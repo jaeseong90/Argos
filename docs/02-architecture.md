@@ -1,0 +1,343 @@
+# Argos 시스템 아키텍처
+
+| 항목 | 내용 |
+|---|---|
+| 문서 버전 | 0.3 |
+| 작성일 | 2026-10-23 |
+| 상태 | 설계 기준선. 상세 설계 10~19 문서 v0.1 완료. 12장 미결(A-)은 Phase 0 PoC로 확정, 13장은 설계 문서 간 정합 결정 |
+| 반영 리뷰 | JVM 에이전트, 데이터·저장소, 보안·개인정보, 운영자·UX, 오픈소스(2026-10-22) |
+| 관련 문서 | [01 제품 기획](01-product-plan.md), [03 완성 기준](03-definition-of-done.md), [05 벤치마크](05-benchmark.md), [06 보안 요구](06-security-requirements.md), 설계 10~19 |
+
+## 0. 이 문서의 역할
+
+이 문서는 **구성 요소, 경계, 데이터 흐름, 전역 설계 결정**을 정한다. 각 구성 요소의 상세 설계(클래스·인터페이스·스키마·API·화면)는 10번대 설계 문서가 맡는다. 문서 간 충돌이 생기면 이 문서 → 해당 설계 문서 순으로 우선한다. 이 문서를 바꾸는 결정은 ADR(`docs/adr/`)로 남긴다.
+
+| 번호 | 설계 문서 | 범위 |
+|---|---|---|
+| 10 | 에이전트 설계 | 모듈·클래스로더·계측 프레임워크·컨텍스트·버퍼·전송·설정·명령·자기 보호 |
+| 11 | 프로토콜 설계 | proto 정의, 세션·배치·사전·명령 메시지, 멱등성, 버전 협상 |
+| 12 | 서버 설계 | 수집 파이프라인(WAL·중복 제거), 세션 레지스트리, 실시간 버스, 알림 엔진, 명령 라우팅, 메타데이터 |
+| 13 | 저장소 설계 | ClickHouse DDL·롤업·TTL·코덱, PostgreSQL 스키마, 마이그레이션 러너, 용량 |
+| 14 | API 설계 | REST(OpenAPI)·WebSocket 프레임, 소스 선택 규칙, 권한 표기, 에러 규약 |
+| 15 | UI 설계 | 정보 구조, 화면 사양, 컴포넌트, URL 상태, 실시간, XLog 캔버스, i18n |
+| 16 | 보안 설계 | 위협 모델, 토큰·세션·권한 구현, 마스킹·분류 구현, 공급망 |
+| 17 | 배포·운영 설계 | Compose·tar·에어갭 패키지, 설정 관리, 업그레이드, 백업, 자기 모니터링, 런북 |
+| 18 | 테스트 설계 | 테스트 계층, 매트릭스·벤치·장시간·카오스·정확성·보안·E2E 하네스 |
+| 19 | 저장소·빌드·릴리스 설계 | 모노레포, Gradle·pnpm, CI 파이프라인·러너 격리, 릴리스·서명·SBOM, 기여 흐름 |
+
+## 1. 전체 구성
+
+```
+┌──────────────── 계측 대상 애플리케이션 서버 ─────────────────┐
+│  JVM (Tomcat / Spring Boot, 플랫폼 또는 가상 스레드)          │
+│   └─ argos-agent.jar  (-javaagent, 단일 jar)                  │
+│        ├─ 계측(ByteBuddy Advice)  ├─ 전수 통계 집계           │
+│        ├─ bounded 큐·배치         ├─ gRPC 클라이언트(TLS)      │
+└───────────────────────────┬──────────────────────────────────┘
+                            │ gRPC :9100  배치 unary(트랜잭션·프로파일·메트릭·통계·액티브)
+                            │           + 세션 양방향 스트림(Hello·heartbeat·사전·설정·명령)
+┌───────────────────────────▼──────────────────────────────────┐
+│  argos-server (Spring Boot, 단일 JVM, 역할 프로파일 all)       │
+│   collector ─ 상한 검사 ─ WAL 기록 ─ ack ─┬─ 실시간 버스 ─ WebSocket ─┐  │
+│                                          └─ 배치 라이터(dedup 토큰) │  │
+│   web ─ REST /api/v1 (OpenAPI) ─ 조회(원본/1m/1h 자동 선택) ───┼──┼──┐│
+│   alert ─ 규칙 평가(10초) ─ 상태 머신 ─ 채널(목적지 검증·서명) │  │  ││
+│   admin ─ 토큰·세션·RBAC·감사 ─ 명령 라우팅 ─ 설정 변경 통제    │  │  ││
+│   ops ─ 야간 정합 검사·롤업 재구축 ─ 자기 메트릭 /actuator/prometheus │
+└──────────────────────────────────────────┼──┼──┼──────────────┘
+        ┌─────────────────────────────────┘  │  │
+┌───────▼─────────┐   ┌──────────────────────▼┐ │   ┌─────────────┐
+│   ClickHouse    │   │      PostgreSQL       │ │   │  React UI   │
+│ xlog, profile,  │   │ 사용자·세션, 앱·인스턴스│ │   │ :8080 (쿠키 │
+│ metric, stat,   │   │ 토큰(해시), 사전(원문) │ └──▶│  세션, WS)  │
+│ 1m/1h 롤업      │   │ 규칙·채널(암호화)·이력│     │             │
+│ (argos_writer/  │   │ 명령·결과(암호화)     │     └─────────────┘
+│  argos_reader)  │   │ 이벤트, 감사, 마이그레이션 이력│
+└─────────────────┘   └───────────────────────┘
+```
+
+런타임 구성 요소는 넷이다. 에이전트, 서버(1 JVM), ClickHouse, PostgreSQL. 1.0에서는 이 넷 외의 런타임 의존성(Redis, Kafka 등)을 두지 않는다. 외부로 노출되는 포트는 UI/API(8080)와 gRPC(9100)뿐이다.
+
+## 2. 설계 원칙
+
+1. **에이전트는 절대 앱을 해치지 않는다.** 앱 스레드를 블로킹하지 않고, 예외·반환값을 바꾸지 않고, 객체 동일성을 깨지 않고(Runnable 래핑 금지), 상한 없는 메모리를 쓰지 않는다. 서버가 없어도 앱은 그대로 돈다. 에이전트 자신의 스레드·클래스는 계측 대상이 아니다.
+2. **XLog는 100%, 상세는 조건부, 통계는 전수.** 트랜잭션 점은 전수 기록하고, 프로파일(step)은 에러·느림·샘플만 전송하며, SQL·외부 호출 통계는 에이전트가 전 트랜잭션에서 집계해 따로 보낸다(D-12).
+3. **숫자는 서로 일치한다.** 수집 경로는 중복 0·누락 0(WAL + 중복 제거 토큰, D-13), 롤업은 원본의 결정적 함수(D-14), 1요청 = 1트랜잭션(D-04), 1 SQL 실행 = 1 step(D-24). 불일치는 야간 정합 검사가 잡아 재구축한다.
+4. **프라이버시 기본값.** 개인정보 가능 필드는 설정 없이는 수집되지 않거나 마스킹된다(5장 분류표). 수집 범위를 넓히는 설정은 원격으로 바꿀 수 없다(SEC-23).
+5. **단일 노드로 시작, 수평 확장 가능.** 1.0은 all-in-one. 역할 분리·ClickHouse 복제·샤딩은 테이블·DB 이름을 설정값으로 두어 1.x에서 바꿀 수 있게 한다.
+6. **표준 호환.** W3C Trace Context(기존 `traceparent` 보존), OpenMetrics 명명, OpenAPI, Prometheus 노출. 내부 모델은 OTLP를 받아들일 수 있게 둔다(2.0).
+7. **AI가 구현한다는 전제.** 모듈 경계와 인터페이스를 명시해 작업 지시서 하나가 모듈 하나에 대응하도록 한다. 모든 모듈은 독립 테스트가 가능해야 한다. 금지 규칙(Advice 작성 규칙, HTML 조립 금지, Mock DB 금지)은 린트·ArchUnit으로 기계 검사한다.
+
+## 3. 전역 설계 결정
+
+| ID | 결정 | 대안 | 선택 이유 | 영향 요구 |
+|---|---|---|---|---|
+| DSN-02-01 | 에이전트는 **ByteBuddy Advice 인라인**만 사용. `MethodDelegation`·`skipOn` 금지. `readOnly=false`(인자·반환 교체)는 **허용 목록 파일에 등록된 관찰 데이터 부가 목적**(전파 헤더 추가, MDC 맵 부가)에만 허용하고 ArchUnit이 검사한다. 앱의 의미·예외·반환값을 바꾸는 용도는 금지 | 전면 금지 | 클래스로더 경계 문제 최소화, 앱 동작 변경 불가능 보장. jdk11 HttpClient·Logback MDC는 인자 부가 없이는 계측 불가(DSN-10-04) | F-A15, N-01 |
+| DSN-02-02 | **단일 jar bootstrap**: jar 루트에 `agent-bootstrap` 클래스, 나머지는 `inst/*.classdata`로 숨기고 격리 `AgentClassLoader`가 로드. 임시 파일 0 | 중첩 jar 추출 | 읽기 전용 FS·`noexec` tmp에서 기동, 보안팀 거부감 제거 | F-A31 |
+| DSN-02-03 | JDK 클래스 계측 시 `Instrumentation.redefineModule`로 bootstrap unnamed 모듈 read edge 추가. `Add-Opens` 매니페스트 미사용 | 매니페스트 속성 | 매니페스트 속성은 에이전트 jar에서 무효. JDK 9+ `IllegalAccessError` 방지 | F-A31 |
+| DSN-02-04 | 요청 앵커는 `ServletRequest` 속성, ThreadLocal은 캐시. `DispatcherType.REQUEST`에서만 트랜잭션 시작 | ThreadLocal만 | Spring Boot `/error` 디스패치 이중 트랜잭션 방지 | F-A28, D-04, D-21 |
+| DSN-02-05 | Executor는 **허용목록**만 계측, 컨텍스트는 Runnable에 필드 주입(약참조 맵 폴백), 래핑 금지 | 인터페이스 전체 매칭 + 래핑 | `remove()`·`ScheduledFuture`·Netty 타입 검사 보존, 변환 대상 최소화 | F-A07, 원칙 1 |
+| DSN-02-06 | JDBC는 `java.sql` 인터페이스 서브타입 매칭 + 클래스 계층별 CallDepth로 최외곽만 기록. `getConnection` 대기·`commit/rollback`도 step | 드라이버별 계측 | 드라이버 무관, 래퍼 중첩 제거 | F-A03, D-24 |
+| DSN-02-07 | 풀·Tomcat 메트릭은 생성자·`start()` Advice로 인스턴스를 약참조 레지스트리에 등록하고 getter 호출. JMX는 보조 | JMX 우선 | Spring Boot는 HikariCP·Tomcat MBean이 기본 off | F-A10 |
+| DSN-02-08 | SQL·외부 호출 통계는 에이전트가 10초 창으로 전수 집계해 `SendStats`로 전송. 서버는 `sql_stat_raw`·`ext_stat_raw`에서 롤업 | 프로파일에서 집계 | 프로파일 샘플링(12%, 편향)으로는 통계가 틀린다 | F-A22, F-S21, D-12 |
+| DSN-02-09 | `tx_id` = 41비트 ms ‖ 12비트 노드 ‖ 11비트 시퀀스(Snowflake형, 랜덤 금지). `trace_id` Argos 생성분은 상위 4B에 Unix 초 | 32비트 초 + 32비트 랜덤 | 전역 유일, id만으로 파티션 범위 계산(ts 힌트 불필요), 충돌 0 | D-11, A-6 해소 |
+| DSN-02-10 | 사전 키(service·sql·name·error_group·host·frame)는 xxh3_64 내용 해시. 원문은 PostgreSQL `dictionary`에 비동기 upsert | 서버 발급 순번, 32비트 해시 | 적재 경로가 사전 왕복에 묶이지 않음, 충돌 확률 무시 가능 | D-08 |
+| DSN-02-11 | 전송은 **배치 단위 unary RPC**(100ms 또는 500건, deadline 5초, in-flight ≤ 4) + 세션 양방향 스트림. 중복 제거 키는 `(instance_id, agent_epoch, 배치 종류, seq)`이며 `seq`는 종류별 단조 증가, `agent_epoch`는 기동 시 난수(DSN-11-02) | 클라이언트 스트리밍 + 단일 Ack | 배치별 ack·재전송, 재기동 후 seq 리셋 구분, gRPC 내부 버퍼 무제한 증가 방지 | N-02, N-05, D-13 |
+| DSN-02-12 | 서버는 수신 배치를 **WAL에 기록 후 ack**(fsync 직후 ack, 적재는 비동기). 블록 경계는 WAL 자체의 INTENT/COMMIT 레코드로 기록하고(DSN-12-02), ClickHouse insert마다 `insert_deduplication_token = argos:{table}:{block_id}`(block_id = COMMIT 레코드 위치, DSN-13-07)를 붙여 MV까지 중복 제거. 중복 제거 윈도는 메모리 + WAL 복원 | 메모리 `batch_seq` 윈도만, 별도 인덱스 파일 | 재시작·스풀 재적재·MV 부분 실패에서도 원본·롤업 비대칭 중복 0 | D-13 |
+| DSN-02-13 | 롤업 SELECT 정의는 MV와 재구축 CLI가 같은 파일을 읽는다. 1h는 1m에서 캐스케이드. 야간 정합 검사가 전날 D-03·D-12를 검증하고 불일치 날을 재구축 | MV만 | 롤업을 결정적·재구축 가능하게 | D-14, F-S22 |
+| DSN-02-14 | 앱 식별은 (name, env) 쌍. `env`는 모든 ClickHouse 테이블에 LowCardinality 컬럼, 모든 목록·규칙·전체 현황의 필터 | 라벨만 | 같은 앱 이름이 환경마다 존재. 나중에 넣으면 전부 고쳐야 함 | F-A25, A-8 |
+| DSN-02-15 | 트랜잭션 `kind`(HTTP/BATCH/MESSAGE). 통계·Apdex·TPS는 기본 HTTP만, 종류별 분리 집계 | 배치 미지원 | 배치가 HTTP 통계를 오염시키지 않으면서 배치도 추적 | F-A24, D-20 |
+| DSN-02-16 | 에이전트 토큰은 앱 단위, 서버는 SHA-256 해시만 보관, 폐기 즉시 세션 종료 | 전역 토큰, 평문 | 06 문서 A | SEC-01~06 |
+| DSN-02-17 | 원격 변경 가능 설정은 에이전트 로컬 `remote-config.allow`가 정한다(하드 캡). 민감 수집 키는 기본 불허. 환경 덤프는 에이전트 측 마스킹 | 서버가 전권 | 서버·운영자 계정 침해가 전 앱 데이터 유출로 번지지 않게 | SEC-20~25 |
+| DSN-02-18 | UI 인증은 httpOnly·Secure·SameSite=Strict 쿠키 + 서버 측 세션 레코드(즉시 무효화) + CSRF 토큰. WebSocket은 핸드셰이크 쿠키·Origin 검사 | Authorization 헤더 + localStorage | XSS 한 번으로 세션 탈취되지 않게, 역할 변경 즉시 반영 | SEC-40~44 |
+| DSN-02-19 | 서버 역할 프로파일 `all` 단일 노드만 1.0 공식 지원. 역할 분리·다중 collector는 1.x | 1.0 HA | 구성 요소 최소화. 설계에 자리만 둔다 | F-S09(C), N-09 |
+| DSN-02-20 | 메트릭 이름은 OpenMetrics 스타일(`snake_case`, 단위 접미사, 라벨). 서버 자기 메트릭도 같은 규약으로 `/actuator/prometheus` | 자체 규약 | 기존 Prometheus와 상호운용 | F-S20, D-16 |
+| DSN-02-21 | 사용자 문서·UI 원본·로그는 영어, ko는 i18n. 기획·설계 문서는 한국어 | 한국어 원본 | 오픈소스 공개·외부 피드백 | O-A04·A05 |
+| DSN-02-22 | 외부 네트워크 호출은 운영자가 설정한 대상(수집 서버, 알림 채널, SMTP)에만. 사용 통계·업데이트 확인 없음 | opt-out 텔레메트리 | 폐쇄망·공공·금융 전제, 오픈소스 신뢰 | O-P01, N-17 |
+
+## 4. 구성 요소와 책임
+
+### 4.1 에이전트 (`argos-agent.jar`, Java 8 타겟)
+
+| 모듈 | 책임 | 설계 문서 |
+|---|---|---|
+| `agent-bootstrap` | bootstrap 클래스로더에 주입되는 최소 API: `TraceContextHolder`, `Tracer`·`CallDepth`·`ArgosThread`, 킬 스위치 플래그, 필드 주입 폴백용 약참조 맵. 의존성 0 | 10 |
+| `agent-core` | 트랜잭션·프로파일 빌더(kind, step 트리, 상한), 전수 통계 집계기, bounded 큐·배치·전송, 설정 로더(파일/환경변수/서버 푸시 + `remote-config.allow`), 사전 캐시, 명령 처리(마스킹), 메트릭 수집기(JVM·풀·Tomcat·cgroup), 느린 스택 감시, 자기 보호·자가 진단, `--check` | 10, 11 |
+| `agent-instrumentation/*` | 모듈 하나 = 패키지 하나: servlet, spring-webmvc, jdbc, pool, httpclient-{jdk,apache4,apache5,okhttp,jdk11,reactornetty}, executor, servlet-async, scheduler(@Scheduled·Quartz·Spring Batch), logging(MDC), custom. 각각 TypeMatcher + Advice + helper + witness | 10 |
+| `agent-dist` | 단일 jar 패키징(`inst/*.classdata`), 셰이딩(`io.argos.agent.shaded.*`), 매니페스트(`Premain-Class`, `Agent-Class`, `Can-Retransform-Classes`), NOTICE·SBOM·버전 매니페스트 동봉, `check-shading.sh` | 19 |
+| `agent-testing` | 샘플 앱 기동·요청·수집 결과 단언 하네스, 변환 목록 베이스라인, fail-safe 주입, 매트릭스 러너 | 18 |
+
+핵심 규칙(상세는 10 문서): 요청 경계(F-A28), 서비스 이름 폴백·상한(F-A29), 제외 규칙(F-A23), JDBC 최외곽·DBC step(F-A03), Executor 허용목록·필드 주입(F-A07), 가상 스레드(F-A30), WebClient 범위(F-A33), 스트리밍 수명(F-A34), 외부 추적 공존(F-A32), 자기 보호·변환 안전·킬 스위치 2단(F-A15), 전송 상한(스레드 ≤ 6, 직접 메모리 ≤ 8MB, NIO·JDK TLS·Unsafe 미사용, F-A35).
+
+### 4.2 서버 (`argos-server`, Java 21 Spring Boot, 단일 JVM)
+
+| 역할 | 책임 | 설계 문서 |
+|---|---|---|
+| collector | gRPC 수신(상한·쿼터 검사 → WAL → ack), 세션 레지스트리(인스턴스 상태 모델 UP/STALE/DOWN/WARN), 사전 해석, 시계 차이 측정, 타임스탬프 가드, 실시간 버스 publish, 배치 라이터(dedup 토큰, 명시 컬럼), 에러 그룹 지문 계산, 전수 통계 적재 | 12 |
+| web | REST `/api/v1`(OpenAPI, `x-argos-role`), 소스 자동 선택(≤6h 원본 / ≤7d 1m / 그 이상 1h, 마지막 2분은 원본), WebSocket 멀티플렉스, 쿠키 세션·CSRF, 레이트 리밋 | 12, 14 |
+| alert | 규칙 모델(평가 창·지속·최소 표본·단위·no-data·기동 유예·2단계·복구·재알림·그룹핑·음소거·ACK), 10초 평가, 상태 머신, 채널(목적지 검증·서명·재시도·실패 자기 알림), 기본 템플릿 | 12 |
+| admin | 앱·인스턴스·승인 대기·토큰(해시·회전·폐기)·사용자·역할·권한 매트릭스·감사 로그·설정 변경 통제(사유·diff·결과·되돌리기)·킬 스위치·명령 라우팅(TTL·동시 1건·권한 분리)·개인정보 삭제 API | 12, 16 |
+| ops | 야간 정합 검사·롤업 재구축 CLI, 저장소 상태 패널·디스크 비상 보존 단축, 자기 메트릭(Prometheus), 마이그레이션 러너(PostgreSQL Flyway + ClickHouse 자체), 설정 토큰 부트스트랩 | 12, 13, 17 |
+
+### 4.3 저장소
+
+| 저장소 | 내용 | 접근 |
+|---|---|---|
+| ClickHouse DB `argos` | `xlog`, `profile_step`, `metric`, `sql_stat_raw`·`ext_stat_raw`(10초 창, 15구간 히스토그램 `buckets` 포함), 롤업 `app_stat_1m/1h`, `service_stat_1m/1h`, `instance_stat_1m`, `sql_stat_1m/1h`, `ext_stat_1m/1h`, `error_stat_1m`, `metric_1m/1h`. 서버 자기 메트릭은 `metric`에 `app_id = 0`으로도 기록 | `argos_writer`(INSERT), `argos_reader`(readonly, 쿼리 상한), `argos_migrator`(DDL). timezone UTC. 상세는 13 문서 |
+| PostgreSQL 스키마 `argos` | `users`, `user_sessions`, `user_permissions`(pii.view 등), `roles`, `apps`, `instances`, `pending_registrations`(승인 대기), `agent_tokens`(해시), `dictionary`(원문, kind, hash64, norm_version), `error_groups`, `alert_rules`(+`alert_rule_revisions`, `alert_states`), `alert_events`, `mutes`, `notification_channels`(암호화), `notification_deliveries`, `webhook_signing_keys`, `commands`, `command_results`(암호화), `events`(배포·자동 이벤트), `config_changes`·`config_change_results`, `privacy_jobs`, `reconcile_results`, `service_apdex_overrides`, `audit_logs`(앱 역할은 INSERT·SELECT만), `settings`, `ch_schema_history` | 앱·감사 기록·백업·마이그레이션 계정 분리, Flyway. 상세는 13·16 문서 |
+| 서버 로컬 디스크 | WAL(`data/wal`, 상한 10GiB), 설정 토큰, 마스터 키 | 0600/0700 |
+
+### 4.4 UI (`ui/`, React + TypeScript)
+
+전체 현황(기본 화면) → 앱 대시보드 → XLog → 트랜잭션 상세 → 트레이스. 액티브 트랜잭션, 서비스·SQL·외부 호출·에러 통계, 인스턴스 상세·스레드 덤프, 알림(규칙·채널·이력), 관리(앱·인스턴스·토큰·설정 변경·사용자·감사·개인정보·라이선스). 전역 상태(앱·환경·시간 범위·종류·필터)는 URL에 있다. 수집 데이터는 텍스트 노드로만 렌더한다. 상세는 15 문서, 화면별 필수 요소는 05 문서 2장.
+
+## 5. 데이터 모델 요약과 데이터 분류표
+
+### 5.1 핵심 엔터티
+
+| 엔터티 | 키 | 핵심 필드 | 저장 |
+|---|---|---|---|
+| Application | `app_id`(서버 발급) | name, env, group, 등록 정책, Apdex T | PostgreSQL |
+| Instance | `instance_id` | app_id, name(설정 → `host:port` → `host:pid`), host, pid, JVM, OS, cgroup, 에이전트 버전, 버전 태그, 가상 스레드 모드, IP 수집 모드, 상태, 설정 해시, 시계 차이 | PostgreSQL + 메모리 |
+| Transaction(xlog) | `(app_id, ts, tx_id)` | env, instance_id, kind, trace_id/span/parent, caller_app_id, service_id, version_id, http_method/status, elapsed_ms, error, error_class_id, error_group_id, apdex_t_ms, remote_ip(모드), user_id(모드), sql_count/time, ext_count/time, cpu_time_ms(결측 가능), alloc_bytes(결측 가능), thread_name_id, profile_captured, sql_ids(A-10) | ClickHouse 30일 |
+| Profile step | `(app_id, tx_id, seq)` | parent_seq, type(SQL/DBC/COMMIT/ROLLBACK/HTTP/METHOD/ASYNC/ERROR/STACK/MESSAGE), start_offset_ms, elapsed_ms, name_id, target_id, rows, status, error, detail(≤4KB, 마스킹), stack(frame id 배열) | ClickHouse 7일 |
+| Stat(10초 창) | `(app_id, sql_id, db_id, ts)` / `(app_id, host_id, ts)` | count, error_count, sum_ms, max_ms, fetch_rows | ClickHouse 14일 → 1m 90일 → 1h 1년 |
+| Metric | `(app_id, instance_id, name, ts)` | value, 종류(gauge/counter)는 레지스트리 | ClickHouse 14일 → 1m/1h |
+| Dictionary | `(app_id, kind, hash64)` | text(≤64KB, truncated 플래그), norm_version, first/last_seen | PostgreSQL |
+| Event | id | app_id, env, ts, type(deploy/start/stop/config/state), title, detail, version | PostgreSQL |
+
+### 5.2 데이터 분류표 (SEC-30)
+
+새 필드를 추가하는 모든 변경은 이 표를 갱신해야 한다(03 공통 DoD). "개인정보 가능" 필드의 기본값은 수집 안 함 또는 마스킹이다.
+
+| 필드 | 분류 | 기본 수집 | 마스킹·모드 | 보존 | 삭제 경로 |
+|---|---|---|---|---|---|
+| 서비스 이름(URL 패턴) | 내부 | 수집 | 쿼리스트링 제외, 숫자·UUID 세그먼트 정규화, 사전 상한 | 사전 90일 미참조 정리 | 사전 관리자 삭제 |
+| URL(원 경로) | 개인정보 가능 | 경로만 | `capture.query-string: off`(기본)/whitelist/full, 길이 2KB | xlog 30일 | 삭제 API(tx 범위) |
+| HTTP 헤더 | 개인정보 가능 | 수집 안 함 | 화이트리스트에 있는 이름만, 값 1KB | xlog 30일 | 삭제 API |
+| remote_ip | 개인정보 가능 | 설치 시 선택 강제 | `full`/`masked`(권장 기본)/`off`, trusted-proxies가 있을 때만 XFF | xlog 30일 | 삭제 API(IP 기준) |
+| user_id | 개인정보 가능 | 수집 안 함 | `off`(기본)/`plain`/`hashed`(앱별 HMAC) | xlog 30일 | 삭제 API(user_id 기준) |
+| SQL 정규화문 | 내부 | 수집 | 리터럴 → `?`, 실패 시 원문 미전송(`<unparsed>`) | 사전 | 사전 관리자 삭제 |
+| SQL 바인드 파라미터 | 개인정보 가능 | 타입·길이만 | `masked`(기본)/`partial`(화이트리스트+정규식)/`full`(관리자 열람·감사) | profile 7일 | 삭제 API |
+| 예외 메시지 | 개인정보 가능 | 수집(마스킹 후) | 1KB 상한, 정규식 마스킹(이메일·전화·주민번호·카드·IP) | xlog·profile | 삭제 API |
+| 스택 트레이스 | 내부 | 수집 | 프레임 사전 id, 깊이 30/64 | profile 7일, 대표 스택은 error_groups | - |
+| 스레드 덤프 본문 | 개인정보 가능(비밀값 가능) | 명령 시만 | 서버 마스터 키 봉투 암호화 저장, 운영자 이상 열람(감사) | 30일 | 자동 만료 |
+| 바인드 파라미터 `full` 값 | 개인정보 가능 | `full` 모드일 때만 | ClickHouse에도 봉투 암호화 컬럼(`*_enc`)으로 저장, `pii.view` 권한자만 복호화 열람(감사). 권한 없는 요청은 403이 아니라 `masked_by_role`로 강등 반환 | profile 7일 | 삭제 API |
+| user_id 해시 솔트 | 비밀값 | 앱 생성 시 | 앱별 솔트를 PostgreSQL에 암호화 저장, ServerHello로 에이전트에 전달 | 앱 수명 | 앱 삭제 |
+| 환경변수·시스템 프로퍼티 덤프 | 비밀값 | 명령 시만(관리자) | 에이전트 측 키·값 패턴 마스킹(끄기 불가), 암호화 저장, 열람 감사 | 30일 | 자동 만료 |
+| 에이전트 토큰 | 비밀값 | - | 서버 해시만, 발급 시 1회 표시, 로그·번들 마스킹 | - | 폐기 |
+| 알림 채널 URL·SMTP 비밀번호 | 비밀값 | - | 마스터 키 AES-256-GCM, UI 마스킹 | - | 삭제 |
+| 사용자 비밀번호 | 비밀값 | - | bcrypt cost 12 | - | - |
+| 감사 로그 | 내부(개인정보 가능: 행위자·열람 대상) | 수집 | 비밀값 마스킹 | 1년(설정) | API 삭제 불가, 만료 삭제 |
+| 메트릭 | 내부 | 수집 | 시리즈 상한 | 14일/90일/1년 | - |
+| 인스턴스 메타(호스트·PID·JVM) | 내부 | 수집 | - | 인스턴스 보관 정책 | 인스턴스 삭제 |
+
+## 6. 데이터 흐름
+
+### 6.1 수집
+
+```
+앱 요청 ─▶ Advice(요청 경계·제외 규칙) ─▶ Transaction 빌더(step 트리, 상한) ─▶ 종료 시 샘플링 결정
+   ├─▶ XLog 레코드 ─▶ 트랜잭션 큐(시간 기반 120초분, 메모리 상한)
+   ├─▶ 프로파일(에러·느림 100% + 정상 N%) ─▶ 프로파일 큐
+   └─▶ 전수 통계 집계기(sql_id·db_id / host_id, 10초 창) ─▶ 통계 큐
+메트릭 수집기(5초) ─▶ 메트릭 큐          액티브 스냅샷(5초) ─▶ 액티브 큐
+송신 스레드(argos-sender) ─▶ 배치(100ms/500건) ─▶ unary RPC(in-flight ≤ 4, deadline 5초) ─▶ ack(last_seq)
+                                                      실패·상한 ─▶ 드롭 + 카운터(D-06)
+서버 collector ─▶ 상한·쿼터·토큰 검사 ─▶ WAL append(그룹 fsync) ─▶ ack
+   ─▶ 디코드·사전 해석·타임스탬프 가드·에러 그룹 지문·Apdex T 기록
+   ├─▶ 실시간 버스(60초 이상 늦은 행 제외) ─▶ WebSocket 구독자(백프레셔: 최신 우선 드롭)
+   └─▶ 배치 라이터(테이블별, 2초/50,000행, dedup 토큰 = WAL 위치) ─▶ ClickHouse ─▶ MV 1m ─▶ MV 1h
+야간 ops ─▶ 전날 D-03·D-12 정합 검사 ─▶ 불일치 날 재구축(같은 SELECT) ─▶ 수집 상태 패널
+```
+
+### 6.2 제어
+
+```
+에이전트 ─ Session 스트림 ─▶ AgentHello(버전·JVM·호스트·app·env·설정 해시·remote-config.allow·IP 모드)
+서버 ─▶ ServerHello(app_id·instance_id·시계 오프셋·적용 설정) 또는 거부(버전·토큰·미등록·상한)
+heartbeat 30초 ↔ 시계 재측정, 상태 모델 UP/STALE/DOWN
+서버 ─▶ ConfigPush(키·값·change_id) ─▶ 에이전트: allow 검사 ─▶ 적용 또는 거부 ─▶ ConfigApplyResult(rejected_keys)
+서버 ─▶ Command(id UUID, type, TTL) ─▶ 에이전트: 권한은 서버가, 마스킹·쿨다운은 에이전트가 ─▶ CommandResult(암호화 저장)
+에이전트 ─▶ InstanceUpdate(포트 확정·가상 스레드 감지·버전 변경), AgentBye(정상 종료)
+```
+
+### 6.3 조회
+
+```
+UI(URL 상태) ─▶ REST /api/v1 (쿠키 세션, CSRF, 역할) ─▶ 소스 선택(원본/1m/1h, 마지막 2분 원본)
+   ─▶ ClickHouse(argos_reader, 쿼리 상한) + PostgreSQL(사전·메타) ─▶ 응답(source 표기, 제한·샘플링 표기)
+UI ─▶ WebSocket /ws(핸드셰이크 쿠키·Origin) ─▶ 구독 {xlog|counter|active, app, env} ─▶ 100ms 묶음 푸시
+```
+
+## 7. 횡단 규칙
+
+| 영역 | 규칙 |
+|---|---|
+| 시간 | 저장 UTC, 표시 브라우저 로컬. 응답시간은 `nanoTime` 차분(µs → ms). 타임스탬프는 에이전트 시계 + 서버 측 오프셋 기록. 가드 `now+5s`/`now-7d` |
+| 식별자 | `tx_id` Snowflake형(`ts = tx_id >> 23`), `trace_id` 16B, 사전 키 xxh3_64, 리소스 id UUIDv4, 앱은 (name, env) |
+| step 타입 열거 | `SQL=1, DBC=2, COMMIT=3, ROLLBACK=4, HTTP=5, METHOD=6, ASYNC=7, ERROR=8, STACK=9, MESSAGE=10, SUMMARY=11`. proto·ClickHouse `Enum8`·에이전트 상수가 같은 번호를 쓴다 |
+| 결측 표현 | proto는 `optional` 필드 부재, ClickHouse 저장은 센티널 `-1`(정수)·`NULL`(문자열), REST 응답은 `null` + `measured: false`. 0과 결측을 섞지 않는다(D-23) |
+| 수집 중단 구간 | 필드명은 `outages[]`(시작·끝·사유). `gaps`는 쓰지 않는다 |
+| 응답 봉투 | `source(raw|1m|1h|mixed)`, `truncated`, `shown/total`, `sampling`, `retention_exceeded`, `outages`. snake_case |
+| 포트 | 8080 UI/API, 9100 gRPC(둘만 외부 노출), 8081 관리(`management.server.port`, 127.0.0.1 바인딩, 베어러 인증) |
+| 테스트 ID | 18 문서의 `T-<영역>-nnn` 체계가 유일. 다른 문서의 보조 ID(예: `ST-xx`)는 별칭 |
+| 상한 | 모든 큐·캐시·사전·문자열·배치·스택에 상한. 초과는 거부 또는 드롭 + 카운터. 상한값은 설정 레퍼런스에 표로 |
+| 설정 | 에이전트 `argos-agent.yml` → `-Dargos.*` → `ARGOS_*` 순 오버라이드, 서버 Spring `argos.*`. 알 수 없는 키는 WARN. 유효 설정과 출처를 조회 가능 |
+| 메트릭 이름 | OpenMetrics: `jvm_memory_used_bytes{area="heap"}`, `jvm_gc_pause_seconds_total{gc="g1",gc_type="young"}`, `tomcat_threads_busy{connector="http-nio-8080"}`, `jdbc_pool_active{pool="HikariPool-1"}`, `argos_agent_dropped_total{queue}`, `argos_ingest_lag_seconds` |
+| 로그 | 에이전트: 자체 로거, 파일 롤링(10MB×5), stdout 0, INFO 이하 PII 없음. 서버: 구조화 JSON, 요청 id, 비밀값 마스킹 |
+| 에러 응답 | 4xx 표준 본문(code, message, details), 5xx + 요청 id, 스택·경로·SQL 미노출 |
+| 권한 | 관리자/운영자/조회자, OpenAPI `x-argos-role`, 객체 수준은 명령 결과(요청자·관리자) |
+| 공개 계약 | 설정 키, API 스키마(추가만), WS 프레임, 메트릭 이름, 웹훅 페이로드(schema_version), CLI, 디렉터리, MDC 키(`argos.trace_id`, `argos.tx_id`), `tracestate` 키 `argos`. 변경은 폐기 절차(O-R03) |
+
+## 8. 배포 토폴로지
+
+| 규모 | 구성 | 대상 |
+|---|---|---|
+| S (1.0 기본) | VM 1대(8코어/16GB/500GB SSD): argos-server(all, 관리 포트 8081은 127.0.0.1) + ClickHouse(7.5GiB) + PostgreSQL(1.5GiB). 메모리 예산표는 17 문서 | 인스턴스 ~50, ~500 TPS 지속(5,000 TPS는 1시간 상한. 2,000 TPS 지속은 보존 단축 또는 1TB) |
+| demo | Compose `--profile demo`: 위 + 샘플 앱(에이전트 부착) + 부하 생성기. 60초 내 XLog | 평가 |
+| M (1.x) | collector × 2 + web × 1 + ClickHouse 복제 2 + Keeper + PostgreSQL | 인스턴스 ~300 |
+| L (1.x) | ClickHouse 샤드 클러스터 | 그 이상 |
+
+설치 방식: Docker Compose(amd64·arm64), `tar.gz` + systemd, 에어갭 번들(이미지·체크섬·GPG 서명·공개키 지문), Helm(1.x). 설치 시 자격증명 랜덤 생성, DB 포트 비노출, 설정 토큰 부트스트랩. 디렉터리 `/opt/argos/{bin,conf,lib,logs,data}`.
+
+## 9. 테스트 전략 개요
+
+| 계층 | 내용 | 실행 |
+|---|---|---|
+| 단위 | Advice 로직, SQL 정규화(50케이스, PII 시드), 큐·상한, 설정 파서, 컨텍스트 전파, 마스킹 패턴, 지문 | 매 커밋 |
+| 변환 검증 | ASM `CheckClassAdapter`, 변환 클래스 목록 베이스라인 diff, `onError`·`ClassCircularityError` 0, `-XX:+BytecodeVerificationLocal`, ArchUnit Advice 규칙, Unsafe 참조 검사 | 매 커밋 |
+| 통합(경량) | Testcontainers ClickHouse·PostgreSQL 적재·조회·정합·마이그레이션, 가짜 gRPC 서버/에이전트 | 매 커밋 |
+| 매트릭스 | 유효 조합표(아래) × 가상 스레드 on/off, JDK 25는 `--sun-misc-unsafe-memory-access=deny`, JDBC 9종(Testcontainers + 사내 상용 DB), 독립 Tomcat WAR 재배포 50회, 공존(JaCoCo·OTel·devtools) | nightly(신뢰 브랜치, 사내 러너) |
+| 성능 | 01 문서 7.3 프로토콜(계측 on/off, no-op 익스포터, 컨테이너, 가상 스레드), 서버 5,000 TPS 1시간, 저장소 리플레이 | 주 1회 + 릴리스 전 |
+| 장시간 | 72시간: 힙 기울기, NMT, FD·스레드, parts | 릴리스 전 |
+| 카오스 | 서버 중단 1시간·지연·손실·5xx·디스크 풀·DNS·인증서 불일치·instance_id 재부여·ClickHouse 30분 중단 | 릴리스 전 |
+| 정확성 | D-01~D-26 각각 자동 테스트, 야간 정합 검사 | 매 커밋 + 운영 |
+| 보안 | `securityTest` 스위트(권한 매트릭스·상한·레이트 리밋·SSRF·XSS 시드·토큰·하드 캡·PII 시드), SBOM 스캔, gitleaks, 인증 상태 ZAP | 매 커밋 / 릴리스 전 |
+| E2E | Playwright 화면별 핵심 시나리오, 05 문서 2장 필수 요소, XSS 전역 훅, CSP 위반 0 | 매 커밋 |
+
+유효 조합표(샘플 앱 × JDK)
+
+| 샘플 앱 | JDK 8 | JDK 11 | JDK 17 | JDK 21 | JDK 25 | 비고 |
+|---|---|---|---|---|---|---|
+| shop-boot2 (Boot 2.7, javax, Tomcat 9) | ○ | ○ | ○ | ○ | △ 미검증 표기 | |
+| shop-boot3 (Boot 3.x, jakarta, Tomcat 10.1) | – | – | ○ | ○ | ○ | 3.2+ 가상 스레드 on/off |
+| shop-boot4 (Boot 4.x, jakarta, Tomcat 11) | – | – | ○ | ○ | ○ | 가상 스레드 on/off |
+| shop-heavy (boot3 + 의존성 200 jar, 클래스 3만) | – | – | ○ | ○ | ○ | 기동 지연 측정 |
+| 독립 Tomcat 9 + WAR(javax) | ○ | ○ | ○ | ○ | – | 재배포 누수 |
+| 독립 Tomcat 10.1/11 + WAR(jakarta) | – | – | ○ | ○ | ○ | |
+| shop-batch (Spring Batch·@Scheduled·Quartz) | – | – | ○ | ○ | ○ | kind=BATCH |
+
+## 10. OpenTelemetry Java Agent 참고 지침
+
+Apache-2.0이므로 참고·차용할 수 있으나 원 저작권 헤더·`NOTICE` 유지가 조건이다(O-L05).
+
+| 가져와도 되는 것 | Argos 적용 |
+|---|---|
+| `AgentClassLoader`, 단일 jar `.classdata`, `ExposeAgentBootstrapListener`(read edge) | DSN-02-02·03 |
+| `HelperInjector`, `VirtualField`(필드 주입 + 약참조 폴백), `CallDepth` | 10 문서 계측 프레임워크 |
+| `GlobalIgnoredTypesConfigurer` 제외 목록, `ExecutorMatchers` 허용목록 | `AgentBuilder.ignore()`, DSN-02-05 |
+| 서블릿 디스패치 요청 속성 앵커 | DSN-02-04 |
+| `SqlStatementSanitizer`(+ `IN` 축약 추가), `JdbcConnectionUrlParser`(+ Tibero·Altibase·CUBRID) | D-22 |
+| HTTP 클라이언트별 계측 함정 처리 | httpclient-* 모듈 |
+| "실제 앱 기동 → 요청 → 단언" 테스트 패턴 | agent-testing |
+
+가져오면 안 되는 것: `Instrumenter`/`Extractor` 추상화와 `InstrumentationModule` SPI(모듈 12개에 과잉), muzzle(빌드 복잡도 — 대신 SkyWalking식 witness 검사), OTel SDK·`Context`·semantic conventions 의존(서비스 이름 규약만 채택), `indy` Advice 모드, Groovy/Spock 테스트. 참고 가능 프로젝트: OpenTelemetry Java, Pinpoint, Scouter, SkyWalking, Elastic APM Java, dd-trace-java(모두 Apache-2.0). 피할 것: Byteman(LGPL), JaCoCo(EPL) 포함, Jennifer(비공개, 화면 개념만).
+
+## 11. Phase 0 PoC 검증 항목
+
+| # | 검증 | 통과 기준 | 결과 기록 |
+|---|---|---|---|
+| P-1 | 단일 jar bootstrap·격리 CL·read edge 구조로 Servlet·Spring MVC·JDBC 계측 | JDK 8/17/21 × Boot 2.7/3.x 기동·수집, 임시 파일 0, 변환 목록 베이스라인 | `docs/poc/agent-poc.md` |
+| P-2 | 오버헤드(01 문서 7.3 프로토콜) | no-op 익스포터 상대 CPU ≤ 5%, p99 ≤ max(1ms, 5%), 기동 +2초(heavy 포함), `--cpus=2` 병기 | `docs/poc/agent-overhead.md` |
+| P-3 | 전송 스택 비교: grpc-netty(NIO·JDK TLS) vs grpc-okhttp vs 자체 HTTP/1.1+protobuf | jar 크기·클래스 수·메타스페이스·기동·직접 메모리·스레드·8u252 TLS·JDK 25 deny 표. 채택 기준 jar ≤ 15MB, 기동 ≤ 2초, 스레드 ≤ 6, 직접 메모리 ≤ 8MB, Unsafe 경고 0 | `docs/poc/agent-poc.md` |
+| P-4 | ClickHouse 목표 규모 벌크 + 리플레이, 쿼리·검증 20종 | Q1~Q11 기준, 압축률 xlog ≥ 3·profile ≥ 5·metric ≥ 8, Q12·13·15·16 정합 0, Q17 동시 부하, Q18~20 기록. 백분위 함수·코덱·bloom·sql_ids 결정 | `docs/poc/clickhouse-benchmark.md` |
+| P-5 | XLog 캔버스 10만 점 | 16ms/프레임, 드래그 선택·요약 | `docs/poc/xlog-ui.md` |
+| P-6 | JDK 클래스 계측 + JPMS | JDK 17·21·25에서 `HttpURLConnection`·`ThreadPoolExecutor`·`CompletableFuture` 계측 `IllegalAccessError` 0 | `docs/poc/agent-poc.md` |
+
+## 12. 아키텍처 미결 사항
+
+| # | 질문 | 추천 | 확정 시점 |
+|---|---|---|---|
+| A-1 | 전송 스택 | grpc-netty(NIO·JDK TLS·Unsafe off). P-3 비교 후 | Phase 0 |
+| A-2 | 역할 분리 시 내부 버스 | gRPC fan-out(의존성 추가 없음) | 1.x 착수 |
+| A-3 | 프로파일 step을 메모리에 기록 후 종료 시 결정하는 방식의 메모리 비용 | step 상한 1,000 + detail 지연 생성 + 큐 시간 기반(120초분) | Phase 0 (P-2) |
+| A-4 | SQL 원문 보관 | PostgreSQL `dictionary`(64KB 상한, 90일 미참조 정리) | 확정 |
+| A-5 | XLog 10만 점 초과 샘플링 | `error OR slow OR cityHash64(tx_id) % N = 0` 결정적 샘플 | 확정 |
+| A-6 | 트랜잭션 상세 조회의 ts | `tx_id`에서 복원, URL ts는 힌트 | 확정(DSN-02-09) |
+| A-7 | 멀티테넌시 예약 | 컬럼 대신 ClickHouse DB 이름·테이블 접두를 설정값으로 | 확정 |
+| A-8 | 환경 태그 | (name, env) → app_id, env는 모든 테이블 LowCardinality 컬럼 | 확정(DSN-02-14) |
+| A-9 | 1.0부터 ReplicatedMergeTree + 내장 Keeper 여부 | 1.0은 MergeTree. 전환 절차는 17 문서에 | Phase 0 후 |
+| A-10 | `xlog.sql_ids` 배열(SQL 포함 검색·관련 트랜잭션 30일) 채택 여부 | P-4 Q11 비용 측정 후 | Phase 0 |
+| A-11 | 백분위 함수(tDigest / BFloat16 / DD) | P-4 Q14 값 오차 비교 후 | Phase 0 |
+| A-12 | 에이전트 큐 크기 단위 | 건수·시간(120초분)·바이트 삼중 상한(DSN-10-09), 디스크 스풀은 1.x | 확정 |
+| A-13 | 1초 카운터(Jennifer 수준 실시간) | 1.0은 5초. 1.x에서 에이전트 부하 측정 후 | 1.x |
+| A-14 | `protobuf-javalite` 채택(에이전트 jar 크기) | P-3에서 `map`·`optional` 지원 확인 후 | Phase 0 |
+| A-15 | 알림 평가용 백분위(HdrHistogram 메모리 윈도)와 롤업 백분위(A-11)의 값 차이 허용 | 허용. "알림 p95는 메모리 윈도 기준"을 문서에 명시 | 확정 |
+
+## 13. 설계 문서 간 정합 결정 (PM, 2026-10-23)
+
+10~19 문서는 병렬로 작성되어 세부가 어긋난 곳이 있다. 아래 결정이 우선하며, 각 문서는 다음 개정에서 이에 맞춘다. 구현자는 문서가 다르면 이 표를 따른다.
+
+| # | 어긋남 | 결정 | 반영할 문서 |
+|---|---|---|---|
+| C-1 | step 타입 번호(10: DBC=2…, 11: DBC=8 추가) | §7 표의 열거(`SQL=1 … SUMMARY=11`) | 11 proto enum, 13 `Enum8` |
+| C-2 | 중복 제거 토큰(12: WAL 위치, 13: 블록 매니페스트 `block_id`) | DSN-02-12: WAL INTENT/COMMIT 레코드가 블록 경계, 토큰 `argos:{table}:{block_id}`(block_id = COMMIT 레코드 위치) | 12·13 문구 통일 |
+| C-3 | 중복 제거 키(02 초안: instance+seq, 11: +agent_epoch+종류) | DSN-02-11: `(instance_id, agent_epoch, 종류, seq)` | 12 윈도 키 |
+| C-4 | 결측 표현(10: -1, 11·18: optional 부재, 13: 센티널, 14: null) | §7 "결측 표현" 행 | 10 레코드 빌더(proto optional 부재로 송신) |
+| C-5 | 수집 중단 필드명(14: `outages`, 15·18: `gaps`) | `outages` | 15, 18 |
+| C-6 | 응답 봉투 필드(13: `rawRetentionExceeded`) | `retention_exceeded`(14 기준) | 13 |
+| C-7 | 관리 포트(12: 9101, 17: 8081) | 8081, 127.0.0.1, 베어러 인증 | 12 |
+| C-8 | 인스턴스 상태 수치(01 초안: STALE 30초, 12: 60초/180초) | STALE = heartbeat 60초 미수신(2회 누락), DOWN = 180초 또는 Bye 후 5분(DSN-12-08). 01 F-S28 갱신 완료 | 14·15 표시 문구 |
+| C-9 | `readOnly=false` 금지(02 초안) vs 허용 목록(10) | DSN-02-01 완화 반영 완료 | — |
+| C-10 | 테스트 ID(16: `ST-xx`, 18: `T-SEC-xx`) | 18의 `T-` 체계. 16의 `ST-xx`는 별칭 | 16 대응표 주석 |
+| C-11 | DB 계정(13: CH 3종, 16: 6종) | CH `argos_writer/reader/migrator` + PG `argos_app/argos_audit/argos_backup`(마이그레이션은 PG 소유자 계정) = 6종 | 13 PG 절 |
+| C-12 | `POST /events` 인증(14: 에이전트 토큰 Bearer 허용 여부를 16에 질의) | 허용. 앱 범위 에이전트 토큰으로 배포 마커만 생성 가능, 감사 기록. 전용 이벤트 토큰은 1.x | 16 권한 매트릭스 |
+| C-13 | 바인드 파라미터 `full` 권한 없는 요청(03 vs 강등) | `masked_by_role` 강등 반환(14 제안 채택). 분류표 갱신 완료 | 15·16 |
+| C-14 | SQL·외부 호출 백분위(13: 15구간 버킷 추정) vs 트랜잭션 백분위(tDigest 등, A-11) | 이원화 채택. UI는 버킷 추정값에 `estimated` 표기 | 14·15 |
+| C-15 | 메트릭 counter 리셋 보정 주체(13: 에이전트가 `delta` 계산) | 에이전트가 `kind`·`delta`를 실어 보낸다(DSN-13-04) | 10·11 |
+| C-16 | 사전 kind 추가(10: FRAME·METRIC·ERROR_GROUP, 11: DB_TARGET·APP_VERSION) | 전부 채택: `SERVICE, SQL, CLASS, METHOD, THREAD, HOST, FRAME, METRIC, ERROR_GROUP, DB_TARGET, APP_VERSION` | 11 enum, 13 PG enum |
+| C-17 | xlog 추가 컬럼 요구(11·12: dbc_wait_ms, request_id, dispatch_count, streaming, timed_out, incoming_trace, app_version_id, late, flags) | 채택. 13 DDL에 추가 | 13 |
+| C-18 | 샘플 앱 세트(18: shop-heavy·shop-batch·ext-stub 추가) | 채택. 04 WO-01 범위 확대 | 04 |
+| C-19 | 세션 스트림 idle 타임아웃(11: heartbeat 3회 90초) | 채택. 상태 모델과 별개(연결 종료 후 STALE/DOWN은 12 규칙) | 12 |
+| C-20 | 알림 백분위 소스(12: HdrHistogram 메모리 윈도) | A-15로 확정 | 14 응답 표기 |
