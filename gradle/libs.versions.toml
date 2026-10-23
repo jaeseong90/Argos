@@ -1,0 +1,94 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Version catalog: the single source of library and plugin versions (DSN-19-01, 19 §3.1).
+# Versions were checked against Maven Central / Gradle Plugin Portal on 2026-10-23.
+# Every artifact that ends up in a shipped artifact must be Apache-2.0, MIT, BSD-2/3-Clause,
+# ISC, 0BSD, PostgreSQL, Unicode-DFS or CC0-1.0 (O-L03, checked by checkLicenses).
+#
+# Not in this file: the foojay toolchain resolver plugin (settings.gradle.kts, 1.0.0), because
+# version catalogs cannot be used in the settings plugins block.
+
+[versions]
+# --- agent runtime (shaded into argos-agent.jar under io.argos.agent.shaded) ---
+bytebuddy = "1.18.15"
+grpc = "1.85.1"
+protobuf = "4.36.2"
+netty = "4.2.19.Final"
+jctools = "4.0.7"
+# --- server runtime ---
+spring-boot = "4.1.2"
+clickhouse-client = "0.11.0"
+postgresql = "42.7.14"
+flyway = "13.11.1"
+# --- tests ---
+# JUnit stays on the 5.x line: JUnit 6 requires Java 17, but agent tests run on Java 8
+# (DSN-19-02). Projects that import the Spring Boot BOM get the Boot-managed JUnit version.
+junit = "5.14.4"
+assertj = "3.27.7"
+archunit = "1.5.1"
+asm = "9.11.1"
+testcontainers = "2.0.5"
+# --- build tools ---
+errorprone = "2.51.0"
+# 1.37.0 exists but fails inside Spotless 8.10.4 (NoSuchMethodError on
+# JavaFormatterOptions$Style.valueOf); 1.36.1 is the version Spotless 8.10.4 is built against.
+google-java-format = "1.36.1"
+spotless = "8.10.4"
+errorprone-plugin = "5.1.1"
+shadow = "9.6.1"
+cyclonedx = "3.5.1"
+license-report = "3.1.4"
+jib = "3.5.4"
+protobuf-plugin = "0.10.0"
+maven-publish = "0.37.0"
+
+[libraries]
+# agent runtime
+bytebuddy = { module = "net.bytebuddy:byte-buddy", version.ref = "bytebuddy" }
+grpc-bom = { module = "io.grpc:grpc-bom", version.ref = "grpc" }
+grpc-api = { module = "io.grpc:grpc-api", version.ref = "grpc" }
+grpc-stub = { module = "io.grpc:grpc-stub", version.ref = "grpc" }
+grpc-protobuf = { module = "io.grpc:grpc-protobuf", version.ref = "grpc" }
+grpc-protobuf-lite = { module = "io.grpc:grpc-protobuf-lite", version.ref = "grpc" }
+grpc-netty = { module = "io.grpc:grpc-netty", version.ref = "grpc" }
+grpc-inprocess = { module = "io.grpc:grpc-inprocess", version.ref = "grpc" }
+protoc-gen-grpc-java = { module = "io.grpc:protoc-gen-grpc-java", version.ref = "grpc" }
+protobuf-bom = { module = "com.google.protobuf:protobuf-bom", version.ref = "protobuf" }
+protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protobuf" }
+protobuf-javalite = { module = "com.google.protobuf:protobuf-javalite", version.ref = "protobuf" }
+protoc = { module = "com.google.protobuf:protoc", version.ref = "protobuf" }
+netty-bom = { module = "io.netty:netty-bom", version.ref = "netty" }
+jctools-core = { module = "org.jctools:jctools-core", version.ref = "jctools" }
+# server runtime
+spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
+clickhouse-client = { module = "com.clickhouse:client-v2", version.ref = "clickhouse-client" }
+postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
+flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
+flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
+# tests
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
+asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
+asm-tree = { module = "org.ow2.asm:asm-tree", version.ref = "asm" }
+asm-util = { module = "org.ow2.asm:asm-util", version.ref = "asm" }
+testcontainers-bom = { module = "org.testcontainers:testcontainers-bom", version.ref = "testcontainers" }
+testcontainers-core = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
+testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-junit-jupiter", version.ref = "testcontainers" }
+testcontainers-clickhouse = { module = "org.testcontainers:testcontainers-clickhouse", version.ref = "testcontainers" }
+testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
+# build tools (resolved by convention plugins, never shipped)
+errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }
+google-java-format = { module = "com.google.googlejavaformat:google-java-format", version.ref = "google-java-format" }
+
+[plugins]
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+errorprone = { id = "net.ltgt.errorprone", version.ref = "errorprone-plugin" }
+shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
+cyclonedx = { id = "org.cyclonedx.bom", version.ref = "cyclonedx" }
+license-report = { id = "com.github.jk1.dependency-license-report", version.ref = "license-report" }
+jib = { id = "com.google.cloud.tools.jib", version.ref = "jib" }
+protobuf = { id = "com.google.protobuf", version.ref = "protobuf-plugin" }
+maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "maven-publish" }
+spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }

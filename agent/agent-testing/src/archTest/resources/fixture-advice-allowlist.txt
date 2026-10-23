@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Allow-list of the archFixtures compliant agent (same format as
+# agent/agent-instrumentation/src/main/resources/argos-advice-allowlist.txt). The module column is
+# the Gradle module name: httpclient-demo11 for package instrumentation.httpclient.demo11.
+demo | io.argos.agent.testing.arch.fixture.compliant.instrumentation.demo.DemoHeaderAdvice | enter | Argument | fixture: adds a propagation header to the argument
+httpclient-demo11 | io.argos.agent.testing.arch.fixture.compliant.instrumentation.httpclient.demo11.Demo11HeaderAdvice | enter | Argument | fixture: hyphenated module name, adds a header

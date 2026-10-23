@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Path-based pull request labels (actions/labeler v7 format), applied by .github/workflows/pr-labeler.yml.
+# Do not add max-files-changed or changed-files-labels-limit: needs-matrix must never be skipped on large PRs.
+
+area/agent:
+  - changed-files:
+      - any-glob-to-any-file:
+          - agent/**
+          - proto/**
+          - sample-apps/**
+          - test/agent/**
+
+area/server:
+  - changed-files:
+      - any-glob-to-any-file:
+          - server/**
+          - proto/**
+
+area/ui:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ui/**
+          - test/e2e/**
+
+area/deploy:
+  - changed-files:
+      - any-glob-to-any-file:
+          - deploy/**
+
+area/docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - docs/**
+          - "*.md"
+
+# Core paths (docs/19 section 6.8, O-Q03): the nightly compatibility matrix and the overhead
+# benchmark must pass on a trusted branch before merge.
+needs-matrix:
+  - changed-files:
+      - any-glob-to-any-file:
+          - agent/agent-bootstrap/**
+          - agent/agent-core/**
+          - agent/agent-dist/**
+          - proto/**
+          - server/src/main/java/io/argos/server/collector/**
+          - server/src/main/java/io/argos/server/storage/**
+          - server/src/main/java/io/argos/server/security/**
+          - server/src/main/java/io/argos/server/admin/token/**
+          - server/src/main/java/io/argos/server/command/**
+          - server/src/main/java/io/argos/server/privacy/**
+          - server/src/main/java/io/argos/server/alert/channel/**
+          - server/src/main/resources/db/**
+          - deploy/clickhouse/schema/**

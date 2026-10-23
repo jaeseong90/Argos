@@ -1,0 +1,39 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* Fonts are system fonts until the bundled font set lands (docs/15 §2.1); nothing is
+   loaded from another origin (O-P03). */
+:root {
+  --color-bg: #ffffff;
+  --color-text: #1f2328;
+  --color-text-muted: #6b7280;
+  --color-primary: #2f6feb;
+  --space-2: 8px;
+  --space-4: 16px;
+  --font-sans: system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+}
+
+.app {
+  padding: var(--space-4);
+}
+
+.app__notice,
+.app__version {
+  color: var(--color-text-muted);
+}
+
+.app__languages {
+  display: flex;
+  gap: var(--space-2);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}

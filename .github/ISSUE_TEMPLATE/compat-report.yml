@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Compatibility report
+description: Tell us whether Argos works with a library, database, application server or JDK combination.
+title: "[Compat]: "
+labels: ["kind/compat-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Compatibility reports fill the "not yet verified" cells of the compatibility table. Reports that something **works** are just as valuable as failures.
+        Remove tokens, host names, IP addresses and personal data from logs before posting.
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options:
+        - Works
+        - Works with limitations
+        - Does not work
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: What did you verify?
+      options:
+        - JDK / JVM vendor
+        - Servlet container / application server
+        - Spring Framework / Spring Boot
+        - JDBC driver / database
+        - Connection pool
+        - HTTP client
+        - Async / executor / scheduler
+        - Logging framework (MDC)
+        - Coexistence with another Java agent
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: subject
+    attributes:
+      label: Library or product and exact version
+      placeholder: "PostgreSQL JDBC 42.7.4 with HikariCP 5.1.0"
+    validations:
+      required: true
+  - type: input
+    id: argos-version
+    attributes:
+      label: Argos agent and server version
+      placeholder: "agent 0.1.0, server 0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: jdk
+    attributes:
+      label: Application JDK
+      placeholder: "Temurin 21.0.4"
+    validations:
+      required: true
+  - type: input
+    id: stack
+    attributes:
+      label: Application stack
+      description: Spring Boot / Framework version, servlet container and version, other relevant libraries.
+      placeholder: "Spring Boot 3.3.4, embedded Tomcat 10.1.30"
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and runtime environment
+      placeholder: "RHEL 8 VM, Docker 26"
+  - type: checkboxes
+    id: observed
+    attributes:
+      label: What worked?
+      description: Tick everything you checked and saw working.
+      options:
+        - label: The application started normally with the agent attached
+        - label: Transactions appeared in XLog and the transaction list
+        - label: SQL statements were recorded once per execution
+        - label: Outbound calls were recorded and traces were linked
+        - label: JVM, pool and host metrics were collected
+        - label: No ERROR or unexpected WARN lines in the agent log
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: For limitations or failures, what was missing or wrong, and how to reproduce it.
+  - type: textarea
+    id: agent-log
+    attributes:
+      label: Agent log excerpt
+      description: The startup banner and any WARN/ERROR lines from argos-agent.log.
+      render: text

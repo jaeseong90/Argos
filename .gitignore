@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# Gradle
+.gradle/
+.kotlin/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Java
+*.class
+*.log
+hs_err_pid*.log
+replay_pid*.log
+
+# Node / UI build outputs
+node_modules/
+ui/dist/
+coverage/
+test-results/
+playwright-report/
+
+# IDEs and OS files
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/*
+!.vscode/extensions.json
+.classpath
+.project
+.settings/
+.DS_Store
+Thumbs.db
+
+# Local environment and secrets (SEC-74): only .env.example is committed.
+.env
+.env.*
+!.env.example

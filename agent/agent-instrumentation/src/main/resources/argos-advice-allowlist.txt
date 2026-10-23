@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Advice parameters that may be written (10 §5.3 A-5, DSN-02-01, C-9), checked by the ArchUnit rule
+# T-AG-002c in agent/agent-testing/src/archTest. Covered: @Advice.Argument, @Advice.AllArguments,
+# @Advice.Return, @Advice.Thrown, @Advice.FieldValue and @Advice.This with readOnly = false,
+# @Advice.FieldSetterHandle (a setter of an application field), and @Advice.AssignReturned.To* on
+# an advice method. @Advice.SelfCallHandle is never allowed (T-AG-002a).
+#
+# The only allowed purpose is adding observation data (propagation headers, MDC keys). Changing the
+# meaning of application arguments, return values or exceptions is never allowed. Adding a line
+# needs PM approval. Every line must match an advice method that uses the annotation (stale entries
+# fail archTest).
+#
+# Format (one entry per line, '|' separated, every column required):
+#   module | advice class (binary name) | advice method | annotation | reason
+# module is the Gradle module name from settings.gradle.kts (httpclient-jdk11, servlet-async, ...),
+# not the package name (httpclient.jdk11, servletasync). annotation is the name below Advice:
+# Argument, AllArguments, Return, Thrown, FieldValue, This, FieldSetterHandle,
+# AssignReturned.ToArguments, AssignReturned.ToReturned, ...
+# A failing T-AG-002c check prints the expected line without the reason.
+#
+# Approved for 1.0 (10 §5.3), added by the work orders that create these modules:
+#   httpclient-jdk11: HttpClientImpl.send/sendAsync @Argument(0) -> request with propagation headers
+#   logging (logback): LoggingEvent.getMDCPropertyMap @Return -> map with the Argos MDC keys
+#   logging (log4j1): LoggingEvent.<init> @FieldValue("mdcCopy") -> MDC copy with the Argos keys
+#   httpclient-reactornetty: only if 10 §6.5 needs it

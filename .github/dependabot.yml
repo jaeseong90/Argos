@@ -1,0 +1,108 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Dependency update policy (docs/19 sections 6.1 and 8, SEC-71/73):
+# - version updates are grouped and opened weekly; a 7-day cooldown skips releases younger than a week;
+#   the weekly interval follows docs/19 and conflicts with 01 O-S04 (monthly); PM decision pending (WO-47);
+# - security updates are opened immediately (enable "Dependabot security updates" in the repository settings);
+# - pull requests are labelled "dependencies"; a maintainer decides whether a CHANGELOG line is needed
+#   (security fixes always get one) or adds the no-changelog label.
+# Gradle note: after a Gradle update, regenerate gradle/verification-metadata.xml and lock files in the same
+# pull request (see docs/dev-setup.md), otherwise the build fails dependency verification by design.
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Seoul
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "deps(gradle)"
+    groups:
+      gradle-version-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      gradle-security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: /ui
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Seoul
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    labels:
+      - dependencies
+      - area/ui
+    commit-message:
+      prefix: "deps(ui)"
+    groups:
+      ui-version-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      ui-security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Seoul
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "deps(actions)"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: docker
+    directories:
+      - /deploy/**
+      - /sample-apps/**
+      - /test/**
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Seoul
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "deps(docker)"
+    groups:
+      docker-images:
+        patterns:
+          - "*"

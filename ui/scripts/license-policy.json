@@ -1,0 +1,16 @@
+{
+  "$comment": "License allowlist for packages shipped in the UI bundle (O-L03, docs/19 §5.5). Overrides map a package version whose package.json has no usable SPDX expression to its actual license; each needs the URL of the license text it was verified against.",
+  "allowed": [
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "0BSD",
+    "PostgreSQL",
+    "Unicode-DFS-2015",
+    "Unicode-DFS-2016",
+    "CC0-1.0"
+  ],
+  "overrides": []
+}

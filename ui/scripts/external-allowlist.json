@@ -1,0 +1,29 @@
+{
+  "$comment": "Exact absolute URL strings that may appear in the UI bundle because they are never fetched. Every entry needs a reason; check-no-external.mjs warns about unused entries. Resource references (src/href/url()/@import) to other origins are never allowed, whatever this list says.",
+  "allowed": [
+    {
+      "url": "http://www.w3.org/1998/Math/MathML",
+      "reason": "XML namespace identifier react-dom passes to createElementNS for MathML; not a network request."
+    },
+    {
+      "url": "http://www.w3.org/1999/xlink",
+      "reason": "XML namespace identifier react-dom uses for xlink:* attributes; not a network request."
+    },
+    {
+      "url": "http://www.w3.org/2000/svg",
+      "reason": "XML namespace identifier react-dom passes to createElementNS for SVG; not a network request."
+    },
+    {
+      "url": "http://www.w3.org/XML/1998/namespace",
+      "reason": "XML namespace identifier react-dom uses for xml:* attributes; not a network request."
+    },
+    {
+      "url": "https://react.dev/errors/",
+      "reason": "Prefix of the documentation link React prints in minified production error messages; text only."
+    },
+    {
+      "url": "https://react.i18next.com/latest/usetranslation-hook",
+      "reason": "Documentation link in a react-i18next error message about Suspense; text only."
+    }
+  ]
+}

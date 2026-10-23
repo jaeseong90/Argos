@@ -21,6 +21,17 @@
 
 설계 문서 간 세부가 어긋나면 02 문서 13장 "설계 문서 간 정합 결정"이 우선한다.
 
+| 구분 | 문서 | 상태 | 한 줄 요약 |
+|---|---|---|---|
+| 개발 | [dev-setup.md](dev-setup.md) | 초안(WO-00) | 개발 환경 준비, 빌드·테스트·정적 검사 명령, PR 잡별 로컬 명령, 의존성 변경 절차 (영문) |
+| 결정 | [adr/](adr/) | 0000~0002 | ADR 템플릿, 0001 라이선스 Apache-2.0, 0002 식별자·공개 시점 (메인테이너 확인 대기) |
+| 라이선스 | [licenses/dev-only.md](licenses/dev-only.md) | WO-00 | 배포물에 넣지 않는 테스트·도구 전용 구성요소 목록(`checkDevOnlyLicenses`가 읽음) |
+
+## 저장소 상태
+
+- **WO-00(저장소 골격 + 오픈소스 골격)**: REVIEW(구현 완료·완료 보고 제출, 사람 수락 검수 대기, 2026-10-23). 04 문서 상태 표는 사람이 갱신한다. Gradle 9.8.2 모노레포(Java 모듈 22개, 빈 소스 + hello 테스트), UI 골격(Vite + React + TypeScript strict + pnpm), 품질 게이트(Spotless·Error Prone·ArchUnit·라이선스 허용 목록·SPDX·`check-shading.sh`), CI 워크플로(`pr.yml`·`codeql.yml`·`secrets-scan.yml`, GitHub에서는 아직 실행하지 않음), 오픈소스 파일 세트가 있다. 기능 코드는 아직 없다.
+- 빌드·검증 명령은 루트 `CLAUDE.md`의 "빌드·검증 명령" 절과 [dev-setup.md](dev-setup.md)에 있다.
+
 ## 읽는 순서
 
 - **처음 보는 사람**: 01 → 02 → 05(2장) → 03

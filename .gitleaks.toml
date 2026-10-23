@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# gitleaks configuration (docs/16 section 10.5, SEC-73, SEC-74).
+# Runs in CI (.github/workflows/secrets-scan.yml) and locally (.github/scripts/run-gitleaks.sh).
+# The default gitleaks rules stay active; this file adds the Argos token format.
+
+title = "Argos APM gitleaks configuration"
+
+[extend]
+useDefault = true
+
+# Argos agent, API and metrics tokens: "argos_" + base64url(32 random bytes) = 43 characters
+# (docs/16 section 2). Metric and identifier names such as argos_agent_heap_bytes_estimated are
+# lowercase snake case and are excluded by the allowlist below.
+[[rules]]
+id = "argos-token"
+description = "Argos agent, API or metrics token"
+regex = '''(?:^|[^A-Za-z0-9_-])(argos_[A-Za-z0-9_-]{43})(?:[^A-Za-z0-9_-]|$)'''
+secretGroup = 1
+entropy = 3.5
+keywords = ["argos_"]
+
+[[rules.allowlists]]
+description = "lowercase snake_case identifiers (metric names, keys), not random tokens"
+regexTarget = "secret"
+regexes = ['''^argos_[a-z0-9_]+$''']

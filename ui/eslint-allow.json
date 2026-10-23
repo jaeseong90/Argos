@@ -1,0 +1,4 @@
+{
+  "$comment": "Per-file lint exceptions (SEC-60, docs/15 §11). Each entry lists exact files, the rules switched off and the reason. Inline eslint-disable comments are ignored in src/.",
+  "exceptions": []
+}

@@ -1,0 +1,15 @@
+{
+  "description": "Licenses allowed in shipped Argos artifacts (O-L03, docs/19-repo-build-release-design.md 5.5). checkLicenses rejects any other license on a shipped configuration. Changing this list needs maintainer approval (ADR).",
+  "allowedLicenses": [
+    { "spdx": "Apache-2.0", "name": "Apache License 2.0" },
+    { "spdx": "MIT", "name": "MIT License" },
+    { "spdx": "BSD-2-Clause", "name": "BSD 2-Clause \"Simplified\" License" },
+    { "spdx": "BSD-3-Clause", "name": "BSD 3-Clause \"New\" or \"Revised\" License" },
+    { "spdx": "ISC", "name": "ISC License" },
+    { "spdx": "0BSD", "name": "BSD Zero Clause License" },
+    { "spdx": "PostgreSQL", "name": "PostgreSQL License" },
+    { "spdx": "Unicode-DFS-2015", "name": "Unicode License Agreement - Data Files and Software (2015)" },
+    { "spdx": "Unicode-DFS-2016", "name": "Unicode License Agreement - Data Files and Software (2016)" },
+    { "spdx": "CC0-1.0", "name": "Creative Commons Zero v1.0 Universal" }
+  ]
+}

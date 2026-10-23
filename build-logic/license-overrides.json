@@ -1,0 +1,4 @@
+{
+  "description": "Manual license mappings for modules whose POM/manifest license metadata is missing or ambiguous (docs/19-repo-build-release-design.md 5.5). Each entry: module (group:artifact), optional version (omit for all versions), license (SPDX expression) and source (URL of the license text or the project's license statement). Every entry is reviewed in the pull request that adds it.",
+  "overrides": []
+}

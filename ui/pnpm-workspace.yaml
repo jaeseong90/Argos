@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# pnpm settings for the ui package (pnpm reads settings from this file, not from .npmrc).
+# The ui package is the only project in this workspace.
+
+# Supply chain (SEC-73): only install versions published at least 24 hours ago.
+# Setting it explicitly turns on strict mode (fail instead of silently falling back).
+minimumReleaseAge: 1440
+
+# Refuse to install when the running Node.js does not satisfy package.json#engines.
+engineStrict: true
+
+# Dependency lifecycle scripts never run unless they are reviewed and listed here.
+# unrs-resolver (via eslint-plugin-import-x) only verifies its prebuilt native binding
+# in postinstall; the binding is delivered as an optional platform package, so the
+# script is not needed.
+allowBuilds:
+  unrs-resolver: false
+
+peerDependencyRules:
+  allowedVersions:
+    # eslint-plugin-react 7.37.5 is the latest release and still declares eslint <= 9.
+    # Its rules used here (react/no-danger etc.) are verified on eslint 10 by
+    # eslint-rules/eslint-config.test.mjs, which fails if the rules stop reporting.
+    eslint-plugin-react>eslint: '10'

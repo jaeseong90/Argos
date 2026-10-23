@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Classes in argos-agent.jar that may reference sun.misc.Unsafe (test/agent/check-shading.sh,
+# T-BLD-004, F-A35). The goal is an empty list: shaded dependencies run with their Unsafe code
+# paths disabled (io.netty.noUnsafe and similar, 10 §10.3).
+#
+# Format: one class per line, as a binary name with dots or slashes and without the inst/ prefix
+# or the .class/.classdata extension, followed by a comment that gives the reason and the PR, e.g.
+#   io.argos.agent.shaded.io.netty.util.internal.PlatformDependent0  # reason, #123
+# Adding a line needs PM approval (F-A35).

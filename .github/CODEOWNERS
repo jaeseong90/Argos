@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Code owners are requested for review automatically. The last matching pattern wins.
+# Replace @jaeseong90 with the @argos-apm/maintainers team once the GitHub organization exists.
+
+# Default owner for everything.
+*                                                       @jaeseong90
+
+# Core paths (docs/19 section 6.8, O-Q03): a maintainer reads the code before merging.
+/agent/agent-bootstrap/                                 @jaeseong90
+/agent/agent-core/                                      @jaeseong90
+/agent/agent-dist/                                      @jaeseong90
+/proto/                                                 @jaeseong90
+/server/src/main/java/io/argos/server/collector/        @jaeseong90
+/server/src/main/java/io/argos/server/storage/          @jaeseong90
+/server/src/main/java/io/argos/server/security/         @jaeseong90
+/server/src/main/java/io/argos/server/admin/token/      @jaeseong90
+/server/src/main/java/io/argos/server/command/          @jaeseong90
+/server/src/main/java/io/argos/server/privacy/          @jaeseong90
+/server/src/main/java/io/argos/server/alert/channel/    @jaeseong90
+/server/src/main/resources/db/                          @jaeseong90
+/deploy/clickhouse/schema/                              @jaeseong90
+
+# Supply chain, CI and licensing.
+/.github/                                               @jaeseong90
+/build-logic/                                           @jaeseong90
+/gradle/                                                @jaeseong90
+/LICENSE                                                @jaeseong90
+/NOTICE                                                 @jaeseong90
+/docs/licenses/                                         @jaeseong90
+/docs/adr/                                              @jaeseong90

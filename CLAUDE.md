@@ -44,15 +44,41 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
 
 ## 빌드·검증 명령
 
-WO-00 완료 후 실제 명령으로 갱신한다. 예정:
+준비: JDK 21(Gradle 9.8.2 실행, `gradle/gradle-daemon-jvm.properties`), Node 24.14 이상 24.x + Corepack(25 이상 미지원), Docker. Gradle·pnpm 전역 설치는 필요 없다. JDK 8(에이전트 테스트)은 Gradle 툴체인이 자동으로 내려받는다. 저장소 루트에서 `pnpm -C ui …`를 쓰려면 먼저 `corepack install -g "$(node -p "require('./ui/package.json').packageManager")"`를 한 번 실행한다(안 하면 `ERR_PNPM_BAD_PM_VERSION`; 대안은 `cd ui && corepack pnpm …`). 자세한 내용은 `docs/dev-setup.md`.
 
 ```
-./gradlew build                          # 전체 빌드 + 단위·경량 통합 테스트
-./gradlew :agent:agent-dist:shadowJar    # 에이전트 단일 jar
-./gradlew securityTest                   # 보안 테스트 스위트
-pnpm -C ui build && pnpm -C ui test
-test/agent/check-shading.sh agent/agent-dist/build/libs/argos-agent.jar
+./gradlew build                                   # 전체: 컴파일 + check + UI(pnpm install·build·lint·typecheck·test)
+./gradlew build -Pargos.ui.skip=true              # Java만 (빠른 반복용, PR 전에는 전체 build)
+./gradlew check                                   # test, archTest, contractTest, verifyAgentJar, spotlessCheck, Error Prone,
+                                                  # checkLicenses, checkSpdx, build-logic 테스트, UI test·lint·typecheck
+./gradlew spotlessApply                           # Java 포맷·SPDX 헤더 자동 수정
+./gradlew :agent:agent-dist:agentJar              # 에이전트 단일 jar → agent/agent-dist/build/libs/argos-agent-<버전>.jar
+./gradlew :agent:agent-dist:check verifyAgentJar  # checkShading, checkMajorVersion(52), checkRelocatedStrings
+./gradlew :agent:agent-testing:archTest           # Advice·패키지 경계 규칙(T-AG-001~004, ADV-04, B-1~B-4, AGT-01~03)
+./gradlew checkLicenses checkDevOnlyLicenses      # 라이선스 허용 목록(테스트 전용 예외: docs/licenses/dev-only.md)
+./gradlew integrationTest                         # Testcontainers(Docker). check에 포함되지 않음
+./gradlew securityTest                            # 보안 테스트 스위트. check에 포함되지 않음
+./gradlew matrixTest -Pmatrix.combo=<id>          # 호환성 매트릭스 1개 조합을 로컬 실행(Docker·해당 JDK 필요). 전체 매트릭스는 신뢰 러너 전용
+./gradlew benchTest -Pbench.machine-profile=<id>  # 오버헤드 벤치(벤치 머신 전용)
+
+pnpm -C ui install --frozen-lockfile
+pnpm -C ui build && pnpm -C ui test               # build = tsc + vite + 번들 라이선스 검사 + 외부 참조 검사
+pnpm -C ui lint && pnpm -C ui typecheck && pnpm -C ui format:check            # ESLint, tsc strict, Prettier
+pnpm -C ui check:i18n && pnpm -C ui check:external && pnpm -C ui check:licenses  # i18n 키, 외부 참조, 라이선스
+pnpm -C ui check:licenses:dev                     # 허용 목록 밖 UI 개발 도구가 dev-only.md `npm:` 행에 있는지
+
+bash test/lint/check-spdx.sh                      # SPDX 헤더 전수(T-BLD-007)
+bash test/agent/check-shading.sh agent/agent-dist/build/libs/argos-agent-0.0.0-SNAPSHOT.jar
+bash .github/scripts/check-workflows.sh           # 워크플로 정책(pull_request_target·self-hosted 금지, SHA 고정)
+bash .github/scripts/check-file-modes.sh          # git 인덱스에서 gradlew·*.sh가 100755인지(lint 잡)
+REQUIRE_DOCKER=1 bash .github/scripts/test/run-all.sh   # CI 스크립트 테스트(DCO·changelog·워크플로 정책 등)
+bash .github/scripts/run-gitleaks.sh dir          # 비밀 스캔(Docker)
 ```
+
+- 워크플로 lint: `docker run --rm -v "$PWD:/repo:ro" -w /repo rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -color` (Git Bash에서는 `MSYS_NO_PATHCONV=1`과 Windows 경로 볼륨). PR 잡과 명령의 대응은 `docs/dev-setup.md` 5절.
+- 의존성 변경 후: `./gradlew resolveAndLockAll --write-locks --no-configuration-cache -Pargos.ui.skip=true`로 잠금을 갱신하고, `gradle/verification-metadata.xml`은 빈 Gradle 캐시의 Linux 컨테이너에서 `--write-verification-metadata sha256`으로 다시 만든다(명령은 `docs/dev-setup.md` 7절). Windows 웜 캐시에서 만들면 POM·BOM 항목이 빠지고 CRLF로 바뀐다.
+- Windows: Git Bash 기준. PowerShell에서는 `.\gradlew.bat`을 쓰고 `"-Pargos.ui.skip=true"`처럼 따옴표로 감싼다. `git config --global core.longpaths true` 권장.
+- Windows에서 커밋할 때(core.filemode=false) `gradlew`와 `*.sh`는 `git add --chmod=+x`로 추가해 100755를 유지한다(`git ls-files -s gradlew` → 100755). 안 하면 100644로 기록되어 CI의 `./gradlew` 잡과 Linux·macOS 빌드가 전부 Permission denied(exit 126)로 실패한다. `bash .github/scripts/check-file-modes.sh`로 확인한다.
 
 ## 절대 하지 말 것
 

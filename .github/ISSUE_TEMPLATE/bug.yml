@@ -1,0 +1,103 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Bug report
+description: Report a defect in the Argos agent, server, UI or packaging.
+title: "[Bug]: "
+labels: ["kind/bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug. **Do not report security vulnerabilities here**; follow SECURITY.md instead.
+        Remove tokens, passwords, host names, IP addresses and personal data from everything you paste.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Agent
+        - Server
+        - UI
+        - Packaging and installation (Compose, tar, air-gap)
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: argos-version
+    attributes:
+      label: Argos version
+      description: Server and agent versions, for example from the agent startup banner or the UI About screen.
+      placeholder: "server 0.1.0 (abc1234), agent 0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: jdk
+    attributes:
+      label: Application JDK
+      description: Vendor and exact version of the JVM the agent runs in.
+      placeholder: "Temurin 17.0.12"
+    validations:
+      required: true
+  - type: input
+    id: spring
+    attributes:
+      label: Spring Boot / Spring Framework version
+      placeholder: "Spring Boot 3.3.4"
+  - type: input
+    id: container
+    attributes:
+      label: Servlet container (WAS) and version
+      placeholder: "embedded Tomcat 10.1.30, standalone Tomcat 9.0.96"
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and runtime environment
+      placeholder: "Rocky Linux 9 VM, Docker 26 with cgroup v2"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the problem and its impact.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The smallest set of steps, configuration and requests that reproduces the problem.
+      placeholder: |
+        1. Start the application with the agent attached using ...
+        2. Send request ...
+        3. Open ... in the UI
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Agent log (argos-agent.log) and server log excerpts around the problem.
+      render: text
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostic bundle
+      description: >-
+        If you use the diagnostic bundle script shipped with the server package, attach its archive here.
+        It masks tokens and secrets, but review the contents before uploading.
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched existing issues and discussions and found no duplicate.
+          required: true
+        - label: This report contains no secrets or personal data, and it is not a security vulnerability.
+          required: true

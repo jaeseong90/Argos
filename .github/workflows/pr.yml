@@ -1,0 +1,426 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Required pull request checks (docs/19 section 6.2, O-Q02). Branch protection on main and release/*
+# requires every job below. All jobs run on GitHub-hosted runners (O-S05); pull_request_target is
+# never used. Action versions are pinned to commit SHAs and updated by Dependabot (SEC-73).
+#
+# Label-dependent jobs (changelog, openapi-diff) read the labels from the API when they run. After a
+# maintainer adds `no-changelog` or `breaking-change`, re-run the failed job.
+name: PR checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "release/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+  GRADLE_TOOLCHAINS_FROM_ENV: JAVA_HOME_8_X64,JAVA_HOME_21_X64
+
+jobs:
+  build-java:
+    name: build-java
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+      - name: Register JDK toolchains
+        run: |
+          mkdir -p "$HOME/.gradle"
+          echo "org.gradle.java.installations.fromEnv=${GRADLE_TOOLCHAINS_FROM_ENV}" >>"$HOME/.gradle/gradle.properties"
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ui/.nvmrc
+          package-manager-cache: false
+      - name: Enable pnpm (Corepack)
+        id: pnpm
+        # `pnpm -C ui ...` runs from the repository root, which has no package.json; make the
+        # Corepack default the version pinned by ui/package.json#packageManager.
+        run: |
+          corepack enable
+          corepack install -g "$(node -p "require('./ui/package.json').packageManager")"
+          echo "store=$(pnpm store path --silent)" >>"$GITHUB_OUTPUT"
+      - name: Cache pnpm store
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm.outputs.store }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+      - name: Build and unit test
+        run: ./gradlew build -x integrationTest
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build-java-reports
+          path: |
+            **/build/reports/
+            **/build/test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  build-ui:
+    name: build-ui
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ui/.nvmrc
+          package-manager-cache: false
+      - name: Enable pnpm (Corepack)
+        id: pnpm
+        # `pnpm -C ui ...` runs from the repository root, which has no package.json; make the
+        # Corepack default the version pinned by ui/package.json#packageManager.
+        run: |
+          corepack enable
+          corepack install -g "$(node -p "require('./ui/package.json').packageManager")"
+          echo "store=$(pnpm store path --silent)" >>"$GITHUB_OUTPUT"
+      - name: Cache pnpm store
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm.outputs.store }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+      - name: Install dependencies
+        run: pnpm -C ui install --frozen-lockfile
+      - name: Build
+        run: pnpm -C ui build
+      - name: Unit tests
+        run: pnpm -C ui test
+      - name: No external resources in the bundle
+        run: pnpm -C ui check:external
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: File modes (gradlew and scripts are executable in git)
+        run: bash .github/scripts/check-file-modes.sh
+      - name: Set up JDK 8 and 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+      - name: Register JDK toolchains
+        run: |
+          mkdir -p "$HOME/.gradle"
+          echo "org.gradle.java.installations.fromEnv=${GRADLE_TOOLCHAINS_FROM_ENV}" >>"$HOME/.gradle/gradle.properties"
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ui/.nvmrc
+          package-manager-cache: false
+      - name: Enable pnpm (Corepack)
+        id: pnpm
+        # `pnpm -C ui ...` runs from the repository root, which has no package.json; make the
+        # Corepack default the version pinned by ui/package.json#packageManager.
+        run: |
+          corepack enable
+          corepack install -g "$(node -p "require('./ui/package.json').packageManager")"
+          echo "store=$(pnpm store path --silent)" >>"$GITHUB_OUTPUT"
+      - name: Cache pnpm store
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm.outputs.store }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+      - name: Spotless
+        run: ./gradlew spotlessCheck
+      - name: SPDX headers
+        run: bash test/lint/check-spdx.sh
+      - name: Install UI dependencies
+        run: pnpm -C ui install --frozen-lockfile
+      - name: ESLint
+        run: pnpm -C ui lint
+      - name: TypeScript (strict)
+        run: pnpm -C ui typecheck
+      - name: Prettier
+        run: pnpm -C ui format:check
+      - name: i18n keys
+        run: pnpm -C ui check:i18n
+      - name: Workflow policy (runner isolation, SHA pinning)
+        run: bash .github/scripts/check-workflows.sh
+      - name: actionlint (with shellcheck)
+        env:
+          ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        run: docker run --rm --network none -v "$PWD:/repo:ro" -w /repo "$ACTIONLINT_IMAGE" -color
+      - name: shellcheck CI and build scripts
+        env:
+          ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        run: |
+          docker run --rm --network none -v "$PWD:/repo:ro" -w /repo --entrypoint shellcheck "$ACTIONLINT_IMAGE" \
+            -x .github/scripts/*.sh .github/scripts/test/*.sh test/agent/*.sh test/lint/*.sh
+      - name: CI script tests
+        env:
+          REQUIRE_DOCKER: "1"
+        run: bash .github/scripts/test/run-all.sh
+
+  license:
+    name: license
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+      - name: Register JDK toolchains
+        run: |
+          mkdir -p "$HOME/.gradle"
+          echo "org.gradle.java.installations.fromEnv=${GRADLE_TOOLCHAINS_FROM_ENV}" >>"$HOME/.gradle/gradle.properties"
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ui/.nvmrc
+          package-manager-cache: false
+      - name: Enable pnpm (Corepack)
+        id: pnpm
+        # `pnpm -C ui ...` runs from the repository root, which has no package.json; make the
+        # Corepack default the version pinned by ui/package.json#packageManager.
+        run: |
+          corepack enable
+          corepack install -g "$(node -p "require('./ui/package.json').packageManager")"
+          echo "store=$(pnpm store path --silent)" >>"$GITHUB_OUTPUT"
+      - name: Cache pnpm store
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm.outputs.store }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+      - name: Gradle license allow list
+        run: ./gradlew checkLicenses checkDevOnlyLicenses
+      - name: Install UI dependencies
+        run: pnpm -C ui install --frozen-lockfile
+      - name: UI license allow list
+        run: pnpm -C ui check:licenses
+      - name: UI development tools outside the allow list are listed in docs/licenses/dev-only.md
+        run: pnpm -C ui check:licenses:dev
+
+  agent-dist-checks:
+    name: agent-dist-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+      - name: Register JDK toolchains
+        run: |
+          mkdir -p "$HOME/.gradle"
+          echo "org.gradle.java.installations.fromEnv=${GRADLE_TOOLCHAINS_FROM_ENV}" >>"$HOME/.gradle/gradle.properties"
+      - name: Agent jar checks (shading, relocated strings, major version 52, size)
+        run: ./gradlew :agent:agent-dist:check verifyAgentJar
+
+  integration:
+    name: integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+      - name: Register JDK toolchains
+        run: |
+          mkdir -p "$HOME/.gradle"
+          echo "org.gradle.java.installations.fromEnv=${GRADLE_TOOLCHAINS_FROM_ENV}" >>"$HOME/.gradle/gradle.properties"
+      - name: Integration tests (Testcontainers)
+        run: ./gradlew integrationTest
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: integration-reports
+          path: |
+            **/build/reports/
+            **/build/test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  security-light:
+    name: security-light
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+      - name: Register JDK toolchains
+        run: |
+          mkdir -p "$HOME/.gradle"
+          echo "org.gradle.java.installations.fromEnv=${GRADLE_TOOLCHAINS_FROM_ENV}" >>"$HOME/.gradle/gradle.properties"
+      - name: Security tests (PR subset)
+        run: ./gradlew securityTest
+
+  openapi-diff:
+    name: openapi-diff
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Read pull request labels
+        id: labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if gh pr view "$PR_NUMBER" --repo "$REPO" --json labels --jq '.labels[].name' | grep -qx 'breaking-change'; then
+            echo "breaking=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "breaking=false" >>"$GITHUB_OUTPUT"
+          fi
+      - name: OpenAPI compatibility (oasdiff)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BREAKING_CHANGE: ${{ steps.labels.outputs.breaking }}
+        run: bash .github/scripts/check-openapi-diff.sh "$BASE_SHA"
+
+  changelog:
+    name: changelog
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Read pull request labels
+        id: labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if gh pr view "$PR_NUMBER" --repo "$REPO" --json labels --jq '.labels[].name' | grep -qx 'no-changelog'; then
+            echo "skip=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >>"$GITHUB_OUTPUT"
+          fi
+      - name: CHANGELOG entry under Unreleased
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          NO_CHANGELOG: ${{ steps.labels.outputs.skip }}
+        run: bash .github/scripts/check-changelog.sh "$BASE_SHA" "$HEAD_SHA"
+
+  dco:
+    name: dco
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Signed-off-by on every commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # Dependabot cannot certify the DCO. Only in pull requests opened by Dependabot (identified
+          # by GitHub, not by commit metadata) are its own commits exempt; commits that people add
+          # to such a pull request (for example regenerated lock files) still need a sign-off.
+          DCO_EXEMPT_DEPENDABOT: ${{ github.event.pull_request.user.login == 'dependabot[bot]' && '1' || '0' }}
+        run: bash .github/scripts/check-dco.sh "$BASE_SHA" "$HEAD_SHA"

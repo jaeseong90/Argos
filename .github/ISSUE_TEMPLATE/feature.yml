@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Feature proposal
+description: Propose a new capability or an improvement.
+title: "[Feature]: "
+labels: ["kind/feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the proposal. Describe the problem first; the best solution is easier to agree on once the problem is clear.
+        For open-ended questions or early ideas, GitHub Discussions (Ideas) is a better place.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Agent (instrumentation, overhead, configuration)
+        - Server (collection, storage, alerting, API)
+        - UI
+        - Deployment and operations
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what makes it hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should Argos do? Include configuration, UI or API sketches if helpful.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you use today or how other tools solve this.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Scale (applications, instances, transactions per second), environment constraints such as air-gapped networks, and anything else that matters.
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched existing issues, discussions and the roadmap and found no duplicate.
+          required: true

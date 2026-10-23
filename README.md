@@ -1,34 +1,119 @@
 # Argos APM
 
-Java 백엔드(Spring Boot / Tomcat)를 위한 **오픈소스 설치형 APM**(Application Performance Monitoring). Apache-2.0. 목표는 누구의 운영 환경(폐쇄망 포함)에 설치해도 문제없이 돌아가는, 상용 SW 수준의 완성도다.
+[![Status: pre-release](https://img.shields.io/badge/status-pre--release%2C%20unsupported-orange)](#project-status)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-- 자체 바이트코드 에이전트(Java 8+)로 트랜잭션, SQL(커넥션 대기 포함), 외부 호출, 배치 작업, JVM·풀·시스템 지표를 수집
-- Spring Boot 수집 서버 + ClickHouse 저장소 + PostgreSQL + React UI
-- 전체 현황, XLog(응답시간 산점도), 분산 추적, 실시간 액티브 트랜잭션, 전수 SQL 통계, 야간 오탐을 억제하는 알림
-- 개인정보는 기본적으로 수집하지 않고, 외부 네트워크 호출(사용 통계·업데이트 확인)은 없다
+[한국어](README.ko.md)
 
-> **상태: 기획·설계 단계 (2026-10). 아직 코드는 없다.** 사전 릴리스이며 지원하지 않는다.
+Argos APM is an open-source, self-hosted application performance monitoring (APM) system for Java
+back ends (Spring Boot and Tomcat). A bytecode agent (Java 8+) records transactions, SQL (including
+connection-pool wait), outbound calls, batch jobs and JVM, pool and host metrics, and sends them to a
+Spring Boot collector that stores data in ClickHouse and PostgreSQL. A React UI shows a service
+overview, XLog (response-time scatter plot), distributed traces, live active transactions, complete
+SQL statistics and alerting tuned to avoid night-time false positives. It is designed to run anywhere,
+including air-gapped networks, at commercial-product quality.
 
-## 문서
+## Project status
 
-| 문서 | 내용 |
+**Pre-release. Not supported. Do not use in production.**
+
+Argos APM is in the design and repository-scaffolding phase. There is no release, no container image
+and no published agent yet. The repository currently contains the design documents, the build
+skeleton and the CI checks that every later change must pass. Interfaces described below are planned
+and may change without notice until 1.0.
+
+## Planned quick start
+
+The following is the intended first-five-minutes experience; it does not work yet.
+
+```sh
+# Server, ClickHouse, PostgreSQL, two sample apps with the agent attached, and a load generator.
+docker compose --profile demo up
+# Open http://localhost:8080 and watch XLog points arrive within 60 seconds.
+```
+
+Attaching the agent to an application (planned):
+
+```sh
+export ARGOS_SERVER_TOKEN_FILE=/etc/argos/agent.token
+java -javaagent:/opt/argos-agent/argos-agent.jar \
+     -Dargos.server.address=argos.example.internal:9100 -Dargos.app.name=shop -Dargos.app.env=prod \
+     -jar app.jar
+```
+
+Every setting can also be given in `argos-agent.yml`, as a `-Dargos.<key>` system property or as an
+`ARGOS_<KEY>` environment variable.
+
+## Building from source
+
+Requirements: JDK 21 (Gradle provisions the JDK 8 toolchain for agent tests), Node.js 24 (24.14.0 or
+later) with Corepack, Docker 24+ and git. See [docs/dev-setup.md](docs/dev-setup.md) for details,
+Windows notes and the full list of checks.
+
+```sh
+corepack enable                      # once per machine
+corepack install -g "$(node -p "require('./ui/package.json').packageManager")"   # pnpm pinned by ui/
+./gradlew build                      # all modules: compile, unit tests, static analysis, checks
+pnpm -C ui install --frozen-lockfile
+pnpm -C ui build && pnpm -C ui test
+```
+
+On Windows, if `corepack enable` fails with EPERM, run pnpm as `corepack pnpm …` (see
+[docs/dev-setup.md](docs/dev-setup.md) §1).
+
+## Compatibility targets (1.0)
+
+| Area | Supported (verified) |
 |---|---|
-| [docs/README.md](docs/README.md) | 문서 지도와 읽는 순서 |
-| [docs/01-product-plan.md](docs/01-product-plan.md) | 제품 기획: 목표, 사용자, 시나리오, 기능 범위, 데이터 정확성, 비기능 요구, 호환성, 완성도 요소, 오픈소스 프로젝트 요소, 로드맵, 리스크, 미결 사항 |
-| [docs/02-architecture.md](docs/02-architecture.md) | 시스템 아키텍처: 구성 요소, 전역 설계 결정, 데이터 분류표, 데이터 흐름, PoC 검증 항목 |
-| [docs/03-definition-of-done.md](docs/03-definition-of-done.md) | 완성 기준: 공통·영역별 DoD, Gate 0/1/1.5/2, 수락 절차, 완료 보고 형식 |
-| [docs/04-work-orders.md](docs/04-work-orders.md) | 작업 지시서: AI 코딩 에이전트에 전달하는 WO 단위 목록과 상태 |
-| [docs/05-benchmark.md](docs/05-benchmark.md) | 벤치마크 기준: Datadog APM·Jennifer·Prometheus/Grafana 대비 기능·UX·수치·프로젝트 운영 매트릭스 |
-| [docs/06-security-requirements.md](docs/06-security-requirements.md) | 보안·개인정보 요구 SEC-01~93 |
-| docs/10~19 | 상세 설계(에이전트, 프로토콜, 서버, 저장소, API, UI, 보안, 배포·운영, 테스트, 저장소·빌드·릴리스) |
-| [CLAUDE.md](CLAUDE.md) | AI 코딩 도구 사용자를 위한 작업 지침 |
+| Application JDK | 8 (8u252+), 11, 17, 21, 25 |
+| Runtime model | Platform threads; virtual threads (JDK 21+, Spring Boot 3.2+) |
+| Servlet container | Tomcat 9.0, 10.1, 11 (standalone and embedded) |
+| Spring | Framework 5.3 / 6.x / 7.x, Spring Boot 2.7 / 3.x / 4.x |
+| JDBC | MySQL, MariaDB, PostgreSQL, Microsoft SQL Server, Oracle |
+| HTTP clients | `HttpURLConnection`, Apache HttpClient 4.5 / 5.x, OkHttp 3 / 4, Java 11 `HttpClient`, `RestTemplate` |
+| Server | JDK 21, ClickHouse (bundled LTS), PostgreSQL 15+, Docker 24+, linux/amd64 and linux/arm64 |
 
-## 개발 방식
+WebFlux (Netty) servers, Kotlin coroutines and GraalVM native images are out of scope for 1.0.
+The full matrix, including "not yet verified" combinations, is in
+[docs/01-product-plan.md](docs/01-product-plan.md) (section 8).
 
-사람이 기획·결정·검수를 맡고, AI 코딩 에이전트(Claude Code)가 작업 지시서(WO) 단위로 구현한다. 완성 기준(03 문서)을 통과해야 DONE이다. 외부 기여는 CONTRIBUTING(작성 예정)과 같은 기준을 따른다.
+## Telemetry: none
 
-## 라이선스·보안·텔레메트리
+Argos APM does not phone home. The agent, server and UI make no network calls other than to
+destinations an operator explicitly configures (the collector address, alert channels, SMTP).
+There are no usage statistics, crash reports or update checks, and the UI loads no external fonts,
+scripts or analytics.
 
-- License: Apache-2.0 (LICENSE 파일은 첫 공개 커밋에 포함)
-- Security: SECURITY.md 참조(작성 예정). 취약점은 공개 이슈가 아니라 비공개 채널로 신고
-- Telemetry: 없음. 에이전트·서버·UI는 운영자가 설정한 대상 외에 외부 네트워크 호출을 하지 않는다
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [docs/README.md](docs/README.md) | Map of the design documents (Korean) and reading order |
+| [docs/dev-setup.md](docs/dev-setup.md) | Development environment, build and test commands |
+| [CHANGELOG.md](CHANGELOG.md) | Notable changes ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/)) |
+| [ROADMAP.md](ROADMAP.md) | Phases and quality gates |
+| [docs/adr/](docs/adr/) | Architecture decision records |
+
+The planning and design documents (`docs/01`–`docs/06`, `docs/10`–`docs/19`) are written in Korean.
+User-facing documents are written in English with Korean translations.
+
+## Community and contributing
+
+- Questions and ideas: GitHub Discussions (English or Korean). Issues are for bugs, feature proposals
+  and compatibility reports.
+- Contributions are welcome under the [Developer Certificate of Origin](https://developercertificate.org/):
+  sign off every commit with `git commit -s`. See [CONTRIBUTING.md](CONTRIBUTING.md).
+- This project follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+- How decisions are made: [GOVERNANCE.md](GOVERNANCE.md). Development is planned and reviewed by
+  people and implemented with the help of an AI coding agent; every change passes the same tests and
+  human review.
+
+## Security
+
+Please do not report vulnerabilities in public issues. See [SECURITY.md](SECURITY.md) for private
+reporting and response times.
+
+## License
+
+Argos APM is licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE) for
+attribution. The license will not be changed (see [GOVERNANCE.md](GOVERNANCE.md)).

@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Path-based pull request labels from .github/labeler.yml: area/* and needs-matrix (docs/19 section 6.8,
+# O-Q03, O-G09).
+#
+# Fork pull requests get a read-only token, so labels cannot be applied from the pull_request workflow
+# itself, and pull_request_target is forbidden (O-S05). This workflow therefore runs on workflow_run in
+# the base repository: it never checks out or executes pull request code, reads the label rules from the
+# default branch through the API, and takes the changed file list from the API as well.
+name: PR labeler
+
+on:
+  workflow_run:
+    workflows:
+      - PR checks
+    types:
+      - requested
+
+permissions:
+  contents: read
+
+jobs:
+  label:
+    name: label
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Find the pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [[ ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "unexpected head SHA" >&2
+            exit 1
+          fi
+          number=$(gh pr list --repo "$REPO" --state open --limit 200 --json number,headRefOid \
+            --jq ".[] | select(.headRefOid == \"${HEAD_SHA}\") | .number" | head -n 1)
+          echo "number=${number}" >>"$GITHUB_OUTPUT"
+          if [[ -z "$number" ]]; then
+            echo "No open pull request has head ${HEAD_SHA}; nothing to label."
+          fi
+      - name: Apply labels
+        if: steps.pr.outputs.number != ''
+        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        with:
+          pr-number: ${{ steps.pr.outputs.number }}
+          sync-labels: false

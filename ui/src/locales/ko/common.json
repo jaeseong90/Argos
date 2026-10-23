@@ -1,0 +1,15 @@
+{
+  "app": {
+    "name": "Argos APM",
+    "tagline": "Java 서비스를 위한 애플리케이션 성능 모니터링",
+    "status": {
+      "preRelease": "사전 릴리스 빌드입니다. 운영 환경에서 사용하지 마세요."
+    },
+    "version": "버전 {{version}}"
+  },
+  "language": {
+    "label": "언어",
+    "en": "English",
+    "ko": "한국어"
+  }
+}
