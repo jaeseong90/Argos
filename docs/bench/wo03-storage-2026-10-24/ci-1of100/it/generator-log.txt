@@ -1,0 +1,10 @@
+argos storage generator: bulk run 04de5ea683da, 2026-10-23T20:24:00Z .. 2026-10-24T03:36:00Z, clickhouse argos_writer argos.ci_*
+  expected rows: xlog ~12,960,000, profile_step ~5,443,200, metric ~12,095,000 (plus statistics)
+   19.2% simulated (2026-10-23T21:47:06Z), 1,000,000 rows inserted, 99,910 rows/s
+   33.6% simulated (2026-10-23T22:49:14Z), 3,500,000 rows inserted, 174,930 rows/s
+   49.5% simulated (2026-10-23T23:57:50Z), 6,000,000 rows inserted, 199,887 rows/s
+   61.7% simulated (2026-10-24T00:50:39Z), 10,000,000 rows inserted, 249,963 rows/s
+   75.1% simulated (2026-10-24T01:48:16Z), 15,500,000 rows inserted, 309,981 rows/s
+   86.3% simulated (2026-10-24T02:36:50Z), 22,000,000 rows inserted, 366,612 rows/s
+   96.5% simulated (2026-10-24T03:21:02Z), 29,000,000 rows inserted, 414,209 rows/s
+argos storage generator: done in 78.5 s

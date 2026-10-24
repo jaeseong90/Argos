@@ -1,0 +1,18 @@
+# dataset (2026-10-24T08:10:17.667166500Z)
+
+- source: generator
+- description: test/storage/generator bulk, seed 42, 2 days at 1 TPS, run 51b43ad61eb4, xlog 173776 rows
+- load time (s): 5
+- late xlog rows / re-sent blocks / skewed instances: 802 / 5 / 2
+- source: generator
+- description: test/storage/generator bulk, seed 42, 2 days at 1 TPS, run 51b43ad61eb4, xlog 173776 rows
+- load time (s): 7
+- late xlog rows / re-sent blocks / skewed instances: 802 / 5 / 2
+- source: generator
+- description: test/storage/generator bulk, seed 42, profile ci, run 04de5ea683da, xlog 12961791 rows
+- load time (s): 80
+- late xlog rows / re-sent blocks / skewed instances: 63080 / 5 / 2
+- source: generator
+- description: test/storage/generator bulk, seed 42, profile ci, run 04de5ea683da, xlog 12961791 rows
+- load time (s): 78
+- late xlog rows / re-sent blocks / skewed instances: 63080 / 5 / 2

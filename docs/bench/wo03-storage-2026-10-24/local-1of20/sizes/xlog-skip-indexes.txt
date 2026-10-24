@@ -1,0 +1,7 @@
+   ┌─name────────┬─type_full──────────┬─granularity─┬─data_compressed_bytes─┬─b_per_row─┐
+1. │ idx_tx      │ bloom_filter(0.01) │           4 │              81483118 │     1.255 │
+2. │ idx_trace   │ bloom_filter(0.01) │           4 │              79035158 │     1.218 │
+3. │ idx_user    │ bloom_filter(0.01) │           4 │              10527841 │     0.162 │
+4. │ idx_request │ bloom_filter(0.01) │           4 │              39521362 │     0.609 │
+5. │ idx_sql     │ bloom_filter(0.01) │           4 │                439361 │     0.007 │
+   └─────────────┴────────────────────┴─────────────┴───────────────────────┴───────────┘

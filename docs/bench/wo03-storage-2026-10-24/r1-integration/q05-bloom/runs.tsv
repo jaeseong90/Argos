@@ -1,0 +1,27 @@
+query_id	label	phase	account	wall_ms	result_rows	error	cpu_load	server_ms	read_rows	read_bytes	memory_bytes	selected_marks	os_read_bytes	cpu_ms	written_rows	read_compressed_bytes	selected_marks_total	skip_index_us
+wo03-0132bf09-q05-bloom_sizes-once-50	Q05/bloom_sizes	once	argos_reader	276.16	1		0.362	271	21	1302	5472378	0	0	271.4	0	0	0	0
+wo03-0132bf09-q05-bloom_fill-once-70	Q05/bloom_fill	once	argos_migrator	36204.34	0		0.340	36164	16620503	3363163659	1088771566	2073	0	41334.2	16620503	1371917036	2073	0
+wo03-0132bf09-q20-dataset_sizes-once-3	Q20/dataset_sizes	once	argos_reader	9.30	17		0.412	4	103	7461	5539998	0	0	4.2	0	0	0	0
+wo03-0132bf09-q05-bloom_drop-once-88	Q05/bloom_drop	once	argos_migrator	224.54	0		0.382	220	0	0	5680	0	0	0.6	0	0	0	0
+wo03-0132bf09-q05-bloom_drop-once-89	Q05/bloom_drop	once	argos_migrator	4.24	0		0.308	0	0	0	1055775	0	0	0.0	0	0	0	0
+wo03-0132bf09-q05-bloom_fill-once-28	Q05/bloom_fill	once	argos_migrator	31739.22	0		0.354	31737	16620503	3363163659	1104887460	2073	167874560	38089.5	16620503	1371360690	2073	0
+wo03-0132bf09-q05-bloom_sizes-once-71	Q05/bloom_sizes	once	argos_reader	7.28	1		0.563	3	16	992	5462754	0	0	3.5	0	0	0	0
+wo03-0132bf09-q05-bloom_targets-once-4	Q05/bloom_targets	once	argos_reader	83.82	1		0.412	78	885358	23510147	5974235	167	135168	113.1	0	5798245	2208	0
+wo03-0132bf09-q05-bloom_drop-once-5	Q05/bloom_drop	once	argos_migrator	5.41	0		0.412	0	0	0	1055775	0	0	0.0	0	0	0	0
+wo03-0132bf09-q05-bloom_drop-once-25	Q05/bloom_drop	once	argos_migrator	260.89	0		0.327	256	0	0	6384	0	0	1.2	0	0	0	0
+wo03-0132bf09-q05-bloom_drop-once-26	Q05/bloom_drop	once	argos_migrator	5.02	0		0.327	0	0	0	1056223	0	0	0.0	0	0	0	0
+wo03-0132bf09-q05-bloom_create_bv_f0100_g1-once-6	Q05/bloom_create_bv_f0100_g1	once	argos_migrator	50.39	0		0.412	44	0	0	2287622	0	0	9.8	0	0	0	0
+wo03-0132bf09-q05-bloom_create_bv_f0100_g4-once-27	Q05/bloom_create_bv_f0100_g4	once	argos_migrator	27.56	0		0.327	22	0	0	2288070	0	0	7.4	0	0	0	0
+wo03-0132bf09-q05-bloom_sizes-once-29	Q05/bloom_sizes	once	argos_reader	7.43	1		0.269	3	10	620	5462746	0	0	3.7	0	0	0	0
+wo03-0132bf09-q05-bloom_fill-once-49	Q05/bloom_fill	once	argos_migrator	32138.60	0		0.341	32318	16620503	3363163659	1023843027	2073	1048576	37187.4	16620503	1371474419	2073	0
+wo03-0132bf09-q05-bloom_drop-once-90	Q05/bloom_drop	once	argos_migrator	4.04	0		0.308	0	0	0	1055775	0	0	0.0	0	0	0	0
+wo03-0132bf09-q05-bloom_drop-once-91	Q05/bloom_drop	once	argos_migrator	287.21	0		0.308	0	0	0	1056223	0	0	0.0	0	0	0	0
+wo03-0132bf09-q05-bloom_drop-once-92	Q05/bloom_drop	once	argos_migrator	24.04	0		0.308	0	0	0	1056223	0	0	0.0	0	0	0	0
+wo03-0132bf09-q05-bloom_drop-once-46	Q05/bloom_drop	once	argos_migrator	228.65	0		0.466	229	0	0	5920	0	0	0.5	0	0	0	0
+wo03-0132bf09-q05-bloom_drop-once-47	Q05/bloom_drop	once	argos_migrator	4.46	0		0.466	0	0	0	1055775	0	0	0.0	0	0	0	0
+wo03-0132bf09-q05-bloom_sizes-once-8	Q05/bloom_sizes	once	argos_reader	13.89	1		0.430	6	12	744	5462378	0	0	6.7	0	0	0	0
+wo03-0132bf09-q05-bloom_fill-once-7	Q05/bloom_fill	once	argos_migrator	36785.85	0		0.363	36783	16620503	3363163659	1031294440	2073	217915392	50581.6	16620503	1374220514	2073	0
+wo03-0132bf09-q05-bloom_drop-once-67	Q05/bloom_drop	once	argos_migrator	225.31	0		0.509	221	0	0	5664	0	0	0.5	0	0	0	0
+wo03-0132bf09-q05-bloom_create_bv_f0250_g1-once-48	Q05/bloom_create_bv_f0250_g1	once	argos_migrator	49.51	0		0.466	46	0	0	2287622	0	0	7.7	0	0	0	0
+wo03-0132bf09-q05-bloom_drop-once-68	Q05/bloom_drop	once	argos_migrator	4.25	0		0.439	0	0	0	1055759	0	0	0.0	0	0	0	0
+wo03-0132bf09-q05-bloom_create_bv_f0250_g4-once-69	Q05/bloom_create_bv_f0250_g4	once	argos_migrator	22.70	0		0.439	18	0	0	2287622	0	0	6.4	0	0	0	0

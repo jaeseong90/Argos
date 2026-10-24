@@ -1,0 +1,11 @@
+query_id	label	phase	account	wall_ms	result_rows	error	cpu_load	server_ms	read_rows	read_bytes	memory_bytes	selected_marks	os_read_bytes	cpu_ms	written_rows	read_compressed_bytes	selected_marks_total	skip_index_us
+wo03-d18e959e-q12-minute_30d-once-5	Q12/minute_30d	once	argos_migrator	157.32	0		0.363	153	16740369	218104261	13722156	2101	0	538.9	0	21028249	2101	0
+wo03-d18e959e-q12-hourly_30d-once-6	Q12/hourly_30d	once	argos_migrator	27.17	0		0.363	22	92397	1570749	6132508	28	0	30.3	0	344253	28	0
+wo03-d18e959e-q12-errors_30d-once-7	Q12/errors_30d	once	argos_migrator	120.26	0		0.406	116	16689950	219755825	7991245	2082	417792	335.2	0	22161124	2082	0
+wo03-d18e959e-q12-nightly-once-8	Q12/nightly	once	argos_migrator	91.34	0		0.449	87	10195257	91989197	5452220	1289	0	283.1	0	12314647	1289	0
+wo03-d18e959e-q13-total_30d-once-10	Q13/total_30d	once	argos_migrator	268.63	0		0.449	264	33728095	506895603	10990188	4210	901120	963.0	0	79511997	4210	0
+wo03-d18e959e-q13-daily_30d-once-11	Q13/daily_30d	once	argos_migrator	251.81	20		0.449	248	33728095	506895603	11744919	4210	0	912.0	0	79565137	4210	0
+wo03-d18e959e-q13-rollups_14d-once-12	Q13/rollups_14d	once	argos_migrator	67.77	0		0.449	64	4741753	63799997	6711487	597	0	170.5	0	14133822	597	0
+wo03-d18e959e-q13-minute_raw_1m-once-13	Q13/minute_raw_1m	once	argos_migrator	66.69	0		0.449	62	4689540	62912376	14276226	586	0	186.2	0	13866433	586	0
+wo03-d18e959e-q13-nightly-once-14	Q13/nightly	once	argos_migrator	58.28	1		0.449	53	10417134	104731036	5624715	1312	0	179.9	0	25608190	1312	0
+wo03-d18e959e-q20-dataset_sizes-once-3	Q20/dataset_sizes	once	argos_reader	9.02	17		0.363	4	103	7461	5538558	0	0	4.3	0	0	0	0

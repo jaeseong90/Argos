@@ -1,0 +1,327 @@
+{
+  "manifestVersion": 1,
+  "runId": "831b244ffc9f",
+  "mode": "bulk",
+  "seed": 42,
+  "scale": 0.00694444,
+  "machineProfile": "",
+  "target": "none (count only)",
+  "createdAt": "2026-10-24T16:05:58.995624600Z",
+  "range": {
+    "start": "2026-10-20T12:00:00Z",
+    "end": "2026-10-20T12:10:00Z",
+    "profileFrom": "2026-10-20T12:00:00Z",
+    "metricFrom": "2026-10-20T12:00:00Z",
+    "versionSwitchAt": "2026-10-20T12:10:00Z",
+    "deployAt": "2026-10-20T12:10:00Z",
+    "restartGapSeconds": 60,
+    "restartDurationSeconds": 30
+  },
+  "topology": {
+    "apps": 10,
+    "prodApps": 7,
+    "instances": 50,
+    "httpServices": 100,
+    "batchServices": 10,
+    "sqls": 2000,
+    "hosts": 20,
+    "errorGroups": 50,
+    "versions": 3,
+    "skewedInstances": [
+      {
+        "skewMs": 60216,
+        "instance_id": 19
+      },
+      {
+        "skewMs": 61797,
+        "instance_id": 37
+      }
+    ],
+    "cpuUnmeasuredInstances": [3, 29],
+    "virtualThreadApps": [9, 10],
+    "latencyNoiseSigma": 0.976209
+  },
+  "generated": {
+    "tables": {
+      "xlog": {
+        "rows": 1201906,
+        "minTs": "2026-10-20T11:59:58.056Z",
+        "maxTs": "2026-10-20T12:10:22.822Z",
+        "clampedRows": 34520,
+        "arrivedLaterThan60s": 5622
+      },
+      "profile_step": {
+        "rows": 2042920,
+        "minTs": "2026-10-20T11:59:58.093Z",
+        "maxTs": "2026-10-20T12:10:22.822Z",
+        "clampedRows": 0,
+        "arrivedLaterThan60s": 9637
+      },
+      "metric": {
+        "rows": 600000,
+        "minTs": "2026-10-20T12:00:00Z",
+        "maxTs": "2026-10-20T12:10:00Z",
+        "clampedRows": 23800,
+        "arrivedLaterThan60s": 2900
+      },
+      "sql_stat_raw": {
+        "rows": 107315,
+        "minTs": "2026-10-20T11:59:50Z",
+        "maxTs": "2026-10-20T12:10:20Z",
+        "clampedRows": 4263,
+        "arrivedLaterThan60s": 639
+      },
+      "ext_stat_raw": {
+        "rows": 13650,
+        "minTs": "2026-10-20T11:59:50Z",
+        "maxTs": "2026-10-20T12:10:20Z",
+        "clampedRows": 482,
+        "arrivedLaterThan60s": 76
+      }
+    },
+    "transactions": {
+      "root": 1115808,
+      "child": 86098,
+      "batch": 36236,
+      "profileCaptured": 147498,
+      "summarized": 18,
+      "timeoutFlag": 234,
+      "lateFlag": 5622,
+      "lateAgentBatches": 236
+    },
+    "d12Totals": {
+      "xlogSqlCount": 7527337,
+      "sqlStatCount": 7527337,
+      "xlogSqlTimeMs": 128272092,
+      "sqlStatSumMs": 128272092,
+      "xlogExtCount": 498158,
+      "extStatCount": 498158
+    },
+    "days": [
+      {
+        "day": "2026-10-20",
+        "xlogRows": 1201906,
+        "xlogErrors": 12142,
+        "xlogLate": 5622,
+        "xlogSqlCount": 7527337,
+        "sqlStatCount": 7527337,
+        "xlogExtCount": 498158,
+        "extStatCount": 498158,
+        "sqlStatRows": 107315,
+        "extStatRows": 13650,
+        "profileRows": 2042920,
+        "metricRows": 600000
+      }
+    ]
+  },
+  "insert": {
+    "xlog": {
+      "blocks": 3,
+      "rows": 1201906,
+      "bodyBytes": 268494735,
+      "summaryWrittenRows": 0,
+      "duplicateSends": 1,
+      "duplicateSummaryWrittenRows": 0,
+      "recoverySends": 0,
+      "recoverySummaryWrittenRows": 0,
+      "retries": 0,
+      "maxQueuedRows": 0,
+      "rowsPerSecondOverRun": 248533,
+      "rowsPerSecondWhileInserting": 480762,
+      "insertMs": {
+        "count": 3,
+        "mean": 68.3333,
+        "p50": 82,
+        "p95": 86,
+        "p99": 86,
+        "max": 86
+      }
+    },
+    "profile_step": {
+      "blocks": 5,
+      "rows": 2042920,
+      "bodyBytes": 207277787,
+      "summaryWrittenRows": 0,
+      "duplicateSends": 1,
+      "duplicateSummaryWrittenRows": 0,
+      "recoverySends": 0,
+      "recoverySummaryWrittenRows": 0,
+      "retries": 0,
+      "maxQueuedRows": 0,
+      "rowsPerSecondOverRun": 42244,
+      "rowsPerSecondWhileInserting": 637019,
+      "insertMs": {
+        "count": 5,
+        "mean": 34,
+        "p50": 37,
+        "p95": 53,
+        "p99": 53,
+        "max": 53
+      }
+    },
+    "metric": {
+      "blocks": 2,
+      "rows": 600000,
+      "bodyBytes": 43824350,
+      "summaryWrittenRows": 0,
+      "duplicateSends": 1,
+      "duplicateSummaryWrittenRows": 0,
+      "recoverySends": 0,
+      "recoverySummaryWrittenRows": 0,
+      "retries": 0,
+      "maxQueuedRows": 0,
+      "rowsPerSecondOverRun": 124069,
+      "rowsPerSecondWhileInserting": 923077,
+      "insertMs": {
+        "count": 2,
+        "mean": 16,
+        "p50": 6,
+        "p95": 26,
+        "p99": 26,
+        "max": 26
+      }
+    },
+    "sql_stat_raw": {
+      "blocks": 1,
+      "rows": 107315,
+      "bodyBytes": 14886100,
+      "summaryWrittenRows": 0,
+      "duplicateSends": 1,
+      "duplicateSummaryWrittenRows": 0,
+      "recoverySends": 0,
+      "recoverySummaryWrittenRows": 0,
+      "retries": 0,
+      "maxQueuedRows": 0,
+      "rowsPerSecondOverRun": 22190.9,
+      "rowsPerSecondWhileInserting": 8.94292e+06,
+      "insertMs": {
+        "count": 1,
+        "mean": 12,
+        "p50": 12,
+        "p95": 12,
+        "p99": 12,
+        "max": 12
+      }
+    },
+    "ext_stat_raw": {
+      "blocks": 1,
+      "rows": 13650,
+      "bodyBytes": 1565943,
+      "summaryWrittenRows": 0,
+      "duplicateSends": 1,
+      "duplicateSummaryWrittenRows": 0,
+      "recoverySends": 0,
+      "recoverySummaryWrittenRows": 0,
+      "retries": 0,
+      "maxQueuedRows": 0,
+      "rowsPerSecondOverRun": 2822.58,
+      "rowsPerSecondWhileInserting": 13650000,
+      "insertMs": {
+        "count": 1,
+        "mean": 1,
+        "p50": 1,
+        "p95": 1,
+        "p99": 1,
+        "max": 1
+      }
+    },
+    "total": {
+      "rows": 3965791,
+      "bodyBytes": 536048915,
+      "elapsedMs": 4836,
+      "rowsPerSecond": 820056,
+      "bodyMiBPerSecond": 105.711
+    }
+  },
+  "hostLoad": {
+    "logicalCpus": 12,
+    "totalMemoryBytes": 16477036544,
+    "samples": 2,
+    "systemCpuAvg": 0.215433,
+    "systemCpuMax": 0.430866,
+    "generatorCpuAvg": 0.168645,
+    "generatorCpuMax": 0.223686
+  },
+  "config": {
+    "seed": "42",
+    "profile": "",
+    "scale": "0.00694444444",
+    "mode": "bulk",
+    "start": "2026-10-20T12:00:00Z",
+    "days": "1",
+    "profile-days": "1",
+    "raw-days": "1",
+    "tps": "2000",
+    "apps": "10",
+    "prod-apps": "7",
+    "instances-per-app": "5",
+    "services": "100",
+    "service-zipf": "1.1",
+    "sqls": "2000",
+    "sql-zipf": "1.0",
+    "ext-hosts": "20",
+    "versions": "3",
+    "version-switch-day": "15",
+    "batch-share": "0.03",
+    "error-rate": "0.01",
+    "error-groups": "50",
+    "latency-median-ms": "80",
+    "latency-sigma": "1.0",
+    "outlier-rate": "0.01",
+    "outlier-min-ms": "2000",
+    "outlier-max-ms": "30000",
+    "user-id-share": "0.3",
+    "users": "200000",
+    "remote-ips": "10000",
+    "request-id-share": "0.5",
+    "sql-ids-mean": "3",
+    "ext-call-rate": "0.2",
+    "internal-call-rate": "0.08",
+    "clock-skew-ms": "2000",
+    "skewed-instances": "2",
+    "skewed-offset-ms": "60000",
+    "late-rate": "0.005",
+    "late-min-minutes": "1",
+    "late-max-minutes": "30",
+    "duplicate-rate": "0.001",
+    "force-duplicate": "true",
+    "metric-series": "100",
+    "profile-normal-rate": "0.1",
+    "profile-step-rate": "0",
+    "active-sqls": "0",
+    "slow-threshold-ms": "1000",
+    "stat-window": "end",
+    "tick-ms": "1000",
+    "block-rows": "500000",
+    "tps-steps": "500,2000,5000",
+    "step-duration": "PT1H",
+    "flush-interval-ms": "2000",
+    "flush-rows": "50000",
+    "writer-restarts": "0",
+    "run-id": "",
+    "target": "none",
+    "database": "argos",
+    "table-prefix": "",
+    "apply-schema": "auto",
+    "docker-memory": "5g",
+    "docker-volume": "",
+    "out": "<scratch>/wo03-genfix-r1/rates/default-2000",
+    "machine-profile": "",
+    "monitor-interval-s": "10"
+  },
+  "simulation": {
+    "tickMs": 1000,
+    "instances": 50,
+    "activeSqlsPerInstance": 0,
+    "profileStepRateTarget": 0,
+    "rowsPerSimulatedSecond": {
+      "xlog": 2003.18,
+      "profile_step": 3404.87,
+      "metric": 1000,
+      "sql_stat_raw": 178.858,
+      "ext_stat_raw": 22.75,
+      "statistics": 201.608,
+      "total": 6609.65
+    }
+  }
+}

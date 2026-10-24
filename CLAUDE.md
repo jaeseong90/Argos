@@ -56,7 +56,13 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
 ./gradlew :agent:agent-dist:check verifyAgentJar  # checkShading, checkMajorVersion(52), checkRelocatedStrings
 ./gradlew :agent:agent-testing:archTest           # Advice·패키지 경계 규칙(T-AG-001~004, ADV-04, B-1~B-4, AGT-01~03)
 ./gradlew checkLicenses checkDevOnlyLicenses      # 라이선스 허용 목록(테스트 전용 예외: docs/licenses/dev-only.md)
-./gradlew integrationTest                         # Testcontainers(Docker), 샘플 앱 shop-boot3 스모크 3변형·시드 센티널. check에 포함되지 않음
+./gradlew integrationTest                         # Testcontainers(Docker), 샘플 앱 shop-boot3 스모크 3변형·시드 센티널, 저장소 스키마·생성기·쿼리(실제 ClickHouse). check에 포함되지 않음
+./gradlew integrationTest -Pqueries.profile=ci    # CI와 같다: 저장소 정합 T-ST-030~033·053을 생성기 1/100 프로파일로(12스레드 개발 머신에서 전체 약 6분)
+test/storage/bench/bench-server.sh start          # 저장소 PoC 벤치용 단독 ClickHouse(127.0.0.1:18123, 비밀번호는 test/storage/bench/build/). 절차는 test/storage/bench/README.md
+./gradlew :test:storage:generator:storageBench -Pbench.machine-profile=<id> -Pstorage.profile=local -Pstorage.target=url:http://127.0.0.1:18123/ -Pstorage.apply-schema=true
+                                                  # 저장소 PoC 벌크 생성·적재(13 §15, 18 §9; profile ci 1/100, local 1/20, full). 리플레이는 storageGenerate -Pstorage.mode=replay
+./gradlew :test:storage:queries:storageQueries -Pqueries.args="--url http://127.0.0.1:18123" -Pqueries.cold=none
+                                                  # Q01~Q20 러너 → test/storage/queries/build/reports/storage-queries/bench/report.md
 ./gradlew securityTest                            # 보안 테스트 스위트. check에 포함되지 않음
 ./gradlew matrixTest -Pmatrix.combo=<id>          # 호환성 매트릭스 1개 조합을 로컬 실행(Docker·해당 JDK 필요). 전체 매트릭스는 신뢰 러너 전용
 ./gradlew benchTest -Pbench.machine-profile=<id>  # 오버헤드 벤치(벤치 머신 전용)

@@ -1,0 +1,1199 @@
+{
+  "manifestVersion": 1,
+  "runId": "c3cd0823acd5",
+  "mode": "replay",
+  "seed": 42,
+  "scale": 1,
+  "machineProfile": "",
+  "target": "clickhouse argos_writer argos.*",
+  "createdAt": "2026-10-24T07:49:15.132803900Z",
+  "range": {
+    "start": "2026-10-24T07:42:30Z",
+    "end": "2026-10-24T07:48:30Z",
+    "profileFrom": "2026-10-24T07:42:30Z",
+    "metricFrom": "2026-10-24T07:42:30Z",
+    "versionSwitchAt": "2026-10-24T07:48:30Z",
+    "deployAt": "2026-10-24T07:48:30Z",
+    "restartGapSeconds": 60,
+    "restartDurationSeconds": 30
+  },
+  "topology": {
+    "apps": 10,
+    "prodApps": 7,
+    "instances": 50,
+    "httpServices": 100,
+    "batchServices": 10,
+    "sqls": 2000,
+    "hosts": 20,
+    "errorGroups": 50,
+    "versions": 3,
+    "skewedInstances": [
+      {
+        "skewMs": 60216,
+        "instance_id": 19
+      },
+      {
+        "skewMs": 61797,
+        "instance_id": 37
+      }
+    ],
+    "cpuUnmeasuredInstances": [3, 29],
+    "virtualThreadApps": [9, 10],
+    "latencyNoiseSigma": 0.976209
+  },
+  "generated": {
+    "tables": {
+      "xlog": {
+        "rows": 901250,
+        "minTs": "2026-10-24T07:42:28.083Z",
+        "maxTs": "2026-10-24T07:48:59.727Z",
+        "clampedRows": 25806,
+        "arrivedLaterThan60s": 4500
+      },
+      "profile_step": {
+        "rows": 1539649,
+        "minTs": "2026-10-24T07:42:28.358Z",
+        "maxTs": "2026-10-24T07:48:59.727Z",
+        "clampedRows": 0,
+        "arrivedLaterThan60s": 8307
+      },
+      "metric": {
+        "rows": 360000,
+        "minTs": "2026-10-24T07:42:30Z",
+        "maxTs": "2026-10-24T07:48:30Z",
+        "clampedRows": 14300,
+        "arrivedLaterThan60s": 1700
+      },
+      "sql_stat_raw": {
+        "rows": 65308,
+        "minTs": "2026-10-24T07:42:20Z",
+        "maxTs": "2026-10-24T07:49:00Z",
+        "clampedRows": 2625,
+        "arrivedLaterThan60s": 156
+      },
+      "ext_stat_raw": {
+        "rows": 8202,
+        "minTs": "2026-10-24T07:42:20Z",
+        "maxTs": "2026-10-24T07:48:50Z",
+        "clampedRows": 295,
+        "arrivedLaterThan60s": 16
+      }
+    },
+    "transactions": {
+      "root": 836997,
+      "child": 64253,
+      "batch": 27313,
+      "profileCaptured": 110529,
+      "summarized": 21,
+      "timeoutFlag": 171,
+      "lateFlag": 4500,
+      "lateAgentBatches": 216
+    },
+    "d12Totals": {
+      "xlogSqlCount": 5685927,
+      "sqlStatCount": 5685927,
+      "xlogSqlTimeMs": 95998218,
+      "sqlStatSumMs": 95998218,
+      "xlogExtCount": 372904,
+      "extStatCount": 372904
+    },
+    "days": [
+      {
+        "day": "2026-10-24",
+        "xlogRows": 901250,
+        "xlogErrors": 9051,
+        "xlogLate": 4500,
+        "xlogSqlCount": 5685927,
+        "sqlStatCount": 5685927,
+        "xlogExtCount": 372904,
+        "extStatCount": 372904,
+        "sqlStatRows": 65308,
+        "extStatRows": 8202,
+        "profileRows": 1539649,
+        "metricRows": 360000
+      }
+    ]
+  },
+  "insert": {
+    "xlog": {
+      "blocks": 149,
+      "rows": 901250,
+      "bodyBytes": 201472468,
+      "summaryWrittenRows": 956276,
+      "duplicateSends": 1,
+      "duplicateSummaryWrittenRows": 1534,
+      "recoverySends": 1,
+      "recoverySummaryWrittenRows": 15096,
+      "retries": 0,
+      "maxQueuedRows": 15131,
+      "rowsPerSecondOverRun": 2230.12,
+      "rowsPerSecondWhileInserting": 2241.76,
+      "insertMs": {
+        "count": 149,
+        "mean": 105.114,
+        "p50": 99,
+        "p95": 185,
+        "p99": 279,
+        "max": 346
+      }
+    },
+    "profile_step": {
+      "blocks": 147,
+      "rows": 1539649,
+      "bodyBytes": 156283315,
+      "summaryWrittenRows": 1539649,
+      "duplicateSends": 1,
+      "duplicateSummaryWrittenRows": 2037,
+      "recoverySends": 0,
+      "recoverySummaryWrittenRows": 0,
+      "retries": 0,
+      "maxQueuedRows": 26763,
+      "rowsPerSecondOverRun": 3809.82,
+      "rowsPerSecondWhileInserting": 3830.38,
+      "insertMs": {
+        "count": 147,
+        "mean": 45.4694,
+        "p50": 42,
+        "p95": 97,
+        "p99": 175,
+        "max": 258
+      }
+    },
+    "metric": {
+      "blocks": 132,
+      "rows": 360000,
+      "bodyBytes": 26317500,
+      "summaryWrittenRows": 1080000,
+      "duplicateSends": 2,
+      "duplicateSummaryWrittenRows": 17400,
+      "recoverySends": 0,
+      "recoverySummaryWrittenRows": 0,
+      "retries": 0,
+      "maxQueuedRows": 3800,
+      "rowsPerSecondOverRun": 890.811,
+      "rowsPerSecondWhileInserting": 895.569,
+      "insertMs": {
+        "count": 132,
+        "mean": 43.2879,
+        "p50": 38,
+        "p95": 71,
+        "p99": 122,
+        "max": 132
+      }
+    },
+    "sql_stat_raw": {
+      "blocks": 82,
+      "rows": 65308,
+      "bodyBytes": 9083658,
+      "summaryWrittenRows": 135984,
+      "duplicateSends": 1,
+      "duplicateSummaryWrittenRows": 538,
+      "recoverySends": 0,
+      "recoverySummaryWrittenRows": 0,
+      "retries": 0,
+      "maxQueuedRows": 1830,
+      "rowsPerSecondOverRun": 161.603,
+      "rowsPerSecondWhileInserting": 162.843,
+      "insertMs": {
+        "count": 82,
+        "mean": 35.2073,
+        "p50": 31,
+        "p95": 63,
+        "p99": 154,
+        "max": 154
+      }
+    },
+    "ext_stat_raw": {
+      "blocks": 81,
+      "rows": 8202,
+      "bodyBytes": 963084,
+      "summaryWrittenRows": 15558,
+      "duplicateSends": 1,
+      "duplicateSummaryWrittenRows": 91,
+      "recoverySends": 0,
+      "recoverySummaryWrittenRows": 0,
+      "retries": 0,
+      "maxQueuedRows": 179,
+      "rowsPerSecondOverRun": 20.2957,
+      "rowsPerSecondWhileInserting": 20.4524,
+      "insertMs": {
+        "count": 81,
+        "mean": 31.7531,
+        "p50": 29,
+        "p95": 60,
+        "p99": 125,
+        "max": 125
+      }
+    },
+    "total": {
+      "rows": 2874409,
+      "bodyBytes": 394120025,
+      "elapsedMs": 404126,
+      "rowsPerSecond": 7112.66,
+      "bodyMiBPerSecond": 0.930062
+    },
+    "ingestLagMs": {
+      "count": 2860733,
+      "mean": 1643.39,
+      "p50": 1679,
+      "p95": 2943,
+      "p99": 3071,
+      "max": 3356
+    },
+    "blockLagMs": {
+      "count": 591,
+      "mean": 2949.25,
+      "p50": 3039,
+      "p95": 3167,
+      "p99": 3231,
+      "max": 3356
+    },
+    "ingestLagMsPerStep": [
+      {
+        "count": 299295,
+        "mean": 1593.18,
+        "p50": 1631,
+        "p95": 2911,
+        "p99": 3039,
+        "max": 3137
+      },
+      {
+        "count": 802673,
+        "mean": 1638.87,
+        "p50": 1679,
+        "p95": 2943,
+        "p99": 3071,
+        "max": 3254
+      },
+      {
+        "count": 1758765,
+        "mean": 1653.99,
+        "p50": 1679,
+        "p95": 2943,
+        "p99": 3103,
+        "max": 3356
+      }
+    ],
+    "rowsDrainedBeforeTheirReceiveTime": 13676
+  },
+  "replay": {
+    "walId": "wc3cd0823acd5",
+    "walRecords": 2875591,
+    "walCommits": 591,
+    "walBytes": 500300419,
+    "writerRestartsBeforeInsert": 1,
+    "writerRestartsAfterInsert": 1,
+    "tpsSteps": [500, 2000, 5000],
+    "stepDurationSeconds": 120
+  },
+  "hostLoad": {
+    "logicalCpus": 12,
+    "totalMemoryBytes": 16477036544,
+    "samples": 202,
+    "systemCpuAvg": 0.325862,
+    "systemCpuMax": 0.983076,
+    "generatorCpuAvg": 0.00597326,
+    "generatorCpuMax": 0.0730127
+  },
+  "config": {
+    "seed": "42",
+    "profile": "",
+    "scale": "1",
+    "mode": "replay",
+    "start": "",
+    "days": "30",
+    "profile-days": "7",
+    "raw-days": "14",
+    "tps": "500",
+    "apps": "10",
+    "prod-apps": "7",
+    "instances-per-app": "5",
+    "services": "100",
+    "service-zipf": "1.1",
+    "sqls": "2000",
+    "sql-zipf": "1.0",
+    "ext-hosts": "20",
+    "versions": "3",
+    "version-switch-day": "15",
+    "batch-share": "0.03",
+    "error-rate": "0.01",
+    "error-groups": "50",
+    "latency-median-ms": "80",
+    "latency-sigma": "1.0",
+    "outlier-rate": "0.01",
+    "outlier-min-ms": "2000",
+    "outlier-max-ms": "30000",
+    "user-id-share": "0.3",
+    "users": "200000",
+    "remote-ips": "10000",
+    "request-id-share": "0.5",
+    "sql-ids-mean": "3",
+    "ext-call-rate": "0.2",
+    "internal-call-rate": "0.08",
+    "clock-skew-ms": "2000",
+    "skewed-instances": "2",
+    "skewed-offset-ms": "60000",
+    "late-rate": "0.005",
+    "late-min-minutes": "1",
+    "late-max-minutes": "30",
+    "duplicate-rate": "0.001",
+    "force-duplicate": "true",
+    "metric-series": "100",
+    "profile-normal-rate": "0.1",
+    "slow-threshold-ms": "1000",
+    "stat-window": "end",
+    "block-rows": "500000",
+    "tps-steps": "500,2000,5000",
+    "step-duration": "PT2M",
+    "flush-interval-ms": "2000",
+    "flush-rows": "50000",
+    "writer-restarts": "2",
+    "run-id": "",
+    "target": "docker",
+    "database": "argos",
+    "table-prefix": "",
+    "apply-schema": "auto",
+    "docker-memory": "4g",
+    "docker-volume": "",
+    "out": "C:\\workspace\\Argos\\test\\storage\\generator\\build\\reports\\storage-generator",
+    "machine-profile": "",
+    "monitor-interval-s": "5"
+  },
+  "clickhouse": {
+    "monitor": {
+      "samples": 82,
+      "maxActivePartsPerPartition": 10,
+      "maxMergesRunning": 4,
+      "peakMemoryTrackingBytes": 320704817,
+      "last": {
+        "secondsSinceStart": 404,
+        "maxActivePartsPerPartition": 7,
+        "mergesRunning": 1,
+        "memoryTrackingBytes": 320704817,
+        "delayedInserts": 0,
+        "rejectedInserts": 0
+      },
+      "series": [
+        {
+          "secondsSinceStart": 0,
+          "maxActivePartsPerPartition": 0,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 188350524,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 5,
+          "maxActivePartsPerPartition": 2,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 210561814,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 10,
+          "maxActivePartsPerPartition": 3,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 213215313,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 15,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 216739533,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 20,
+          "maxActivePartsPerPartition": 3,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 231159754,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 25,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 218536021,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 30,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 218907880,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 35,
+          "maxActivePartsPerPartition": 2,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 240462700,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 40,
+          "maxActivePartsPerPartition": 3,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 220668986,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 45,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 222855818,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 50,
+          "maxActivePartsPerPartition": 4,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 223954058,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 55,
+          "maxActivePartsPerPartition": 4,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 251542339,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 60,
+          "maxActivePartsPerPartition": 6,
+          "mergesRunning": 1,
+          "memoryTrackingBytes": 247309000,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 65,
+          "maxActivePartsPerPartition": 3,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 243964434,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 70,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 232430389,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 75,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 228050114,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 80,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 233149014,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 85,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 242837685,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 90,
+          "maxActivePartsPerPartition": 6,
+          "mergesRunning": 2,
+          "memoryTrackingBytes": 239296215,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 95,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 259217390,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 100,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 232939059,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 105,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 233584212,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 110,
+          "maxActivePartsPerPartition": 4,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 235008294,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 115,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 236134422,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 120,
+          "maxActivePartsPerPartition": 6,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 239241061,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 125,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 248681523,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 130,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 1,
+          "memoryTrackingBytes": 246185482,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 135,
+          "maxActivePartsPerPartition": 4,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 243481626,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 140,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 241093932,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 145,
+          "maxActivePartsPerPartition": 6,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 241850547,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 150,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 242187633,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 155,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 244045410,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 160,
+          "maxActivePartsPerPartition": 6,
+          "mergesRunning": 1,
+          "memoryTrackingBytes": 277885835,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 165,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 249153142,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 170,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 246693394,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 175,
+          "maxActivePartsPerPartition": 6,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 257574203,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 180,
+          "maxActivePartsPerPartition": 7,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 261959000,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 185,
+          "maxActivePartsPerPartition": 6,
+          "mergesRunning": 2,
+          "memoryTrackingBytes": 273297510,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 190,
+          "maxActivePartsPerPartition": 7,
+          "mergesRunning": 1,
+          "memoryTrackingBytes": 280292384,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 195,
+          "maxActivePartsPerPartition": 4,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 247974356,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 200,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 249834524,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 205,
+          "maxActivePartsPerPartition": 6,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 264470169,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 210,
+          "maxActivePartsPerPartition": 4,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 253494464,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 215,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 255819237,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 220,
+          "maxActivePartsPerPartition": 7,
+          "mergesRunning": 1,
+          "memoryTrackingBytes": 261808331,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 225,
+          "maxActivePartsPerPartition": 8,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 272714508,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 230,
+          "maxActivePartsPerPartition": 4,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 265474911,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 235,
+          "maxActivePartsPerPartition": 6,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 266589959,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 240,
+          "maxActivePartsPerPartition": 8,
+          "mergesRunning": 2,
+          "memoryTrackingBytes": 271128826,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 245,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 269813600,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 250,
+          "maxActivePartsPerPartition": 6,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 273749343,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 255,
+          "maxActivePartsPerPartition": 4,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 266270485,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 260,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 275775416,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 265,
+          "maxActivePartsPerPartition": 7,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 284290366,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 270,
+          "maxActivePartsPerPartition": 6,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 284596329,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 275,
+          "maxActivePartsPerPartition": 6,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 279255240,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 280,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 279509095,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 285,
+          "maxActivePartsPerPartition": 7,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 290386907,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 290,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 273358920,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 295,
+          "maxActivePartsPerPartition": 7,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 273970548,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 300,
+          "maxActivePartsPerPartition": 8,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 289756246,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 305,
+          "maxActivePartsPerPartition": 8,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 294226489,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 310,
+          "maxActivePartsPerPartition": 7,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 278042353,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 315,
+          "maxActivePartsPerPartition": 6,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 279463630,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 320,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 289381902,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 325,
+          "maxActivePartsPerPartition": 7,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 294434289,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 330,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 282003418,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 335,
+          "maxActivePartsPerPartition": 6,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 286884198,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 340,
+          "maxActivePartsPerPartition": 8,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 281869585,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 345,
+          "maxActivePartsPerPartition": 6,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 281866298,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 350,
+          "maxActivePartsPerPartition": 7,
+          "mergesRunning": 3,
+          "memoryTrackingBytes": 319507800,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 355,
+          "maxActivePartsPerPartition": 9,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 283799809,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 360,
+          "maxActivePartsPerPartition": 6,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 284289595,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 365,
+          "maxActivePartsPerPartition": 8,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 285547629,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 370,
+          "maxActivePartsPerPartition": 10,
+          "mergesRunning": 1,
+          "memoryTrackingBytes": 304867450,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 375,
+          "maxActivePartsPerPartition": 8,
+          "mergesRunning": 4,
+          "memoryTrackingBytes": 312020721,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 380,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 298613135,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 385,
+          "maxActivePartsPerPartition": 6,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 288035714,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 390,
+          "maxActivePartsPerPartition": 8,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 289160058,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 395,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 290177522,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 400,
+          "maxActivePartsPerPartition": 5,
+          "mergesRunning": 0,
+          "memoryTrackingBytes": 290023779,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        },
+        {
+          "secondsSinceStart": 404,
+          "maxActivePartsPerPartition": 7,
+          "mergesRunning": 1,
+          "memoryTrackingBytes": 320704817,
+          "delayedInserts": 0,
+          "rejectedInserts": 0
+        }
+      ]
+    },
+    "storage": {
+      "app_stat_1h": {
+        "rows": 42,
+        "compressedBytes": 58020,
+        "uncompressedBytes": 95532,
+        "compressionRatio": 1.64654,
+        "bytesPerRow": 1381.43,
+        "activeParts": 4,
+        "partitions": 1
+      },
+      "app_stat_1m": {
+        "rows": 203,
+        "compressedBytes": 209974,
+        "uncompressedBytes": 387737,
+        "compressionRatio": 1.8466,
+        "bytesPerRow": 1034.35,
+        "activeParts": 4,
+        "partitions": 1
+      },
+      "error_stat_1m": {
+        "rows": 1869,
+        "compressedBytes": 29325,
+        "uncompressedBytes": 108486,
+        "compressionRatio": 3.69944,
+        "bytesPerRow": 15.6902,
+        "activeParts": 2,
+        "partitions": 1
+      },
+      "ext_stat_1h": {
+        "rows": 70,
+        "compressedBytes": 5694,
+        "uncompressedBytes": 13342,
+        "compressionRatio": 2.34317,
+        "bytesPerRow": 81.3429,
+        "activeParts": 1,
+        "partitions": 1
+      },
+      "ext_stat_1m": {
+        "rows": 485,
+        "compressedBytes": 26366,
+        "uncompressedBytes": 92192,
+        "compressionRatio": 3.49662,
+        "bytesPerRow": 54.3629,
+        "activeParts": 1,
+        "partitions": 1
+      },
+      "ext_stat_raw": {
+        "rows": 8202,
+        "compressedBytes": 216733,
+        "uncompressedBytes": 937095,
+        "compressionRatio": 4.32373,
+        "bytesPerRow": 26.4244,
+        "activeParts": 1,
+        "partitions": 1
+      },
+      "instance_stat_1m": {
+        "rows": 527,
+        "compressedBytes": 545738,
+        "uncompressedBytes": 1064690,
+        "compressionRatio": 1.95092,
+        "bytesPerRow": 1035.56,
+        "activeParts": 5,
+        "partitions": 1
+      },
+      "metric": {
+        "rows": 360000,
+        "compressedBytes": 1379034,
+        "uncompressedBytes": 11189407,
+        "compressionRatio": 8.11395,
+        "bytesPerRow": 3.83065,
+        "activeParts": 7,
+        "partitions": 1
+      },
+      "metric_1h": {
+        "rows": 5900,
+        "compressedBytes": 99418,
+        "uncompressedBytes": 379718,
+        "compressionRatio": 3.81941,
+        "bytesPerRow": 16.8505,
+        "activeParts": 2,
+        "partitions": 1
+      },
+      "metric_1m": {
+        "rows": 35900,
+        "compressedBytes": 582783,
+        "uncompressedBytes": 2285736,
+        "compressionRatio": 3.9221,
+        "bytesPerRow": 16.2335,
+        "activeParts": 2,
+        "partitions": 1
+      },
+      "profile_step": {
+        "rows": 1539649,
+        "compressedBytes": 21589111,
+        "uncompressedBytes": 159738816,
+        "compressionRatio": 7.39905,
+        "bytesPerRow": 14.0221,
+        "activeParts": 5,
+        "partitions": 1
+      },
+      "service_stat_1h": {
+        "rows": 226,
+        "compressedBytes": 215765,
+        "uncompressedBytes": 386764,
+        "compressionRatio": 1.79252,
+        "bytesPerRow": 954.712,
+        "activeParts": 4,
+        "partitions": 1
+      },
+      "service_stat_1m": {
+        "rows": 770,
+        "compressedBytes": 632720,
+        "uncompressedBytes": 1398546,
+        "compressionRatio": 2.21037,
+        "bytesPerRow": 821.714,
+        "activeParts": 1,
+        "partitions": 1
+      },
+      "sql_stat_1h": {
+        "rows": 2151,
+        "compressedBytes": 118481,
+        "uncompressedBytes": 442226,
+        "compressionRatio": 3.73246,
+        "bytesPerRow": 55.0818,
+        "activeParts": 2,
+        "partitions": 1
+      },
+      "sql_stat_1m": {
+        "rows": 8635,
+        "compressedBytes": 371535,
+        "uncompressedBytes": 1777967,
+        "compressionRatio": 4.78546,
+        "bytesPerRow": 43.0266,
+        "activeParts": 2,
+        "partitions": 1
+      },
+      "sql_stat_raw": {
+        "rows": 65308,
+        "compressedBytes": 1958951,
+        "uncompressedBytes": 9022348,
+        "compressionRatio": 4.6057,
+        "bytesPerRow": 29.9956,
+        "activeParts": 5,
+        "partitions": 1
+      },
+      "xlog": {
+        "rows": 901250,
+        "compressedBytes": 73105552,
+        "uncompressedBytes": 190960733,
+        "compressionRatio": 2.61212,
+        "bytesPerRow": 81.1157,
+        "activeParts": 6,
+        "partitions": 1
+      }
+    },
+    "rawCounts": {
+      "xlog": 901250,
+      "profile_step": 1539649,
+      "metric": 360000,
+      "sql_stat_raw": 65308,
+      "ext_stat_raw": 8202
+    },
+    "rawCountsMatchManifest": true
+  }
+}

@@ -90,3 +90,23 @@ val sampleApps =
   )
 
 sampleApps.forEach { include(":sample-apps:$it") }
+
+// Storage PoC tools (WO-03, 13 §15, 18 §9). Development-only (ArgosProject.isDevelopmentOnly).
+//   clickhouse-support  pinned ClickHouse image, Testcontainers launcher with deploy/clickhouse
+//                       config, HTTP client, schema renderer, lint and applier (shared by the lanes)
+//   schema-tests        schema apply, rollup views, dedup token, accounts, 13 §17 confirmations
+include(":test:storage:clickhouse-support")
+include(":test:storage:schema-tests")
+//   queries             Q01..Q20 (13 §6.3, §15), runner, report generator, CI consistency tests
+include(":test:storage:queries")
+//   generator           13 §15 synthetic telemetry: bulk and replay (WAL -> block -> token) loads,
+//                       manifest of expected counts (storageGenerate, storageBench generation phase)
+include(":test:storage:generator")
+
+// Agent transport comparison (WO-02 P-3, A-1, A-14). Development-only (ArgosProject.isDevelopmentOnly);
+// its comparison jars, smoke and bench run only through the transportPoc* tasks, never in build.
+include(":test:agent:transport-poc")
+
+// Agent overhead harness (WO-02 P-2, 01 §7.3, 18 §7). Development-only; build and check compile and
+// unit-test it, the measurement runs as a standalone jar (test/agent/overhead/README.md).
+include(":test:agent:overhead")

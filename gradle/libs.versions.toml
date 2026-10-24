@@ -28,6 +28,11 @@ assertj = "3.27.7"
 archunit = "1.5.1"
 asm = "9.11.1"
 testcontainers = "2.0.5"
+# --- agent instrumentation compile-time APIs (compileOnly and module tests, never shipped) ---
+# The lowest supported API version of each target, so that a module cannot call a newer method by
+# accident; at run time the application's own classes are used (docs/licenses/dev-only.md).
+agent-servlet-javax-api = "3.1.0"
+agent-servlet-jakarta-api = "5.0.0"
 # --- build tools ---
 errorprone = "2.51.0"
 # 1.37.0 exists but fails inside Spotless 8.10.4 (NoSuchMethodError on
@@ -81,6 +86,10 @@ grpc-stub = { module = "io.grpc:grpc-stub", version.ref = "grpc" }
 grpc-protobuf = { module = "io.grpc:grpc-protobuf", version.ref = "grpc" }
 grpc-protobuf-lite = { module = "io.grpc:grpc-protobuf-lite", version.ref = "grpc" }
 grpc-netty = { module = "io.grpc:grpc-netty", version.ref = "grpc" }
+# WO-02 P-3 transport comparison only (test/agent/transport-poc, A-1); not used by shipped modules.
+grpc-okhttp = { module = "io.grpc:grpc-okhttp", version.ref = "grpc" }
+# Netty 4.1 line for the P-3 ADR-0003 C-22 comparison (Netty 4.2 ships Java 11 class files).
+poc-netty41-bom = { module = "io.netty:netty-bom", version = "4.1.139.Final" }
 grpc-inprocess = { module = "io.grpc:grpc-inprocess", version.ref = "grpc" }
 protoc-gen-grpc-java = { module = "io.grpc:protoc-gen-grpc-java", version.ref = "grpc" }
 protobuf-bom = { module = "com.google.protobuf:protobuf-bom", version.ref = "protobuf" }
@@ -108,6 +117,9 @@ testcontainers-core = { module = "org.testcontainers:testcontainers", version.re
 testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-junit-jupiter", version.ref = "testcontainers" }
 testcontainers-clickhouse = { module = "org.testcontainers:testcontainers-clickhouse", version.ref = "testcontainers" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
+# agent instrumentation compile-time APIs (compileOnly and module tests only, never shipped)
+agent-servlet-javax-api = { module = "javax.servlet:javax.servlet-api", version.ref = "agent-servlet-javax-api" }
+agent-servlet-jakarta-api = { module = "jakarta.servlet:jakarta.servlet-api", version.ref = "agent-servlet-jakarta-api" }
 # build tools (resolved by convention plugins, never shipped)
 errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }
 google-java-format = { module = "com.google.googlejavaformat:google-java-format", version.ref = "google-java-format" }

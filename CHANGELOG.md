@@ -44,5 +44,12 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   generator without third-party dependencies (fixed arrival rate, image definition for
   `argos-demo-load`), and `test/seed/seed-traffic.sh` for the PII and XSS seeds carrying the
   `ARGOS_SEED` sentinel.
+- ClickHouse storage proof of concept: the bundled ClickHouse 26.8 LTS pinned by digest
+  (`deploy/clickhouse/image.properties`), the initial schema `deploy/clickhouse/schema/V001__init.sql`
+  (five raw tables, twelve rollups and their materialized views sharing `deploy/clickhouse/rollups/*.sql`),
+  server and user configuration with three least-privilege accounts and no default user, and
+  development-only tools in `test/storage/`: a synthetic telemetry generator (bulk and replay through
+  deduplication tokens), the Q01-Q20 query runner and report, a standalone benchmark server script, and
+  integration tests against a real ClickHouse. Results: `docs/poc/clickhouse-benchmark.md`.
 
 [Unreleased]: https://github.com/argos-apm/argos/commits/main

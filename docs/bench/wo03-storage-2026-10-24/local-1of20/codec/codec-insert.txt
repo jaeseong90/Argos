@@ -1,0 +1,12 @@
+    ┌─query_id──────────────────┬─query_duration_ms─┬─written_rows─┬─cpu_ms─┐
+ 1. │ wo03-codec-t-ext_stat_raw │              2120 │      1808615 │   2527 │
+ 2. │ wo03-codec-t-metric       │              6600 │     31677400 │   7530 │
+ 3. │ wo03-codec-t-profile_step │               858 │      1222131 │   1045 │
+ 4. │ wo03-codec-t-sql_stat_raw │              9676 │     10577464 │  10703 │
+ 5. │ wo03-codec-t-xlog         │             74168 │     43204363 │  88999 │
+ 6. │ wo03-codec-z-ext_stat_raw │              1351 │      1808615 │   1482 │
+ 7. │ wo03-codec-z-metric       │              6840 │     31677400 │   7162 │
+ 8. │ wo03-codec-z-profile_step │               810 │      1222131 │   1017 │
+ 9. │ wo03-codec-z-sql_stat_raw │             10734 │     10577464 │  12286 │
+10. │ wo03-codec-z-xlog         │             71650 │     43204363 │  86984 │
+    └───────────────────────────┴───────────────────┴──────────────┴────────┘

@@ -27,12 +27,14 @@
 | 결정 | [adr/](adr/) | 0000~0002 | ADR 템플릿, 0001 라이선스 Apache-2.0, 0002 식별자·공개 시점 (메인테이너 확인 대기) |
 | 라이선스 | [licenses/dev-only.md](licenses/dev-only.md) | WO-00 | 배포물에 넣지 않는 테스트·도구 전용 구성요소 목록(`checkDevOnlyLicenses`가 읽음) |
 | PoC | [poc/xlog-ui.md](poc/xlog-ui.md) | WO-04 | XLog 캔버스 PoC: 접근 방식, 프레임 시간 측정(1만·5만·10만 점), 15 §18 #2 답, 사람 재현 절차 |
+| PoC | [poc/clickhouse-benchmark.md](poc/clickhouse-benchmark.md) | WO-03 | ClickHouse 저장소 PoC(P-4): 1/100(CI)·1/20(로컬) 적재·압축·Q1~Q20, 13 §17 답, A-6·A-9·A-10·A-11·코덱·bloom 결정 제안([ADR-0006](adr/0006-storage-poc-decisions.md), Proposed), 목표 하드웨어 확인 목록 |
 
 ## 저장소 상태
 
 - **WO-00(저장소 골격 + 오픈소스 골격)**: REVIEW(구현 완료·완료 보고 제출, 사람 수락 검수 대기, 2026-10-23). 04 문서 상태 표는 사람이 갱신한다. Gradle 9.8.2 모노레포(Java 모듈 22개, 빈 소스 + hello 테스트), UI 골격(Vite + React + TypeScript strict + pnpm), 품질 게이트(Spotless·Error Prone·ArchUnit·라이선스 허용 목록·SPDX·`check-shading.sh`), CI 워크플로(`pr.yml`·`codeql.yml`·`secrets-scan.yml`, GitHub에서는 아직 실행하지 않음), 오픈소스 파일 세트가 있다. 기능 코드는 아직 없다.
 - **WO-04(XLog 캔버스 PoC)**: REVIEW(구현 완료, 사람 수락 대기, 2026-10-24). 데모 `/xlog-poc`, `ui/src/xlog/` 캔버스, Vitest, Playwright E2E(드래그 → 요약·목록, 통과), `ui/perf/xlog-frame.spec.ts`가 있다. 15 §7.2 원안의 색별 3패스 fill은 5만·10만 점에서 16ms를 넘고, 15 §18 #2의 대안 `ImageData`(`render=pixels`)는 통과한다. 기본 그리기 방식은 ADR-0003 C-34로 `pixels`로 결정되었고 코드 기본값에 반영되었다(판정 단위·상호작용 예산은 C-35·C-36, [poc/xlog-ui.md](poc/xlog-ui.md) 4.7.3·8장).
 - **WO-01(샘플 앱 세트 + ext-stub + 부하 생성기)**: REVIEW(구현 완료·r1 리뷰 수정 반영, PM 결정·사람 수락 대기, 2026-10-24). `sample-apps/`에 공유 카탈로그(`common`), 앱 8종(`shop-boot2`·`shop-boot3`·`shop-boot4`·`shop-heavy`·`shop-batch`·`shop-war-javax`·`shop-war-jakarta` + `ext-stub`), 스모크 러너와 `sampleSmoke` 태스크(에이전트 없이 기동해 카탈로그 검증, `check` 미포함), Dockerfile, k6 `load/bench.js`·`run-bench.sh`, 의존성 없는 데모 부하 생성기, `test/seed/seed-traffic.sh`가 있다. 앱별 jar·클래스 수와 에이전트 없는 기동 기준선(N-04·N-27)은 [sample-apps/README.md](../sample-apps/README.md) "Startup baseline" 절에 있다(공유 Windows 머신 측정, 벤치 머신 재측정 필요).
+- **WO-03(저장소 PoC, P-4)**: REVIEW(구현 완료, 목표 하드웨어 측정·PM 결정·사람 수락 대기, 2026-10-24). 번들 ClickHouse 26.8.34.13 LTS(다이제스트 고정, `deploy/clickhouse/image.properties`), `deploy/clickhouse/` V001 스키마·롤업 12종·설정·계정 3종, `test/storage/`(ClickHouse 지원·스키마 테스트·생성기·Q01~Q20 러너·벤치 서버 스크립트)가 있다. CI 1/100 자동 기준(T-ST-030~033·053)은 녹색이고, 로컬 1/20에서 Q1~Q11·정합은 충족, xlog 압축률(2.56 < 3)은 코덱 변경 제안(3.76)으로 해결을 제안한다. 리뷰 r1 수정(시스템 로그 TTL·미사용 리스너 제거·writer 제약·migrator 권한 축소, 롤업 재구축 IT, 생성기 N-06 부하 옵션·100ms tick, 러너 수정, 증거 `docs/bench/wo03-storage-2026-10-24/`)을 반영했고, 통합 재검증(2026-10-24)에서 전체 build·`integrationTest -Pqueries.profile=ci`·1/100 처음부터 끝까지가 녹색이다(PoC 16장). 결정 제안은 [ADR-0006](adr/0006-storage-poc-decisions.md)(Proposed), 측정은 [poc/clickhouse-benchmark.md](poc/clickhouse-benchmark.md).
 - 빌드·검증 명령은 루트 `CLAUDE.md`의 "빌드·검증 명령" 절과 [dev-setup.md](dev-setup.md)에 있다.
 
 ## 읽는 순서

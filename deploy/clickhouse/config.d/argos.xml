@@ -1,0 +1,155 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Argos ClickHouse server settings (docs/13-storage-design.md section 7.2, docs/17 section 7).
+  Install as /etc/clickhouse-server/config.d/argos.xml (Compose: mounted read-only).
+
+  Substitution variable (ClickHouse from_env). The installer computes it from the host RAM
+  (docs/17 section 7.3) and passes it in the environment of clickhouse-server; ClickHouse refuses to
+  start when it is unset, so no RAM-blind default (90 % of RAM) can slip through (N-18).
+    ARGOS_CH_MAX_SERVER_MEMORY_USAGE  bytes. RAM x 0.47 (S topology 16 GiB: 8053063680 = 7.5 GiB).
+                                      In a container: at most 0.9 x the container memory limit
+                                      (ClickHouse caps a larger value there).
+  Per-user memory limits and passwords are variables of users.d/argos.xml.
+
+  listen_host: 127.0.0.1 for the package (tar) install (docs/17 DSN-17-04). In the official Docker
+  image, config.d/docker_related_config.xml is merged after this file and replaces it with the
+  wildcard addresses; Compose publishes no ClickHouse port, so the server is reachable only on the
+  internal network.
+-->
+<clickhouse>
+  <timezone>UTC</timezone>
+  <listen_host>127.0.0.1</listen_host>
+
+  <!-- Listeners (docs/16 section 10.7: no unused network surface). Kept: http_port 8123 (server,
+       batch writer, query API) and tcp_port 9000 (native protocol: clickhouse-client for operators
+       and the runbooks of docs/17). Removed: the MySQL (9004) and PostgreSQL (9005) compatibility
+       protocols, which Argos never uses, and the interserver HTTP port (9009), which serves part
+       fetches between replicas without authentication. If A-9 adopts ReplicatedMergeTree, turn
+       interserver_http_port back on together with interserver_http_credentials. -->
+  <mysql_port remove="1"/>
+  <postgresql_port remove="1"/>
+  <interserver_http_port remove="1"/>
+
+  <!-- Outbound connections (SEC-74, SEC-76; Argos calls no network target that the operator did not
+       configure): an empty allow list makes ClickHouse refuse every remote URL (url(), HTTP
+       dictionary sources and the other URL-based engines such as s3()). The installer adds only
+       hosts the operator configures, e.g. the S3 backup target of docs/13 section 10. -->
+  <remote_url_allow_hosts></remote_url_allow_hosts>
+
+  <!-- Memory budget (13 section 7.1). -->
+  <max_server_memory_usage from_env="ARGOS_CH_MAX_SERVER_MEMORY_USAGE"/>
+  <mark_cache_size>536870912</mark_cache_size>
+  <uncompressed_cache_size>0</uncompressed_cache_size>
+  <max_concurrent_queries>50</max_concurrent_queries>
+
+  <background_pool_size>4</background_pool_size>
+  <background_schedule_pool_size>8</background_schedule_pool_size>
+
+  <!-- Emergency retention shortening must be able to DROP large partitions (13 section 8). This is a
+       server setting; ClickHouse 26.8 has no table-level override, only a query-level one. -->
+  <max_partition_size_to_drop>0</max_partition_size_to_drop>
+  <max_table_size_to_drop>0</max_table_size_to_drop>
+
+  <merge_tree>
+    <ttl_only_drop_parts>1</ttl_only_drop_parts>
+    <merge_with_ttl_timeout>14400</merge_with_ttl_timeout>   <!-- TTL every 4 hours (N-08) -->
+    <parts_to_delay_insert>300</parts_to_delay_insert>
+    <parts_to_throw_insert>1000</parts_to_throw_insert>
+    <!-- background_pool_size 4 gives 4 x background_merges_mutations_concurrency_ratio (2) = 8 merge
+         slots. ClickHouse 26.8 refuses to start when these thresholds exceed the slot count (defaults
+         8, 20, 25 for 32 slots), so they keep the default proportions of the smaller pool. -->
+    <number_of_free_entries_in_pool_to_lower_max_size_of_merge>2</number_of_free_entries_in_pool_to_lower_max_size_of_merge>
+    <number_of_free_entries_in_pool_to_execute_mutation>5</number_of_free_entries_in_pool_to_execute_mutation>
+    <number_of_free_entries_in_pool_to_execute_optimize_entire_partition>6</number_of_free_entries_in_pool_to_execute_optimize_entire_partition>
+  </merge_tree>
+
+  <storage_configuration>
+    <disks>
+      <default>
+        <keep_free_space_bytes>10737418240</keep_free_space_bytes>
+      </default>
+    </disks>
+  </storage_configuration>
+
+  <!-- Least privilege (SEC-74, SEC-76): system tables are readable only with an explicit grant
+       (users.d/argos.xml grants the ones the reader needs), and settings constraints of a profile
+       replace inherited ones, which enables the changeable_in_readonly constraints of the reader. -->
+  <access_control_improvements>
+    <select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>
+    <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
+    <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
+  </access_control_improvements>
+
+  <logger>
+    <level>warning</level>
+  </logger>
+
+  <!-- System logs (13 section 7.2): every system log the bundled image (26.8.34.13) enables has an
+       upper bound. A log used for diagnosis keeps 7 days (TTL, like query_log); a log that neither
+       the storage health panel nor operational diagnosis uses is removed. The schema tests
+       (SystemLogsIT) fail when a later LTS enables a *_log section without a TTL. -->
+
+  <!-- Kept for 7 days. -->
+  <!-- query_log: reader limits and refused DDL are traced here (T-ST-053), slow query analysis. -->
+  <query_log>
+    <ttl>event_date + INTERVAL 7 DAY</ttl>
+  </query_log>
+  <!-- trace_log: sampling profiler and memory traces of slow or memory-hungry queries and merges. -->
+  <trace_log>
+    <ttl>event_date + INTERVAL 7 DAY</ttl>
+  </trace_log>
+  <!-- metric_log: per-second history of ProfileEvents and CurrentMetrics (inserts, merges, memory)
+       for post-incident diagnosis; the health panel itself reads the live system.metrics/events. -->
+  <metric_log>
+    <ttl>event_date + INTERVAL 7 DAY</ttl>
+  </metric_log>
+  <!-- asynchronous_metric_log: history of memory, disk and load metrics (disk-full and OOM analysis). -->
+  <asynchronous_metric_log>
+    <ttl>event_date + INTERVAL 7 DAY</ttl>
+  </asynchronous_metric_log>
+  <!-- error_log: history of error counters (which error started when). -->
+  <error_log>
+    <ttl>event_date + INTERVAL 7 DAY</ttl>
+  </error_log>
+  <!-- crash_log: stack traces of server crashes (rows only on a crash). -->
+  <crash_log>
+    <ttl>event_date + INTERVAL 7 DAY</ttl>
+  </crash_log>
+  <!-- backup_log: status and errors of BACKUP/RESTORE (optional ClickHouse backup, 13 section 10). -->
+  <backup_log>
+    <ttl>event_date + INTERVAL 7 DAY</ttl>
+  </backup_log>
+
+  <!-- Removed. -->
+  <!-- part_log, text_log: removed by 13 section 7.2 (part events and the server log as a table). -->
+  <part_log remove="1"/>
+  <text_log remove="1"/>
+  <!-- query_thread_log: per-thread copy of query_log; query_log is enough for diagnosis. -->
+  <query_thread_log remove="1"/>
+  <!-- query_views_log: one row per view per insert (12 views x one block per table every 2 s, about
+       520,000 rows a day); view failures already appear in query_log. -->
+  <query_views_log remove="1"/>
+  <!-- query_metric_log: per-query metric history; not used by the panel or the runbooks. -->
+  <query_metric_log remove="1"/>
+  <!-- processors_profile_log: per-processor profile of every query; developer tool. -->
+  <processors_profile_log remove="1"/>
+  <!-- background_schedule_pool_log: background task timings; developer tool. -->
+  <background_schedule_pool_log remove="1"/>
+  <!-- instrumentation_trace_log: function instrumentation (XRay); developer tool, off in Argos. -->
+  <instrumentation_trace_log remove="1"/>
+  <!-- asynchronous_insert_log: Argos does not use async inserts (writer profile, 13 section 7.3). -->
+  <asynchronous_insert_log remove="1"/>
+  <!-- opentelemetry_span_log: ClickHouse's own tracing spans; Argos does not trace ClickHouse. -->
+  <opentelemetry_span_log remove="1"/>
+  <!-- blob_storage_log: object storage disk operations; Argos stores data on the local disk. -->
+  <blob_storage_log remove="1"/>
+  <!-- s3queue_log: S3Queue table engine (ingestion from S3), not used. -->
+  <s3queue_log remove="1"/>
+  <!-- iceberg_metadata_log, delta_lake_metadata_log: data lake table engines, not used. -->
+  <iceberg_metadata_log remove="1"/>
+  <delta_lake_metadata_log remove="1"/>
+  <!-- aggregated_zookeeper_log, zookeeper_connection_log: Keeper clients only; 1.0 runs without
+       Keeper (A-9). Turn them back on with a TTL together with ReplicatedMergeTree. -->
+  <aggregated_zookeeper_log remove="1"/>
+  <zookeeper_connection_log remove="1"/>
+</clickhouse>

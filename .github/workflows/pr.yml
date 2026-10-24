@@ -278,7 +278,7 @@ jobs:
   integration:
     name: integration
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -300,7 +300,9 @@ jobs:
           mkdir -p "$HOME/.gradle"
           echo "org.gradle.java.installations.fromEnv=${GRADLE_TOOLCHAINS_FROM_ENV}" >>"$HOME/.gradle/gradle.properties"
       - name: Integration tests (Testcontainers)
-        run: ./gradlew integrationTest
+        # queries.profile=ci: the storage consistency tests T-ST-030..033 and T-ST-053 run on the
+        # generator's 1/100 profile (18 §9, WO-03 automatic criterion).
+        run: ./gradlew integrationTest -Pqueries.profile=ci
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -1,0 +1,40 @@
+app_id	
+env	
+instance_id	
+ts	CODEC(DoubleDelta, LZ4)
+tx_id	
+kind	
+trace_id	CODEC(NONE)
+span_id	CODEC(NONE)
+parent_span_id	CODEC(NONE)
+incoming_trace	
+caller_app_id	
+service_id	
+version_id	
+http_method	
+http_status	
+elapsed_ms	CODEC(T64, LZ4)
+error	
+error_class_id	
+error_group_id	
+apdex_t_ms	
+remote_ip	
+ip_mode	
+user_id	CODEC(ZSTD(3))
+user_id_mode	
+request_id	CODEC(ZSTD(3))
+sql_count	
+sql_time_ms	CODEC(T64, LZ4)
+dbc_time_ms	CODEC(T64, LZ4)
+ext_count	
+ext_time_ms	CODEC(T64, LZ4)
+cpu_time_ms	CODEC(T64, LZ4)
+alloc_bytes	CODEC(T64, LZ4)
+thread_name_id	
+profile_captured	
+streaming	
+timeout_flag	
+dispatch_count	
+late	
+flags	
+sql_ids	

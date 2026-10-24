@@ -1,0 +1,370 @@
+{
+  "manifestVersion": 1,
+  "runId": "c7d4121c8afa",
+  "mode": "replay",
+  "seed": 42,
+  "scale": 1,
+  "machineProfile": "",
+  "target": "none (count only)",
+  "createdAt": "2026-10-24T16:05:24.039662800Z",
+  "range": {
+    "start": "2026-10-24T15:59:39Z",
+    "end": "2026-10-24T16:04:39Z",
+    "profileFrom": "2026-10-24T15:59:39Z",
+    "metricFrom": "2026-10-24T15:59:39Z",
+    "versionSwitchAt": "2026-10-24T16:04:39Z",
+    "deployAt": "2026-10-24T16:04:39Z",
+    "restartGapSeconds": 60,
+    "restartDurationSeconds": 30
+  },
+  "topology": {
+    "apps": 10,
+    "prodApps": 7,
+    "instances": 300,
+    "httpServices": 100,
+    "batchServices": 10,
+    "sqls": 2000,
+    "hosts": 20,
+    "errorGroups": 50,
+    "versions": 3,
+    "skewedInstances": [
+      {
+        "instance_id": 37,
+        "skewMs": 61797
+      },
+      {
+        "instance_id": 269,
+        "skewMs": 59091
+      }
+    ],
+    "cpuUnmeasuredInstances": [99, 101],
+    "virtualThreadApps": [9, 10],
+    "latencyNoiseSigma": 0.976209
+  },
+  "generated": {
+    "tables": {
+      "xlog": {
+        "rows": 1503437,
+        "minTs": "2026-10-24T15:59:37.041Z",
+        "maxTs": "2026-10-24T16:05:31.432Z",
+        "clampedRows": 10195,
+        "arrivedLaterThan60s": 7584
+      },
+      "profile_step": {
+        "rows": 15005254,
+        "minTs": "2026-10-24T15:59:37.041Z",
+        "maxTs": "2026-10-24T16:05:31.432Z",
+        "clampedRows": 0,
+        "arrivedLaterThan60s": 74862
+      },
+      "metric": {
+        "rows": 1800000,
+        "minTs": "2026-10-24T15:59:40Z",
+        "maxTs": "2026-10-24T16:04:40Z",
+        "clampedRows": 12000,
+        "arrivedLaterThan60s": 9300
+      },
+      "sql_stat_raw": {
+        "rows": 1590014,
+        "minTs": "2026-10-24T15:59:30Z",
+        "maxTs": "2026-10-24T16:05:00Z",
+        "clampedRows": 10304,
+        "arrivedLaterThan60s": 7415
+      },
+      "ext_stat_raw": {
+        "rows": 37714,
+        "minTs": "2026-10-24T15:59:30Z",
+        "maxTs": "2026-10-24T16:05:00Z",
+        "clampedRows": 244,
+        "arrivedLaterThan60s": 176
+      }
+    },
+    "transactions": {
+      "root": 1395189,
+      "child": 108248,
+      "batch": 45066,
+      "profileCaptured": 1103287,
+      "summarized": 134,
+      "timeoutFlag": 281,
+      "lateFlag": 7584,
+      "lateAgentBatches": 573
+    },
+    "d12Totals": {
+      "xlogSqlCount": 9379086,
+      "sqlStatCount": 9379086,
+      "xlogSqlTimeMs": 159897952,
+      "sqlStatSumMs": 159897952,
+      "xlogExtCount": 623392,
+      "extStatCount": 623392
+    },
+    "days": [
+      {
+        "day": "2026-10-24",
+        "xlogRows": 1503437,
+        "xlogErrors": 14930,
+        "xlogLate": 7584,
+        "xlogSqlCount": 9379086,
+        "sqlStatCount": 9379086,
+        "xlogExtCount": 623392,
+        "extStatCount": 623392,
+        "sqlStatRows": 1590014,
+        "extStatRows": 37714,
+        "profileRows": 15005254,
+        "metricRows": 1800000
+      }
+    ]
+  },
+  "insert": {
+    "xlog": {
+      "blocks": 163,
+      "rows": 1503437,
+      "bodyBytes": 336004714,
+      "summaryWrittenRows": 0,
+      "duplicateSends": 1,
+      "duplicateSummaryWrittenRows": 0,
+      "recoverySends": 0,
+      "recoverySummaryWrittenRows": 0,
+      "retries": 0,
+      "maxQueuedRows": 10708,
+      "rowsPerSecondOverRun": 4361.04,
+      "rowsPerSecondWhileInserting": 4388.55,
+      "insertMs": {
+        "count": 163,
+        "mean": 1.57055,
+        "p50": 2,
+        "p95": 2,
+        "p99": 3,
+        "max": 11
+      }
+    },
+    "profile_step": {
+      "blocks": 302,
+      "rows": 15005254,
+      "bodyBytes": 1381942954,
+      "summaryWrittenRows": 0,
+      "duplicateSends": 1,
+      "duplicateSummaryWrittenRows": 0,
+      "recoverySends": 0,
+      "recoverySummaryWrittenRows": 0,
+      "retries": 0,
+      "maxQueuedRows": 69312,
+      "rowsPerSecondOverRun": 43525.9,
+      "rowsPerSecondWhileInserting": 43705.6,
+      "insertMs": {
+        "count": 302,
+        "mean": 3.44371,
+        "p50": 4,
+        "p95": 5,
+        "p99": 5,
+        "max": 26
+      }
+    },
+    "metric": {
+      "blocks": 136,
+      "rows": 1800000,
+      "bodyBytes": 131495800,
+      "summaryWrittenRows": 0,
+      "duplicateSends": 2,
+      "duplicateSummaryWrittenRows": 0,
+      "recoverySends": 0,
+      "recoverySummaryWrittenRows": 0,
+      "retries": 0,
+      "maxQueuedRows": 16400,
+      "rowsPerSecondOverRun": 5221.28,
+      "rowsPerSecondWhileInserting": 5254.98,
+      "insertMs": {
+        "count": 136,
+        "mean": 0.602941,
+        "p50": 1,
+        "p95": 1,
+        "p99": 1,
+        "max": 2
+      }
+    },
+    "sql_stat_raw": {
+      "blocks": 78,
+      "rows": 1590014,
+      "bodyBytes": 220623339,
+      "summaryWrittenRows": 0,
+      "duplicateSends": 1,
+      "duplicateSummaryWrittenRows": 0,
+      "recoverySends": 0,
+      "recoverySummaryWrittenRows": 0,
+      "retries": 0,
+      "maxQueuedRows": 27484,
+      "rowsPerSecondOverRun": 4612.17,
+      "rowsPerSecondWhileInserting": 4651.68,
+      "insertMs": {
+        "count": 78,
+        "mean": 2.08974,
+        "p50": 3,
+        "p95": 3,
+        "p99": 4,
+        "max": 4
+      }
+    },
+    "ext_stat_raw": {
+      "blocks": 76,
+      "rows": 37714,
+      "bodyBytes": 4346771,
+      "summaryWrittenRows": 0,
+      "duplicateSends": 1,
+      "duplicateSummaryWrittenRows": 0,
+      "recoverySends": 0,
+      "recoverySummaryWrittenRows": 0,
+      "retries": 0,
+      "maxQueuedRows": 646,
+      "rowsPerSecondOverRun": 109.397,
+      "rowsPerSecondWhileInserting": 110.335,
+      "insertMs": {
+        "count": 76,
+        "mean": 0.0263158,
+        "p50": 0,
+        "p95": 0,
+        "p99": 1,
+        "max": 1
+      }
+    },
+    "total": {
+      "rows": 19936419,
+      "bodyBytes": 2074413578,
+      "elapsedMs": 344743,
+      "rowsPerSecond": 57829.8,
+      "bodyMiBPerSecond": 5.73852
+    },
+    "ingestLagMs": {
+      "count": 19845013,
+      "mean": 678.856,
+      "p50": 631,
+      "p95": 1663,
+      "p99": 2015,
+      "max": 2383
+    },
+    "blockLagMs": {
+      "count": 755,
+      "mean": 1700.75,
+      "p50": 2079,
+      "p95": 2143,
+      "p99": 2143,
+      "max": 2383
+    },
+    "ingestLagMsPerStep": [
+      {
+        "count": 19845013,
+        "mean": 678.856,
+        "p50": 631,
+        "p95": 1663,
+        "p99": 2015,
+        "max": 2383
+      }
+    ],
+    "rowsDrainedBeforeTheirReceiveTime": 91406
+  },
+  "replay": {
+    "walId": "wc7d4121c8afa",
+    "walRecords": 19937929,
+    "walCommits": 755,
+    "walBytes": 2811821100,
+    "writerRestartsBeforeInsert": 0,
+    "writerRestartsAfterInsert": 0,
+    "tpsSteps": [5000],
+    "stepDurationSeconds": 300
+  },
+  "hostLoad": {
+    "logicalCpus": 12,
+    "totalMemoryBytes": 16477036544,
+    "samples": 172,
+    "systemCpuAvg": 0.339677,
+    "systemCpuMax": 1,
+    "generatorCpuAvg": 0.00956831,
+    "generatorCpuMax": 0.0739111
+  },
+  "config": {
+    "seed": "42",
+    "profile": "",
+    "scale": "1",
+    "mode": "replay",
+    "start": "",
+    "days": "30",
+    "profile-days": "7",
+    "raw-days": "14",
+    "tps": "500",
+    "apps": "10",
+    "prod-apps": "7",
+    "instances-per-app": "30",
+    "services": "100",
+    "service-zipf": "1.1",
+    "sqls": "2000",
+    "sql-zipf": "1.0",
+    "ext-hosts": "20",
+    "versions": "3",
+    "version-switch-day": "15",
+    "batch-share": "0.03",
+    "error-rate": "0.01",
+    "error-groups": "50",
+    "latency-median-ms": "80",
+    "latency-sigma": "1.0",
+    "outlier-rate": "0.01",
+    "outlier-min-ms": "2000",
+    "outlier-max-ms": "30000",
+    "user-id-share": "0.3",
+    "users": "200000",
+    "remote-ips": "10000",
+    "request-id-share": "0.5",
+    "sql-ids-mean": "3",
+    "ext-call-rate": "0.2",
+    "internal-call-rate": "0.08",
+    "clock-skew-ms": "2000",
+    "skewed-instances": "2",
+    "skewed-offset-ms": "60000",
+    "late-rate": "0.005",
+    "late-min-minutes": "1",
+    "late-max-minutes": "30",
+    "duplicate-rate": "0.001",
+    "force-duplicate": "true",
+    "metric-series": "100",
+    "profile-normal-rate": "0.1",
+    "profile-step-rate": "50000",
+    "active-sqls": "200",
+    "slow-threshold-ms": "1000",
+    "stat-window": "end",
+    "tick-ms": "100",
+    "block-rows": "500000",
+    "tps-steps": "5000",
+    "step-duration": "PT5M",
+    "flush-interval-ms": "2000",
+    "flush-rows": "50000",
+    "writer-restarts": "0",
+    "run-id": "",
+    "target": "none",
+    "database": "argos",
+    "table-prefix": "",
+    "apply-schema": "auto",
+    "docker-memory": "5g",
+    "docker-volume": "",
+    "out": "<scratch>/wo03-genfix-r1/gen",
+    "machine-profile": "",
+    "monitor-interval-s": "5"
+  },
+  "simulation": {
+    "tickMs": 100,
+    "instances": 300,
+    "activeSqlsPerInstance": 200,
+    "profileStepRateTarget": 50000,
+    "controlledSeconds": 300,
+    "profileStepsPerSecondTarget": 50000,
+    "profileStepsPerSecondAchieved": 50017.5,
+    "normalCaptureRateMean": 0.726312,
+    "normalCaptureRateLast": 0.720686,
+    "stepsPerSampledTransaction": 13.5305,
+    "rowsPerSimulatedSecond": {
+      "xlog": 5011.46,
+      "profile_step": 50017.5,
+      "metric": 6000,
+      "sql_stat_raw": 5300.05,
+      "ext_stat_raw": 125.713,
+      "statistics": 5425.76,
+      "total": 66454.7
+    }
+  }
+}

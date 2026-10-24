@@ -1,0 +1,102 @@
+# consistency (2026-10-24T08:12:11.329196600Z)
+
+- negative control Q12 / Q13 rows: 1.0 / 1.0
+- xlog rows loaded / ground truth: 175776 / 173776
+- Q12/minute_30d mismatching rows: 0
+- Q12/hourly_30d mismatching rows: 0
+- Q12/errors_30d mismatching rows: 0
+- Q12/nightly mismatching rows: 0
+- Q13/total_30d mismatching rows: 0 []
+- Q13/daily_30d mismatching rows: 6 [[4, HTTP, 2026-10-22, 26834, 26830, 2139, 2138], [8, HTTP, 2026-10-22, 16964, 16961, 1314, 1314], [4, HTTP, 2026-10-23, 39394, 39398, 3231, 3232]]
+- Q13/rollups_14d mismatching rows: 0 []
+- Q13/nightly mismatching rows: 1 [[529358, 529362]]
+- Q15: {increase=0.0, broken_view_filled=1.0, window_mismatches=0.0, failed_insert_error=1.0, reinsert_round_trip_ms=34.909495} [blocks: 5 raw tables x 2000 transactions; failed insert error VIOLATED_CONSTRAINT; mean duplicate insert round trip 34.9 ms]
+- Q16: {rows=0.0, delta_mismatches=0.0, late_rows=2000.0} [2000 rows with ts in 2026-10-24 07:00:00 .. 2026-10-24 07:10:00 inserted in 2 block(s) after the end of the data; Q12 window rows 0, Q12 minute_30d rows 0 (PASS)]
+- negative control Q12 / Q13 rows: 1.0 / 1.0
+- xlog rows loaded / ground truth: 175776 / 173776
+- Q12/minute_30d mismatching rows: 0
+- Q12/hourly_30d mismatching rows: 0
+- Q12/errors_30d mismatching rows: 0
+- Q12/nightly mismatching rows: 0
+- Q13/total_30d mismatching rows: 0 []
+- Q13/daily_30d mismatching rows: 6 [[4, HTTP, 2026-10-22, 26834, 26830, 2139, 2138], [8, HTTP, 2026-10-22, 16964, 16961, 1314, 1314], [4, HTTP, 2026-10-23, 39394, 39398, 3231, 3232]]
+- Q13/rollups_14d mismatching rows: 0 []
+- Q13/nightly mismatching rows: 1 [[529358, 529362]]
+- Q15: {increase=0.0, broken_view_filled=1.0, window_mismatches=0.0, failed_insert_error=1.0, reinsert_round_trip_ms=34.596180999999994} [blocks: 5 raw tables x 2000 transactions; failed insert error VIOLATED_CONSTRAINT; mean duplicate insert round trip 34.6 ms]
+- Q16: {rows=0.0, delta_mismatches=0.0, late_rows=2000.0} [2000 rows with ts in 2026-10-24 07:00:00 .. 2026-10-24 07:10:00 inserted in 2 block(s) after the end of the data; Q12 window rows 0, Q12 minute_30d rows 0 (PASS)]
+- negative control Q12 / Q13 rows: 1.0 / 1.0
+- xlog rows loaded / ground truth: 12963791 / 12961791
+- Q12/minute_30d mismatching rows: 0
+- Q12/hourly_30d mismatching rows: 0
+- Q12/errors_30d mismatching rows: 0
+- Q12/nightly mismatching rows: 0
+- Q13/total_30d mismatching rows: 0 []
+- Q13/daily_30d mismatching rows: 20 [[1, HTTP, 2026-10-23, 8582168, 8582093, 710721, 710714], [2, HTTP, 2026-10-23, 5266715, 5266686, 426254, 426248], [3, HTTP, 2026-10-23, 3709292, 3709248, 301667, 301662]]
+- Q13/rollups_14d mismatching rows: 0 []
+- Q13/nightly mismatching rows: 1 [[40456891, 40457601]]
+- Q15: {increase=0.0, broken_view_filled=1.0, window_mismatches=0.0, failed_insert_error=1.0, reinsert_round_trip_ms=37.7350614} [blocks: 5 raw tables x 2000 transactions; failed insert error VIOLATED_CONSTRAINT; mean duplicate insert round trip 37.7 ms]
+- Q16: {rows=0.0, delta_mismatches=0.0, late_rows=2000.0} [2000 rows with ts in 2026-10-24 02:36:00 .. 2026-10-24 02:46:00 inserted in 2 block(s) after the end of the data; Q12 window rows 0, Q12 minute_30d rows 0 (PASS)]
+- negative control Q12 / Q13 rows: 1.0 / 1.0
+- xlog rows loaded / ground truth: 12963791 / 12961791
+- Q12/minute_30d mismatching rows: 0
+- Q12/hourly_30d mismatching rows: 0
+- Q12/errors_30d mismatching rows: 0
+- Q12/nightly mismatching rows: 0
+- Q13/total_30d mismatching rows: 0 []
+- Q13/daily_30d mismatching rows: 20 [[1, HTTP, 2026-10-23, 8582168, 8582093, 710721, 710714], [2, HTTP, 2026-10-23, 5266715, 5266686, 426254, 426248], [3, HTTP, 2026-10-23, 3709292, 3709248, 301667, 301662]]
+- Q13/rollups_14d mismatching rows: 0 []
+- Q13/nightly mismatching rows: 1 [[40457254, 40457964]]
+- Q15: {increase=0.0, broken_view_filled=1.0, window_mismatches=0.0, failed_insert_error=1.0, reinsert_round_trip_ms=41.335260000000005} [blocks: 5 raw tables x 2000 transactions; failed insert error VIOLATED_CONSTRAINT; mean duplicate insert round trip 41.3 ms]
+- Q16: {rows=0.0, delta_mismatches=0.0, late_rows=2000.0} [2000 rows with ts in 2026-10-24 02:36:00 .. 2026-10-24 02:46:00 inserted in 2 block(s) after the end of the data; Q12 window rows 0, Q12 minute_30d rows 0 (PASS)]
+- negative control Q12 / Q13 rows: 1.0 / 1.0
+- xlog rows loaded / ground truth: 12963791 / 12961791
+- Q12/minute_30d mismatching rows: 0
+- Q12/hourly_30d mismatching rows: 0
+- Q12/errors_30d mismatching rows: 0
+- Q12/nightly mismatching rows: 0
+- Q13/total_30d mismatching rows: 0 []
+- Q13/daily_30d mismatching rows: 20 [[1, HTTP, 2026-10-23, 8582168, 8582093, 710721, 710714], [2, HTTP, 2026-10-23, 5266715, 5266686, 426254, 426248], [3, HTTP, 2026-10-23, 3709292, 3709248, 301667, 301662]]
+- Q13/rollups_14d mismatching rows: 0 []
+- Q13/nightly mismatching rows: 1 [[40457384, 40458094]]
+- Q15: {increase=0.0, broken_view_filled=1.0, window_mismatches=0.0, failed_insert_error=1.0, reinsert_round_trip_ms=42.7285404} [blocks: 5 raw tables x 2000 transactions; failed insert error VIOLATED_CONSTRAINT; mean duplicate insert round trip 42.7 ms]
+- Q16: {rows=0.0, delta_mismatches=0.0, late_rows=2000.0} [2000 rows with ts in 2026-10-24 02:36:00 .. 2026-10-24 02:46:00 inserted in 2 block(s) after the end of the data; Q12 window rows 0, Q12 minute_30d rows 0 (PASS)]
+- negative control Q12 / Q13 total / Q13 minute_raw_1m rows; third-source-only key: 1.0 / 1.0 / 1.0; [999, BATCH, 2026-10-24 13:00:00, 0, 0, 1, 0]
+- xlog rows loaded / ground truth: 173776 / 173776
+- profile_step rows loaded / ground truth: 147365 / 147365
+- metric rows loaded / ground truth: 864000 / 864000
+- sql_stat_raw rows loaded / ground truth: 502136 / 502136
+- ext_stat_raw rows loaded / ground truth: 59418 / 59418
+- xlog late rows / app_stat_1m sum / re-sent blocks: 904 / 173776 / 5
+- xlog rows now (>= snapshot, information): 175776
+- Q12/minute_30d mismatching rows: 0
+- Q12/hourly_30d mismatching rows: 0
+- Q12/errors_30d mismatching rows: 0
+- Q12/nightly mismatching rows: 0
+- Q13/total_30d mismatching rows: 0 []
+- Q13/daily_30d mismatching rows: 0 []
+- Q13/rollups_14d mismatching rows: 0 []
+- Q13/minute_raw_1m mismatching rows: 0 []
+- Q13/nightly mismatching rows: 0 []
+- Q13 per-day (D-12, PM decision pending): days with a manifest difference / reported by daily_30d / nightly rows: [] / [] / 0
+- Q15: {increase=0.0, broken_view_filled=1.0, window_mismatches=0.0, failed_insert_error=1.0, reinsert_round_trip_ms=39.4642044} [blocks: 5 raw tables x 2000 transactions; failed insert error VIOLATED_CONSTRAINT; mean duplicate insert round trip 39.5 ms]
+- Q16: {rows=0.0, delta_mismatches=0.0, late_rows=20000.0} [20000 rows with ts in 2026-10-24 15:00:00 .. 2026-10-24 15:10:00 inserted in 4 block(s) after the end of the data; Q12 window rows 0, Q12 minute_30d rows 0 (PASS)]
+- negative control Q12 / Q13 total / Q13 minute_raw_1m rows; third-source-only key: 1.0 / 1.0 / 1.0; [999, BATCH, 2026-10-24 14:00:00, 0, 0, 1, 0]
+- xlog rows loaded / ground truth: 12961791 / 12961791
+- profile_step rows loaded / ground truth: 5148066 / 5148066
+- metric rows loaded / ground truth: 12096300 / 12096300
+- sql_stat_raw rows loaded / ground truth: 3172102 / 3172102
+- ext_stat_raw rows loaded / ground truth: 542241 / 542241
+- xlog late rows / app_stat_1m sum / re-sent blocks: 63080 / 12961791 / 5
+- xlog rows now (>= snapshot, information): 12963791
+- Q12/minute_30d mismatching rows: 0
+- Q12/hourly_30d mismatching rows: 0
+- Q12/errors_30d mismatching rows: 0
+- Q12/nightly mismatching rows: 0
+- Q13/total_30d mismatching rows: 0 []
+- Q13/daily_30d mismatching rows: 20 [[1, HTTP, 2026-10-23, 8582168, 8582093, 710721, 710714], [2, HTTP, 2026-10-23, 5266715, 5266686, 426254, 426248], [3, HTTP, 2026-10-23, 3709292, 3709248, 301667, 301662]]
+- Q13/rollups_14d mismatching rows: 0 []
+- Q13/minute_raw_1m mismatching rows: 0 []
+- Q13/nightly mismatching rows: 1 [[40457102, 40457812]]
+- Q13 per-day (D-12, PM decision pending): days with a manifest difference / reported by daily_30d / nightly rows: [2026-10-23, 2026-10-24] / [2026-10-23, 2026-10-24] / 1
+- Q15: {increase=0.0, broken_view_filled=1.0, window_mismatches=0.0, failed_insert_error=1.0, reinsert_round_trip_ms=34.7756178} [blocks: 5 raw tables x 2000 transactions; failed insert error VIOLATED_CONSTRAINT; mean duplicate insert round trip 34.8 ms]
+- Q16: {rows=0.0, delta_mismatches=0.0, late_rows=20000.0} [20000 rows with ts in 2026-10-24 02:36:00 .. 2026-10-24 02:46:00 inserted in 4 block(s) after the end of the data; Q12 window rows 0, Q12 minute_30d rows 0 (PASS)]

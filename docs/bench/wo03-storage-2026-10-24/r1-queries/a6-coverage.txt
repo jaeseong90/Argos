@@ -1,0 +1,17 @@
+# A-6 coverage (WO-03 r1, qfix bench server, 2026-10-24 UTC, argos_migrator)
+# SQL ({p} = table prefix):
+# WITH toDateTime64((bitShiftRight(tx_id, 23) + 1767225600000) / 1000, 3, 'UTC') AS t0 SELECT count() AS transactions, countIf(abs(dateDiff('millisecond', ts, t0)) > 2000) AS restore_misses, countIf(toDate(ts) < toDate(t0) - 1) AS fallback_misses, countIf(toDate(ts) = toDate(t0) - 1) AS one_day_back, max(dateDiff('second', ts, t0)) AS max_ahead_s FROM argos.{p}xlog WHERE ts >= (SELECT max(minute) + 60 FROM argos.{p}app_stat_1m) - INTERVAL 1 DAY
+
+## prefix '' (1/100 profile ci, generator default skew: 2 instances +60 s)
+transactions	restore_misses	fallback_misses	one_day_back	max_ahead_s
+13533789	383617	0	816	62
+
+## prefix 'sk_' (2 days at 1 TPS, --skewed-offset-ms=90000000: 2 instances +25 h)
+transactions	restore_misses	fallback_misses	one_day_back	max_ahead_s
+86565	2463	94	2369	90002
+
+# Note: the prefix '' row above was taken at 16:46 UTC during the replay (2,000 TPS step running, ts near now,
+# so the one-day window now covers bulk + replay rows). The same query before the replay (16:40:52 UTC, bulk
+# data only, cited in the PoC document 12.1):
+transactions	restore_misses	fallback_misses	one_day_back	max_ahead_s
+12961791	370227	0	816	62

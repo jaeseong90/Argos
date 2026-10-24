@@ -1,0 +1,42 @@
+    ┌─column───────────┬─type──────────────────────────────────────────┬───bpr─┬──ratio─┬──pct─┐
+ 1. │ trace_id         │ FixedString(16)                               │    16 │      1 │ 19.3 │
+ 2. │ request_id       │ String                                        │ 10.21 │   2.49 │ 12.4 │
+ 3. │ sql_ids          │ Array(UInt64)                                 │  10.1 │   3.22 │ 12.2 │
+ 4. │ parent_span_id   │ UInt64                                        │     8 │      1 │  9.7 │
+ 5. │ span_id          │ UInt64                                        │     8 │      1 │  9.7 │
+ 6. │ tx_id            │ UInt64                                        │  6.97 │   1.15 │  8.4 │
+ 7. │ remote_ip        │ IPv6                                          │  3.77 │   4.25 │  4.6 │
+ 8. │ alloc_bytes      │ Int64                                         │  2.69 │   2.97 │  3.3 │
+ 9. │ instance_id      │ UInt32                                        │  2.34 │   1.71 │  2.8 │
+10. │ user_id          │ String                                        │  1.79 │   6.88 │  2.2 │
+11. │ service_id       │ UInt64                                        │  1.79 │   4.47 │  2.2 │
+12. │ sql_count        │ UInt16                                        │   1.4 │   1.43 │  1.7 │
+13. │ elapsed_ms       │ UInt32                                        │  1.34 │   2.98 │  1.6 │
+14. │ sql_time_ms      │ UInt32                                        │  1.22 │   3.29 │  1.5 │
+15. │ ts               │ DateTime64(3, 'UTC')                          │  1.13 │   7.09 │  1.4 │
+16. │ cpu_time_ms      │ Int32                                         │  1.08 │   3.69 │  1.3 │
+17. │ ext_count        │ UInt16                                        │   0.8 │   2.49 │    1 │
+18. │ ext_time_ms      │ UInt32                                        │  0.73 │   5.51 │  0.9 │
+19. │ version_id       │ UInt64                                        │  0.57 │  13.95 │  0.7 │
+20. │ http_status      │ UInt16                                        │  0.47 │   4.22 │  0.6 │
+21. │ caller_app_id    │ UInt32                                        │  0.37 │  10.83 │  0.4 │
+22. │ profile_captured │ UInt8                                         │  0.36 │   2.78 │  0.4 │
+23. │ http_method      │ LowCardinality(String)                        │  0.35 │   2.88 │  0.4 │
+24. │ incoming_trace   │ UInt8                                         │  0.31 │   3.25 │  0.4 │
+25. │ apdex_t_ms       │ UInt16                                        │  0.27 │    7.5 │  0.3 │
+26. │ thread_name_id   │ UInt64                                        │  0.22 │  36.24 │  0.3 │
+27. │ kind             │ Enum8('HTTP' = 1, 'BATCH' = 2, 'MESSAGE' = 3) │  0.13 │   7.55 │  0.2 │
+28. │ dbc_time_ms      │ UInt32                                        │  0.08 │   2.84 │  0.1 │
+29. │ error_group_id   │ UInt64                                        │  0.04 │   2.71 │    0 │
+30. │ flags            │ UInt16                                        │  0.04 │     55 │    0 │
+31. │ dispatch_count   │ UInt16                                        │  0.03 │   2.08 │    0 │
+32. │ error_class_id   │ UInt64                                        │  0.03 │   2.84 │    0 │
+33. │ app_id           │ UInt32                                        │  0.02 │ 222.37 │    0 │
+34. │ streaming        │ UInt8                                         │  0.01 │   1.68 │    0 │
+35. │ env              │ LowCardinality(String)                        │  0.01 │ 168.87 │    0 │
+36. │ error            │ UInt8                                         │  0.01 │   1.77 │    0 │
+37. │ late             │ UInt8                                         │  0.01 │   2.12 │    0 │
+38. │ ip_mode          │ Enum8('off' = 0, 'masked' = 1, 'full' = 2)    │     0 │ 224.36 │    0 │
+39. │ timeout_flag     │ UInt8                                         │     0 │   2.11 │    0 │
+40. │ user_id_mode     │ Enum8('off' = 0, 'plain' = 1, 'hashed' = 2)   │     0 │ 224.36 │    0 │
+    └──────────────────┴───────────────────────────────────────────────┴───────┴────────┴──────┘

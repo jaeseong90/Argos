@@ -1,0 +1,318 @@
+# reader-limits (2026-10-24T08:12:41.543522700Z)
+
+- Q01/1h: PASS warm 12.6 ms, server 10 ms, rows 324 (CI dataset, reference only)
+- Q01/6h: RECORDED warm 13.1 ms, server 10 ms, rows 359 (CI dataset, reference only)
+- Q02/7d_1m: PASS warm 22.9 ms, server 20 ms, rows 192 (CI dataset, reference only)
+- Q02/90d_1h: PASS warm 14.5 ms, server 12 ms, rows 9 (CI dataset, reference only)
+- Q03/10m: PASS warm 17.8 ms, server 15 ms, rows 128 (CI dataset, reference only)
+- Q03/100k: PASS warm 51.3 ms, server 34 ms, rows 22877 (CI dataset, reference only)
+- Q04/range: PASS warm 13.4 ms, server 11 ms, rows 40 (CI dataset, reference only)
+- Q04/range_services: PASS warm 14.7 ms, server 12 ms, rows 352 (CI dataset, reference only)
+- Q04/range_errors: PASS warm 12.3 ms, server 10 ms, rows 6 (CI dataset, reference only)
+- Q04/user_1h: PASS warm 10.9 ms, server 8 ms, rows 1 (CI dataset, reference only)
+- Q04/user_24h: RECORDED warm 12.5 ms, server 10 ms, rows 2 (CI dataset, reference only)
+- Q04/request_1h: PASS warm 10.9 ms, server 8 ms, rows 1 (CI dataset, reference only)
+- Q05/restored: PASS warm 28.7 ms, server 26 ms, rows 1 (CI dataset, reference only)
+- Q05/restored_no_app: PASS warm 27.2 ms, server 24 ms, rows 1 (CI dataset, reference only)
+- Q05/url_ts: PASS warm 28.3 ms, server 25 ms, rows 1 (CI dataset, reference only)
+- Q05/profile: PASS warm 15.5 ms, server 12 ms, rows 11 (CI dataset, reference only)
+- Q05/bloom_only: RECORDED warm 12.0 ms, server 9 ms, rows 1 (CI dataset, reference only)
+- Q06/hint_1h: PASS warm 13.7 ms, server 11 ms, rows 2 (CI dataset, reference only)
+- Q06/24h: PASS warm 13.8 ms, server 11 ms, rows 2 (CI dataset, reference only)
+- Q06/30d: RECORDED warm 13.7 ms, server 11 ms, rows 2 (CI dataset, reference only)
+- Q07/1d: PASS warm 17.6 ms, server 15 ms, rows 20 (CI dataset, reference only)
+- Q07/7d: PASS warm 24.6 ms, server 22 ms, rows 20 (CI dataset, reference only)
+- Q07/1d_version: PASS warm 18.0 ms, server 15 ms, rows 40 (CI dataset, reference only)
+- Q07/7d_version: PASS warm 25.6 ms, server 23 ms, rows 40 (CI dataset, reference only)
+- Q08/1d: PASS warm 32.2 ms, server 30 ms, rows 500 (CI dataset, reference only)
+- Q08/7d: PASS warm 41.4 ms, server 39 ms, rows 500 (CI dataset, reference only)
+- Q08/detail_1d: PASS warm 22.7 ms, server 20 ms, rows 288 (CI dataset, reference only)
+- Q08/detail_7d: PASS warm 31.7 ms, server 29 ms, rows 192 (CI dataset, reference only)
+- Q09/groups_1d: PASS warm 11.8 ms, server 9 ms, rows 14 (CI dataset, reference only)
+- Q09/related_30d: PASS warm 13.7 ms, server 11 ms, rows 10 (CI dataset, reference only)
+- Q10/instance_7d: PASS warm 14.9 ms, server 12 ms, rows 720 (CI dataset, reference only)
+- Q10/app_total_90d: PASS warm 9.5 ms, server 6 ms, rows 13 (CI dataset, reference only)
+- Q11/has_1d: PASS warm 18.8 ms, server 16 ms, rows 124 (CI dataset, reference only)
+- Q11/has_30d: RECORDED warm 22.4 ms, server 20 ms, rows 268 (CI dataset, reference only)
+- DROP TABLE IF EXISTS <missing table> as argos_reader: succeeds (no-op, nothing to drop)
+- DDL and write statements refused as argos_reader: 35
+- refused T-ST-053/rows: ExceptionWhileProcessing code 158
+- refused T-ST-053/memory: ExceptionWhileProcessing code 241
+- refused T-ST-053/time: ExceptionWhileProcessing code 159
+- refused T-ST-053/raise-time-sql: ExceptionBeforeStart code 452
+- refused T-ST-053/other-setting-sql: ExceptionBeforeStart code 164
+- refused T-ST-053/raise-time-url: SETTING_CONSTRAINT_VIOLATION, no system.query_log record
+- refused T-ST-053/other-setting-url: READONLY, no system.query_log record
+- refused T-ST-053/raise-threads-url: SETTING_CONSTRAINT_VIOLATION, no system.query_log record
+- Q01/1h: PASS warm 12.7 ms, server 10 ms, rows 324 (CI dataset, reference only)
+- Q01/6h: RECORDED warm 12.3 ms, server 10 ms, rows 359 (CI dataset, reference only)
+- Q02/7d_1m: PASS warm 21.7 ms, server 19 ms, rows 192 (CI dataset, reference only)
+- Q02/90d_1h: PASS warm 13.7 ms, server 11 ms, rows 9 (CI dataset, reference only)
+- Q03/10m: PASS warm 17.2 ms, server 14 ms, rows 128 (CI dataset, reference only)
+- Q03/100k: PASS warm 42.8 ms, server 32 ms, rows 22851 (CI dataset, reference only)
+- Q04/range: PASS warm 13.2 ms, server 11 ms, rows 40 (CI dataset, reference only)
+- Q04/range_services: PASS warm 13.6 ms, server 11 ms, rows 344 (CI dataset, reference only)
+- Q04/range_errors: PASS warm 12.5 ms, server 10 ms, rows 5 (CI dataset, reference only)
+- Q04/user_1h: PASS warm 10.2 ms, server 7 ms, rows 1 (CI dataset, reference only)
+- Q04/user_24h: RECORDED warm 12.2 ms, server 9 ms, rows 2 (CI dataset, reference only)
+- Q04/request_1h: PASS warm 11.0 ms, server 8 ms, rows 1 (CI dataset, reference only)
+- Q05/restored: PASS warm 27.8 ms, server 25 ms, rows 1 (CI dataset, reference only)
+- Q05/restored_no_app: PASS warm 28.1 ms, server 25 ms, rows 1 (CI dataset, reference only)
+- Q05/url_ts: PASS warm 27.5 ms, server 25 ms, rows 1 (CI dataset, reference only)
+- Q05/profile: PASS warm 14.8 ms, server 11 ms, rows 2 (CI dataset, reference only)
+- Q05/bloom_only: RECORDED warm 12.3 ms, server 9 ms, rows 1 (CI dataset, reference only)
+- Q06/hint_1h: PASS warm 12.8 ms, server 10 ms, rows 2 (CI dataset, reference only)
+- Q06/24h: PASS warm 13.1 ms, server 10 ms, rows 2 (CI dataset, reference only)
+- Q06/30d: RECORDED warm 13.9 ms, server 10 ms, rows 2 (CI dataset, reference only)
+- Q07/1d: PASS warm 18.0 ms, server 15 ms, rows 20 (CI dataset, reference only)
+- Q07/7d: PASS warm 23.5 ms, server 21 ms, rows 20 (CI dataset, reference only)
+- Q07/1d_version: PASS warm 17.7 ms, server 15 ms, rows 40 (CI dataset, reference only)
+- Q07/7d_version: PASS warm 24.3 ms, server 22 ms, rows 40 (CI dataset, reference only)
+- Q08/1d: PASS warm 31.0 ms, server 29 ms, rows 500 (CI dataset, reference only)
+- Q08/7d: PASS warm 41.3 ms, server 39 ms, rows 500 (CI dataset, reference only)
+- Q08/detail_1d: PASS warm 20.9 ms, server 19 ms, rows 288 (CI dataset, reference only)
+- Q08/detail_7d: PASS warm 30.7 ms, server 28 ms, rows 192 (CI dataset, reference only)
+- Q09/groups_1d: PASS warm 11.4 ms, server 8 ms, rows 10 (CI dataset, reference only)
+- Q09/related_30d: PASS warm 14.6 ms, server 13 ms, rows 10 (CI dataset, reference only)
+- Q10/instance_7d: PASS warm 14.9 ms, server 12 ms, rows 720 (CI dataset, reference only)
+- Q10/app_total_90d: PASS warm 9.8 ms, server 7 ms, rows 13 (CI dataset, reference only)
+- Q11/has_1d: PASS warm 19.1 ms, server 16 ms, rows 54 (CI dataset, reference only)
+- Q11/has_30d: RECORDED warm 22.8 ms, server 20 ms, rows 117 (CI dataset, reference only)
+- DROP TABLE IF EXISTS <missing table> as argos_reader: succeeds (no-op, nothing to drop)
+- DDL and write statements refused as argos_reader: 35
+- refused T-ST-053/rows: ExceptionWhileProcessing code 158
+- refused T-ST-053/memory: ExceptionWhileProcessing code 241
+- refused T-ST-053/time: ExceptionWhileProcessing code 159
+- refused T-ST-053/raise-time-sql: ExceptionBeforeStart code 452
+- refused T-ST-053/other-setting-sql: ExceptionBeforeStart code 164
+- refused T-ST-053/raise-time-url: SETTING_CONSTRAINT_VIOLATION, no system.query_log record
+- refused T-ST-053/other-setting-url: READONLY, no system.query_log record
+- refused T-ST-053/raise-threads-url: SETTING_CONSTRAINT_VIOLATION, no system.query_log record
+- Q01/1h: PASS warm 48.9 ms, server 46 ms, rows 355 (CI dataset, reference only)
+- Q01/6h: RECORDED warm 194.6 ms, server 191 ms, rows 360 (CI dataset, reference only)
+- Q02/7d_1m: PASS warm 59.2 ms, server 57 ms, rows 30 (CI dataset, reference only)
+- Q02/90d_1h: PASS warm 14.0 ms, server 11 ms, rows 2 (CI dataset, reference only)
+- Q03/10m: PASS warm 69.3 ms, server 41 ms, rows 69235 (CI dataset, reference only)
+- Q03/100k: PASS warm 134.9 ms, server 103 ms, rows 86999 (CI dataset, reference only)
+- Q04/range: PASS warm 93.4 ms, server 91 ms, rows 1000 (CI dataset, reference only)
+- Q04/range_services: PASS warm 96.1 ms, server 94 ms, rows 1000 (CI dataset, reference only)
+- Q04/range_errors: PASS warm 100.8 ms, server 98 ms, rows 1000 (CI dataset, reference only)
+- Q04/user_1h: PASS warm 60.4 ms, server 57 ms, rows 36 (CI dataset, reference only)
+- Q04/user_24h: RECORDED warm 284.5 ms, server 282 ms, rows 178 (CI dataset, reference only)
+- Q04/request_1h: PASS warm 12.6 ms, server 9 ms, rows 1 (CI dataset, reference only)
+- Q05/restored: PASS warm 35.0 ms, server 32 ms, rows 1 (CI dataset, reference only)
+- Q05/restored_no_app: PASS warm 32.4 ms, server 29 ms, rows 1 (CI dataset, reference only)
+- Q05/url_ts: PASS warm 35.1 ms, server 32 ms, rows 1 (CI dataset, reference only)
+- Q05/profile: PASS warm 16.4 ms, server 13 ms, rows 12 (CI dataset, reference only)
+- Q05/bloom_only: RECORDED warm 22.4 ms, server 19 ms, rows 1 (CI dataset, reference only)
+- Q06/hint_1h: PASS warm 17.0 ms, server 14 ms, rows 2 (CI dataset, reference only)
+- Q06/24h: PASS warm 16.2 ms, server 13 ms, rows 2 (CI dataset, reference only)
+- Q06/30d: RECORDED warm 17.5 ms, server 14 ms, rows 2 (CI dataset, reference only)
+- Q07/1d: PASS warm 67.7 ms, server 64 ms, rows 20 (CI dataset, reference only)
+- Q07/7d: PASS warm 75.3 ms, server 72 ms, rows 20 (CI dataset, reference only)
+- Q07/1d_version: PASS warm 64.7 ms, server 62 ms, rows 60 (CI dataset, reference only)
+- Q07/7d_version: PASS warm 67.4 ms, server 64 ms, rows 60 (CI dataset, reference only)
+- Q08/1d: PASS warm 40.2 ms, server 37 ms, rows 500 (CI dataset, reference only)
+- Q08/7d: PASS warm 38.9 ms, server 36 ms, rows 500 (CI dataset, reference only)
+- Q08/detail_1d: PASS warm 26.6 ms, server 24 ms, rows 88 (CI dataset, reference only)
+- Q08/detail_7d: PASS warm 26.1 ms, server 23 ms, rows 30 (CI dataset, reference only)
+- Q09/groups_1d: PASS warm 13.4 ms, server 10 ms, rows 11 (CI dataset, reference only)
+- Q09/related_30d: PASS warm 18.6 ms, server 17 ms, rows 10 (CI dataset, reference only)
+- Q10/instance_7d: PASS warm 17.6 ms, server 14 ms, rows 203 (CI dataset, reference only)
+- Q10/app_total_90d: PASS warm 10.4 ms, server 7 ms, rows 4 (CI dataset, reference only)
+- Q11/has_1d: PASS warm 138.5 ms, server 137 ms, rows 1000 (CI dataset, reference only)
+- Q11/has_30d: RECORDED warm 135.6 ms, server 134 ms, rows 1000 (CI dataset, reference only)
+- DROP TABLE IF EXISTS <missing table> as argos_reader: succeeds (no-op, nothing to drop)
+- DDL and write statements refused as argos_reader: 35
+- refused T-ST-053/rows: ExceptionWhileProcessing code 158
+- refused T-ST-053/memory: ExceptionWhileProcessing code 241
+- refused T-ST-053/time: ExceptionWhileProcessing code 159
+- refused T-ST-053/raise-time-sql: ExceptionBeforeStart code 452
+- refused T-ST-053/other-setting-sql: ExceptionBeforeStart code 164
+- refused T-ST-053/raise-time-url: SETTING_CONSTRAINT_VIOLATION, no system.query_log record
+- refused T-ST-053/other-setting-url: READONLY, no system.query_log record
+- refused T-ST-053/raise-threads-url: SETTING_CONSTRAINT_VIOLATION, no system.query_log record
+- Q01/1h: PASS warm 51.5 ms, server 49 ms, rows 355 (CI dataset, reference only)
+- Q01/6h: RECORDED warm 221.8 ms, server 219 ms, rows 360 (CI dataset, reference only)
+- Q02/7d_1m: PASS warm 120.7 ms, server 115 ms, rows 30 (CI dataset, reference only)
+- Q02/90d_1h: PASS warm 16.1 ms, server 12 ms, rows 2 (CI dataset, reference only)
+- Q03/10m: PASS warm 112.1 ms, server 65 ms, rows 69235 (CI dataset, reference only)
+- Q03/100k: PASS warm 165.6 ms, server 118 ms, rows 86999 (CI dataset, reference only)
+- Q04/range: PASS warm 107.5 ms, server 103 ms, rows 1000 (CI dataset, reference only)
+- Q04/range_services: PASS warm 105.0 ms, server 102 ms, rows 1000 (CI dataset, reference only)
+- Q04/range_errors: PASS warm 116.2 ms, server 109 ms, rows 1000 (CI dataset, reference only)
+- Q04/user_1h: PASS warm 62.7 ms, server 59 ms, rows 36 (CI dataset, reference only)
+- Q04/user_24h: RECORDED warm 298.7 ms, server 297 ms, rows 178 (CI dataset, reference only)
+- Q04/request_1h: PASS warm 13.4 ms, server 10 ms, rows 1 (CI dataset, reference only)
+- Q05/restored: PASS warm 37.3 ms, server 34 ms, rows 1 (CI dataset, reference only)
+- Q05/restored_no_app: PASS warm 32.9 ms, server 30 ms, rows 1 (CI dataset, reference only)
+- Q05/url_ts: PASS warm 35.2 ms, server 31 ms, rows 1 (CI dataset, reference only)
+- Q05/profile: PASS warm 17.3 ms, server 14 ms, rows 12 (CI dataset, reference only)
+- Q05/bloom_only: RECORDED warm 25.6 ms, server 22 ms, rows 1 (CI dataset, reference only)
+- Q06/hint_1h: PASS warm 21.3 ms, server 17 ms, rows 2 (CI dataset, reference only)
+- Q06/24h: PASS warm 18.8 ms, server 15 ms, rows 2 (CI dataset, reference only)
+- Q06/30d: RECORDED warm 18.4 ms, server 14 ms, rows 2 (CI dataset, reference only)
+- Q07/1d: PASS warm 77.4 ms, server 74 ms, rows 20 (CI dataset, reference only)
+- Q07/7d: PASS warm 88.9 ms, server 84 ms, rows 20 (CI dataset, reference only)
+- Q07/1d_version: PASS warm 74.0 ms, server 71 ms, rows 60 (CI dataset, reference only)
+- Q07/7d_version: PASS warm 73.9 ms, server 70 ms, rows 60 (CI dataset, reference only)
+- Q08/1d: PASS warm 48.1 ms, server 45 ms, rows 500 (CI dataset, reference only)
+- Q08/7d: PASS warm 46.4 ms, server 43 ms, rows 500 (CI dataset, reference only)
+- Q08/detail_1d: PASS warm 30.8 ms, server 27 ms, rows 88 (CI dataset, reference only)
+- Q08/detail_7d: PASS warm 33.3 ms, server 30 ms, rows 30 (CI dataset, reference only)
+- Q09/groups_1d: PASS warm 16.8 ms, server 13 ms, rows 12 (CI dataset, reference only)
+- Q09/related_30d: PASS warm 26.2 ms, server 24 ms, rows 10 (CI dataset, reference only)
+- Q10/instance_7d: PASS warm 21.8 ms, server 18 ms, rows 203 (CI dataset, reference only)
+- Q10/app_total_90d: PASS warm 11.9 ms, server 8 ms, rows 4 (CI dataset, reference only)
+- Q11/has_1d: PASS warm 160.4 ms, server 159 ms, rows 1000 (CI dataset, reference only)
+- Q11/has_30d: RECORDED warm 174.2 ms, server 174 ms, rows 1000 (CI dataset, reference only)
+- DROP TABLE IF EXISTS <missing table> as argos_reader: succeeds (no-op, nothing to drop)
+- DDL and write statements refused as argos_reader: 35
+- refused T-ST-053/rows: ExceptionWhileProcessing code 158
+- refused T-ST-053/memory: ExceptionWhileProcessing code 241
+- refused T-ST-053/time: ExceptionWhileProcessing code 159
+- refused T-ST-053/raise-time-sql: ExceptionBeforeStart code 452
+- refused T-ST-053/other-setting-sql: ExceptionBeforeStart code 164
+- refused T-ST-053/raise-time-url: SETTING_CONSTRAINT_VIOLATION, no system.query_log record
+- refused T-ST-053/other-setting-url: READONLY, no system.query_log record
+- refused T-ST-053/raise-threads-url: SETTING_CONSTRAINT_VIOLATION, no system.query_log record
+- Q01/1h: PASS warm 52.4 ms, server 49 ms, rows 355 (CI dataset, reference only)
+- Q01/6h: RECORDED warm 213.4 ms, server 211 ms, rows 360 (CI dataset, reference only)
+- Q02/7d_1m: PASS warm 61.5 ms, server 58 ms, rows 30 (CI dataset, reference only)
+- Q02/90d_1h: PASS warm 17.0 ms, server 13 ms, rows 2 (CI dataset, reference only)
+- Q03/10m: PASS warm 96.7 ms, server 53 ms, rows 69235 (CI dataset, reference only)
+- Q03/100k: PASS warm 167.5 ms, server 124 ms, rows 86999 (CI dataset, reference only)
+- Q04/range: PASS warm 93.6 ms, server 90 ms, rows 1000 (CI dataset, reference only)
+- Q04/range_services: PASS warm 105.2 ms, server 101 ms, rows 1000 (CI dataset, reference only)
+- Q04/range_errors: PASS warm 104.7 ms, server 101 ms, rows 1000 (CI dataset, reference only)
+- Q04/user_1h: PASS warm 57.4 ms, server 54 ms, rows 36 (CI dataset, reference only)
+- Q04/user_24h: RECORDED warm 310.0 ms, server 307 ms, rows 178 (CI dataset, reference only)
+- Q04/request_1h: PASS warm 13.0 ms, server 9 ms, rows 1 (CI dataset, reference only)
+- Q05/restored: PASS warm 37.1 ms, server 33 ms, rows 1 (CI dataset, reference only)
+- Q05/restored_no_app: PASS warm 32.3 ms, server 29 ms, rows 1 (CI dataset, reference only)
+- Q05/url_ts: PASS warm 40.2 ms, server 37 ms, rows 1 (CI dataset, reference only)
+- Q05/profile: PASS warm 16.7 ms, server 13 ms, rows 12 (CI dataset, reference only)
+- Q05/bloom_only: RECORDED warm 23.1 ms, server 19 ms, rows 1 (CI dataset, reference only)
+- Q06/hint_1h: PASS warm 17.7 ms, server 14 ms, rows 2 (CI dataset, reference only)
+- Q06/24h: PASS warm 17.7 ms, server 14 ms, rows 2 (CI dataset, reference only)
+- Q06/30d: RECORDED warm 17.6 ms, server 14 ms, rows 2 (CI dataset, reference only)
+- Q07/1d: PASS warm 75.1 ms, server 71 ms, rows 20 (CI dataset, reference only)
+- Q07/7d: PASS warm 73.7 ms, server 70 ms, rows 20 (CI dataset, reference only)
+- Q07/1d_version: PASS warm 70.2 ms, server 66 ms, rows 60 (CI dataset, reference only)
+- Q07/7d_version: PASS warm 72.8 ms, server 69 ms, rows 60 (CI dataset, reference only)
+- Q08/1d: PASS warm 49.7 ms, server 46 ms, rows 500 (CI dataset, reference only)
+- Q08/7d: PASS warm 45.8 ms, server 41 ms, rows 500 (CI dataset, reference only)
+- Q08/detail_1d: PASS warm 28.0 ms, server 25 ms, rows 88 (CI dataset, reference only)
+- Q08/detail_7d: PASS warm 28.0 ms, server 25 ms, rows 30 (CI dataset, reference only)
+- Q09/groups_1d: PASS warm 14.3 ms, server 11 ms, rows 12 (CI dataset, reference only)
+- Q09/related_30d: PASS warm 21.8 ms, server 19 ms, rows 10 (CI dataset, reference only)
+- Q10/instance_7d: PASS warm 19.7 ms, server 16 ms, rows 203 (CI dataset, reference only)
+- Q10/app_total_90d: PASS warm 11.1 ms, server 8 ms, rows 4 (CI dataset, reference only)
+- Q11/has_1d: PASS warm 161.2 ms, server 161 ms, rows 1000 (CI dataset, reference only)
+- Q11/has_30d: RECORDED warm 163.0 ms, server 161 ms, rows 1000 (CI dataset, reference only)
+- DROP TABLE IF EXISTS <missing table> as argos_reader: succeeds (no-op, nothing to drop)
+- DDL and write statements refused as argos_reader: 35
+- refused T-ST-053/rows: ExceptionWhileProcessing code 158
+- refused T-ST-053/memory: ExceptionWhileProcessing code 241
+- refused T-ST-053/time: ExceptionWhileProcessing code 159
+- refused T-ST-053/raise-time-sql: ExceptionBeforeStart code 452
+- refused T-ST-053/other-setting-sql: ExceptionBeforeStart code 164
+- refused T-ST-053/raise-time-url: SETTING_CONSTRAINT_VIOLATION, no system.query_log record
+- refused T-ST-053/other-setting-url: READONLY, no system.query_log record
+- refused T-ST-053/raise-threads-url: SETTING_CONSTRAINT_VIOLATION, no system.query_log record
+- Q01/1h: PASS warm 18.4 ms, server 15 ms, rows 324 (CI dataset, reference only)
+- Q01/6h: RECORDED warm 15.3 ms, server 12 ms, rows 359 (CI dataset, reference only)
+- Q02/7d_1m: PASS warm 24.9 ms, server 22 ms, rows 192 (CI dataset, reference only)
+- Q02/90d_1h: PASS warm 19.4 ms, server 16 ms, rows 9 (CI dataset, reference only)
+- Q03/10m: PASS warm 21.5 ms, server 18 ms, rows 128 (CI dataset, reference only)
+- Q03/100k: PASS warm 58.3 ms, server 47 ms, rows 24561 (CI dataset, reference only)
+- Q04/range: PASS warm 17.9 ms, server 15 ms, rows 82 (CI dataset, reference only)
+- Q04/range_services: PASS warm 17.6 ms, server 15 ms, rows 645 (CI dataset, reference only)
+- Q04/range_errors: PASS warm 16.4 ms, server 14 ms, rows 16 (CI dataset, reference only)
+- Q04/user_1h: PASS warm 11.4 ms, server 8 ms, rows 1 (CI dataset, reference only)
+- Q04/user_24h: RECORDED warm 13.7 ms, server 10 ms, rows 2 (CI dataset, reference only)
+- Q04/request_1h: PASS warm 13.1 ms, server 10 ms, rows 1 (CI dataset, reference only)
+- Q05/restored: PASS warm 35.0 ms, server 32 ms, rows 1 (CI dataset, reference only)
+- Q05/restored_no_app: PASS warm 38.2 ms, server 35 ms, rows 1 (CI dataset, reference only)
+- Q05/url_ts: PASS warm 36.6 ms, server 33 ms, rows 1 (CI dataset, reference only)
+- Q05/profile: PASS warm 17.8 ms, server 15 ms, rows 6 (CI dataset, reference only)
+- Q05/bloom_only: RECORDED warm 12.3 ms, server 9 ms, rows 1 (CI dataset, reference only)
+- Q05/restored_skewed: RECORDED warm 24.9 ms, server 21 ms, rows 0 (CI dataset, reference only)
+- Q05/fallback_2d: PASS warm 28.1 ms, server 25 ms, rows 1 (CI dataset, reference only)
+- Q05/fallback_coverage: RECORDED warm 18.5 ms, server 15 ms, rows 1 (CI dataset, reference only)
+- Q06/hint_1h: PASS warm 17.9 ms, server 14 ms, rows 2 (CI dataset, reference only)
+- Q06/24h: PASS warm 17.1 ms, server 13 ms, rows 2 (CI dataset, reference only)
+- Q06/30d: RECORDED warm 18.2 ms, server 15 ms, rows 2 (CI dataset, reference only)
+- Q07/1d: PASS warm 19.3 ms, server 16 ms, rows 20 (CI dataset, reference only)
+- Q07/1d_live: PASS warm 25.2 ms, server 23 ms, rows 20 (CI dataset, reference only)
+- Q07/7d: PASS warm 24.9 ms, server 22 ms, rows 20 (CI dataset, reference only)
+- Q07/1d_version: PASS warm 21.6 ms, server 18 ms, rows 40 (CI dataset, reference only)
+- Q07/7d_version: PASS warm 26.8 ms, server 23 ms, rows 40 (CI dataset, reference only)
+- Q08/1d: PASS warm 53.8 ms, server 51 ms, rows 500 (CI dataset, reference only)
+- Q08/7d: PASS warm 56.8 ms, server 54 ms, rows 500 (CI dataset, reference only)
+- Q08/detail_1d: PASS warm 24.9 ms, server 21 ms, rows 288 (CI dataset, reference only)
+- Q08/detail_7d: PASS warm 38.5 ms, server 35 ms, rows 192 (CI dataset, reference only)
+- Q09/groups_1d: PASS warm 12.8 ms, server 9 ms, rows 19 (CI dataset, reference only)
+- Q09/related_30d: PASS warm 21.5 ms, server 19 ms, rows 10 (CI dataset, reference only)
+- Q10/instance_7d: PASS warm 16.1 ms, server 13 ms, rows 720 (CI dataset, reference only)
+- Q10/app_total_90d: PASS warm 9.7 ms, server 7 ms, rows 13 (CI dataset, reference only)
+- Q11/has_1d: PASS warm 18.5 ms, server 15 ms, rows 265 (CI dataset, reference only)
+- Q11/has_30d: RECORDED warm 35.2 ms, server 32 ms, rows 564 (CI dataset, reference only)
+- DROP TABLE IF EXISTS <missing table> as argos_reader: succeeds (no-op, nothing to drop)
+- DDL and write statements refused as argos_reader: 44
+- refused T-ST-053/rows: ExceptionWhileProcessing code 158
+- refused T-ST-053/memory: ExceptionWhileProcessing code 241
+- refused T-ST-053/time: ExceptionWhileProcessing code 159
+- refused T-ST-053/raise-time-sql: ExceptionBeforeStart code 452
+- refused T-ST-053/other-setting-sql: ExceptionBeforeStart code 164
+- refused T-ST-053/raise-time-url: SETTING_CONSTRAINT_VIOLATION, no system.query_log record
+- refused T-ST-053/other-setting-url: READONLY, no system.query_log record
+- refused T-ST-053/raise-threads-url: SETTING_CONSTRAINT_VIOLATION, no system.query_log record
+- Q01/1h: PASS warm 58.3 ms, server 55 ms, rows 355 (CI dataset, reference only)
+- Q01/6h: RECORDED warm 211.3 ms, server 208 ms, rows 360 (CI dataset, reference only)
+- Q02/7d_1m: PASS warm 65.4 ms, server 63 ms, rows 30 (CI dataset, reference only)
+- Q02/90d_1h: PASS warm 15.4 ms, server 12 ms, rows 2 (CI dataset, reference only)
+- Q03/10m: PASS warm 70.8 ms, server 42 ms, rows 69235 (CI dataset, reference only)
+- Q03/100k: PASS warm 141.7 ms, server 111 ms, rows 86999 (CI dataset, reference only)
+- Q04/range: PASS warm 90.1 ms, server 87 ms, rows 1000 (CI dataset, reference only)
+- Q04/range_services: PASS warm 99.8 ms, server 97 ms, rows 1000 (CI dataset, reference only)
+- Q04/range_errors: PASS warm 103.4 ms, server 101 ms, rows 1000 (CI dataset, reference only)
+- Q04/user_1h: PASS warm 51.6 ms, server 49 ms, rows 36 (CI dataset, reference only)
+- Q04/user_24h: RECORDED warm 234.7 ms, server 229 ms, rows 178 (CI dataset, reference only)
+- Q04/request_1h: PASS warm 11.5 ms, server 8 ms, rows 1 (CI dataset, reference only)
+- Q05/restored: PASS warm 34.5 ms, server 31 ms, rows 1 (CI dataset, reference only)
+- Q05/restored_no_app: PASS warm 31.6 ms, server 28 ms, rows 1 (CI dataset, reference only)
+- Q05/url_ts: PASS warm 32.9 ms, server 30 ms, rows 1 (CI dataset, reference only)
+- Q05/profile: PASS warm 15.9 ms, server 13 ms, rows 12 (CI dataset, reference only)
+- Q05/bloom_only: RECORDED warm 20.1 ms, server 17 ms, rows 1 (CI dataset, reference only)
+- Q05/restored_skewed: RECORDED warm 24.1 ms, server 20 ms, rows 0 (CI dataset, reference only)
+- Q05/fallback_2d: PASS warm 33.0 ms, server 30 ms, rows 1 (CI dataset, reference only)
+- Q05/fallback_coverage: RECORDED warm 708.1 ms, server 705 ms, rows 1 (CI dataset, reference only)
+- Q06/hint_1h: PASS warm 15.6 ms, server 12 ms, rows 2 (CI dataset, reference only)
+- Q06/24h: PASS warm 16.1 ms, server 13 ms, rows 2 (CI dataset, reference only)
+- Q06/30d: RECORDED warm 16.4 ms, server 13 ms, rows 2 (CI dataset, reference only)
+- Q07/1d: PASS warm 60.7 ms, server 58 ms, rows 20 (CI dataset, reference only)
+- Q07/1d_live: PASS warm 69.9 ms, server 67 ms, rows 20 (CI dataset, reference only)
+- Q07/7d: PASS warm 58.0 ms, server 55 ms, rows 20 (CI dataset, reference only)
+- Q07/1d_version: PASS warm 60.6 ms, server 57 ms, rows 60 (CI dataset, reference only)
+- Q07/7d_version: PASS warm 56.3 ms, server 53 ms, rows 60 (CI dataset, reference only)
+- Q08/1d: PASS warm 45.0 ms, server 42 ms, rows 500 (CI dataset, reference only)
+- Q08/7d: PASS warm 41.2 ms, server 39 ms, rows 500 (CI dataset, reference only)
+- Q08/detail_1d: PASS warm 28.7 ms, server 26 ms, rows 88 (CI dataset, reference only)
+- Q08/detail_7d: PASS warm 29.1 ms, server 25 ms, rows 30 (CI dataset, reference only)
+- Q09/groups_1d: PASS warm 13.0 ms, server 10 ms, rows 21 (CI dataset, reference only)
+- Q09/related_30d: PASS warm 20.9 ms, server 19 ms, rows 10 (CI dataset, reference only)
+- Q10/instance_7d: PASS warm 17.4 ms, server 14 ms, rows 203 (CI dataset, reference only)
+- Q10/app_total_90d: PASS warm 10.3 ms, server 7 ms, rows 4 (CI dataset, reference only)
+- Q11/has_1d: PASS warm 139.0 ms, server 139 ms, rows 1000 (CI dataset, reference only)
+- Q11/has_30d: RECORDED warm 146.5 ms, server 142 ms, rows 1000 (CI dataset, reference only)
+- DROP TABLE IF EXISTS <missing table> as argos_reader: succeeds (no-op, nothing to drop)
+- DDL and write statements refused as argos_reader: 44
+- refused T-ST-053/rows: ExceptionWhileProcessing code 158
+- refused T-ST-053/memory: ExceptionWhileProcessing code 241
+- refused T-ST-053/time: ExceptionWhileProcessing code 159
+- refused T-ST-053/raise-time-sql: ExceptionBeforeStart code 452
+- refused T-ST-053/other-setting-sql: ExceptionBeforeStart code 164
+- refused T-ST-053/raise-time-url: SETTING_CONSTRAINT_VIOLATION, no system.query_log record
+- refused T-ST-053/other-setting-url: READONLY, no system.query_log record
+- refused T-ST-053/raise-threads-url: SETTING_CONSTRAINT_VIOLATION, no system.query_log record
