@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Docker build context: only the packaged app and the staged Tomcat.
+**
+!build/sample-app/
+!build/tomcat/

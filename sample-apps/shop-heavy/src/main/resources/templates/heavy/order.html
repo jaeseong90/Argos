@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- shop-heavy order report (Thymeleaf): GET /heavy/orders/{id} and the report mail body. -->
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title th:text="'Order ' + ${order['id']}">Order</title>
+</head>
+<body>
+  <h1 th:text="'Order ' + ${order['id']}">Order</h1>
+  <table>
+    <tr th:each="entry : ${order}">
+      <th th:text="${entry.key}">key</th>
+      <td th:text="${entry.value}">value</td>
+    </tr>
+  </table>
+</body>
+</html>

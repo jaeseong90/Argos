@@ -161,6 +161,8 @@ object SpdxNames {
       "apache[- ]?(licen[cs]e[- ])?(v|version )?2(\\.0)?" to "Apache-2.0",
       "asl,? ?(v|version )?2(\\.0)?" to "Apache-2.0",
       "(the )?mit( licen[cs]e)?( \\(mit\\))?" to "MIT",
+      // MIT No Attribution (ADR-0004 C-42), e.g. org.reactivestreams:reactive-streams 1.0.4.
+      "(the )?(mit[- ]0|mit no attribution)( licen[cs]e)?( \\(mit-0\\))?" to "MIT-0",
       "(the )?(bsd[- ]2[- ]clause|2[- ]clause bsd|simplified bsd|freebsd)( licen[cs]e)?" to "BSD-2-Clause",
       "(the )?(bsd[- ]3[- ]clause|3[- ]clause bsd|new bsd|revised bsd|modified bsd)( licen[cs]e)?" to
         "BSD-3-Clause",
@@ -200,6 +202,9 @@ object SpdxNames {
       "https?://(www\\.)?apache\\.org/licenses/license-2\\.0(\\.txt|\\.html)?" to "Apache-2.0",
       "https?://(www\\.)?opensource\\.org/licen[cs]es?/apache-2\\.0(\\.php)?" to "Apache-2.0",
       "https?://(www\\.)?opensource\\.org/licen[cs]es?/mit(\\.php|-license\\.php)?" to "MIT",
+      "https?://(www\\.)?opensource\\.org/licen[cs]es?/mit-0(\\.php)?" to "MIT-0",
+      "https?://spdx\\.org/licenses/mit-0(\\.html)?" to "MIT-0",
+      "https?://github\\.com/aws/mit-0" to "MIT-0",
       "https?://(www\\.)?opensource\\.org/licen[cs]es?/bsd-2-clause(\\.php)?" to "BSD-2-Clause",
       "https?://(www\\.)?opensource\\.org/licen[cs]es?/bsd-3-clause(\\.php)?" to "BSD-3-Clause",
       "https?://(www\\.)?eclipse\\.org/org/documents/edl-v10\\.(php|html)" to "BSD-3-Clause",
@@ -242,6 +247,7 @@ object SpdxNames {
     setOf(
       "Apache-2.0",
       "MIT",
+      "MIT-0",
       "BSD-2-Clause",
       "BSD-3-Clause",
       "ISC",

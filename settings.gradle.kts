@@ -67,5 +67,26 @@ include(":ui")
 // Installation packages (tarDist, airgapBundle: WO-40).
 include(":deploy")
 
-// Sample apps (shop-boot2, shop-boot3, ..., ext-stub, load) are added by WO-01:
-// include(":sample-apps:shop-boot3") and so on, one line per app.
+// Sample apps and their tools (18 §4, C-18, WO-01). Development-only: never shipped
+// (ArgosProject.isDevelopmentOnly), built with the argos.sample-app convention plugin.
+//   common            framework-neutral endpoint catalog, data access, seeds, switches (Java 8)
+//   ext-stub          outgoing-call target (normal, delay, no response, 5xx, redirect)
+//   smoke             smoke runner behind every app's sampleSmoke task
+//   shop-*            the apps of 18 §4.1 (WAR apps use the 18 §4.1 names shop-war-*)
+//   load              demo load generator (allow-listed licenses only, ADR-0003 C-33) and bench.js
+val sampleApps =
+  listOf(
+    "common",
+    "ext-stub",
+    "smoke",
+    "shop-boot2",
+    "shop-boot3",
+    "shop-boot4",
+    "shop-heavy",
+    "shop-batch",
+    "shop-war-javax",
+    "shop-war-jakarta",
+    "load",
+  )
+
+sampleApps.forEach { include(":sample-apps:$it") }

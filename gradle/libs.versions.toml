@@ -2,7 +2,7 @@
 #
 # Version catalog: the single source of library and plugin versions (DSN-19-01, 19 §3.1).
 # Versions were checked against Maven Central / Gradle Plugin Portal on 2026-10-23.
-# Every artifact that ends up in a shipped artifact must be Apache-2.0, MIT, BSD-2/3-Clause,
+# Every artifact that ends up in a shipped artifact must be Apache-2.0, MIT, MIT-0, BSD-2/3-Clause,
 # ISC, 0BSD, PostgreSQL, Unicode-DFS or CC0-1.0 (O-L03, checked by checkLicenses).
 #
 # Not in this file: the foojay toolchain resolver plugin (settings.gradle.kts, 1.0.0), because
@@ -41,6 +41,36 @@ license-report = "3.1.4"
 jib = "3.5.4"
 protobuf-plugin = "0.10.0"
 maven-publish = "0.37.0"
+# --- sample apps (sample-apps/, 18 §4, WO-01) ---
+# Development-only: sample apps are not shipped, so their dependencies are checked by
+# checkDevOnlyLicenses (docs/licenses/dev-only.md), not by checkLicenses. The exception is
+# sample-apps/load, which becomes the public argos-demo-load image; it has no third-party runtime
+# dependency (checkDemoLoadDependencies). Library versions not listed here come from the Spring
+# Boot BOM of each app (platform dependency).
+# 2.7.18 is the last open-source 2.7 release (Java 8, javax, Tomcat 9, Hibernate 5).
+sample-boot2 = "2.7.18"
+# Last 3.x line (Java 17, jakarta, Tomcat 10.1, Hibernate 6).
+sample-boot3 = "3.5.16"
+# Java 17 baseline, Framework 7, Tomcat 11; same release as the server (spring-boot above).
+sample-boot4 = "4.1.2"
+# Spring Cloud release train for Boot 3.5 (shop-heavy).
+sample-spring-cloud = "2025.0.3"
+# OkHttp per app generation (18 §4.1): 3.x for shop-boot2, 4.x for the jakarta apps.
+sample-okhttp3 = "3.14.9"
+sample-okhttp4 = "4.12.0"
+# Standalone Tomcat binary distributions (zip from Maven Central) for the WAR apps.
+sample-tomcat9 = "9.0.123"
+sample-tomcat10 = "10.1.61"
+sample-tomcat11 = "11.0.27"
+# shop-heavy extras (dependency count and class count for N-04/N-27).
+sample-springdoc = "2.9.1"
+sample-querydsl = "6.12"
+sample-poi = "5.5.1"
+sample-aws-sdk = "2.57.3"
+sample-guava = "33.7.2-jre"
+sample-commons-collections4 = "4.5.0"
+sample-commons-text = "1.15.0"
+sample-mapstruct = "1.6.3"
 
 [libraries]
 # agent runtime
@@ -81,6 +111,80 @@ testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgr
 # build tools (resolved by convention plugins, never shipped)
 errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }
 google-java-format = { module = "com.google.googlejavaformat:google-java-format", version.ref = "google-java-format" }
+# sample apps (dev-only, 18 §4, WO-01). Entries without a version are managed by the Spring Boot BOM
+# that the app imports as a platform (sample-boot2-bom, sample-boot3-bom or sample-boot4-bom).
+sample-boot2-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "sample-boot2" }
+sample-boot2-loader = { module = "org.springframework.boot:spring-boot-loader", version.ref = "sample-boot2" }
+sample-boot3-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "sample-boot3" }
+sample-boot3-loader = { module = "org.springframework.boot:spring-boot-loader", version.ref = "sample-boot3" }
+sample-boot4-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "sample-boot4" }
+sample-boot4-loader = { module = "org.springframework.boot:spring-boot-loader", version.ref = "sample-boot4" }
+sample-spring-cloud-bom = { module = "org.springframework.cloud:spring-cloud-dependencies", version.ref = "sample-spring-cloud" }
+sample-starter-web = { module = "org.springframework.boot:spring-boot-starter-web" }
+sample-starter-webmvc = { module = "org.springframework.boot:spring-boot-starter-webmvc" }
+sample-starter-webflux = { module = "org.springframework.boot:spring-boot-starter-webflux" }
+sample-starter-webclient = { module = "org.springframework.boot:spring-boot-starter-webclient" }
+sample-starter-restclient = { module = "org.springframework.boot:spring-boot-starter-restclient" }
+sample-starter-websocket = { module = "org.springframework.boot:spring-boot-starter-websocket" }
+sample-starter-data-jpa = { module = "org.springframework.boot:spring-boot-starter-data-jpa" }
+sample-starter-jdbc = { module = "org.springframework.boot:spring-boot-starter-jdbc" }
+sample-starter-actuator = { module = "org.springframework.boot:spring-boot-starter-actuator" }
+sample-starter-tomcat = { module = "org.springframework.boot:spring-boot-starter-tomcat" }
+sample-starter-batch = { module = "org.springframework.boot:spring-boot-starter-batch" }
+sample-starter-quartz = { module = "org.springframework.boot:spring-boot-starter-quartz" }
+sample-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
+sample-starter-cache = { module = "org.springframework.boot:spring-boot-starter-cache" }
+sample-starter-aop = { module = "org.springframework.boot:spring-boot-starter-aop" }
+sample-starter-thymeleaf = { module = "org.springframework.boot:spring-boot-starter-thymeleaf" }
+sample-starter-mail = { module = "org.springframework.boot:spring-boot-starter-mail" }
+sample-starter-hateoas = { module = "org.springframework.boot:spring-boot-starter-hateoas" }
+sample-spring-jdbc = { module = "org.springframework:spring-jdbc" }
+sample-spring-context = { module = "org.springframework:spring-context" }
+sample-hc4 ={ module = "org.apache.httpcomponents:httpclient" }
+sample-hc5 = { module = "org.apache.httpcomponents.client5:httpclient5" }
+sample-okhttp3 = { module = "com.squareup.okhttp3:okhttp", version.ref = "sample-okhttp3" }
+sample-okhttp4 = { module = "com.squareup.okhttp3:okhttp", version.ref = "sample-okhttp4" }
+sample-hikari = { module = "com.zaxxer:HikariCP" }
+sample-tomcat-jdbc = { module = "org.apache.tomcat:tomcat-jdbc" }
+sample-dbcp2 = { module = "org.apache.commons:commons-dbcp2" }
+sample-h2 = { module = "com.h2database:h2" }
+sample-postgresql = { module = "org.postgresql:postgresql" }
+sample-mysql = { module = "com.mysql:mysql-connector-j" }
+sample-tomcat9-dist = { module = "org.apache.tomcat:tomcat", version.ref = "sample-tomcat9" }
+sample-tomcat10-dist = { module = "org.apache.tomcat:tomcat", version.ref = "sample-tomcat10" }
+sample-tomcat11-dist = { module = "org.apache.tomcat:tomcat", version.ref = "sample-tomcat11" }
+# shop-heavy extras (Spring Cloud versions from sample-spring-cloud-bom, the rest from the Boot BOM
+# unless a version is given)
+sample-cloud-openfeign = { module = "org.springframework.cloud:spring-cloud-starter-openfeign" }
+sample-cloud-circuitbreaker = { module = "org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j" }
+sample-cloud-loadbalancer = { module = "org.springframework.cloud:spring-cloud-starter-loadbalancer" }
+sample-cloud-gateway-mvc = { module = "org.springframework.cloud:spring-cloud-starter-gateway-server-webmvc" }
+sample-cloud-function-web = { module = "org.springframework.cloud:spring-cloud-function-web" }
+sample-hibernate-envers = { module = "org.hibernate.orm:hibernate-envers" }
+sample-hibernate-jcache = { module = "org.hibernate.orm:hibernate-jcache" }
+sample-caffeine = { module = "com.github.ben-manes.caffeine:caffeine" }
+# JCache (JSR-107) provider of Hibernate's second-level cache in shop-heavy (hibernate-jcache).
+sample-caffeine-jcache = { module = "com.github.ben-manes.caffeine:jcache" }
+sample-jackson-xml = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-xml" }
+sample-jackson-yaml = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml" }
+sample-jackson-csv = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-csv" }
+sample-jackson-cbor = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-cbor" }
+sample-jackson-smile = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-smile" }
+sample-jackson-guava = { module = "com.fasterxml.jackson.datatype:jackson-datatype-guava" }
+sample-jackson-joda = { module = "com.fasterxml.jackson.datatype:jackson-datatype-joda" }
+sample-jackson-hibernate6 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-hibernate6" }
+sample-jackson-blackbird = { module = "com.fasterxml.jackson.module:jackson-module-blackbird" }
+sample-jackson-kotlin = { module = "com.fasterxml.jackson.module:jackson-module-kotlin" }
+sample-micrometer-prometheus = { module = "io.micrometer:micrometer-registry-prometheus" }
+sample-springdoc = { module = "org.springdoc:springdoc-openapi-starter-webmvc-ui", version.ref = "sample-springdoc" }
+sample-querydsl-jpa = { module = "io.github.openfeign.querydsl:querydsl-jpa", version.ref = "sample-querydsl" }
+sample-poi-ooxml = { module = "org.apache.poi:poi-ooxml", version.ref = "sample-poi" }
+sample-aws-s3 = { module = "software.amazon.awssdk:s3", version.ref = "sample-aws-sdk" }
+sample-guava = { module = "com.google.guava:guava", version.ref = "sample-guava" }
+sample-commons-lang3 = { module = "org.apache.commons:commons-lang3" }
+sample-commons-text = { module = "org.apache.commons:commons-text", version.ref = "sample-commons-text" }
+sample-commons-collections4 = { module = "org.apache.commons:commons-collections4", version.ref = "sample-commons-collections4" }
+sample-mapstruct = { module = "org.mapstruct:mapstruct", version.ref = "sample-mapstruct" }
 
 [plugins]
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

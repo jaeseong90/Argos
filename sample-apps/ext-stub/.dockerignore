@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
+# Docker build context: only the packaged app.
+**
+!build/sample-app/

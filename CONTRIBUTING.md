@@ -76,7 +76,7 @@ compatibility, CHANGELOG entry and DCO.
 
 ## Dependencies and borrowed code
 
-- Dependencies that ship in Argos artifacts must be licensed under Apache-2.0, MIT, BSD-2-Clause,
+- Dependencies that ship in Argos artifacts must be licensed under Apache-2.0, MIT, MIT-0, BSD-2-Clause,
   BSD-3-Clause, ISC, 0BSD, PostgreSQL, Unicode-DFS or CC0-1.0. The build fails otherwise.
 - Test- and sample-only dependencies with other licenses must be listed in
   [docs/licenses/dev-only.md](docs/licenses/dev-only.md) and must never reach a shipped artifact.

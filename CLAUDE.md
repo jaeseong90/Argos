@@ -23,8 +23,8 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
 
 - **지시받은 WO(또는 이슈) 범위만** 구현한다. 범위 밖 변경은 보고서·PR에 제안만 남기고 하지 않는다.
 - **완성 기준은 03 문서가 유일한 기준**이다. 테스트 없이 "동작한다"고 보고하지 않는다. 테스트는 수락 기준을 직접 검증해야 한다.
-- 모호한 점은 가정을 명시하고 진행한 뒤 보고서 "가정과 미해결"에 남긴다. 단, **02 문서의 전역 설계 결정(DSN)이나 설계 문서를 바꿔야 하면 멈추고 묻는다.** 바뀌면 ADR을 남긴다.
-- **배포물에 포함되는 의존성은 Apache-2.0 호환 허용 목록만**(Apache-2.0, MIT, BSD, ISC, 0BSD, PostgreSQL). GPL·LGPL·AGPL·SSPL·BSL은 금지. 테스트 전용 드라이버는 배포물에 들어가지 않는 조건으로 허용하고 `docs/licenses/dev-only.md`에 기록한다.
+- 모호한 점은 가정을 명시하고 진행한 뒤 보고서 "가정과 미해결"에 남긴다. 단, **02 문서의 전역 설계 결정(DSN)이나 설계 문서를 바꿔야 하면 멈추고 묻는다.** 바뀌면 ADR을 남긴다. 설계 문서끼리 어긋날 때의 정합 결정은 02 §13(C-1~C-20)과 `docs/adr/0003`(C-21~C-36)·`docs/adr/0004`(C-37~C-49)가 우선한다.
+- **배포물에 포함되는 의존성은 Apache-2.0 호환 허용 목록만**(Apache-2.0, MIT, MIT-0, BSD, ISC, 0BSD, PostgreSQL. 전체 목록은 `build-logic/allowed-licenses.json`, MIT-0은 ADR-0004 C-42). GPL·LGPL·AGPL·SSPL·BSL은 금지. 테스트 전용 드라이버는 배포물에 들어가지 않는 조건으로 허용하고 `docs/licenses/dev-only.md`에 기록한다.
 - **에이전트 모듈에 의존성을 추가할 때는** 셰이딩 규칙·SBOM·버전 매니페스트에 넣고 보고서에 `jar tf`와 `check-shading.sh` 결과를 첨부한다.
 - 외부 오픈소스 코드(OpenTelemetry·Pinpoint·Scouter·SkyWalking 등 Apache-2.0)를 차용·개작하면 원 저작권 헤더를 유지하고 `NOTICE`에 출처를 적는다. 상용 제품(Jennifer·Datadog 등)의 코드·에셋·문구는 참고만 하고 복사하지 않는다.
 - 새 파일에는 SPDX 헤더(`SPDX-License-Identifier: Apache-2.0`)를 넣는다.
@@ -56,18 +56,29 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
 ./gradlew :agent:agent-dist:check verifyAgentJar  # checkShading, checkMajorVersion(52), checkRelocatedStrings
 ./gradlew :agent:agent-testing:archTest           # Advice·패키지 경계 규칙(T-AG-001~004, ADV-04, B-1~B-4, AGT-01~03)
 ./gradlew checkLicenses checkDevOnlyLicenses      # 라이선스 허용 목록(테스트 전용 예외: docs/licenses/dev-only.md)
-./gradlew integrationTest                         # Testcontainers(Docker). check에 포함되지 않음
+./gradlew integrationTest                         # Testcontainers(Docker), 샘플 앱 shop-boot3 스모크 3변형·시드 센티널. check에 포함되지 않음
 ./gradlew securityTest                            # 보안 테스트 스위트. check에 포함되지 않음
 ./gradlew matrixTest -Pmatrix.combo=<id>          # 호환성 매트릭스 1개 조합을 로컬 실행(Docker·해당 JDK 필요). 전체 매트릭스는 신뢰 러너 전용
 ./gradlew benchTest -Pbench.machine-profile=<id>  # 오버헤드 벤치(벤치 머신 전용)
+./gradlew :sample-apps:<app>:sampleSmoke          # 샘플 앱을 에이전트 없이 기동해 엔드포인트 카탈로그 검증(전 변형, check 미포함).
+                                                  # 1개 변형은 sampleSmoke<Variant>, 루트 sampleSmoke는 50변형 전부. -Psample.startupRuns=5는 기동 중앙값
+./gradlew :sample-apps:<app>:sampleAppJar         # 실행 jar → sample-apps/<app>/build/sample-app/<app>.jar (WAR 앱은 :war)
+./gradlew :sample-apps:<app>:sampleImage          # 샘플 앱 Docker 이미지 argos-sample/<app>:dev
 
 pnpm -C ui install --frozen-lockfile
 pnpm -C ui build && pnpm -C ui test               # build = tsc + vite + 번들 라이선스 검사 + 외부 참조 검사
 pnpm -C ui lint && pnpm -C ui typecheck && pnpm -C ui format:check            # ESLint, tsc strict, Prettier
 pnpm -C ui check:i18n && pnpm -C ui check:external && pnpm -C ui check:licenses  # i18n 키, 외부 참조, 라이선스
 pnpm -C ui check:licenses:dev                     # 허용 목록 밖 UI 개발 도구가 dev-only.md `npm:` 행에 있는지
+pnpm -C ui playwright:install                     # Playwright Chromium 설치(머신당 1회, e2e·perf 전제)
+pnpm -C ui e2e                                    # vite build + Playwright E2E(Chromium). test·Gradle check에 포함되지 않음
+pnpm -C ui perf                                   # vite build + XLog 프레임 시간 spec(T-NFR-14, Chrome tracing). 조용한 머신에서, 약 12~16분
 
 bash test/lint/check-spdx.sh                      # SPDX 헤더 전수(T-BLD-007)
+bash sample-apps/load/run-bench.sh --summary build/bench/summary.json   # k6 bench.js 1,000/s × 1분(Docker), 결과 JSON·머신 부하
+java -jar sample-apps/load/build/sample-app/load.jar --target-url http://127.0.0.1:8080 --mix bench --rate 1000 --duration 1m --summary build/load/summary.json
+                                                  # 데모 부하 생성기(의존성 없음, :sample-apps:load:sampleAppJar), 실행 중인 앱 대상
+bash test/seed/seed-traffic.sh --start --repeat 10   # PII·XSS 시드 트래픽(센티널 ARGOS_SEED). 실행 중인 앱은 --url <URL>
 bash test/agent/check-shading.sh agent/agent-dist/build/libs/argos-agent-0.0.0-SNAPSHOT.jar
 bash .github/scripts/check-workflows.sh           # 워크플로 정책(pull_request_target·self-hosted 금지, SHA 고정)
 bash .github/scripts/check-file-modes.sh          # git 인덱스에서 gradlew·*.sh가 100755인지(lint 잡)

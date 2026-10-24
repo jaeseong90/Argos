@@ -3,6 +3,7 @@
   "allowedLicenses": [
     { "spdx": "Apache-2.0", "name": "Apache License 2.0" },
     { "spdx": "MIT", "name": "MIT License" },
+    { "spdx": "MIT-0", "name": "MIT No Attribution" },
     { "spdx": "BSD-2-Clause", "name": "BSD 2-Clause \"Simplified\" License" },
     { "spdx": "BSD-3-Clause", "name": "BSD 3-Clause \"New\" or \"Revised\" License" },
     { "spdx": "ISC", "name": "ISC License" },

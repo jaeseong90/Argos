@@ -5,17 +5,17 @@
 | 상태 | Accepted (provisional, maintainer confirmation pending) |
 | 날짜 | 2026-10-23 |
 | 결정자 | PM(메인테이너 위임 결정). 메인테이너 확인 대기 |
-| 관련 | 02 §13 정합 결정 C-1~C-20의 보충(C-21~C-33), WO-00 완료 보고 "가정과 미해결" C·D절, 10 §4.1·§5.2·§5.3·§10.3, 18 §2.2·§5.10, 19 §3.2·§3.3·§5.3·§5.6·§6.1·§13, 01 O-S04, 16 §10.5, 17 §16 |
+| 관련 | 02 §13 정합 결정 C-1~C-20의 보충(C-21~C-36), WO-00 완료 보고 "가정과 미해결" C·D절, 10 §4.1·§5.2·§5.3·§10.3, 18 §2.2·§5.10, 19 §3.2·§3.3·§5.3·§5.6·§6.1·§13, 01 O-S04, 16 §10.5, 17 §16 |
 
 ## English summary
 
 WO-00 surfaced places where the design documents disagree with each other. This ADR records the PM's
-alignment decisions as C-21 to C-33, a supplement to the alignment table in docs/02 §13, so that later
+alignment decisions as C-21 to C-36, a supplement to the alignment table in docs/02 §13, so that later
 work orders can proceed without stopping. The main points are: the agent entry class follows docs/10,
 own agent classes must be bytecode major 52 while shaded third-party classes may be 52 or lower, exit
 advice decides by the enter result instead of re-reading the kill switch, the module registry must not
 make agent-core depend on instrumentation modules, routine Dependabot updates are monthly, and the demo
-load generator must not ship k6 (AGPL). The design documents themselves are unchanged; where they
+load generator must not ship k6 (AGPL); C-34, added after the XLog PoC, makes direct ImageData pixel writes the default XLog point renderer. The design documents themselves are unchanged; where they
 conflict with this ADR, this ADR wins until the maintainer confirms or overrides it.
 
 ## 맥락
@@ -43,6 +43,9 @@ conflict with this ADR, this ADR wins until the maintainer confirms or overrides
 | C-31 | SBOM 스캔 PR 필수 검사 | O-Q02·19 §6.2의 SBOM 스캔 잡은 WO-47에서 `pr.yml`에 추가한다(WO-00 잡 목록에 없었음). | WO-47 |
 | C-32 | ADR 언어 | 한국어 본문 + 영문 요약(English summary) 1단락. O-G07의 "영문 1페이지"는 영문 요약으로 충족한다. | 모든 ADR |
 | C-33 | 데모 부하 생성기와 k6 | k6(AGPL-3.0)는 벤치·개발 전용(`docs/licenses/dev-only.md`)이며 배포물·공개 이미지에 넣지 않는다. 공개 이미지 `argos-demo-load`는 허용 목록 라이선스만 쓰는 자체 구현(예: Java `HttpClient` 기반 고정 도착률 생성기)으로 만든다. WO-01은 벤치용 k6 시나리오와 별도로 이 생성기의 정의를 만들고, WO-41은 데모 앱·부하 이미지를 `checkLicenses` 대상으로 전환한다. | WO-01, WO-41 |
+| C-34 | XLog 점 레이어 그리기 방식(P-5 결과, 2026-10-23 추가) | WO-04 실측에서 15 §7.2·DSN-15-03의 색별 3패스 path fill은 5만·10만 점에서 16ms를 넘었다(10만 점 p95 79~145ms, 병목 GPU 래스터). 15 §18 #2가 미리 정한 대안인 **ImageData 직접 쓰기(`pixels`)를 기본값**으로 한다. `path`는 비교·진단용 옵션으로 남긴다. 고DPR(≥ 2)에서는 **점 레이어의 백킹 스토어 배율에 상한**을 두고(축·격자·글자·드래그 오버레이는 전체 DPR), 상한값은 DPR 2에서 10만 점이 기준을 지키는 값으로 WO-04가 실측해 정한다. 판정 통계는 15 §15대로 p95와 평균이 16ms 이하일 때 통과로 하고, max는 보고만 한다. WO-04는 DPR 1과 DPR 2 두 조건을 모두 측정해 보고한다. | WO-04, WO-33 |
+| C-35 | XLog 프레임 판정 단위(WO-04 후속, 2026-10-24 추가) | C-34의 p95·평균 판정은 **런마다** 적용한다(3회 런 각각이 통과해야 통과). 3회를 합친 분포는 보고용이다. 측정은 조용한 머신(런 직전 CPU 부하 기록)에서 하며, 공유 머신 수치는 참고값이다. | WO-04, WO-33, WO-51 |
+| C-36 | XLog 상호작용 예산(WO-04 후속, 2026-10-24 추가) | 15 §7.3 "10만 점 선택 계산 ≤ 5ms"는 런별 p95로 판정한다. 드래그를 놓은 뒤 요약·목록이 화면에 반영되기까지(React 커밋 포함)는 별도 예산 **p95 ≤ 100ms**를 둔다. WO-04 실측(선택 질의 p95 4.5~6.4ms, 요약+1,000행 커밋 p95 60~73ms, 공유 머신)은 참고값이며, 목록 가상화와 함께 WO-33 수락 기준으로 판정한다. | WO-33 |
 
 다음은 결정이 아니라 담당 WO 지정이다.
 
@@ -63,11 +66,11 @@ conflict with this ADR, this ADR wins until the maintainer confirms or overrides
 ## 결과
 
 - 이후 WO의 공통 맥락은 "02 §13 + ADR-0003"을 정합 결정의 출처로 쓴다.
-- 메인테이너가 이 ADR을 확인하면 C-21~C-33을 02 §13 표에 옮기고 이 ADR의 상태를 Accepted로 바꾼다. 뒤집는 결정이 있으면 해당 WO의 산출물을 고친다.
+- 메인테이너가 이 ADR을 확인하면 C-21~C-36을 02 §13 표에 옮기고 이 ADR의 상태를 Accepted로 바꾼다. 뒤집는 결정이 있으면 해당 WO의 산출물을 고친다.
 - C-22·C-24는 WO-00이 만든 검사(`checkMajorVersion`, `check-shading.sh`, ArchUnit ADV-03)의 수정을 요구한다. WO-02가 수행하고 네거티브 테스트를 유지한다.
 
 ## 확인 사항
 
-- [ ] C-21~C-33 각 항목을 메인테이너가 확인했다.
-- [ ] 02 §13 표에 C-21~C-33을 옮겼다.
+- [ ] C-21~C-36 각 항목을 메인테이너가 확인했다.
+- [ ] 02 §13 표에 C-21~C-36을 옮겼다.
 - [ ] C-23(relocate 정책)과 httpclient-jdk11 결정을 WO-02·WO-14 결과로 덧붙였다.

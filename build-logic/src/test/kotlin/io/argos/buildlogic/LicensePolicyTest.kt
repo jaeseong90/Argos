@@ -20,12 +20,13 @@ class LicensePolicyTest {
     )
 
   @Test
-  @DisplayName("T-BLD-007 the allow-list is exactly the O-L03 set")
+  @DisplayName("T-BLD-007 the allow-list is exactly the O-L03 set plus MIT-0 (ADR-0004 C-42)")
   fun allowListMatchesOL03() {
     assertThat(policy.allowed)
       .containsExactlyInAnyOrder(
         "Apache-2.0",
         "MIT",
+        "MIT-0",
         "BSD-2-Clause",
         "BSD-3-Clause",
         "ISC",
@@ -66,6 +67,48 @@ class LicensePolicyTest {
     assertThat(SpdxNames.fromUrl("https://www.apache.org/licenses/LICENSE-2.0.txt")).isEqualTo("Apache-2.0")
     assertThat(SpdxNames.fromUrl("https://opensource.org/licenses/MIT")).isEqualTo("MIT")
     assertThat(SpdxNames.fromUrl("https://www.gnu.org/licenses/gpl-3.0.txt")).isEqualTo("GPL-3.0-only")
+  }
+
+  @Test
+  @DisplayName("T-BLD-007 MIT-0 (ADR-0004 C-42) is recognised and allowed; other MIT variants are not")
+  fun mit0IsAllowed() {
+    mapOf(
+        "MIT-0" to "MIT-0",
+        "MIT No Attribution" to "MIT-0",
+        "MIT No Attribution License" to "MIT-0",
+        "The MIT-0 License" to "MIT-0",
+        "MIT-0 OR GPL-3.0-only" to "MIT-0 OR GPL-3.0-only",
+      )
+      .forEach { (name, id) -> assertThat(SpdxNames.fromName(name)).`as`(name).isEqualTo(id) }
+    listOf(
+        "https://spdx.org/licenses/MIT-0.html",
+        "https://opensource.org/license/mit-0",
+        "https://opensource.org/licenses/MIT-0",
+        "https://github.com/aws/mit-0",
+      )
+      .forEach { assertThat(SpdxNames.fromUrl(it)).`as`(it).isEqualTo("MIT-0") }
+    // The POM of org.reactivestreams:reactive-streams 1.0.4 (used by Reactor).
+    val reactiveStreams =
+      policy.resolve(
+        "org.reactivestreams:reactive-streams",
+        "1.0.4",
+        listOf(DeclaredLicense("MIT-0", "https://spdx.org/licenses/MIT-0.html")),
+      )
+    assertThat(reactiveStreams.expression).isEqualTo("MIT-0")
+    assertThat(reactiveStreams.origin).isEqualTo("metadata")
+    assertThat(reactiveStreams.allowed).isTrue()
+    // Only the URL is known: still MIT-0.
+    assertThat(
+        policy
+          .resolve("com.example:x", "1", listOf(DeclaredLicense(null, "https://spdx.org/licenses/MIT-0.html")))
+          .allowed
+      )
+      .isTrue()
+    // MIT-0 does not make other MIT variants or MIT-0 combined with a copyleft license pass.
+    assertThat(SpdxNames.fromName("MIT-Modern-Variant")).isNull()
+    assertThat(SpdxNames.fromName("MIT-1")).isNull()
+    assertThat(policy.isAllowed("MIT-0 AND GPL-3.0-only")).isFalse()
+    assertThat(policy.isAllowed("MIT-0 WITH Classpath-exception-2.0")).isFalse()
   }
 
   @Test

@@ -35,7 +35,7 @@ val commandPrefix: List<String> = if (isWindows) listOf("cmd", "/c") else emptyL
 val projectInputs =
   fileTree(layout.projectDirectory) {
     exclude("node_modules/**", "dist/**", "build/**", "coverage/**", "test-results/**")
-    exclude("playwright-report/**", ".vite/**", "*.log")
+    exclude("playwright-report/**", "blob-report/**", "perf/results/**", ".vite/**", "*.log")
   }
 
 fun registerPnpm(name: String, taskDescription: String, vararg args: String) =
