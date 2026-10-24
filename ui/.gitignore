@@ -5,3 +5,8 @@ build/
 coverage/
 *.tsbuildinfo
 *.local
+# Playwright (E2E and performance spec) outputs
+test-results/
+playwright-report/
+blob-report/
+perf/results/

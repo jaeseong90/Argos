@@ -1,0 +1,125 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* XLog canvas (docs/15 §7.2). Colours follow docs/15 §13 until the design tokens land (WO-30). */
+.xlog-canvas-frame {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.xlog-canvas {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  background: #ffffff;
+  border: 1px solid #e2e5ea;
+  border-radius: 6px;
+  overflow: hidden;
+  /* The canvas handles drags itself: no text selection, no touch scrolling inside the plot. */
+  user-select: none;
+  touch-action: none;
+}
+
+.xlog-canvas__plot {
+  position: absolute;
+  inset: 0;
+}
+
+.xlog-canvas__points,
+.xlog-canvas__overlay {
+  position: absolute;
+  display: block;
+}
+
+/* The point layer's backing store may be smaller than CSS size × DPR (ADR-0003 C-34): scale it up
+   without smoothing so points stay crisp squares. */
+.xlog-canvas__points {
+  image-rendering: pixelated;
+}
+
+.xlog-canvas__overlay {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+.xlog-canvas__sampling {
+  position: absolute;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #e2e5ea;
+  color: #1f2328;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+/* Positioned by XLogTooltip (placeTooltip): inside the container, next to the hovered point. */
+.xlog-tooltip {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+  max-width: 320px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #1f2328;
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: none;
+  overflow-wrap: anywhere;
+}
+
+.xlog-tooltip__service {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.xlog-tooltip__fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 8px;
+  margin: 0;
+}
+
+.xlog-tooltip__fields dt {
+  color: #c3c7cf;
+}
+
+.xlog-tooltip__fields dd {
+  margin: 0;
+}
+
+.xlog-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: #1f2328;
+}
+
+.xlog-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 280px;
+  min-width: 0;
+}
+
+.xlog-legend__swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.xlog-legend__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

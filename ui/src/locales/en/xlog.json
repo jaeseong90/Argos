@@ -1,0 +1,125 @@
+{
+  "poc": {
+    "title": "$t(common:term.xlog) canvas proof of concept",
+    "description": "Synthetic transactions generated in the browser. No server is involved.",
+    "generating": "Generating {{count, number}} points…",
+    "stats": {
+      "label": "Rendering statistics",
+      "points": "Points in buffer",
+      "visible": "Points drawn",
+      "frame": "Last frame (JavaScript)",
+      "frameValue": "{{value, number(maximumFractionDigits: 1)}} ms",
+      "dropped": "Dropped (buffer full)"
+    }
+  },
+  "toolbar": {
+    "label": "Chart options",
+    "colorBy": {
+      "label": "Color by",
+      "status": "Status",
+      "instance": "Instance",
+      "service": "Top services"
+    },
+    "yScale": {
+      "label": "Y axis",
+      "linear": "Linear",
+      "log": "Log"
+    },
+    "threshold": "Latency threshold {{value}}",
+    "live": "Live",
+    "pause": "Pause",
+    "resume": "Resume live"
+  },
+  "canvas": {
+    "label_one": "$t(common:term.xlog): response time of {{count, number}} transaction over time",
+    "label_other": "$t(common:term.xlog): response time of {{count, number}} transactions over time",
+    "sampling": "Showing {{shown, number}} of {{total, number}}"
+  },
+  "status": {
+    "normal": "Normal",
+    "slow": "Slow",
+    "error": "Error"
+  },
+  "legend": {
+    "label": "Legend",
+    "other": "Other"
+  },
+  "tooltip": {
+    "time": "Time",
+    "elapsed": "Response time",
+    "status": "Status",
+    "instance": "Instance",
+    "http": "HTTP status",
+    "errorClass": "Error class"
+  },
+  "unit": {
+    "ms": "{{value, number(maximumFractionDigits: 1)}} ms",
+    "s": "{{value, number(maximumFractionDigits: 2)}} s",
+    "min": "{{value, number(maximumFractionDigits: 2)}} min"
+  },
+  "summary": {
+    "title": "Selection summary",
+    "empty": "Drag across the chart to select transactions. Their summary and list appear here.",
+    "count_one": "{{count, number}} point selected",
+    "count_other": "{{count, number}} points selected",
+    "sampled": "Based on the points shown: the data is sampled.",
+    "clear": "Clear selection",
+    "filterHint": "Select a row to filter the list.",
+    "services": {
+      "title": "Top services",
+      "more": "{{shown, number}} of {{total, number}} services",
+      "service": "Service",
+      "count": "Count",
+      "avg": "Average",
+      "max": "Max",
+      "errors": "Errors"
+    },
+    "instances": {
+      "title": "By instance",
+      "instance": "Instance",
+      "count": "Count",
+      "errors": "Errors"
+    },
+    "status": {
+      "title": "By status",
+      "status": "Status",
+      "count": "Count"
+    },
+    "http": {
+      "title": "By HTTP status",
+      "code": "HTTP status",
+      "count": "Count",
+      "none": "Not HTTP"
+    },
+    "errors": {
+      "title": "By error class",
+      "errorClass": "Error class",
+      "count": "Count",
+      "unavailable": "The points carry no error class. Check the list.",
+      "none": "No errors in the selection."
+    }
+  },
+  "list": {
+    "title": "Selected transactions",
+    "top": "Slowest {{shown, number}} of {{matching, number}}",
+    "all_one": "{{count, number}} transaction",
+    "all_other": "{{count, number}} transactions",
+    "filterField": "Filter: {{field}} =",
+    "clearFilter": "Clear filter",
+    "empty": "No transaction in the selection matches the filter. Clear the filter to see all of them.",
+    "columns": {
+      "time": "Time",
+      "service": "Service",
+      "elapsed": "Response time",
+      "status": "Status",
+      "http": "HTTP",
+      "errorClass": "Error class",
+      "instance": "Instance",
+      "txId": "Transaction ID"
+    }
+  },
+  "value": {
+    "unknown": "Unknown (#{{id}})",
+    "none": "—"
+  }
+}

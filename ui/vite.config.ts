@@ -29,10 +29,36 @@ function packageVersion(): string {
   return pkg.version;
 }
 
+/**
+ * Content-Security-Policy of `vite preview`, which the Playwright suites (E2E, performance) serve
+ * dist/ with. It is the policy of docs/16 §9.9 (SEC-46) without its two server-side parts: no
+ * nonce, because a static preview cannot inject a per-request nonce into index.html (the server's
+ * IndexHtmlController does that, WO-30 / DSN-15-09), and no report-uri / report-to (there is no
+ * report endpoint). connect-src has no wss:// source because nothing here opens a WebSocket yet.
+ * The E2E page hook (e2e/fixtures/fixtures.ts) requires this header and zero CSP violations.
+ * Not applied to the dev server (`server.headers`): React refresh injects an inline preamble.
+ */
+const PREVIEW_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "img-src 'self' data: blob:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "worker-src 'self' blob:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join('; ');
+
 export default defineConfig({
   plugins: [react()],
   define: {
     __ARGOS_VERSION__: JSON.stringify(packageVersion()),
+  },
+  preview: {
+    headers: { 'Content-Security-Policy': PREVIEW_CSP },
   },
   build: {
     outDir: 'dist',
@@ -65,7 +91,13 @@ export default defineConfig({
         test: {
           name: 'tooling',
           environment: 'node',
-          include: ['scripts/**/*.test.mjs', 'eslint-rules/**/*.test.mjs'],
+          // perf/ and e2e/: helpers of the Playwright suites (trace analysis, statistics, server).
+          include: [
+            'scripts/**/*.test.mjs',
+            'eslint-rules/**/*.test.mjs',
+            'perf/**/*.test.ts',
+            'e2e/**/*.test.ts',
+          ],
         },
       },
     ],

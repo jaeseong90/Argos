@@ -196,8 +196,17 @@ const RESTRICTION_SCOPES = [
 ];
 
 export default defineConfig([
-  // build/ is the Gradle :ui project's directory.
-  globalIgnores(['dist/', 'coverage/', 'node_modules/', 'build/']),
+  // build/ is the Gradle :ui project's directory; the others are Playwright outputs.
+  globalIgnores([
+    'dist/',
+    'coverage/',
+    'node_modules/',
+    'build/',
+    'test-results/',
+    'playwright-report/',
+    'blob-report/',
+    'perf/results/',
+  ]),
 
   {
     name: 'argos/all-files',

@@ -11,5 +11,17 @@
     "label": "언어",
     "en": "English",
     "ko": "한국어"
+  },
+  "term": {
+    "xlog": "XLog",
+    "xlogDescription": "응답시간 분포도"
+  },
+  "route": {
+    "loading": "불러오는 중…",
+    "notFound": {
+      "title": "페이지를 찾을 수 없습니다",
+      "description": "주소에 맞는 화면이 없습니다. 링크를 확인하거나 시작 화면으로 이동하세요.",
+      "home": "시작 화면으로 이동"
+    }
   }
 }

@@ -24,6 +24,18 @@
     {
       "url": "https://react.i18next.com/latest/usetranslation-hook",
       "reason": "Documentation link in a react-i18next error message about Suspense; text only."
+    },
+    {
+      "url": "http://localhost",
+      "reason": "react-router: base URL passed to new URL() to parse paths when no window location is available; parsing only, never requested."
+    },
+    {
+      "url": "https://reactrouter.com/en/main/routers/picking-a-router",
+      "reason": "Documentation link in a react-router error message ('must be used within a data router'); text only."
+    },
+    {
+      "url": "https://github.com/ungap/url-search-params",
+      "reason": "Polyfill suggestion in a react-router error message for browsers without URLSearchParams; text only."
     }
   ]
 }

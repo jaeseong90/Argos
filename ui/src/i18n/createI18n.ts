@@ -2,7 +2,13 @@
 import i18next, { type i18n } from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
-import { defaultNS, resources, supportedLanguages, type SupportedLanguage } from './resources';
+import {
+  defaultNS,
+  namespaces,
+  resources,
+  supportedLanguages,
+  type SupportedLanguage,
+} from './resources';
 
 /** Creates an isolated, synchronously initialised i18next instance for the given language. */
 export function createI18n(language: SupportedLanguage): i18n {
@@ -13,7 +19,7 @@ export function createI18n(language: SupportedLanguage): i18n {
     fallbackLng: 'en',
     supportedLngs: supportedLanguages,
     defaultNS,
-    ns: [defaultNS],
+    ns: namespaces,
     // React renders interpolated values as text nodes, so i18next must not HTML-escape them
     // (that would double-escape). HTML is never assembled from strings (SEC-60, SEC-61).
     interpolation: { escapeValue: false },

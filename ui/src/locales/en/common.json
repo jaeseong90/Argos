@@ -11,5 +11,17 @@
     "label": "Language",
     "en": "English",
     "ko": "한국어"
+  },
+  "term": {
+    "xlog": "XLog",
+    "xlogDescription": "Response time scatter plot"
+  },
+  "route": {
+    "loading": "Loading…",
+    "notFound": {
+      "title": "Page not found",
+      "description": "The address does not match any page. Check the link or go to the start page.",
+      "home": "Go to the start page"
+    }
   }
 }

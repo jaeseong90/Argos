@@ -1,0 +1,247 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* /xlog-poc demo page. Plain CSS until the design tokens and Ant Design land (WO-30). Minimum
+   width 1366 px without horizontal page scroll (docs/15 §13): wide tables scroll inside their
+   own box. */
+.xlog-poc {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.xlog-poc__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+}
+
+.xlog-poc__title {
+  margin: 0;
+  font-size: 20px;
+}
+
+.xlog-poc__heading {
+  margin: 0;
+  font-size: 15px;
+}
+
+.xlog-poc__muted {
+  margin: 0;
+  color: #6b7280;
+}
+
+/* One row: the chart controls (a group) on the left, the rendering statistics on the right. */
+.xlog-poc__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.xlog-poc__toolbar {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  min-width: 0;
+}
+
+.xlog-poc__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.xlog-poc__field button[aria-pressed='true'] {
+  background: #2f6feb;
+  border-color: #2f6feb;
+  color: #ffffff;
+}
+
+.xlog-poc__threshold-swatch {
+  display: inline-block;
+  width: 16px;
+  border-top: 2px dashed #d97706;
+}
+
+.xlog-poc__stats {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: auto auto;
+  gap: 0 16px;
+  margin: 0 0 0 auto;
+  font-size: 12px;
+}
+
+.xlog-poc__stats dt {
+  color: #6b7280;
+}
+
+.xlog-poc__stats dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.xlog-poc__generating {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 420px;
+  margin: 0;
+  border: 1px dashed #e2e5ea;
+  border-radius: 6px;
+  color: #6b7280;
+}
+
+.xlog-poc__results {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.xlog-summary,
+.xlog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.xlog-summary__header,
+.xlog-list__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+}
+
+.xlog-summary__count {
+  margin: 0;
+  font-weight: 600;
+}
+
+.xlog-summary__sampled {
+  margin: 0;
+  color: #b45309;
+}
+
+.xlog-summary__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.xlog-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.xlog-table caption {
+  padding-bottom: 4px;
+  text-align: left;
+  font-weight: 600;
+}
+
+.xlog-table th,
+.xlog-table td {
+  padding: 3px 6px;
+  border-bottom: 1px solid #eceef1;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.xlog-table thead th {
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.xlog-table td,
+.xlog-table__num {
+  font-variant-numeric: tabular-nums;
+}
+
+.xlog-table__mono {
+  font-family: ui-monospace, monospace;
+}
+
+.xlog-summary__name {
+  max-width: 0;
+  width: 100%;
+}
+
+.xlog-summary__filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #2f6feb;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xlog-summary__filter[aria-pressed='true'] {
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.xlog-status {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 50%;
+}
+
+.xlog-status--0 {
+  background: #3b82f6;
+}
+
+.xlog-status--1 {
+  background: #f59e0b;
+}
+
+.xlog-status--2 {
+  background: #dc2626;
+}
+
+.xlog-list__filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.xlog-list__scroll {
+  max-height: 480px;
+  overflow: auto;
+  border: 1px solid #e2e5ea;
+  border-radius: 6px;
+}
+
+.xlog-list__table thead th {
+  position: sticky;
+  top: 0;
+  background: #f7f8fa;
+}
+
+.xlog-list__text {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

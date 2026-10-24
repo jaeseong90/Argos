@@ -72,6 +72,12 @@ describe('evaluateLicense (O-L03)', () => {
   it.each([
     ['MIT', true],
     ['mit', true],
+    // MIT No Attribution (ADR-0004 C-42).
+    ['MIT-0', true],
+    ['mit-0', true],
+    ['MIT-0 OR GPL-3.0-only', true],
+    ['MIT-0 AND GPL-3.0-only', false],
+    ['MIT-Modern-Variant', false],
     ['Apache-2.0', true],
     ['BSD-3-Clause', true],
     ['0BSD', true],
@@ -244,7 +250,7 @@ describe('checkLicenses (T-BLD-007)', () => {
 });
 
 // Development tool chain: app -> lib (MIT); devDependencies: tool (MIT) -> mpl-dep (MPL-2.0),
-// @scope/a (MIT-0), plat-linux (MPL-2.0, a per-platform native package).
+// @scope/a (CC-BY-4.0), plat-linux (MPL-2.0, a per-platform native package).
 const DEV_PROJECT = {
   'package.json': {
     name: 'app',
@@ -257,7 +263,7 @@ const DEV_PROJECT = {
     optionalDependencies: { 'plat-linux': '1.0.0', 'plat-win32': '1.0.0' },
   }),
   'node_modules/mpl-dep/package.json': pkg('mpl-dep', 'MPL-2.0'),
-  'node_modules/@scope/a/package.json': pkg('@scope/a', 'MIT-0'),
+  'node_modules/@scope/a/package.json': pkg('@scope/a', 'CC-BY-4.0'),
   'node_modules/plat-linux/package.json': pkg('plat-linux', 'MPL-2.0'),
 };
 
@@ -330,10 +336,38 @@ describe('check-licenses --dev (development tools, docs/licenses/dev-only.md)', 
 
     expect(outcome.errors).toEqual([]);
     expect(outcome.listed).toEqual([
-      { key: '@scope/a@1.0.0', license: 'MIT-0', pattern: '@scope/*' },
+      { key: '@scope/a@1.0.0', license: 'CC-BY-4.0', pattern: '@scope/*' },
       { key: 'mpl-dep@1.0.0', license: 'MPL-2.0', pattern: 'mpl-dep' },
       { key: 'plat-linux@1.0.0', license: 'MPL-2.0', pattern: 'plat-*' },
     ]);
+  });
+
+  it('accepts MIT-0 (ADR-0004 C-42) without a dev-only.md row, but not MIT-0 AND GPL', () => {
+    const projectDir = fixture({
+      'package.json': {
+        name: 'app',
+        dependencies: { lib: '1.0.0' },
+        devDependencies: { tool: '1.0.0' },
+      },
+      'node_modules/lib/package.json': pkg('lib', 'MIT-0'),
+      'node_modules/tool/package.json': pkg('tool', 'MIT-0', { dependencies: { gpl: '1.0.0' } }),
+      'node_modules/gpl/package.json': pkg('gpl', 'MIT-0 AND GPL-3.0-only'),
+    });
+    const outcome = checkLicenses({ projectDir, policy: POLICY });
+
+    const dev = checkDevLicenses({
+      projectDir,
+      policy: POLICY,
+      devOnly: [],
+      production: outcome.packages,
+    });
+
+    expect(outcome.errors).toEqual([]);
+    expect(dev.errors).toEqual([
+      'gpl@1.0.0 (tool@1.0.0 > gpl@1.0.0): "MIT-0 AND GPL-3.0-only" is not on the allowlist; ' +
+        'a development-only package needs a `npm:gpl` row in docs/licenses/dev-only.md',
+    ]);
+    expect(dev.listed).toEqual([]);
   });
 
   it('never exempts a production dependency, even when it is listed', () => {
