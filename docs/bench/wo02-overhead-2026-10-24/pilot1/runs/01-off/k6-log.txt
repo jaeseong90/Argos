@@ -1,0 +1,12 @@
+
+bench.js  target=http://127.0.0.1:60084  rate=1000/s  window=40s  warm-up=0s (excluded)
+  requests=40001  achieved=1000.025/s  unexpected=0.000%  5xx=5.000% (5% intended)  dropped=0 (0.000%)
+  latency ms  p50=0.532  p95=14.969  p99=312.442  p99.9=315.096  max=328.915  avg=15.998
+  route          share   expect  p50      p95      p99      max
+  orders.get     40.001%  200     0.524    1.056    1.664    14.257  
+  orders.page       20%  200     0.53     1.147    2.038    14.495  
+  pay               20%  200     0.535    1.233    2.127    14.969  
+  orders.items      10%  200     0.544    1.568    2.27     9.78    
+  slow               5%  200     307.853  314.733  315.394  328.915 
+  error-500          5%  500     1.068    2.118    2.751    13.456  
+  thresholds passed; summary: <scratch>\wo02perf\pilot1\runs\01-off\k6.json

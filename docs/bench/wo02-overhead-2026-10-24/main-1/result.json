@@ -1,0 +1,40 @@
+{
+  "kind": "load",
+  "label": "main-1: process mode, JDK 21.0.10, shared Windows machine",
+  "mode": "process",
+  "virtualThreads": false,
+  "criteria": "N-01, N-03, N-26 (Gate 0: N-01 mean, N-03)",
+  "runs": [
+    {
+      "index": 1,
+      "round": 1,
+      "variant": "off",
+      "appCpuSeconds": 328.40625,
+      "wallSeconds": 601.359797,
+      "requests": 598594,
+      "dropped": 1405,
+      "unexpectedRate": 6.5E-5,
+      "p50": 0.533,
+      "p95": 300.68,
+      "p99": 314.925,
+      "p999": 421.476,
+      "hostCpuPercentMean": 60.14839923546022,
+      "loaderCpuPercentMean": 60.14839923546022,
+      "cpuBeforePercent": 25.054960293021335,
+      "backgroundCpuPercent": null,
+      "attempt": null,
+      "discardedAttempts": 0,
+      "gate": "FAIL"
+    }
+  ],
+  "validity": {
+    "offCpuSeconds": [328.40625],
+    "offCpuCv": null,
+    "offCpuCvLimit": 0.02,
+    "offCpuCvOk": false,
+    "gateProblems": ["run 1 (off): FAIL"]
+  },
+  "comparisons": {},
+  "verdict": "INVALID",
+  "reasons": ["off-run CPU CV NaN% > 2% (01 7.3 item 4)", "run 1 (off): k6 gate FAIL (C-46)"]
+}

@@ -1,0 +1,7 @@
+# Extract of class-histogram.txt (jcmd GC.class_histogram after GC.run x2): the header,
+# every row of an io.argos.agent.* class (N-02) and the Total row.
+15268:
+ num     #instances         #bytes  class name (module)
+-------------------------------------------------------
+   1:        126340       17810000  [B (java.base@21.0.10)
+Total        911802       57700528

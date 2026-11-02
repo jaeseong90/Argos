@@ -1,0 +1,2 @@
+# own-code string constants in the relocated namespace (1)
+inst/io/argos/agent/core/boot/IgnoreMatchers.classdata: "io.argos.agent.shaded.kotlin.reflect.jvm.internal."

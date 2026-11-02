@@ -1,0 +1,6 @@
+# instrumentation modules of argos-agent-0.0.0-SNAPSHOT.jar (inst/META-INF/services/io.argos.agent.instrumentation.api.InstrumentationModule)
+io.argos.agent.instrumentation.executor.ExecutorModule
+io.argos.agent.instrumentation.httpclient.jdk.HttpClientJdkModule
+io.argos.agent.instrumentation.jdbc.JdbcModule
+io.argos.agent.instrumentation.servlet.ServletModule
+io.argos.agent.instrumentation.springwebmvc.SpringWebMvcModule

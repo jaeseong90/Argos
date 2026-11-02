@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// AgentService of docs/11-protocol-design.md §3 for the WO-02 P-3 transport comparison only (Java
+// package below io.argos.agent so that the stubs can be shaded into comparison agent jars). The
+// real service definition arrives with WO-11 in proto/src/main/proto/argos/v1.
+
+syntax = "proto3";
+package argos.v1;
+option java_package = "io.argos.agent.transportpoc.proto";
+option java_multiple_files = true;
+
+import "argos/v1/session.proto";
+import "argos/v1/data.proto";
+
+service AgentService {
+  rpc Session(stream AgentMessage) returns (stream ServerMessage);
+  rpc SendTransactions(TransactionBatch) returns (Ack);
+  rpc SendProfiles(ProfileBatch) returns (Ack);
+  rpc SendMetrics(MetricBatch) returns (Ack);
+  rpc SendStats(StatBatch) returns (Ack);
+  rpc SendActiveSnapshot(ActiveTransactionSnapshot) returns (Ack);
+}

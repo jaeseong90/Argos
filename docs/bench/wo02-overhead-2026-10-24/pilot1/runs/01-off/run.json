@@ -1,0 +1,324 @@
+{
+  "index": 1,
+  "round": 1,
+  "variant": "off",
+  "mode": "process",
+  "before": {
+    "cpuPercent5s": 12.152553020190581,
+    "availableMemoryMb": 2744,
+    "waitedSeconds": 5.560351,
+    "quiet": true
+  },
+  "startedAt": "2026-10-24T10:43:40.260400600Z",
+  "startup": {
+    "spawnToPortMs": 9032,
+    "spawnToReadyMs": 9324
+  },
+  "warmup": {
+    "k6ExitCode": 0,
+    "requests": 19685,
+    "achievedRate": 984.25,
+    "unexpectedRate": 0,
+    "checksRate": 1,
+    "http5xxRate": 0.049987,
+    "iterationsWholeRun": 19685,
+    "dropped": 316,
+    "droppedRate": 0.015799,
+    "latencyMs": {
+      "avg": 31.739,
+      "min": 0,
+      "p50": 0.648,
+      "p95": 306.564,
+      "p99": 732.504,
+      "p99.9": 1022.787,
+      "max": 1158.526
+    },
+    "routes": [
+      {
+        "route": "orders.get",
+        "requests": 7874,
+        "latencyMs": {
+          "avg": 22.205,
+          "min": 0,
+          "p50": 0.536,
+          "p95": 6.433,
+          "p99": 803.794,
+          "p99.9": 1083.331,
+          "max": 1158.526
+        }
+      },
+      {
+        "route": "orders.page",
+        "requests": 3937,
+        "latencyMs": {
+          "avg": 13.218,
+          "min": 0,
+          "p50": 0.536,
+          "p95": 6.005,
+          "p99": 558.996,
+          "p99.9": 832.955,
+          "max": 862.058
+        }
+      },
+      {
+        "route": "pay",
+        "requests": 3937,
+        "latencyMs": {
+          "avg": 7.657,
+          "min": 0,
+          "p50": 1.041,
+          "p95": 5.74,
+          "p99": 262.874,
+          "p99.9": 558.972,
+          "max": 580.369
+        }
+      },
+      {
+        "route": "orders.items",
+        "requests": 1969,
+        "latencyMs": {
+          "avg": 25.602,
+          "min": 0,
+          "p50": 1.035,
+          "p95": 13.521,
+          "p99": 838.866,
+          "p99.9": 1054.731,
+          "max": 1083.547
+        }
+      },
+      {
+        "route": "slow",
+        "requests": 984,
+        "latencyMs": {
+          "avg": 313.801,
+          "min": 300.174,
+          "p50": 308.419,
+          "p95": 316.25,
+          "p99": 525.031,
+          "p99.9": 864.281,
+          "max": 864.381
+        }
+      },
+      {
+        "route": "error-500",
+        "requests": 984,
+        "latencyMs": {
+          "avg": 8.712,
+          "min": 0,
+          "p50": 1.227,
+          "p95": 6.629,
+          "p99": 263.961,
+          "p99.9": 575.641,
+          "max": 596.222
+        }
+      }
+    ],
+    "thresholdsPassed": true
+  },
+  "measure": {
+    "k6ExitCode": 0,
+    "requests": 40001,
+    "achievedRate": 1000.025,
+    "unexpectedRate": 0,
+    "checksRate": 1,
+    "http5xxRate": 0.049999,
+    "iterationsWholeRun": 40001,
+    "dropped": 0,
+    "droppedRate": 0,
+    "latencyMs": {
+      "avg": 15.998,
+      "min": 0,
+      "p50": 0.532,
+      "p95": 14.969,
+      "p99": 312.442,
+      "p99.9": 315.096,
+      "max": 328.915
+    },
+    "routes": [
+      {
+        "route": "orders.get",
+        "requests": 16001,
+        "latencyMs": {
+          "avg": 0.464,
+          "min": 0,
+          "p50": 0.524,
+          "p95": 1.056,
+          "p99": 1.664,
+          "p99.9": 5.501,
+          "max": 14.257
+        }
+      },
+      {
+        "route": "orders.page",
+        "requests": 8000,
+        "latencyMs": {
+          "avg": 0.651,
+          "min": 0,
+          "p50": 0.53,
+          "p95": 1.147,
+          "p99": 2.038,
+          "p99.9": 6.257,
+          "max": 14.495
+        }
+      },
+      {
+        "route": "pay",
+        "requests": 8000,
+        "latencyMs": {
+          "avg": 0.738,
+          "min": 0,
+          "p50": 0.535,
+          "p95": 1.233,
+          "p99": 2.127,
+          "p99.9": 7.112,
+          "max": 14.969
+        }
+      },
+      {
+        "route": "orders.items",
+        "requests": 4000,
+        "latencyMs": {
+          "avg": 0.811,
+          "min": 0,
+          "p50": 0.544,
+          "p95": 1.568,
+          "p99": 2.27,
+          "p99.9": 6.325,
+          "max": 9.78
+        }
+      },
+      {
+        "route": "slow",
+        "requests": 2000,
+        "latencyMs": {
+          "avg": 307.839,
+          "min": 300.105,
+          "p50": 307.853,
+          "p95": 314.733,
+          "p99": 315.394,
+          "p99.9": 321.732,
+          "max": 328.915
+        }
+      },
+      {
+        "route": "error-500",
+        "requests": 2000,
+        "latencyMs": {
+          "avg": 1.24,
+          "min": 0,
+          "p50": 1.068,
+          "p95": 2.118,
+          "p99": 2.751,
+          "p99.9": 5.891,
+          "max": 13.456
+        }
+      }
+    ],
+    "thresholdsPassed": true,
+    "wallSeconds": 40.5229738,
+    "appCpuSeconds": 29.84375,
+    "appCores": 0.736464953122468,
+    "appCpuMsPerRequest": 0.7460750981225469,
+    "k6CpuSeconds": 26.71875,
+    "hostCpuPercentMean": 57.07022255821705,
+    "hostCpuPercentMax": 94.4497924774835,
+    "availableMemoryMbMin": 1433,
+    "appCpuTimeline": [
+      [0.001, 0],
+      [1.007, 1.031],
+      [2.015, 1.969],
+      [3.028, 2.516],
+      [4.037, 3.094],
+      [5.045, 4.016],
+      [6.055, 4.844],
+      [7.065, 5.625],
+      [8.072, 6.469],
+      [9.08, 7.406],
+      [10.088, 8.484],
+      [11.1, 9.172],
+      [12.106, 10.156],
+      [13.122, 10.906],
+      [14.126, 11.625],
+      [15.137, 12.25],
+      [16.145, 12.922],
+      [17.154, 13.734],
+      [18.166, 14.859],
+      [19.174, 15.578],
+      [20.185, 16.125],
+      [21.195, 16.875],
+      [22.208, 17.484],
+      [23.224, 18.172],
+      [24.233, 18.875],
+      [25.245, 19.594],
+      [26.252, 20.313],
+      [27.262, 21.188],
+      [28.274, 21.641],
+      [29.284, 22.359],
+      [30.289, 23.031],
+      [31.299, 23.672],
+      [32.309, 24.516],
+      [33.316, 25.078],
+      [34.333, 25.672],
+      [35.348, 26.297],
+      [36.356, 26.906],
+      [37.364, 28.141],
+      [38.374, 28.844],
+      [39.383, 29.484],
+      [40.396, 29.828],
+      [40.525, 29.844]
+    ],
+    "loaderMachineCpuPercentMean": 57.07022255821705,
+    "agentThreadCpuSeconds": 0,
+    "agentThreads": [],
+    "javaThreadsAtEnd": 235,
+    "gate": {
+      "plannedIterations": 40000,
+      "dropped": 0,
+      "droppedLimit": 400,
+      "droppedOk": true,
+      "unexpectedRate": 0,
+      "unexpectedOk": true,
+      "loaderCpuPercentMean": 57.07022255821705,
+      "loaderSaturated": false,
+      "verdict": "PASS"
+    }
+  },
+  "memory": {
+    "agentHeapBytes": 1368,
+    "agentHeapInstances": 51,
+    "histogramTotalBytes": 57476224,
+    "agentTopClasses": ["io.argos.sample.common.http.OutboundOutcome 5 instances 160 bytes", "io.argos.sample.common.db.DbKind 3 instances 120 bytes", "io.argos.sample.common.db.PoolKind 3 instances 96 bytes", "io.argos.sample.common.SampleConfig 1 instances 72 bytes", "io.argos.sample.boot3.jpa.OrderQueries$$SpringCGLIB$$0 1 instances 48 bytes", "io.argos.sample.boot3.web.AsyncWorker$$SpringCGLIB$$0 1 instances 48 bytes", "io.argos.sample.common.datasource.SampleDataSource 1 instances 48 bytes", "[Lio.argos.sample.common.http.OutboundOutcome; 1 instances 40 bytes", "io.argos.sample.boot3.web.DiagnosticsController 1 instances 40 bytes", "[Lio.argos.sample.common.db.DbKind; 1 instances 32 bytes"],
+    "nmtTotalCommittedKb": 1360188,
+    "nmtCommittedKb": {
+      "Java Heap": 1048576,
+      "Class": 14866,
+      "Thread": 22003,
+      "Code": 51463,
+      "GC": 78749,
+      "GCCardSet": 307,
+      "Compiler": 1804,
+      "Internal": 2118,
+      "Other": 1670,
+      "Symbol": 34191,
+      "Native Memory Tracking": 6375,
+      "Arena Chunk": 395,
+      "Tracing": 0,
+      "Logging": 0,
+      "Module": 270,
+      "Safepoint": 8,
+      "Synchronization": 202,
+      "Serviceability": 17,
+      "Metaspace": 84372,
+      "String Deduplication": 1,
+      "Object Monitors": 1,
+      "Unknown": 0
+    },
+    "nmtThreads": 253,
+    "classes": 19788,
+    "metaspaceUsedKb": 95816,
+    "metaspaceCommittedKb": 97024,
+    "javaThreads": 235
+  },
+  "premainMs": null,
+  "finishedAt": "2026-10-24T10:44:52.597163200Z"
+}

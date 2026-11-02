@@ -1,0 +1,30 @@
+# Extract of k6.log (3,719,586 bytes, 15,768 lines; over 1 MB, not copied in full).
+# The 15,754 k6 warning lines are counted by their error text (digits replaced by N),
+# followed by every line that is not a warning (the summary of the run).
+   6287  Get \"http://N.N.N.N:N/api/orders/N\": dial tcp N.N.N.N:N: connectex: No connection could be made because the target machine actively refused it.
+   3126  Get \"http://N.N.N.N:N/api/orders?page=N\": dial tcp N.N.N.N:N: connectex: No connection could be made because the target machine actively refused it.
+   3122  Get \"http://N.N.N.N:N/api/pay/N\": dial tcp N.N.N.N:N: connectex: No connection could be made because the target machine actively refused it.
+   1580  Get \"http://N.N.N.N:N/api/orders/N/items\": dial tcp N.N.N.N:N: connectex: No connection could be made because the target machine actively refused it.
+    786  Get \"http://N.N.N.N:N/api/error-N\": dial tcp N.N.N.N:N: connectex: No connection could be made because the target machine actively refused it.
+    772  Get \"http://N.N.N.N:N/api/slow?ms=N\": dial tcp N.N.N.N:N: connectex: No connection could be made because the target machine actively refused it.
+     32  Get \"http://N.N.N.N:N/api/orders/N\": request timeout
+     16  Get \"http://N.N.N.N:N/api/pay/N\": request timeout
+     16  Get \"http://N.N.N.N:N/api/orders?page=N\": request timeout
+      8  Get \"http://N.N.N.N:N/api/orders/N/items\": request timeout
+      4  Get \"http://N.N.N.N:N/api/error-N\": request timeout
+      4  Get \"http://N.N.N.N:N/api/slow?ms=N\": request timeout
+      1  time="N-N-NTN:N:N+N:N" level=warning msg="Insufficient VUs, reached N active VUs and cannot initialize more" executor=constant-arrival-rate scenario=mix
+
+
+bench.js  target=http://127.0.0.1:61450  rate=1000/s  window=600s  warm-up=0s (excluded)
+  requests=578921  achieved=964.868/s  unexpected=3.004%  5xx=7.868% (5% intended)  dropped=21081 (3.514%)
+  latency ms  p50=3.039  p95=312.614  p99=659.877  p99.9=2424.443  max=10658.543  avg=47.593
+  route          share   expect  p50      p95      p99      max
+  orders.get        40%  200     2.508    80.508   414.412  10645.822
+  orders.page       20%  200     2.803    82.782   428.568  10644.325
+  pay               20%  200     3.366    175.595  1119.046 10650.346
+  orders.items      10%  200     3.001    85.834   416.89   10634.784
+  slow               5%  200     315.555  464.974  1037.655 10658.543
+  error-500          5%  500     4.517    116.179  483.42   10649.874
+  thresholds FAILED; summary: <scratch>\wo02perf\sets\main-2\runs\01-off\k6.json
+time="2026-10-24T20:53:15+09:00" level=error msg="thresholds on metrics 'checks{phase:measure}, dropped_iterations, http_req_failed{phase:measure}' have been crossed"

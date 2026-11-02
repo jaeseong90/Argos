@@ -1,0 +1,8 @@
+# Extract of threads-start.txt (jcmd Thread.print): the first two lines, then the
+# header line of every thread whose name starts with argos- (cpu= is the thread CPU time).
+# Threads in the full dump: 255; argos- threads: 3.
+24100:
+2026-10-25 05:53:53
+"argos-logger" #20 [1372] daemon prio=5 os_prio=0 cpu=62.50ms elapsed=193.55s tid=0x000001ee027cd7c0 nid=1372 waiting on condition  [0x000000dacdaff000]
+"argos-sender" #21 [6128] daemon prio=5 os_prio=0 cpu=140.62ms elapsed=193.09s tid=0x000001ee027cb6f0 nid=6128 waiting on condition  [0x000000dacdbff000]
+"argos-watch" #22 [28012] daemon prio=5 os_prio=0 cpu=31.25ms elapsed=193.09s tid=0x000001ee027ca9d0 nid=28012 waiting on condition  [0x000000dacdcfe000]

@@ -32,6 +32,9 @@ import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.Missin
 import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.MissingSuppressAdvice;
 import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.NewThrowableAdvice;
 import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.NotInlinedAdvice;
+import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.NullCheckInEnterAdvice;
+import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.NullCheckOtherValueAdvice;
+import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.NullCheckWithoutReturnAdvice;
 import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.OtherModuleAdvice;
 import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.QueueTakeAdvice;
 import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.RepeatOnAdvice;
@@ -505,6 +508,51 @@ class AdviceRulesTest {
       // reference (return null) and exit-only advice.
       assertThat(Fixtures.compliant().stream().map(JavaClass::getSimpleName))
           .contains("DemoAdvice", "DemoExitOnlyAdvice", "DemoNegatedGuardAdvice");
+    }
+
+    @Test
+    @DisplayName(
+        "T-AG-003a C-24 accepts exit advice that starts with a null check of its @Advice.Enter"
+            + " value (== null return and != null block forms, Enter not the first parameter)")
+    void acceptsEnterNullCheckInExitAdvice() {
+      assertPassesOnCompliant(AdviceRules.guardFirst(COMPLIANT));
+      assertThat(Fixtures.compliant().stream().map(JavaClass::getSimpleName))
+          .contains("DemoEnterNullCheckAdvice", "DemoEnterNonNullBlockAdvice");
+    }
+
+    @Test
+    @DisplayName("T-AG-003a C-24 rejects an exit advice whose null check tests another value")
+    void rejectsNullCheckOfOtherValue() {
+      assertViolation(
+          AdviceRules.guardFirst(VIOLATING),
+          classes(NullCheckOtherValueAdvice.class),
+          "NullCheckOtherValueAdvice.exit",
+          "does not start with a null check of the @Advice.Enter parameter (first instruction:"
+              + " ALOAD 1)",
+          "in exit advice, if (<@Advice.Enter parameter> == null) return; (C-24)");
+    }
+
+    @Test
+    @DisplayName(
+        "T-AG-003a C-24 rejects an exit advice that runs code when the enter value is null")
+    void rejectsNullCheckWithoutReturn() {
+      assertViolation(
+          AdviceRules.guardFirst(VIOLATING),
+          classes(NullCheckWithoutReturnAdvice.class),
+          "NullCheckWithoutReturnAdvice.exit",
+          "does not return at once when the @Advice.Enter value is null");
+    }
+
+    @Test
+    @DisplayName("T-AG-003a C-24 rejects a null check as the guard of enter advice")
+    void rejectsNullCheckInEnterAdvice() {
+      assertViolation(
+              AdviceRules.guardFirst(VIOLATING),
+              classes(NullCheckInEnterAdvice.class),
+              "NullCheckInEnterAdvice.enter",
+              "calls " + Fixtures.VIOLATING_ROOT + ".instrumentation.demo.DemoHelper.record",
+              EXPECTED_GUARD)
+          .hasMessageNotContaining("or, in exit advice");
     }
 
     @Test

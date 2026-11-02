@@ -1,0 +1,55 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Snapshot of docs/11-protocol-design.md §4 (common.proto) for the WO-02 P-3 transport comparison only:
+// message definitions copied verbatim, design comments removed (see the design document), Java
+// package moved below io.argos.agent so that the classes can be shaded into comparison agent jars.
+// The real protocol lives in proto/src/main/proto/argos/v1 (WO-11).
+
+syntax = "proto3";
+package argos.v1;
+option java_package = "io.argos.agent.transportpoc.proto";
+option java_multiple_files = true;
+
+
+enum TransactionKind { TRANSACTION_KIND_UNSPECIFIED = 0; HTTP = 1; BATCH = 2; MESSAGE = 3; }
+
+enum StepType {
+  STEP_TYPE_UNSPECIFIED = 0;
+  SQL = 1; HTTP_CALL = 2; METHOD = 3; ASYNC = 4; ERROR = 5; MESSAGE_STEP = 6; STACK = 7;
+  DBC = 8;
+  COMMIT = 9; ROLLBACK = 10;
+}
+
+enum FailureKind { FAILURE_NONE = 0; TIMEOUT = 1; CONNECT_FAIL = 2; HTTP_5XX = 3; OTHER_ERROR = 4; }
+
+enum DictionaryKind {
+  DICTIONARY_KIND_UNSPECIFIED = 0;
+  SERVICE = 1;
+  SQL_TEXT = 2;
+  CLASS = 3;
+  METHOD_NAME = 4;
+  THREAD = 5;
+  HOST = 6;
+  FRAME = 7;
+  DB_TARGET = 8;
+  APP_VERSION = 9;
+}
+
+enum MetricKind { METRIC_KIND_UNSPECIFIED = 0; GAUGE = 1; COUNTER = 2; }
+
+enum IpMode { IP_MODE_UNSPECIFIED = 0; IP_FULL = 1; IP_MASKED = 2; IP_OFF = 3; }
+enum UserIdMode { USER_ID_MODE_UNSPECIFIED = 0; USER_ID_OFF = 1; USER_ID_PLAIN = 2; USER_ID_HASHED = 3; }
+enum QueryStringMode { QUERY_STRING_MODE_UNSPECIFIED = 0; QS_OFF = 1; QS_WHITELIST = 2; QS_FULL = 3; }
+enum SqlParamMode { SQL_PARAM_MODE_UNSPECIFIED = 0; SQL_PARAM_MASKED = 1; SQL_PARAM_PARTIAL = 2; SQL_PARAM_FULL = 3; }
+
+enum CommandType {
+  COMMAND_TYPE_UNSPECIFIED = 0;
+  THREAD_DUMP = 1;
+  THREAD_STACK = 2;
+  SELF_DIAGNOSTICS = 3;
+  CONFIG_RELOAD = 4;
+  ENV_DUMP = 5;
+  reserved 6 to 9;
+}
+
+message KeyValue { string key = 1; string value = 2; }

@@ -1,0 +1,1357 @@
+Installing pnpm@12.14.0...
+nproc=4
+Fetching distribution.
+Downloading https://services.gradle.org/distributions/gradle-9.8.2-bin.zip
+..............10%..............20%...............30%..............40%...............50%..............60%...............70%..............80%...............90%..............100%
+
+Welcome to Gradle 9.8.2!
+
+Here are the highlights of this release:
+ - Java 27 support
+ - Maven mirror settings reuse
+ - Linked problem locations in build output
+
+For more details see https://docs.gradle.org/9.8.2/release-notes.html
+
+Starting a Gradle Daemon (subsequent builds will be faster)
+Calculating task graph as no cached configuration is available for tasks: build
+> Task :build-logic:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :build-logic:generateExternalPluginSpecBuilders
+> Task :build-logic:extractPrecompiledScriptPluginPlugins
+> Task :build-logic:generateScriptPluginAdapters
+> Task :build-logic:pluginDescriptors
+> Task :build-logic:processResources
+> Task :build-logic:compilePluginsBlocks
+> Task :build-logic:generatePrecompiledScriptPluginAccessors
+> Task :build-logic:compileKotlin
+> Task :build-logic:compileJava NO-SOURCE
+> Task :build-logic:classes
+> Task :build-logic:jar
+
+> Configure project :test:agent:overhead
+w: file:///w/test/agent/overhead/build.gradle.kts:21:9: 'fun <U : Task> RegisteringDomainObjectDelegateProviderWithTypeAndAction<out TaskContainer, U>.provideDelegate(receiver: Any?, property: KProperty<*>): ExistingDomainObjectDelegate<TaskProvider<U>>' is deprecated. Use 'val task = tasks.register<Type>(name) { }' instead. See the Gradle 9.6 upgrading guide.
+w: file:///w/test/agent/overhead/build.gradle.kts:21:9: 'fun <T : Any, C : PolymorphicDomainObjectContainer<T>, U : T> C.registering(type: KClass<U>, action: U.() -> Unit): RegisteringDomainObjectDelegateProviderWithTypeAndAction<out C, U>' is deprecated. Use 'val element = register<Type>(name) { }' instead. See the Gradle 9.6 upgrading guide.
+w: file:///w/test/agent/overhead/build.gradle.kts:21:9: 'fun <T> ExistingDomainObjectDelegate<out T>.getValue(receiver: Any?, property: KProperty<*>): T' is deprecated. Use the named() API instead. See the Gradle 9.6 upgrading guide.
+
+> Task :deploy:assemble UP-TO-DATE
+> Task :deploy:check UP-TO-DATE
+> Task :deploy:build UP-TO-DATE
+> Task :proto:protobufDummy UP-TO-DATE
+> Task :assemble UP-TO-DATE
+> Task :server:compileJava NO-SOURCE
+> Task :server:processResources NO-SOURCE
+> Task :server:classes UP-TO-DATE
+> Task :server:jar
+> Task :server:assemble
+
+> Task :checkSpdx
+check-spdx: OK (981 files, find, 2 excluded)
+
+> Task :proto:extractIncludeProto
+> Task :proto:extractProto
+> Task :proto:generateProto NO-SOURCE
+> Task :proto:compileJava NO-SOURCE
+> Task :proto:processProtoResources
+> Task :proto:processResources NO-SOURCE
+> Task :proto:classes UP-TO-DATE
+> Task :proto:jar
+> Task :proto:assemble
+> Task :proto:extractIncludeTestProto
+> Task :proto:extractTestProto
+> Task :proto:generateTestProto NO-SOURCE
+
+> Task :ui:pnpmInstall
+Downloading the pnpm 12.14.0 binary for linux-x64...
+? Verifying lockfile against supply-chain policies (437 entries)...
+Update available! 12.14.0 → 12.16.1.
+Changelog: https://pnpm.io/v/12.16.1
+To update, run: curl -fsSL https://get.pnpm.io/install.sh | sh -
+Packages are hard linked from the content-addressable store to the virtual store.
+  Content-addressable store is at: /root/.local/share/pnpm/store/v11
+  Virtual store is at:             node_modules/.pnpm
+Downloading @rolldown/binding-linux-x64-gnu@1.2.15: 0.00 B/8.30 MB
+Progress: resolved 385, reused 0, downloaded 188, added 160
+Progress: resolved 385, reused 0, downloaded 288, added 283
+Progress: resolved 385, reused 0, downloaded 371, added 352
+Downloading @rolldown/binding-linux-x64-gnu@1.2.15: 8.06 MB/8.30 MB
+✓ Lockfile passes supply-chain policies (437 entries in 6s)
+Lockfile is up to date, resolution step is skipped
+Packages: +385
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 385, reused 0, downloaded 385, added 385, done
+
+dependencies:
++ i18next 26.4.7
++ react 19.3.1
++ react-dom 19.3.1
++ react-i18next 17.0.20
++ react-router 8.5.0
+
+devDependencies:
++ @eslint/js 10.0.1
++ @playwright/test 1.64.1
++ @testing-library/dom 10.4.2
++ @testing-library/jest-dom 7.0.1
++ @testing-library/react 16.3.3
++ @testing-library/user-event 14.6.8
++ @types/node 24.19.2
++ @types/react 19.3.0
++ @types/react-dom 19.3.0
++ @vitejs/plugin-react 6.1.2
++ eslint 10.13.0
++ eslint-config-prettier 10.1.8
++ eslint-plugin-i18next 6.1.5
++ eslint-plugin-import-x 4.17.1
++ eslint-plugin-jsx-a11y-x 0.2.0
++ eslint-plugin-react 7.37.5
++ eslint-plugin-react-hooks 7.1.1
++ globals 17.13.0
++ jsdom 29.1.1
++ prettier 3.9.10
++ typescript 6.0.3
++ typescript-eslint 8.71.2
++ vite 8.3.4
++ vitest 5.0.5
+
+Done in 6.8s using pnpm v12.14.0
+
+> Task :agent:agent-bootstrap:compileJava
+> Task :agent:agent-bootstrap:processResources NO-SOURCE
+> Task :agent:agent-bootstrap:classes
+> Task :agent:agent-bootstrap:jar
+> Task :agent:agent-bootstrap:assemble
+> Task :server:compileTestJava
+> Task :server:processTestResources NO-SOURCE
+> Task :server:testClasses
+
+> Task :ui:pnpmBuild
+$ tsc -b && vite build && node scripts/check-licenses.mjs --require-bundle --notices dist/licenses.txt && node scripts/check-no-external.mjs
+
+> Task :proto:compileTestJava
+> Task :proto:processTestProtoResources
+> Task :proto:processTestResources NO-SOURCE
+> Task :proto:testClasses
+> Task :agent:agent-bootstrap:compileTestJava
+> Task :agent:agent-bootstrap:processTestResources NO-SOURCE
+> Task :agent:agent-bootstrap:testClasses
+> Task :server:test
+> Task :server:compileArchTestJava NO-SOURCE
+> Task :server:processArchTestResources NO-SOURCE
+> Task :server:archTestClasses UP-TO-DATE
+> Task :server:archTest NO-SOURCE
+> Task :build-logic:compileTestKotlin
+> Task :build-logic:compileTestJava NO-SOURCE
+> Task :build-logic:pluginUnderTestMetadata
+> Task :build-logic:processTestResources NO-SOURCE
+> Task :build-logic:testClasses UP-TO-DATE
+> Task :proto:test
+> Task :proto:extractArchTestProto
+> Task :proto:extractIncludeArchTestProto
+> Task :proto:generateArchTestProto NO-SOURCE
+> Task :proto:compileArchTestJava NO-SOURCE
+> Task :proto:processArchTestProtoResources
+> Task :proto:processArchTestResources NO-SOURCE
+> Task :proto:archTestClasses UP-TO-DATE
+> Task :proto:archTest NO-SOURCE
+> Task :proto:checkForbiddenDependencies
+> Task :server:generateLicenseReport
+
+> Task :server:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :server:compileContractTestJava NO-SOURCE
+> Task :server:processContractTestResources NO-SOURCE
+> Task :server:contractTestClasses UP-TO-DATE
+> Task :server:contractTest NO-SOURCE
+> Task :agent:agent-bootstrap:test
+> Task :agent:agent-bootstrap:compileArchTestJava NO-SOURCE
+> Task :agent:agent-bootstrap:processArchTestResources NO-SOURCE
+> Task :agent:agent-bootstrap:archTestClasses UP-TO-DATE
+> Task :agent:agent-bootstrap:archTest NO-SOURCE
+> Task :agent:agent-bootstrap:checkForbiddenDependencies
+> Task :proto:generateLicenseReport
+
+> Task :proto:checkLicenses
+checkLicenses: 14 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :proto:checkModuleReadme
+> Task :proto:spotlessJava
+> Task :proto:spotlessJavaCheck
+> Task :proto:spotlessCheck
+> Task :proto:check
+> Task :proto:build
+> Task :server:spotlessJava
+> Task :server:spotlessJavaCheck
+> Task :server:spotlessCheck
+> Task :server:check
+> Task :server:build
+> Task :agent:agent-bootstrap:generateLicenseReport
+> Task :agent:agent-core:processResources NO-SOURCE
+> Task :agent:agent-core:processTestResources NO-SOURCE
+> Task :agent:agent-core:processArchTestResources NO-SOURCE
+> Task :agent:agent-core:checkForbiddenDependencies
+
+> Task :agent:agent-bootstrap:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-bootstrap:checkModuleReadme
+> Task :agent:agent-bootstrap:checkNoDependencies
+> Task :agent:agent-core:generateLicenseReport
+
+> Task :agent:agent-core:checkLicenses
+checkLicenses: 1 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-core:checkModuleReadme
+
+> Task :ui:pnpmBuild
+vite v8.3.4 building client environment for production...
+transforming...
+✓ 155 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                         0.56 kB │ gzip:   0.37 kB
+dist/.vite/license.json                 8.54 kB │ gzip:   1.00 kB
+dist/assets/index-IPOi7QJd.css          0.46 kB │ gzip:   0.27 kB
+dist/assets/XLogPocPage-BvadFZSw.css    4.32 kB │ gzip:   1.33 kB
+dist/assets/XLogPocPage-Zv6rSGC0.js    61.32 kB │ gzip:  19.30 kB
+dist/assets/index-ufbIftX8.js         374.03 kB │ gzip: 119.04 kB
+
+✓ built in 583ms
+ok   @babel/runtime@7.29.10                   MIT
+ok   @remix-run/route-pattern@0.22.1          MIT
+ok   cookie-es@3.1.1                          MIT
+ok   html-parse-stringify@4.0.1               MIT
+ok   i18next@26.4.7                           MIT
+ok   react-dom@19.3.1                         MIT
+ok   react-i18next@17.0.20                    MIT
+ok   react-router@8.5.0                       MIT
+ok   react@19.3.1                             MIT
+ok   scheduler@0.28.0                         MIT
+ok   use-sync-external-store@1.7.0            MIT
+check-licenses: production packages=11 bundled=7 errors=0
+check-licenses: wrote /w/ui/dist/licenses.txt (7 packages)
+check-no-external: scanned=6 skipped=2 (dist/.vite/license.json, dist/licenses.txt) allowlisted=25 errors=0
+
+> Task :agent:agent-bootstrap:spotlessJava
+> Task :agent:agent-bootstrap:spotlessJavaCheck
+> Task :ui:assemble
+> Task :agent:agent-bootstrap:spotlessCheck
+> Task :agent:agent-bootstrap:check
+> Task :agent:agent-bootstrap:build
+> Task :agent:agent-core:spotlessJava
+> Task :agent:agent-core:spotlessJavaCheck
+> Task :agent:agent-core:spotlessCheck
+> Task :agent:agent-instrumentation:custom:processResources NO-SOURCE
+> Task :agent:agent-instrumentation:executor:processResources
+> Task :agent:agent-instrumentation:httpclient-apache4:processResources NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-apache5:processResources NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-jdk:processResources
+> Task :agent:agent-instrumentation:httpclient-jdk11:processResources NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-okhttp:processResources NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-reactornetty:processResources NO-SOURCE
+> Task :agent:agent-instrumentation:jdbc:processResources
+> Task :agent:agent-instrumentation:logging:processResources NO-SOURCE
+> Task :agent:agent-instrumentation:pool:processResources NO-SOURCE
+> Task :agent:agent-instrumentation:scheduler:processResources NO-SOURCE
+> Task :agent:agent-instrumentation:servlet:processResources
+> Task :agent:agent-instrumentation:servlet-async:processResources NO-SOURCE
+> Task :agent:agent-instrumentation:spring-webmvc:processResources
+
+> Task :ui:typecheck
+$ tsc -b
+
+> Task :agent:agent-dist:cyclonedxDirectBom
+> Task :agent:agent-dist:agentSbom
+> Task :agent:agent-dist:processResources NO-SOURCE
+> Task :agent:agent-dist:generateLicenseReport
+
+> Task :agent:agent-dist:checkLicenses
+checkLicenses: 1 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-dist:generateDepsManifest
+> Task :agent:agent-dist:processTestResources NO-SOURCE
+> Task :agent:agent-dist:processArchTestResources NO-SOURCE
+> Task :agent:agent-dist:checkForbiddenDependencies
+> Task :agent:agent-dist:checkModuleReadme
+> Task :agent:agent-dist:spotlessJava
+> Task :agent:agent-dist:spotlessJavaCheck
+> Task :agent:agent-dist:spotlessCheck
+> Task :agent:agent-instrumentation:custom:processTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:custom:processArchTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:custom:checkForbiddenDependencies
+> Task :agent:agent-instrumentation:custom:generateLicenseReport
+
+> Task :agent:agent-instrumentation:custom:checkLicenses
+checkLicenses: 1 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-instrumentation:custom:checkModuleReadme
+> Task :agent:agent-instrumentation:custom:spotlessJava
+> Task :agent:agent-instrumentation:custom:spotlessJavaCheck
+> Task :agent:agent-instrumentation:custom:spotlessCheck
+> Task :agent:agent-instrumentation:executor:processTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:executor:processArchTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:executor:checkForbiddenDependencies
+> Task :agent:agent-instrumentation:executor:generateLicenseReport
+
+> Task :agent:agent-instrumentation:executor:checkLicenses
+checkLicenses: 1 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-instrumentation:executor:checkModuleReadme
+> Task :agent:agent-instrumentation:executor:spotlessJava
+> Task :agent:agent-instrumentation:executor:spotlessJavaCheck
+> Task :agent:agent-instrumentation:executor:spotlessCheck
+> Task :agent:agent-instrumentation:httpclient-apache4:processTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-apache4:processArchTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-apache4:checkForbiddenDependencies
+> Task :agent:agent-instrumentation:httpclient-apache4:generateLicenseReport
+
+> Task :agent:agent-instrumentation:httpclient-apache4:checkLicenses
+checkLicenses: 1 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-instrumentation:httpclient-apache4:checkModuleReadme
+> Task :agent:agent-instrumentation:httpclient-apache4:spotlessJava
+> Task :agent:agent-instrumentation:httpclient-apache4:spotlessJavaCheck
+> Task :agent:agent-instrumentation:httpclient-apache4:spotlessCheck
+> Task :agent:agent-instrumentation:httpclient-apache5:processTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-apache5:processArchTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-apache5:checkForbiddenDependencies
+> Task :agent:agent-instrumentation:httpclient-apache5:generateLicenseReport
+
+> Task :agent:agent-instrumentation:httpclient-apache5:checkLicenses
+checkLicenses: 1 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-instrumentation:httpclient-apache5:checkModuleReadme
+> Task :agent:agent-instrumentation:httpclient-apache5:spotlessJava
+> Task :agent:agent-instrumentation:httpclient-apache5:spotlessJavaCheck
+> Task :agent:agent-instrumentation:httpclient-apache5:spotlessCheck
+> Task :agent:agent-instrumentation:httpclient-jdk:processTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-jdk:processArchTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-jdk:checkForbiddenDependencies
+> Task :agent:agent-instrumentation:httpclient-jdk:generateLicenseReport
+
+> Task :agent:agent-instrumentation:httpclient-jdk:checkLicenses
+checkLicenses: 1 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-instrumentation:httpclient-jdk:checkModuleReadme
+> Task :agent:agent-instrumentation:api:compileJava
+> Task :agent:agent-instrumentation:httpclient-jdk:spotlessJava
+> Task :agent:agent-instrumentation:api:processResources NO-SOURCE
+> Task :agent:agent-instrumentation:api:classes
+> Task :agent:agent-instrumentation:api:jar
+> Task :agent:agent-instrumentation:custom:compileJava NO-SOURCE
+> Task :agent:agent-testing:compileJava
+> Task :agent:agent-instrumentation:httpclient-apache4:compileJava NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-apache5:compileJava NO-SOURCE
+> Task :agent:agent-instrumentation:executor:compileJava
+> Task :agent:agent-instrumentation:httpclient-jdk11:compileJava NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-okhttp:compileJava NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-reactornetty:compileJava NO-SOURCE
+$ eslint --max-warnings 0 .
+
+> Task :ui:lint
+
+> Task :agent:agent-instrumentation:httpclient-jdk:compileJava
+> Task :agent:agent-instrumentation:logging:compileJava NO-SOURCE
+> Task :agent:agent-instrumentation:pool:compileJava NO-SOURCE
+> Task :agent:agent-instrumentation:scheduler:compileJava NO-SOURCE
+> Task :agent:agent-core:compileJava
+> Task :agent:agent-core:classes
+> Task :agent:agent-core:jar
+> Task :agent:agent-core:assemble
+> Task :agent:agent-instrumentation:jdbc:compileJava
+> Task :agent:agent-instrumentation:servlet-async:compileJava NO-SOURCE
+> Task :agent:agent-instrumentation:servlet:compileJava
+> Task :agent:agent-instrumentation:custom:classes UP-TO-DATE
+> Task :agent:agent-instrumentation:custom:jar
+> Task :agent:agent-instrumentation:executor:classes
+> Task :agent:agent-instrumentation:executor:jar
+> Task :agent:agent-instrumentation:httpclient-apache4:classes UP-TO-DATE
+> Task :agent:agent-instrumentation:httpclient-apache4:jar
+> Task :agent:agent-instrumentation:httpclient-apache5:classes UP-TO-DATE
+> Task :agent:agent-instrumentation:httpclient-apache5:jar
+> Task :agent:agent-instrumentation:httpclient-jdk:classes
+> Task :agent:agent-instrumentation:httpclient-jdk:jar
+> Task :agent:agent-instrumentation:httpclient-jdk11:classes UP-TO-DATE
+> Task :agent:agent-instrumentation:httpclient-jdk11:jar
+> Task :agent:agent-instrumentation:httpclient-okhttp:classes UP-TO-DATE
+> Task :agent:agent-instrumentation:httpclient-okhttp:jar
+> Task :agent:agent-instrumentation:httpclient-reactornetty:classes UP-TO-DATE
+> Task :agent:agent-instrumentation:httpclient-reactornetty:jar
+> Task :agent:agent-instrumentation:jdbc:classes
+> Task :agent:agent-instrumentation:jdbc:jar
+> Task :agent:agent-instrumentation:logging:classes UP-TO-DATE
+> Task :agent:agent-instrumentation:logging:jar
+> Task :agent:agent-instrumentation:pool:classes UP-TO-DATE
+> Task :agent:agent-instrumentation:pool:jar
+> Task :agent:agent-instrumentation:scheduler:classes UP-TO-DATE
+> Task :agent:agent-instrumentation:scheduler:jar
+> Task :agent:agent-instrumentation:servlet:classes
+> Task :agent:agent-instrumentation:servlet:jar
+> Task :agent:agent-instrumentation:servlet-async:classes UP-TO-DATE
+> Task :agent:agent-instrumentation:servlet-async:jar
+> Task :agent:agent-testing:processResources NO-SOURCE
+> Task :agent:agent-testing:classes
+> Task :agent:agent-testing:jar
+> Task :agent:agent-testing:assemble
+> Task :agent:agent-instrumentation:spring-webmvc:compileJava
+> Task :agent:agent-dist:compileJava NO-SOURCE
+> Task :agent:agent-dist:classes UP-TO-DATE
+> Task :agent:agent-dist:compileArchTestJava NO-SOURCE
+> Task :build-logic:test
+> Task :agent:agent-testing:compileTestJava
+> Task :agent:agent-instrumentation:spring-webmvc:classes
+> Task :agent:agent-dist:compileTestJava
+> Task :agent:agent-dist:jar SKIPPED
+> Task :agent:agent-dist:testClasses
+> Task :agent:agent-dist:archTestClasses UP-TO-DATE
+> Task :agent:agent-instrumentation:spring-webmvc:jar
+> Task :agent:agent-testing:processTestResources NO-SOURCE
+> Task :agent:agent-testing:testClasses
+> Task :agent:agent-core:compileTestJava
+> Task :agent:agent-core:testClasses
+> Task :agent:agent-testing:test
+> Task :agent:agent-dist:shadowJar
+> Task :agent:agent-dist:classdataJar
+> Task :agent:agent-dist:generateThirdPartyNotices
+> Task :agent:agent-dist:agentJar
+> Task :agent:agent-dist:checkMajorVersion
+> Task :agent:agent-dist:checkModuleIndex
+> Task :agent:agent-dist:checkOwnRelocatedLiterals
+> Task :agent:agent-dist:checkRelocatedStrings
+> Task :agent:agent-core:test
+> Task :agent:agent-core:compileArchTestJava NO-SOURCE
+> Task :agent:agent-core:archTestClasses UP-TO-DATE
+> Task :agent:agent-core:archTest NO-SOURCE
+> Task :agent:agent-core:check
+> Task :agent:agent-core:build
+> Task :agent:agent-instrumentation:api:assemble
+> Task :agent:agent-testing:compileArchFixturesJava
+> Task :agent:agent-testing:processArchFixturesResources NO-SOURCE
+> Task :agent:agent-testing:archFixturesClasses
+
+> Task :agent:agent-dist:checkShading
+ok   [packages] 2648 classes, all below io/argos/agent/
+ok   [root-exposure] root classes only in io/argos/agent/bootstrap/ (+ Premain-Class io.argos.agent.AgentPremain)
+ok   [root-entries] outside inst/ only bootstrap classes, the Premain-Class, META-INF notices/SBOM, manifest
+ok   [meta-inf] LICENSE, NOTICE, THIRD-PARTY-NOTICES, argos-deps.txt, sbom/agent.cdx.json, manifest
+ok   [signatures] no signature files
+ok   [major-version] 2648 classes: own major 52, shaded <= 52 (0 shaded below 52; read from jar entries)
+ok   [unsafe] no sun.misc.Unsafe reference outside the allow-list (0 entries)
+ok   [native] no native libraries
+ok   [size] 4074167 bytes <= 15 MB (15000000 bytes)
+ok   [duplicates] no duplicate classes or entries
+check-shading: OK (2648 classes, 4074167 bytes, /w/agent/agent-dist/build/libs/argos-agent-0.0.0-SNAPSHOT.jar)
+
+> Task :agent:agent-dist:verifyAgentJar
+> Task :agent:agent-dist:assemble
+> Task :agent:agent-instrumentation:api:compileTestJava
+> Task :agent:agent-instrumentation:api:processTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:api:testClasses
+> Task :agent:agent-dist:test
+> Task :agent:agent-dist:archTest NO-SOURCE
+> Task :agent:agent-dist:check
+> Task :agent:agent-dist:build
+> Task :agent:agent-instrumentation:custom:assemble
+> Task :agent:agent-testing:compileArchTestJava
+> Task :agent:agent-testing:processArchTestResources
+> Task :agent:agent-testing:archTestClasses
+> Task :agent:agent-instrumentation:api:test
+> Task :agent:agent-instrumentation:api:compileArchTestJava NO-SOURCE
+> Task :agent:agent-instrumentation:api:processArchTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:api:archTestClasses UP-TO-DATE
+> Task :agent:agent-instrumentation:api:archTest NO-SOURCE
+> Task :agent:agent-instrumentation:api:checkForbiddenDependencies
+> Task :agent:agent-instrumentation:api:generateLicenseReport
+
+> Task :agent:agent-instrumentation:api:checkLicenses
+checkLicenses: 1 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-instrumentation:api:checkModuleReadme
+> Task :agent:agent-instrumentation:api:spotlessJava
+> Task :agent:agent-instrumentation:api:spotlessJavaCheck
+> Task :agent:agent-instrumentation:api:spotlessCheck
+> Task :agent:agent-instrumentation:api:check
+> Task :agent:agent-instrumentation:api:build
+> Task :agent:agent-instrumentation:executor:assemble
+
+> Task :agent:agent-testing:archTest
+
+Gradle Test Executor 17 STANDARD_ERROR
+    SLF4J(W): No SLF4J providers were found.
+    SLF4J(W): Defaulting to no-operation (NOP) logger implementation
+    SLF4J(W): See https://www.slf4j.org/codes.html#noProviders for further details.
+
+> Task :agent:agent-instrumentation:custom:compileTestJava
+> Task :agent:agent-instrumentation:custom:testClasses
+
+> Task :ui:test
+
+ RUN  v5.0.5 /w/ui
+
+$ vitest run
+ ✓  tooling  scripts/check-i18n-keys.test.mjs (22 tests) 857ms
+   ✓ check-i18n-keys CLI (2)
+     ✓ without a ko directory: warns in PR mode (exit 0), fails with --release (exit 1) 377ms
+ ✓  tooling  scripts/check-licenses.test.mjs (47 tests) 1449ms
+   ✓ check-licenses --dev (development tools, docs/licenses/dev-only.md) (9)
+     ✓ passes for the real ui tool chain with docs/licenses/dev-only.md 453ms
+ ✓  tooling  scripts/check-no-external.test.mjs (27 tests) 378ms
+ ✓  tooling  perf/lib/frames.test.ts (14 tests) 48ms
+ ✓  tooling  perf/lib/results.test.ts (8 tests) 28ms
+ ✓  tooling  perf/lib/settings.test.ts (18 tests) 36ms
+ ✓  tooling  perf/lib/cpuLoad.test.ts (6 tests) 20ms
+ ✓  tooling  scripts/src-extensions.test.mjs (12 tests) 63ms
+ ✓  tooling  e2e/fixtures/distCheck.test.ts (4 tests) 54ms
+ ✓  tooling  perf/lib/stats.test.ts (6 tests) 22ms
+ ✓  tooling  eslint-rules/lint-exceptions.test.mjs (9 tests) 15ms
+ ✓  tooling  eslint-rules/spdx-header.test.mjs (11 tests) 460ms
+ ✓  tooling  e2e/fixtures/uiServer.test.ts (3 tests) 14ms
+
+> Task :agent:agent-instrumentation:executor:compileTestJava
+> Task :agent:agent-instrumentation:executor:testClasses
+> Task :agent:agent-instrumentation:custom:test
+> Task :agent:agent-instrumentation:custom:compileArchTestJava NO-SOURCE
+> Task :agent:agent-instrumentation:custom:archTestClasses UP-TO-DATE
+> Task :agent:agent-instrumentation:custom:archTest NO-SOURCE
+> Task :agent:agent-instrumentation:custom:check
+> Task :agent:agent-instrumentation:custom:build
+> Task :agent:agent-instrumentation:httpclient-apache4:assemble
+
+> Task :ui:test
+ ✓  ui  src/xlog/engine.test.ts (19 tests) 454ms
+
+> Task :agent:agent-instrumentation:executor:test
+> Task :agent:agent-instrumentation:executor:compileArchTestJava NO-SOURCE
+> Task :agent:agent-instrumentation:executor:archTestClasses UP-TO-DATE
+> Task :agent:agent-instrumentation:executor:archTest NO-SOURCE
+> Task :agent:agent-instrumentation:executor:check
+> Task :agent:agent-instrumentation:executor:build
+> Task :agent:agent-instrumentation:httpclient-apache5:assemble
+
+> Task :ui:test
+ ✓  tooling  eslint-rules/eslint-config.test.mjs (66 tests) 12817ms
+   ✓ eslint.config.mjs (66)
+     ✓ rejects devDependencies in production code but allows them in tests 529ms
+     ✓ rejects files without the SPDX header (argos/spdx-header) 450ms
+
+> Task :agent:agent-instrumentation:httpclient-apache4:compileTestJava
+> Task :agent:agent-instrumentation:httpclient-apache4:testClasses
+
+> Task :ui:test
+ ✓  ui  src/xlog/XLogCanvas.test.tsx (12 tests) 1184ms
+   ✓ XLogCanvas (12)
+     ✓ describes the plot for assistive technology 481ms
+
+> Task :agent:agent-instrumentation:httpclient-apache5:compileTestJava
+> Task :agent:agent-instrumentation:httpclient-apache5:testClasses
+> Task :agent:agent-testing:generateLicenseReport
+
+> Task :agent:agent-testing:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in no shipped configuration; all licenses allowed
+
+> Task :agent:agent-instrumentation:httpclient-apache4:test
+> Task :agent:agent-instrumentation:httpclient-apache4:compileArchTestJava NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-apache4:archTestClasses UP-TO-DATE
+> Task :agent:agent-instrumentation:httpclient-apache4:archTest NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-apache4:check
+> Task :agent:agent-instrumentation:httpclient-apache4:build
+> Task :agent:agent-instrumentation:httpclient-jdk:assemble
+> Task :agent:agent-instrumentation:httpclient-apache5:test
+> Task :agent:agent-instrumentation:httpclient-apache5:compileArchTestJava NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-apache5:archTestClasses UP-TO-DATE
+> Task :agent:agent-instrumentation:httpclient-apache5:archTest NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-apache5:check
+> Task :agent:agent-instrumentation:httpclient-apache5:build
+> Task :agent:agent-instrumentation:httpclient-jdk11:assemble
+> Task :agent:agent-testing:spotlessJava
+> Task :agent:agent-testing:spotlessJavaCheck
+> Task :agent:agent-testing:spotlessCheck
+> Task :agent:agent-testing:check
+> Task :agent:agent-testing:build
+> Task :agent:agent-instrumentation:httpclient-okhttp:assemble
+
+> Task :ui:test
+ ✓  ui  src/features/xlog-poc/dummyData.test.ts (9 tests) 4350ms
+   ✓ dummy XLog data (WO-04) (9)
+     ✓ generates 100,000 points in time order inside the range 1709ms
+     ✓ derives the status: errors per service rate, slow above the threshold 1343ms
+     ✓ T-UI-001 samples deterministically: all slow/error points plus a txId hash share (A-5) 438ms
+
+> Task :agent:agent-instrumentation:httpclient-jdk:compileTestJava
+> Task :agent:agent-instrumentation:httpclient-jdk:testClasses
+
+> Task :ui:test
+ ✓  ui  src/xlog/renderer.test.ts (33 tests) 19520ms
+   ✓ PointLayer (docs/15 §7.2) (15)
+     ✓ pixels mode with the row cache (perf-3): y = log, colour = service (3)
+       ✓ draws the same pixels as the reference with a cold and a warm cache: DPR 1 (2 px points, direct writes) 775ms
+       ✓ draws the same pixels as the reference with a cold and a warm cache: DPR 2 capped at 1.5 (3 px points) 1559ms
+   ✓ PointLayer realtime: no new point inside the window is lost (docs/15 §7.5) (12)
+     ✓ path: 60 s at 500 points/s with a fractional shift per 1 s window move 4011ms
+     ✓ rect: 60 s at 500 points/s with a fractional shift per 1 s window move 3311ms
+     ✓ pixels: 60 s at 500 points/s with a fractional shift per 1 s window move 3599ms
+     ✓ path: a frame between the append and the window move draws the late points later 1037ms
+     ✓ rect: a frame between the append and the window move draws the late points later 1445ms
+     ✓ pixels: a frame between the append and the window move draws the late points later 1366ms
+     ✓ path: points that arrive while the range is paused appear on resume 508ms
+     ✓ rect: points that arrive while the range is paused appear on resume 501ms
+     ✓ pixels: points that arrive while the range is paused appear on resume 592ms
+ ✓  ui  src/xlog/selectionSummary.test.ts (12 tests) 88ms
+
+> Task :agent:agent-instrumentation:httpclient-jdk11:compileTestJava
+> Task :agent:agent-instrumentation:httpclient-jdk11:processTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-jdk11:testClasses
+
+> Task :ui:test
+ ✓  ui  src/xlog/scale.test.ts (18 tests) 21ms
+
+> Task :agent:agent-instrumentation:httpclient-okhttp:compileTestJava
+> Task :agent:agent-instrumentation:httpclient-okhttp:processTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-okhttp:testClasses
+> Task :build-logic:validatePlugins
+> Task :build-logic:check
+
+> Task :ui:test
+ ✓  ui  src/xlog/hitIndex.test.ts (10 tests) 970ms
+   ✓ HitIndex (docs/15 §7.3, 8 px grid) (10)
+     ✓ finds the nearest point within the hover radius, like a brute-force search 507ms
+ ✓  ui  src/xlog/XLogBuffer.test.ts (10 tests) 15ms
+
+> Task :agent:agent-instrumentation:httpclient-jdk11:test
+> Task :check
+> Task :build
+> Task :agent:agent-instrumentation:httpclient-jdk11:compileArchTestJava NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-jdk11:processArchTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-jdk11:archTestClasses UP-TO-DATE
+> Task :agent:agent-instrumentation:httpclient-jdk11:archTest NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-jdk11:checkForbiddenDependencies
+> Task :agent:agent-instrumentation:httpclient-jdk:test
+> Task :agent:agent-instrumentation:httpclient-jdk:compileArchTestJava NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-jdk:archTestClasses UP-TO-DATE
+> Task :agent:agent-instrumentation:httpclient-jdk:archTest NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-jdk:spotlessJavaCheck
+> Task :agent:agent-instrumentation:httpclient-jdk:spotlessCheck
+> Task :agent:agent-instrumentation:httpclient-jdk:check
+> Task :agent:agent-instrumentation:httpclient-jdk:build
+> Task :agent:agent-instrumentation:httpclient-reactornetty:assemble
+> Task :agent:agent-instrumentation:httpclient-jdk11:generateLicenseReport
+
+> Task :agent:agent-instrumentation:httpclient-jdk11:checkLicenses
+checkLicenses: 1 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-instrumentation:httpclient-jdk11:checkModuleReadme
+> Task :agent:agent-instrumentation:httpclient-jdk11:spotlessJava
+> Task :agent:agent-instrumentation:httpclient-jdk11:spotlessJavaCheck
+> Task :agent:agent-instrumentation:httpclient-jdk11:spotlessCheck
+> Task :agent:agent-instrumentation:httpclient-jdk11:check
+> Task :agent:agent-instrumentation:httpclient-jdk11:build
+> Task :agent:agent-instrumentation:jdbc:assemble
+> Task :agent:agent-instrumentation:httpclient-okhttp:test
+> Task :agent:agent-instrumentation:httpclient-okhttp:compileArchTestJava NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-okhttp:processArchTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-okhttp:archTestClasses UP-TO-DATE
+> Task :agent:agent-instrumentation:httpclient-okhttp:archTest NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-okhttp:checkForbiddenDependencies
+> Task :agent:agent-instrumentation:httpclient-okhttp:generateLicenseReport
+
+> Task :agent:agent-instrumentation:httpclient-okhttp:checkLicenses
+checkLicenses: 1 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-instrumentation:httpclient-okhttp:checkModuleReadme
+> Task :agent:agent-instrumentation:httpclient-okhttp:spotlessJava
+> Task :agent:agent-instrumentation:httpclient-okhttp:spotlessJavaCheck
+> Task :agent:agent-instrumentation:httpclient-okhttp:spotlessCheck
+> Task :agent:agent-instrumentation:httpclient-okhttp:check
+> Task :agent:agent-instrumentation:httpclient-okhttp:build
+> Task :agent:agent-instrumentation:logging:assemble
+
+> Task :ui:test
+ ✓  ui  src/features/xlog-poc/realtimeSim.test.ts (7 tests) 455ms
+ ✓  ui  src/app/App.test.tsx (9 tests) 635ms
+   ✓ App (9)
+     ✓ renders the English source strings from locales/en (T-UI-006) 400ms
+
+> Task :agent:agent-instrumentation:httpclient-reactornetty:compileTestJava
+> Task :agent:agent-instrumentation:httpclient-reactornetty:processTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-reactornetty:testClasses
+
+> Task :ui:test
+ ✓  ui  src/features/xlog-poc/XLogPocPage.test.tsx (14 tests) 22934ms
+   ✓ XLogPocPage (/xlog-poc) (14)
+     ✓ generates the requested points and shows the empty-selection hint 718ms
+     ✓ drag -> summary (count, top 10 services, distributions) and a list of N rows 2406ms
+     ✓ a smaller drag selects fewer points and lists all of them 513ms
+     ✓ filters the list by a summary row and clears the filter 3169ms
+     ✓ renders XSS payloads in the summary and the list as text only (SEC-61) 2850ms
+     ✓ shows collected names that look like i18next syntax verbatim (en, SEC-61) 4009ms
+     ✓ shows collected names that look like i18next syntax verbatim (ko, SEC-61) 2835ms
+     ✓ clears the selection with Escape and with the clear button 2051ms
+     ✓ T-UI-001 shows the sampling indicator and the sampled note for total > n 1095ms
+     ✓ realtime: dragging pauses the window, resume restarts it (docs/05 §2.0) 1881ms
+     ✓ exposes window.__xlogPerf with frame samples and a benchmark 586ms
+     ✓ renders the Korean translation 500ms
+ ✓  ui  src/xlog/tooltipPlacement.test.ts (8 tests) 11ms
+ ✓  ui  src/features/xlog-poc/pocParams.test.ts (22 tests) 35ms
+
+> Task :agent:agent-instrumentation:httpclient-reactornetty:test
+> Task :agent:agent-instrumentation:httpclient-reactornetty:compileArchTestJava NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-reactornetty:processArchTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-reactornetty:archTestClasses UP-TO-DATE
+> Task :agent:agent-instrumentation:httpclient-reactornetty:archTest NO-SOURCE
+> Task :agent:agent-instrumentation:httpclient-reactornetty:checkForbiddenDependencies
+> Task :agent:agent-instrumentation:httpclient-reactornetty:generateLicenseReport
+
+> Task :agent:agent-instrumentation:httpclient-reactornetty:checkLicenses
+checkLicenses: 1 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-instrumentation:httpclient-reactornetty:checkModuleReadme
+> Task :agent:agent-instrumentation:httpclient-reactornetty:spotlessJava
+> Task :agent:agent-instrumentation:httpclient-reactornetty:spotlessJavaCheck
+> Task :agent:agent-instrumentation:httpclient-reactornetty:spotlessCheck
+> Task :agent:agent-instrumentation:httpclient-reactornetty:check
+> Task :agent:agent-instrumentation:httpclient-reactornetty:build
+> Task :agent:agent-instrumentation:pool:assemble
+
+> Task :ui:test
+ ✓  ui  src/xlog/perf.test.ts (5 tests) 12ms
+ ✓  ui  src/app/router.test.tsx (3 tests) 680ms
+   ✓ routes (3)
+     ✓ renders the start page at / 368ms
+ ✓  ui  src/i18n/language.test.ts (9 tests) 18ms
+
+> Task :agent:agent-instrumentation:logging:compileTestJava
+> Task :agent:agent-instrumentation:logging:processTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:logging:testClasses
+
+> Task :ui:test
+ ✓  ui  src/xlog/sampling.test.ts (3 tests) 4ms
+
+ Test Files  31 passed (31)
+      Tests  456 passed (456)
+   Start at  12:45:31
+   Duration  40.33s (tests 62%, environment 28%, setup 6%, transform 3%, import 2%)
+
+
+> Task :ui:check
+> Task :ui:build
+> Task :agent:agent-instrumentation:pool:compileTestJava
+> Task :agent:agent-instrumentation:logging:test
+> Task :agent:agent-instrumentation:jdbc:compileTestJava
+> Task :sample-apps:shop-batch:sampleBuildInfo
+> Task :sample-apps:shop-batch:processResources
+> Task :sample-apps:shop-batch:processTestResources NO-SOURCE
+> Task :sample-apps:shop-batch:processArchTestResources NO-SOURCE
+> Task :sample-apps:ext-stub:compileJava
+> Task :sample-apps:ext-stub:sampleBuildInfo
+> Task :sample-apps:shop-batch:generateLicenseReport
+> Task :sample-apps:ext-stub:processResources
+> Task :sample-apps:ext-stub:classes
+
+> Task :sample-apps:shop-batch:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in no shipped configuration; all licenses allowed
+
+> Task :sample-apps:ext-stub:jar
+> Task :sample-apps:ext-stub:assemble
+> Task :sample-apps:shop-batch:spotlessJava
+> Task :sample-apps:shop-batch:spotlessJavaCheck
+> Task :sample-apps:shop-batch:spotlessCheck
+> Task :sample-apps:shop-boot2:sampleBuildInfo
+> Task :sample-apps:shop-boot2:processResources
+> Task :sample-apps:shop-boot2:processTestResources NO-SOURCE
+> Task :sample-apps:shop-boot2:processArchTestResources NO-SOURCE
+> Task :sample-apps:shop-boot2:generateLicenseReport
+
+> Task :sample-apps:shop-boot2:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in no shipped configuration; all licenses allowed
+
+> Task :sample-apps:shop-boot2:spotlessJava
+> Task :sample-apps:shop-boot2:spotlessJavaCheck
+> Task :sample-apps:shop-boot2:spotlessCheck
+> Task :sample-apps:shop-boot3:sampleBuildInfo
+> Task :sample-apps:shop-boot3:processResources
+> Task :sample-apps:shop-boot3:processTestResources NO-SOURCE
+> Task :sample-apps:shop-boot3:processArchTestResources NO-SOURCE
+> Task :sample-apps:ext-stub:compileTestJava
+> Task :sample-apps:ext-stub:processTestResources NO-SOURCE
+> Task :sample-apps:ext-stub:testClasses
+> Task :sample-apps:shop-boot3:generateLicenseReport
+
+> Task :sample-apps:shop-boot3:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in no shipped configuration; all licenses allowed
+
+> Task :sample-apps:common:compileJava
+> Task :sample-apps:common:processResources
+> Task :sample-apps:common:classes
+> Task :sample-apps:common:jar
+> Task :sample-apps:common:assemble
+> Task :sample-apps:shop-boot3:spotlessJava
+> Task :sample-apps:ext-stub:test
+> Task :sample-apps:ext-stub:compileArchTestJava NO-SOURCE
+> Task :sample-apps:ext-stub:processArchTestResources NO-SOURCE
+> Task :sample-apps:ext-stub:archTestClasses UP-TO-DATE
+> Task :sample-apps:ext-stub:archTest NO-SOURCE
+> Task :sample-apps:ext-stub:generateLicenseReport
+
+> Task :sample-apps:ext-stub:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in no shipped configuration; all licenses allowed
+
+> Task :sample-apps:ext-stub:spotlessJava
+> Task :sample-apps:ext-stub:spotlessJavaCheck
+> Task :sample-apps:ext-stub:spotlessCheck
+> Task :sample-apps:ext-stub:check
+> Task :sample-apps:ext-stub:build
+> Task :sample-apps:load:compileJava
+> Task :sample-apps:load:sampleBuildInfo
+> Task :sample-apps:load:processResources
+> Task :sample-apps:load:classes
+> Task :sample-apps:load:jar
+> Task :sample-apps:load:assemble
+> Task :sample-apps:common:compileTestJava
+> Task :sample-apps:common:processTestResources NO-SOURCE
+> Task :sample-apps:common:testClasses
+
+> Task :sample-apps:common:test
+
+ShopJdbcTest STANDARD_ERROR
+    SLF4J: Failed to load class "org.slf4j.impl.StaticLoggerBinder".
+    SLF4J: Defaulting to no-operation (NOP) logger implementation
+    SLF4J: See http://www.slf4j.org/codes.html#StaticLoggerBinder for further details.
+
+> Task :sample-apps:load:compileTestJava
+> Task :sample-apps:load:processTestResources NO-SOURCE
+> Task :sample-apps:load:testClasses
+> Task :sample-apps:common:compileArchTestJava NO-SOURCE
+> Task :sample-apps:common:processArchTestResources NO-SOURCE
+> Task :sample-apps:common:archTestClasses UP-TO-DATE
+> Task :sample-apps:common:archTest NO-SOURCE
+> Task :sample-apps:common:generateLicenseReport
+
+> Task :sample-apps:common:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in no shipped configuration; all licenses allowed
+
+> Task :sample-apps:common:spotlessJava
+> Task :sample-apps:common:spotlessJavaCheck
+> Task :sample-apps:common:spotlessCheck
+> Task :sample-apps:common:check
+> Task :sample-apps:common:build
+> Task :sample-apps:shop-batch:compileJava
+> Task :sample-apps:shop-batch:classes
+> Task :sample-apps:shop-batch:jar
+> Task :sample-apps:shop-batch:assemble
+> Task :sample-apps:shop-boot2:compileJava
+> Task :sample-apps:shop-boot2:classes
+> Task :sample-apps:shop-boot2:jar
+> Task :sample-apps:shop-boot2:assemble
+> Task :sample-apps:shop-batch:compileTestJava
+> Task :sample-apps:shop-batch:testClasses
+> Task :sample-apps:load:test
+> Task :sample-apps:load:compileArchTestJava NO-SOURCE
+> Task :sample-apps:load:processArchTestResources NO-SOURCE
+> Task :sample-apps:load:archTestClasses UP-TO-DATE
+> Task :sample-apps:load:archTest NO-SOURCE
+> Task :sample-apps:load:checkDemoLoadDependencies
+> Task :sample-apps:load:generateLicenseReport
+
+> Task :sample-apps:load:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in no shipped configuration; all licenses allowed
+
+> Task :sample-apps:load:spotlessJava
+> Task :sample-apps:load:spotlessJavaCheck
+> Task :sample-apps:load:spotlessCheck
+> Task :sample-apps:load:check
+> Task :sample-apps:load:build
+> Task :sample-apps:shop-boot3:compileJava
+> Task :sample-apps:shop-boot3:classes
+> Task :sample-apps:shop-boot3:jar
+> Task :sample-apps:shop-boot3:assemble
+> Task :sample-apps:shop-boot3:compileTestJava NO-SOURCE
+> Task :sample-apps:shop-boot3:testClasses UP-TO-DATE
+> Task :sample-apps:shop-boot3:test NO-SOURCE
+> Task :sample-apps:shop-boot3:compileArchTestJava NO-SOURCE
+> Task :sample-apps:shop-boot3:archTestClasses UP-TO-DATE
+> Task :sample-apps:shop-boot3:archTest NO-SOURCE
+> Task :sample-apps:shop-boot3:spotlessJavaCheck
+> Task :sample-apps:shop-boot3:spotlessCheck
+> Task :sample-apps:shop-boot3:check
+> Task :sample-apps:shop-boot3:build
+> Task :sample-apps:shop-boot2:compileTestJava
+> Task :sample-apps:shop-boot2:testClasses
+> Task :sample-apps:shop-batch:test
+> Task :sample-apps:shop-batch:compileArchTestJava NO-SOURCE
+> Task :sample-apps:shop-batch:archTestClasses UP-TO-DATE
+> Task :sample-apps:shop-batch:archTest NO-SOURCE
+> Task :sample-apps:shop-batch:check
+> Task :sample-apps:shop-batch:build
+> Task :sample-apps:shop-boot2:test
+> Task :sample-apps:shop-boot2:compileArchTestJava NO-SOURCE
+> Task :sample-apps:shop-boot2:archTestClasses UP-TO-DATE
+> Task :sample-apps:shop-boot2:archTest NO-SOURCE
+> Task :sample-apps:shop-boot2:check
+> Task :sample-apps:shop-boot2:build
+> Task :sample-apps:shop-war-jakarta:compileJava
+> Task :sample-apps:shop-war-jakarta:sampleBuildInfo
+> Task :sample-apps:shop-war-jakarta:processResources
+> Task :sample-apps:shop-war-jakarta:classes
+> Task :sample-apps:shop-war-jakarta:jar
+> Task :sample-apps:shop-war-javax:compileJava
+> Task :sample-apps:shop-war-javax:sampleBuildInfo
+> Task :sample-apps:shop-war-javax:processResources
+> Task :sample-apps:shop-war-javax:classes
+> Task :sample-apps:shop-war-javax:jar
+> Task :sample-apps:shop-war-javax:war
+> Task :sample-apps:shop-war-javax:sampleLaunchDescriptor
+> Task :sample-apps:shop-war-javax:assemble
+> Task :sample-apps:shop-war-javax:compileTestJava NO-SOURCE
+> Task :sample-apps:shop-war-javax:processTestResources NO-SOURCE
+> Task :sample-apps:shop-war-javax:testClasses UP-TO-DATE
+> Task :sample-apps:shop-war-javax:test NO-SOURCE
+> Task :sample-apps:shop-war-javax:compileArchTestJava NO-SOURCE
+> Task :sample-apps:shop-war-javax:processArchTestResources NO-SOURCE
+> Task :sample-apps:shop-war-javax:archTestClasses UP-TO-DATE
+> Task :sample-apps:shop-war-javax:archTest NO-SOURCE
+> Task :sample-apps:shop-war-jakarta:war
+> Task :sample-apps:shop-war-jakarta:sampleLaunchDescriptor
+> Task :sample-apps:shop-war-jakarta:assemble
+> Task :sample-apps:shop-war-jakarta:compileTestJava NO-SOURCE
+> Task :sample-apps:shop-war-jakarta:processTestResources NO-SOURCE
+> Task :sample-apps:shop-war-jakarta:testClasses UP-TO-DATE
+> Task :sample-apps:shop-war-jakarta:test NO-SOURCE
+> Task :sample-apps:shop-war-jakarta:compileArchTestJava NO-SOURCE
+> Task :sample-apps:shop-war-jakarta:processArchTestResources NO-SOURCE
+> Task :sample-apps:shop-war-jakarta:archTestClasses UP-TO-DATE
+> Task :sample-apps:shop-war-jakarta:archTest NO-SOURCE
+> Task :sample-apps:shop-war-javax:generateLicenseReport
+
+> Task :sample-apps:shop-war-javax:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in no shipped configuration; all licenses allowed
+
+> Task :sample-apps:shop-war-javax:spotlessJava
+> Task :sample-apps:shop-war-javax:spotlessJavaCheck
+> Task :sample-apps:shop-war-javax:spotlessCheck
+> Task :sample-apps:shop-war-javax:check
+> Task :sample-apps:shop-war-javax:build
+> Task :sample-apps:shop-war-jakarta:generateLicenseReport
+
+> Task :sample-apps:shop-war-jakarta:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in no shipped configuration; all licenses allowed
+
+> Task :sample-apps:shop-war-jakarta:spotlessJava
+> Task :sample-apps:shop-war-jakarta:spotlessJavaCheck
+> Task :sample-apps:shop-war-jakarta:spotlessCheck
+> Task :sample-apps:shop-war-jakarta:check
+> Task :sample-apps:shop-war-jakarta:build
+> Task :agent:agent-instrumentation:jdbc:processTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:jdbc:testClasses
+> Task :sample-apps:shop-boot4:compileJava
+> Task :sample-apps:shop-boot4:sampleBuildInfo
+> Task :sample-apps:shop-boot4:processResources
+> Task :sample-apps:shop-boot4:classes
+> Task :sample-apps:shop-boot4:jar
+> Task :sample-apps:shop-boot4:assemble
+> Task :sample-apps:shop-boot4:compileTestJava NO-SOURCE
+> Task :sample-apps:shop-boot4:processTestResources NO-SOURCE
+> Task :sample-apps:shop-boot4:testClasses UP-TO-DATE
+> Task :sample-apps:shop-boot4:test NO-SOURCE
+> Task :sample-apps:shop-boot4:compileArchTestJava NO-SOURCE
+> Task :sample-apps:shop-boot4:processArchTestResources NO-SOURCE
+> Task :sample-apps:shop-boot4:archTestClasses UP-TO-DATE
+> Task :sample-apps:shop-boot4:archTest NO-SOURCE
+> Task :agent:agent-instrumentation:jdbc:test
+> Task :agent:agent-instrumentation:jdbc:compileArchTestJava NO-SOURCE
+> Task :agent:agent-instrumentation:jdbc:processArchTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:jdbc:archTestClasses UP-TO-DATE
+> Task :agent:agent-instrumentation:jdbc:archTest NO-SOURCE
+> Task :agent:agent-instrumentation:jdbc:checkForbiddenDependencies
+> Task :agent:agent-instrumentation:jdbc:generateLicenseReport
+
+> Task :agent:agent-instrumentation:jdbc:checkLicenses
+checkLicenses: 1 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-instrumentation:jdbc:checkModuleReadme
+> Task :agent:agent-instrumentation:jdbc:spotlessJava
+> Task :agent:agent-instrumentation:jdbc:spotlessJavaCheck
+> Task :agent:agent-instrumentation:jdbc:spotlessCheck
+> Task :agent:agent-instrumentation:jdbc:check
+> Task :agent:agent-instrumentation:jdbc:build
+> Task :agent:agent-instrumentation:logging:compileArchTestJava NO-SOURCE
+> Task :agent:agent-instrumentation:logging:processArchTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:logging:archTestClasses UP-TO-DATE
+> Task :agent:agent-instrumentation:logging:archTest NO-SOURCE
+> Task :agent:agent-instrumentation:logging:checkForbiddenDependencies
+> Task :sample-apps:shop-boot4:generateLicenseReport
+
+> Task :sample-apps:shop-boot4:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in no shipped configuration; all licenses allowed
+
+> Task :sample-apps:smoke:compileJava
+> Task :sample-apps:smoke:sampleBuildInfo
+> Task :sample-apps:smoke:processResources
+> Task :sample-apps:smoke:classes
+> Task :sample-apps:shop-boot4:spotlessJava
+> Task :sample-apps:shop-boot4:spotlessJavaCheck
+> Task :sample-apps:shop-boot4:spotlessCheck
+> Task :sample-apps:shop-boot4:check
+> Task :sample-apps:shop-boot4:build
+> Task :agent:agent-instrumentation:pool:processTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:pool:testClasses
+> Task :sample-apps:smoke:jar
+> Task :sample-apps:smoke:assemble
+> Task :agent:agent-instrumentation:logging:generateLicenseReport
+
+> Task :agent:agent-instrumentation:logging:checkLicenses
+checkLicenses: 1 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-instrumentation:logging:checkModuleReadme
+> Task :agent:agent-instrumentation:logging:spotlessJava
+> Task :agent:agent-instrumentation:logging:spotlessJavaCheck
+> Task :agent:agent-instrumentation:logging:spotlessCheck
+> Task :agent:agent-instrumentation:logging:check
+> Task :agent:agent-instrumentation:logging:build
+> Task :agent:agent-instrumentation:scheduler:assemble
+> Task :agent:agent-instrumentation:scheduler:compileTestJava
+> Task :agent:agent-instrumentation:scheduler:processTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:scheduler:testClasses
+> Task :sample-apps:smoke:compileTestJava
+> Task :sample-apps:smoke:processTestResources NO-SOURCE
+> Task :sample-apps:smoke:testClasses
+> Task :agent:agent-instrumentation:pool:test
+> Task :agent:agent-instrumentation:pool:compileArchTestJava NO-SOURCE
+> Task :agent:agent-instrumentation:pool:processArchTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:pool:archTestClasses UP-TO-DATE
+> Task :agent:agent-instrumentation:pool:archTest NO-SOURCE
+> Task :agent:agent-instrumentation:pool:checkForbiddenDependencies
+> Task :agent:agent-instrumentation:pool:generateLicenseReport
+
+> Task :agent:agent-instrumentation:pool:checkLicenses
+checkLicenses: 1 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-instrumentation:pool:checkModuleReadme
+> Task :agent:agent-instrumentation:pool:spotlessJava
+> Task :agent:agent-instrumentation:pool:spotlessJavaCheck
+> Task :agent:agent-instrumentation:pool:spotlessCheck
+> Task :agent:agent-instrumentation:pool:check
+> Task :agent:agent-instrumentation:pool:build
+> Task :agent:agent-instrumentation:servlet:assemble
+> Task :agent:agent-instrumentation:scheduler:test
+> Task :agent:agent-instrumentation:scheduler:compileArchTestJava NO-SOURCE
+> Task :agent:agent-instrumentation:scheduler:processArchTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:scheduler:archTestClasses UP-TO-DATE
+> Task :agent:agent-instrumentation:scheduler:archTest NO-SOURCE
+> Task :agent:agent-instrumentation:scheduler:checkForbiddenDependencies
+> Task :agent:agent-instrumentation:scheduler:generateLicenseReport
+
+> Task :agent:agent-instrumentation:scheduler:checkLicenses
+checkLicenses: 1 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-instrumentation:scheduler:checkModuleReadme
+> Task :agent:agent-instrumentation:scheduler:spotlessJava
+> Task :agent:agent-instrumentation:scheduler:spotlessJavaCheck
+> Task :agent:agent-instrumentation:scheduler:spotlessCheck
+> Task :agent:agent-instrumentation:scheduler:check
+> Task :agent:agent-instrumentation:scheduler:build
+> Task :agent:agent-instrumentation:servlet-async:assemble
+> Task :sample-apps:shop-heavy:compileJava
+> Task :sample-apps:shop-heavy:sampleBuildInfo
+> Task :sample-apps:shop-heavy:processResources
+> Task :sample-apps:shop-heavy:classes
+> Task :sample-apps:shop-heavy:jar
+> Task :sample-apps:shop-heavy:assemble
+> Task :sample-apps:smoke:test
+> Task :sample-apps:smoke:compileArchTestJava NO-SOURCE
+> Task :sample-apps:smoke:processArchTestResources NO-SOURCE
+> Task :sample-apps:smoke:archTestClasses UP-TO-DATE
+> Task :sample-apps:smoke:archTest NO-SOURCE
+> Task :sample-apps:smoke:generateLicenseReport
+
+> Task :sample-apps:smoke:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in no shipped configuration; all licenses allowed
+
+> Task :sample-apps:smoke:spotlessJava
+> Task :sample-apps:smoke:spotlessJavaCheck
+> Task :sample-apps:smoke:spotlessCheck
+> Task :sample-apps:smoke:check
+> Task :sample-apps:smoke:build
+> Task :agent:agent-instrumentation:spring-webmvc:assemble
+> Task :agent:agent-instrumentation:servlet-async:compileTestJava
+> Task :agent:agent-instrumentation:servlet-async:processTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:servlet-async:testClasses
+> Task :agent:agent-instrumentation:servlet:compileTestJava
+> Task :agent:agent-instrumentation:servlet:processTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:servlet:testClasses
+> Task :agent:agent-instrumentation:servlet-async:test
+> Task :agent:agent-instrumentation:servlet-async:compileArchTestJava NO-SOURCE
+> Task :agent:agent-instrumentation:servlet-async:processArchTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:servlet-async:archTestClasses UP-TO-DATE
+> Task :agent:agent-instrumentation:servlet-async:archTest NO-SOURCE
+> Task :agent:agent-instrumentation:servlet-async:checkForbiddenDependencies
+> Task :agent:agent-instrumentation:servlet-async:generateLicenseReport
+
+> Task :agent:agent-instrumentation:servlet-async:checkLicenses
+checkLicenses: 1 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-instrumentation:servlet-async:checkModuleReadme
+> Task :agent:agent-instrumentation:servlet-async:spotlessJava
+> Task :agent:agent-instrumentation:servlet-async:spotlessJavaCheck
+> Task :agent:agent-instrumentation:servlet-async:spotlessCheck
+> Task :agent:agent-instrumentation:servlet-async:check
+> Task :agent:agent-instrumentation:servlet-async:build
+> Task :sample-apps:shop-heavy:compileTestJava
+> Task :sample-apps:shop-heavy:processTestResources NO-SOURCE
+> Task :sample-apps:shop-heavy:testClasses
+> Task :agent:agent-instrumentation:servlet:test
+> Task :agent:agent-instrumentation:servlet:compileArchTestJava NO-SOURCE
+> Task :agent:agent-instrumentation:servlet:processArchTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:servlet:archTestClasses UP-TO-DATE
+> Task :agent:agent-instrumentation:servlet:archTest NO-SOURCE
+> Task :agent:agent-instrumentation:servlet:checkForbiddenDependencies
+> Task :agent:agent-instrumentation:spring-webmvc:compileTestJava
+> Task :agent:agent-instrumentation:spring-webmvc:processTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:spring-webmvc:testClasses
+> Task :agent:agent-instrumentation:servlet:generateLicenseReport
+
+> Task :agent:agent-instrumentation:servlet:checkLicenses
+checkLicenses: 1 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-instrumentation:servlet:checkModuleReadme
+> Task :agent:agent-instrumentation:servlet:spotlessJava
+> Task :agent:agent-instrumentation:servlet:spotlessJavaCheck
+> Task :agent:agent-instrumentation:servlet:spotlessCheck
+> Task :agent:agent-instrumentation:servlet:check
+> Task :agent:agent-instrumentation:servlet:build
+> Task :test:agent:transport-poc:protobufDummy UP-TO-DATE
+> Task :test:agent:transport-poc:extractIncludeProto
+> Task :test:agent:transport-poc:extractProto
+> Task :test:agent:transport-poc:generateProto NO-SOURCE
+> Task :test:agent:transport-poc:compileJava NO-SOURCE
+> Task :test:agent:transport-poc:processProtoResources
+> Task :test:agent:transport-poc:processResources NO-SOURCE
+> Task :test:agent:transport-poc:classes UP-TO-DATE
+> Task :test:agent:transport-poc:jar
+> Task :test:agent:transport-poc:assemble
+> Task :test:agent:transport-poc:extractIncludeTestProto
+> Task :test:agent:transport-poc:extractTestProto
+> Task :test:agent:transport-poc:generateTestProto NO-SOURCE
+> Task :test:agent:transport-poc:compileTestJava NO-SOURCE
+> Task :test:agent:transport-poc:processTestProtoResources
+> Task :test:agent:transport-poc:processTestResources NO-SOURCE
+> Task :test:agent:transport-poc:testClasses UP-TO-DATE
+> Task :test:agent:transport-poc:test NO-SOURCE
+> Task :test:agent:transport-poc:extractArchTestProto
+> Task :test:agent:transport-poc:extractIncludeArchTestProto
+> Task :test:agent:transport-poc:generateArchTestProto NO-SOURCE
+> Task :test:agent:transport-poc:compileArchTestJava NO-SOURCE
+> Task :test:agent:transport-poc:processArchTestProtoResources
+> Task :test:agent:transport-poc:processArchTestResources NO-SOURCE
+> Task :test:agent:transport-poc:archTestClasses UP-TO-DATE
+> Task :test:agent:transport-poc:archTest NO-SOURCE
+> Task :test:agent:transport-poc:checkForbiddenDependencies
+> Task :agent:agent-instrumentation:spring-webmvc:test
+> Task :agent:agent-instrumentation:spring-webmvc:compileArchTestJava NO-SOURCE
+> Task :agent:agent-instrumentation:spring-webmvc:processArchTestResources NO-SOURCE
+> Task :agent:agent-instrumentation:spring-webmvc:archTestClasses UP-TO-DATE
+> Task :agent:agent-instrumentation:spring-webmvc:archTest NO-SOURCE
+> Task :agent:agent-instrumentation:spring-webmvc:checkForbiddenDependencies
+> Task :agent:agent-instrumentation:spring-webmvc:generateLicenseReport
+
+> Task :agent:agent-instrumentation:spring-webmvc:checkLicenses
+checkLicenses: 1 shipped third-party module(s) checked in runtimeClasspath; all licenses allowed
+
+> Task :agent:agent-instrumentation:spring-webmvc:checkModuleReadme
+> Task :agent:agent-instrumentation:spring-webmvc:spotlessJava
+> Task :agent:agent-instrumentation:spring-webmvc:spotlessJavaCheck
+> Task :agent:agent-instrumentation:spring-webmvc:spotlessCheck
+> Task :agent:agent-instrumentation:spring-webmvc:check
+> Task :agent:agent-instrumentation:spring-webmvc:build
+> Task :sample-apps:shop-heavy:test
+> Task :sample-apps:shop-heavy:compileArchTestJava NO-SOURCE
+> Task :sample-apps:shop-heavy:processArchTestResources NO-SOURCE
+> Task :sample-apps:shop-heavy:archTestClasses UP-TO-DATE
+> Task :sample-apps:shop-heavy:archTest NO-SOURCE
+> Task :test:agent:transport-poc:generateLicenseReport
+
+> Task :test:agent:transport-poc:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in no shipped configuration; all licenses allowed
+
+> Task :test:agent:transport-poc:checkModuleReadme
+> Task :test:agent:transport-poc:spotlessJava
+> Task :test:agent:transport-poc:spotlessJavaCheck
+> Task :test:agent:transport-poc:spotlessCheck
+> Task :test:agent:transport-poc:check
+> Task :test:agent:transport-poc:build
+> Task :test:storage:generator:processResources NO-SOURCE
+> Task :test:storage:generator:processTestResources NO-SOURCE
+> Task :test:storage:generator:processArchTestResources NO-SOURCE
+> Task :test:storage:generator:generateLicenseReport
+
+> Task :test:storage:generator:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in no shipped configuration; all licenses allowed
+
+> Task :test:storage:generator:spotlessJava
+> Task :test:storage:generator:spotlessJavaCheck
+> Task :test:storage:generator:spotlessCheck
+> Task :test:storage:queries:processResources NO-SOURCE
+> Task :test:storage:queries:processTestResources NO-SOURCE
+> Task :test:storage:queries:processArchTestResources NO-SOURCE
+> Task :test:storage:queries:generateLicenseReport
+
+> Task :test:storage:queries:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in no shipped configuration; all licenses allowed
+
+> Task :test:storage:queries:spotlessJava
+> Task :test:storage:queries:spotlessJavaCheck
+> Task :test:storage:queries:spotlessCheck
+> Task :test:storage:schema-tests:compileJava NO-SOURCE
+> Task :test:storage:schema-tests:processResources NO-SOURCE
+> Task :test:storage:schema-tests:classes UP-TO-DATE
+> Task :test:storage:schema-tests:jar
+> Task :test:storage:schema-tests:assemble
+> Task :test:storage:schema-tests:processTestResources NO-SOURCE
+> Task :test:storage:schema-tests:compileArchTestJava NO-SOURCE
+> Task :test:storage:schema-tests:processArchTestResources NO-SOURCE
+> Task :test:storage:schema-tests:archTestClasses UP-TO-DATE
+> Task :test:storage:schema-tests:archTest NO-SOURCE
+> Task :sample-apps:shop-heavy:generateLicenseReport
+
+> Task :sample-apps:shop-heavy:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in no shipped configuration; all licenses allowed
+
+> Task :test:storage:schema-tests:generateLicenseReport
+
+> Task :test:storage:schema-tests:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in no shipped configuration; all licenses allowed
+
+> Task :sample-apps:shop-heavy:spotlessJava
+> Task :sample-apps:shop-heavy:spotlessJavaCheck
+> Task :sample-apps:shop-heavy:spotlessCheck
+
+> Task :sample-apps:shop-heavy:verifyHeavyFootprint
+shop-heavy footprint: 267 dependency jars, 76949 classes
+
+> Task :sample-apps:shop-heavy:check
+> Task :sample-apps:shop-heavy:build
+> Task :test:storage:schema-tests:spotlessJava
+> Task :test:storage:schema-tests:spotlessJavaCheck
+> Task :test:storage:schema-tests:spotlessCheck
+> Task :test:agent:overhead:compileJava
+> Task :test:agent:overhead:processResources NO-SOURCE
+> Task :test:agent:overhead:classes
+> Task :test:agent:overhead:jar
+> Task :test:agent:overhead:assemble
+> Task :test:storage:clickhouse-support:compileJava
+> Task :test:storage:clickhouse-support:processResources NO-SOURCE
+> Task :test:storage:clickhouse-support:classes
+> Task :test:agent:overhead:compileTestJava
+> Task :test:agent:overhead:processTestResources NO-SOURCE
+> Task :test:agent:overhead:testClasses
+> Task :test:storage:clickhouse-support:jar
+> Task :test:storage:clickhouse-support:assemble
+> Task :test:agent:overhead:test
+> Task :test:agent:overhead:compileArchTestJava NO-SOURCE
+> Task :test:agent:overhead:processArchTestResources NO-SOURCE
+> Task :test:agent:overhead:archTestClasses UP-TO-DATE
+> Task :test:agent:overhead:archTest NO-SOURCE
+> Task :test:agent:overhead:generateLicenseReport
+
+> Task :test:agent:overhead:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in no shipped configuration; all licenses allowed
+
+> Task :test:agent:overhead:spotlessJava
+> Task :test:agent:overhead:spotlessJavaCheck
+> Task :test:agent:overhead:spotlessCheck
+> Task :test:agent:overhead:check
+> Task :test:agent:overhead:build
+> Task :test:storage:clickhouse-support:compileTestJava
+> Task :test:storage:clickhouse-support:processTestResources NO-SOURCE
+> Task :test:storage:clickhouse-support:testClasses
+> Task :test:storage:clickhouse-support:test
+> Task :test:storage:clickhouse-support:compileArchTestJava NO-SOURCE
+> Task :test:storage:clickhouse-support:processArchTestResources NO-SOURCE
+> Task :test:storage:clickhouse-support:archTestClasses UP-TO-DATE
+> Task :test:storage:clickhouse-support:archTest NO-SOURCE
+> Task :test:storage:clickhouse-support:generateLicenseReport
+
+> Task :test:storage:clickhouse-support:checkLicenses
+checkLicenses: 0 shipped third-party module(s) checked in no shipped configuration; all licenses allowed
+
+> Task :test:storage:clickhouse-support:spotlessJava
+> Task :test:storage:clickhouse-support:spotlessJavaCheck
+> Task :test:storage:clickhouse-support:spotlessCheck
+> Task :test:storage:clickhouse-support:check
+> Task :test:storage:clickhouse-support:build
+> Task :test:storage:schema-tests:compileTestJava
+> Task :test:storage:schema-tests:testClasses
+> Task :test:storage:schema-tests:test
+> Task :test:storage:schema-tests:check
+> Task :test:storage:schema-tests:build
+> Task :test:storage:generator:compileJava
+> Task :test:storage:generator:classes
+> Task :test:storage:generator:jar
+> Task :test:storage:generator:assemble
+> Task :test:storage:queries:compileJava
+> Task :test:storage:queries:classes
+> Task :test:storage:queries:jar
+> Task :test:storage:queries:assemble
+> Task :test:storage:generator:compileTestJava
+> Task :test:storage:generator:testClasses
+> Task :test:storage:queries:compileTestJava
+> Task :test:storage:queries:testClasses
+> Task :test:storage:queries:test
+> Task :test:storage:queries:compileArchTestJava NO-SOURCE
+> Task :test:storage:queries:archTestClasses UP-TO-DATE
+> Task :test:storage:queries:archTest NO-SOURCE
+> Task :test:storage:queries:check
+> Task :test:storage:queries:build
+> Task :test:storage:generator:test
+> Task :test:storage:generator:compileArchTestJava NO-SOURCE
+> Task :test:storage:generator:archTestClasses UP-TO-DATE
+> Task :test:storage:generator:archTest NO-SOURCE
+> Task :test:storage:generator:check
+> Task :test:storage:generator:build
+
+100 problems were found storing the configuration cache, 51 of which seem unique.
+- Plugin class 'org.gradle.api.plugins.JavaBasePlugin': execution of task ':agent:agent-testing:generateLicenseReport' caused invocation of 'Task.project' in other task at execution time which is unsupported with the configuration cache.
+  See https://docs.gradle.org/9.8.2/userguide/configuration_cache_requirements.html#config_cache:requirements:use_project_during_execution
+- Plugin class 'org.gradle.api.plugins.JavaBasePlugin': execution of task ':sample-apps:common:generateLicenseReport' caused invocation of 'Task.project' in other task at execution time which is unsupported with the configuration cache.
+  See https://docs.gradle.org/9.8.2/userguide/configuration_cache_requirements.html#config_cache:requirements:use_project_during_execution
+- Plugin class 'org.gradle.api.plugins.JavaBasePlugin': execution of task ':sample-apps:ext-stub:generateLicenseReport' caused invocation of 'Task.project' in other task at execution time which is unsupported with the configuration cache.
+  See https://docs.gradle.org/9.8.2/userguide/configuration_cache_requirements.html#config_cache:requirements:use_project_during_execution
+- Plugin class 'org.gradle.api.plugins.JavaBasePlugin': execution of task ':sample-apps:load:generateLicenseReport' caused invocation of 'Task.project' in other task at execution time which is unsupported with the configuration cache.
+  See https://docs.gradle.org/9.8.2/userguide/configuration_cache_requirements.html#config_cache:requirements:use_project_during_execution
+- Plugin class 'org.gradle.api.plugins.JavaBasePlugin': execution of task ':sample-apps:shop-batch:generateLicenseReport' caused invocation of 'Task.project' in other task at execution time which is unsupported with the configuration cache.
+  See https://docs.gradle.org/9.8.2/userguide/configuration_cache_requirements.html#config_cache:requirements:use_project_during_execution
+- Plugin class 'org.gradle.api.plugins.JavaBasePlugin': execution of task ':sample-apps:shop-boot2:generateLicenseReport' caused invocation of 'Task.project' in other task at execution time which is unsupported with the configuration cache.
+  See https://docs.gradle.org/9.8.2/userguide/configuration_cache_requirements.html#config_cache:requirements:use_project_during_execution
+- Plugin class 'org.gradle.api.plugins.JavaBasePlugin': execution of task ':sample-apps:shop-heavy:generateLicenseReport' caused invocation of 'Task.project' in other task at execution time which is unsupported with the configuration cache.
+  See https://docs.gradle.org/9.8.2/userguide/configuration_cache_requirements.html#config_cache:requirements:use_project_during_execution
+- Plugin class 'org.gradle.api.plugins.JavaBasePlugin': execution of task ':server:generateLicenseReport' caused invocation of 'Task.project' in other task at execution time which is unsupported with the configuration cache.
+  See https://docs.gradle.org/9.8.2/userguide/configuration_cache_requirements.html#config_cache:requirements:use_project_during_execution
+- Plugin class 'org.gradle.api.plugins.JavaBasePlugin': execution of task ':test:agent:transport-poc:generateLicenseReport' caused invocation of 'Task.project' in other task at execution time which is unsupported with the configuration cache.
+  See https://docs.gradle.org/9.8.2/userguide/configuration_cache_requirements.html#config_cache:requirements:use_project_during_execution
+- Plugin class 'org.gradle.api.plugins.JavaBasePlugin': execution of task ':test:storage:generator:generateLicenseReport' caused invocation of 'Task.project' in other task at execution time which is unsupported with the configuration cache.
+  See https://docs.gradle.org/9.8.2/userguide/configuration_cache_requirements.html#config_cache:requirements:use_project_during_execution
+- Plugin class 'org.gradle.api.plugins.JavaBasePlugin': execution of task ':test:storage:queries:generateLicenseReport' caused invocation of 'Task.project' in other task at execution time which is unsupported with the configuration cache.
+  See https://docs.gradle.org/9.8.2/userguide/configuration_cache_requirements.html#config_cache:requirements:use_project_during_execution
+- Plugin class 'org.gradle.api.plugins.JavaBasePlugin': execution of task ':test:storage:schema-tests:generateLicenseReport' caused invocation of 'Task.project' in other task at execution time which is unsupported with the configuration cache.
+  See https://docs.gradle.org/9.8.2/userguide/configuration_cache_requirements.html#config_cache:requirements:use_project_during_execution
+- Task `:agent:agent-bootstrap:generateLicenseReport` of type `com.github.jk1.license.task.ReportTask`: cannot serialize object of type 'org.gradle.api.internal.project.DefaultProject', a subtype of 'org.gradle.api.Project', as these are not supported with the configuration cache.
+  See https://docs.gradle.org/9.8.2/userguide/configuration_cache_requirements.html#config_cache:requirements:disallowed_types
+- Task `:agent:agent-core:generateLicenseReport` of type `com.github.jk1.license.task.ReportTask`: cannot serialize object of type 'org.gradle.api.internal.project.DefaultProject', a subtype of 'org.gradle.api.Project', as these are not supported with the configuration cache.
+  See https://docs.gradle.org/9.8.2/userguide/configuration_cache_requirements.html#config_cache:requirements:disallowed_types
+- Task `:agent:agent-dist:generateLicenseReport` of type `com.github.jk1.license.task.ReportTask`: cannot serialize object of type 'org.gradle.api.internal.project.DefaultProject', a subtype of 'org.gradle.api.Project', as these are not supported with the configuration cache.
+  See https://docs.gradle.org/9.8.2/userguide/configuration_cache_requirements.html#config_cache:requirements:disallowed_types
+plus 36 more problems. Please see the report for details.
+
+See the complete report at file:///w/build/reports/configuration-cache/eg8cnlvypbv80mpqzbwzfap2s/6f0xzmeao7tym8p5p1yr837by/configuration-cache-report.html
+
+[Incubating] Problems report is available at: file:///w/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.8.2/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 7m 31s
+414 actionable tasks: 414 executed
+Configuration cache entry discarded with 100 problems.
+BUILD-JAVA rc=0 seconds=452

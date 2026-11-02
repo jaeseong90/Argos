@@ -1,0 +1,229 @@
+{
+  "kind": "load",
+  "label": "pilot1",
+  "mode": "process",
+  "virtualThreads": false,
+  "criteria": "N-01, N-03, N-26 (Gate 0: N-01 mean, N-03)",
+  "runs": [
+    {
+      "index": 1,
+      "round": 1,
+      "variant": "off",
+      "appCpuSeconds": 29.84375,
+      "wallSeconds": 40.5229738,
+      "requests": 40001,
+      "dropped": 0,
+      "unexpectedRate": 0,
+      "p50": 0.532,
+      "p95": 14.969,
+      "p99": 312.442,
+      "p999": 315.096,
+      "hostCpuPercentMean": 57.07022255821705,
+      "loaderCpuPercentMean": 57.07022255821705,
+      "cpuBeforePercent": 12.152553020190581,
+      "gate": "PASS"
+    },
+    {
+      "index": 2,
+      "round": 1,
+      "variant": "on",
+      "appCpuSeconds": 29.421875,
+      "wallSeconds": 40.4991601,
+      "requests": 40001,
+      "dropped": 0,
+      "unexpectedRate": 0,
+      "p50": 0.528,
+      "p95": 33.163,
+      "p99": 312.399,
+      "p999": 315.128,
+      "hostCpuPercentMean": 47.55419851752119,
+      "loaderCpuPercentMean": 47.55419851752119,
+      "cpuBeforePercent": 55.52154366750731,
+      "gate": "PASS"
+    }
+  ],
+  "validity": {
+    "offCpuSeconds": [29.84375],
+    "offCpuCv": null,
+    "offCpuCvLimit": 0.02,
+    "offCpuCvOk": false,
+    "gateProblems": []
+  },
+  "comparisons": {
+    "on": {
+      "cpu": {
+        "offCpuSeconds": [29.84375],
+        "onCpuSeconds": [29.421875],
+        "offMean": 29.84375,
+        "onMean": 29.421875,
+        "relative": -0.014136125654450216,
+        "pairRelatives": [-0.014136125654450216],
+        "pairRelativeCi95": [null, null],
+        "check": {
+          "value": -0.014136125654450216,
+          "limit": 0.05,
+          "unit": "relative",
+          "verdict": "PASS"
+        },
+        "offCpuMsPerRequestMean": 0.7460750981225469,
+        "onCpuMsPerRequestMean": 0.7355284867878303,
+        "relativePerRequest": -0.014136125654450216
+      },
+      "peak": {
+        "windowSeconds": 60,
+        "stepSeconds": 10,
+        "windowRelatives": [],
+        "value": null,
+        "limit": 0.08,
+        "unit": "relative",
+        "verdict": "NO DATA"
+      },
+      "agentThreadCpu": {
+        "agentThreadCpuSeconds": [0.09375],
+        "hostCpus": 12,
+        "value": 0.019290523508906053,
+        "limit": 1,
+        "unit": "% of host CPU",
+        "verdict": "PASS"
+      },
+      "latency": {
+        "p50": {
+          "off": [0.532],
+          "on": [0.528],
+          "offMean": 0.532,
+          "onMean": 0.528,
+          "diffMean": -0.0040000000000000036,
+          "diffCi95": [null, null],
+          "noDifference": true
+        },
+        "p95": {
+          "off": [14.969],
+          "on": [33.163],
+          "offMean": 14.969,
+          "onMean": 33.163,
+          "diffMean": 18.193999999999996,
+          "diffCi95": [null, null],
+          "noDifference": true
+        },
+        "p99": {
+          "off": [312.442],
+          "on": [312.399],
+          "offMean": 312.442,
+          "onMean": 312.399,
+          "diffMean": -0.043000000000006366,
+          "diffCi95": [null, null],
+          "noDifference": true,
+          "check": {
+            "value": -0.043000000000006366,
+            "limit": 15.622100000000001,
+            "unit": "ms",
+            "verdict": "PASS"
+          }
+        },
+        "p99.9": {
+          "off": [315.096],
+          "on": [315.128],
+          "offMean": 315.096,
+          "onMean": 315.128,
+          "diffMean": 0.031999999999982265,
+          "diffCi95": [null, null],
+          "noDifference": true
+        }
+      },
+      "routesP99": {
+        "orders.get": {
+          "offP99Mean": 1.664,
+          "onP99Mean": 2.125,
+          "diffMean": 0.4610000000000001,
+          "diffCi95": [null, null]
+        },
+        "orders.page": {
+          "offP99Mean": 2.038,
+          "onP99Mean": 2.274,
+          "diffMean": 0.2360000000000002,
+          "diffCi95": [null, null]
+        },
+        "pay": {
+          "offP99Mean": 2.127,
+          "onP99Mean": 2.935,
+          "diffMean": 0.8080000000000003,
+          "diffCi95": [null, null]
+        },
+        "orders.items": {
+          "offP99Mean": 2.27,
+          "onP99Mean": 2.401,
+          "diffMean": 0.13099999999999978,
+          "diffCi95": [null, null]
+        },
+        "slow": {
+          "offP99Mean": 315.394,
+          "onP99Mean": 315.735,
+          "diffMean": 0.3410000000000082,
+          "diffCi95": [null, null]
+        },
+        "error-500": {
+          "offP99Mean": 2.751,
+          "onP99Mean": 4.098,
+          "diffMean": 1.347,
+          "diffCi95": [null, null]
+        }
+      },
+      "memory": {
+        "agentHeapMbMax": 0.3176116943359375,
+        "agentHeapMb": {
+          "value": 0.3176116943359375,
+          "limit": 64,
+          "unit": "MB",
+          "verdict": "PASS",
+          "requirement": "N-02 agent heap"
+        },
+        "metaspaceIncreaseMb": {
+          "value": 7.0849609375,
+          "limit": 32,
+          "unit": "MB",
+          "verdict": "PASS",
+          "requirement": "N-26 metaspace increase"
+        },
+        "nmtInternalOtherIncreaseMb": {
+          "value": 0.3212890625,
+          "limit": 16,
+          "unit": "MB",
+          "verdict": "PASS",
+          "requirement": "01 §7.3 item 7 NMT Internal+Other"
+        },
+        "directMemoryIncreaseMb": {
+          "value": 0,
+          "limit": 8,
+          "unit": "MB",
+          "verdict": "PASS",
+          "requirement": "N-26 direct memory (NMT Other)"
+        },
+        "threadIncrease": {
+          "value": 2,
+          "limit": 6,
+          "unit": "threads",
+          "verdict": "PASS",
+          "requirement": "01 §7.3 item 7 thread increase"
+        },
+        "agentThreads": {
+          "value": 3,
+          "limit": 6,
+          "unit": "threads",
+          "verdict": "PASS",
+          "requirement": "N-26 agent threads"
+        },
+        "nmtTotalCommittedIncreaseMb": 34.0634765625,
+        "loadedClassIncrease": 1870
+      },
+      "startup": {
+        "premainMs": [559.473],
+        "premainMedianMs": 559.473,
+        "offReadyMedianMs": 9324,
+        "onReadyMedianMs": 14089
+      },
+      "failed": []
+    }
+  },
+  "verdict": "INVALID",
+  "reasons": ["off-run CPU CV NaN% > 2% (01 §7.3 item 4)"]
+}

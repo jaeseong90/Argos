@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# P-3 (WO-02) allow-list of the grpc-netty41-full-x comparison jar (ARGOS_UNSAFE_ALLOWLIST for
+# test/agent/check-shading.sh; not the release allow-list test/agent/unsafe-allowlist.txt).
+# These classes reference sun.misc.Unsafe and ARE loaded (class-load runs on JDK 8, 21, 25), but
+# with io.netty.noUnsafe=true (relocated, NettyProps) Netty never obtains Unsafe and Guava picks
+# another helper: JDK 25 prints no Unsafe warning and --sun-misc-unsafe-memory-access=deny works.
+# ADR-0003 allows an entry only for classes that are never loaded, so this list needs a PM decision.
+io.argos.agent.shaded.com.google.common.util.concurrent.AbstractFutureState$UnsafeAtomicHelper  # loaded, Unsafe never used (P-3 class-load and JDK 25 runs)
+io.argos.agent.shaded.io.netty.util.internal.CleanerJava9  # loaded, Unsafe never used (P-3 class-load and JDK 25 runs)
+io.argos.agent.shaded.io.netty.util.internal.PlatformDependent  # loaded, Unsafe never used (P-3 class-load and JDK 25 runs)
+io.argos.agent.shaded.io.netty.util.internal.PlatformDependent0  # loaded, Unsafe never used (P-3 class-load and JDK 25 runs)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseLinkedQueueConsumerNodeRef  # loaded, Unsafe never used (P-3 class-load and JDK 25 runs)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseLinkedQueueProducerNodeRef  # loaded, Unsafe never used (P-3 class-load and JDK 25 runs)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseMpscLinkedArrayQueueColdProducerFields  # loaded, Unsafe never used (P-3 class-load and JDK 25 runs)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseMpscLinkedArrayQueueConsumerFields  # loaded, Unsafe never used (P-3 class-load and JDK 25 runs)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseMpscLinkedArrayQueueProducerFields  # loaded, Unsafe never used (P-3 class-load and JDK 25 runs)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpmcArrayQueueConsumerIndexField  # loaded, Unsafe never used (P-3 class-load and JDK 25 runs)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpmcArrayQueueProducerIndexField  # loaded, Unsafe never used (P-3 class-load and JDK 25 runs)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpscArrayQueueConsumerIndexField  # loaded, Unsafe never used (P-3 class-load and JDK 25 runs)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpscArrayQueueProducerIndexField  # loaded, Unsafe never used (P-3 class-load and JDK 25 runs)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpscArrayQueueProducerLimitField  # loaded, Unsafe never used (P-3 class-load and JDK 25 runs)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.unpadded.MpscUnpaddedArrayQueueConsumerIndexField  # loaded, Unsafe never used (P-3 class-load and JDK 25 runs)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.unpadded.MpscUnpaddedArrayQueueProducerIndexField  # loaded, Unsafe never used (P-3 class-load and JDK 25 runs)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.unpadded.MpscUnpaddedArrayQueueProducerLimitField  # loaded, Unsafe never used (P-3 class-load and JDK 25 runs)

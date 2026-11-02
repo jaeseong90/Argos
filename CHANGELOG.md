@@ -51,5 +51,18 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   development-only tools in `test/storage/`: a synthetic telemetry generator (bulk and replay through
   deduplication tokens), the Q01-Q20 query runner and report, a standalone benchmark server script, and
   integration tests against a real ClickHouse. Results: `docs/poc/clickhouse-benchmark.md`.
+- Java agent proof of concept: a single `argos-agent.jar` (Java 8 target, ByteBuddy 1.18.15 shaded
+  under `io.argos.agent.shaded` with its `sun.misc.Unsafe` classes removed, isolated agent class
+  loader, no temporary files as long as `-Dargos.log.dir` or the `logs` directory next to the agent
+  directory is writable; otherwise the agent log falls back to `java.io.tmpdir/argos-agent-<pid>`)
+  that attaches with `-javaagent` on JDK 8 to 25. It instruments the
+  servlet API (javax and jakarta), Spring MVC service names, JDBC prepare/execute, `HttpURLConnection`
+  and `ThreadPoolExecutor`, writes through the `noop` and `file` (JSONL) exporters (no collector
+  transport yet), and answers `java -jar argos-agent.jar --version` and `--check` (JDK version only).
+  The proof-of-concept configuration keys (`exporter`, `exporter.file.*`, `debug.transform-list`,
+  `test.faults`) may change before the first release.
+- Development-only agent tools: `test/agent/transport-poc` (P-3 transport comparison) and
+  `test/agent/overhead` (P-2 overhead harness). Results: `docs/poc/agent-poc.md` and
+  `docs/poc/agent-overhead.md`.
 
 [Unreleased]: https://github.com/argos-apm/argos/commits/main

@@ -1,0 +1,152 @@
+[overhead 18:28:16Z] set <scratch>\wo02perf\sets\main-9 (process, 3 rounds of [off, on], warm-up 180 s, window 600 s, 1000/s)
+[overhead 18:28:22Z] machine CPU 29% > 20%: waiting
+[overhead 18:28:42Z] machine CPU 29% > 20%: waiting
+[overhead 18:28:57Z] machine CPU 36% > 20%: waiting
+[overhead 18:29:12Z] machine CPU 31% > 20%: waiting
+[overhead 18:29:27Z] machine CPU 35% > 20%: waiting
+[overhead 18:29:42Z] machine CPU 32% > 20%: waiting
+[overhead 18:30:02Z] machine CPU 33% > 20%: waiting
+[overhead 18:30:17Z] machine CPU 32% > 20%: waiting
+[overhead 18:30:32Z] machine CPU 26% > 20%: waiting
+[overhead 18:30:47Z] machine CPU 25% > 20%: waiting
+[overhead 18:31:02Z] machine CPU 23% > 20%: waiting
+[overhead 18:32:19Z] run 1 (round 1, off): starting the app
+[overhead 18:32:27Z] run 1: warm-up 180 s
+[overhead 18:35:28Z] run 1: measured window 600 s
+[overhead 18:45:29Z] run 1: memory (jcmd GC.run x2, class histogram, NMT)
+[overhead 18:45:32Z] run 1 (off): app CPU 268.7 s, p99 312.244 ms, dropped 0, unexpected 0, host CPU 29%, gate PASS
+[overhead 18:47:03Z] run 2 (round 1, on): starting the app
+[overhead 18:47:14Z] run 2: warm-up 180 s
+[overhead 18:50:15Z] run 2: measured window 600 s
+[overhead 19:00:16Z] run 2: memory (jcmd GC.run x2, class histogram, NMT)
+[overhead 19:00:24Z] run 2 (on): app CPU 281.3 s, p99 312.233 ms, dropped 0, unexpected 0, host CPU 29%, gate PASS
+[overhead 19:01:56Z] run 3 (round 2, off): starting the app
+[overhead 19:02:05Z] run 3: warm-up 180 s
+[overhead 19:05:05Z] run 3: measured window 600 s
+[overhead 19:15:07Z] run 3: attempt 1 discarded (background CPU 61% (limit 25%), gate PASS in the window), repeating
+[overhead 19:16:12Z] machine CPU 32% > 20%: waiting
+[overhead 19:16:27Z] machine CPU 23% > 20%: waiting
+[overhead 19:16:47Z] machine CPU 60% > 20%: waiting
+[overhead 19:17:02Z] machine CPU 92% > 20%: waiting
+[overhead 19:17:17Z] machine CPU 93% > 20%: waiting
+[overhead 19:17:32Z] machine CPU 83% > 20%: waiting
+[overhead 19:17:47Z] machine CPU 92% > 20%: waiting
+[overhead 19:18:02Z] machine CPU 92% > 20%: waiting
+[overhead 19:18:17Z] machine CPU 98% > 20%: waiting
+[overhead 19:18:32Z] machine CPU 80% > 20%: waiting
+[overhead 19:18:47Z] machine CPU 94% > 20%: waiting
+[overhead 19:19:02Z] machine CPU 87% > 20%: waiting
+[overhead 19:19:17Z] machine CPU 57% > 20%: waiting
+[overhead 19:19:32Z] machine CPU 20% > 20%: waiting
+[overhead 19:20:07Z] machine CPU 24% > 20%: waiting
+[overhead 19:20:52Z] machine CPU 21% > 20%: waiting
+[overhead 19:21:17Z] machine CPU 24% > 20%: waiting
+[overhead 19:22:07Z] machine CPU 24% > 20%: waiting
+[overhead 19:23:24Z] run 3 (round 2, off): starting the app
+[overhead 19:23:33Z] run 3: warm-up 180 s
+[overhead 19:26:34Z] run 3: measured window 600 s
+[overhead 19:36:35Z] run 3: attempt 2 discarded (background CPU 29% (limit 25%), gate PASS in the window), repeating
+[overhead 19:37:10Z] machine CPU 69% > 20%: waiting
+[overhead 19:37:25Z] machine CPU 39% > 20%: waiting
+[overhead 19:37:40Z] machine CPU 61% > 20%: waiting
+[overhead 19:37:55Z] machine CPU 88% > 20%: waiting
+[overhead 19:38:10Z] machine CPU 82% > 20%: waiting
+[overhead 19:38:25Z] machine CPU 21% > 20%: waiting
+[overhead 19:39:06Z] machine CPU 23% > 20%: waiting
+[overhead 19:40:23Z] run 3 (round 2, off): starting the app
+[overhead 19:40:31Z] run 3: warm-up 180 s
+[overhead 19:43:31Z] run 3: measured window 600 s
+[overhead 19:53:33Z] run 3: memory (jcmd GC.run x2, class histogram, NMT)
+[overhead 19:53:37Z] run 3 (off): app CPU 249.3 s, p99 312.64 ms, dropped 302, unexpected 0, host CPU 24%, gate PASS
+[overhead 19:54:12Z] machine CPU 64% > 20%: waiting
+[overhead 19:54:27Z] machine CPU 75% > 20%: waiting
+[overhead 19:54:42Z] machine CPU 83% > 20%: waiting
+[overhead 19:54:57Z] machine CPU 92% > 20%: waiting
+[overhead 19:55:12Z] machine CPU 67% > 20%: waiting
+[overhead 19:55:27Z] machine CPU 28% > 20%: waiting
+[overhead 19:56:02Z] machine CPU 28% > 20%: waiting
+[overhead 19:56:17Z] machine CPU 20% > 20%: waiting
+[overhead 19:57:02Z] machine CPU 24% > 20%: waiting
+[overhead 19:57:17Z] machine CPU 30% > 20%: waiting
+[overhead 19:57:52Z] machine CPU 26% > 20%: waiting
+[overhead 19:59:09Z] run 4 (round 2, on): starting the app
+[overhead 19:59:20Z] run 4: warm-up 180 s
+[overhead 20:02:22Z] run 4: measured window 600 s
+[overhead 20:12:23Z] run 4: memory (jcmd GC.run x2, class histogram, NMT)
+[overhead 20:12:26Z] run 4 (on): app CPU 247.6 s, p99 312.234 ms, dropped 0, unexpected 0, host CPU 18%, gate PASS
+[overhead 20:13:06Z] machine CPU 25% > 20%: waiting
+[overhead 20:14:17Z] run 5 (round 3, off): starting the app
+[overhead 20:14:25Z] run 5: warm-up 180 s
+[overhead 20:17:25Z] run 5: measured window 600 s
+[overhead 20:27:27Z] run 5: memory (jcmd GC.run x2, class histogram, NMT)
+[overhead 20:27:35Z] run 5 (off): app CPU 269.8 s, p99 312.24 ms, dropped 0, unexpected 0, host CPU 33%, gate PASS
+[overhead 20:28:10Z] machine CPU 26% > 20%: waiting
+[overhead 20:28:25Z] machine CPU 22% > 20%: waiting
+[overhead 20:29:00Z] machine CPU 21% > 20%: waiting
+[overhead 20:29:15Z] machine CPU 21% > 20%: waiting
+[overhead 20:29:55Z] machine CPU 21% > 20%: waiting
+[overhead 20:30:15Z] machine CPU 23% > 20%: waiting
+[overhead 20:30:35Z] machine CPU 21% > 20%: waiting
+[overhead 20:30:50Z] machine CPU 20% > 20%: waiting
+[overhead 20:31:10Z] machine CPU 21% > 20%: waiting
+[overhead 20:31:25Z] machine CPU 25% > 20%: waiting
+[overhead 20:31:40Z] machine CPU 21% > 20%: waiting
+[overhead 20:31:55Z] machine CPU 20% > 20%: waiting
+[overhead 20:32:10Z] machine CPU 20% > 20%: waiting
+[overhead 20:32:25Z] machine CPU 33% > 20%: waiting
+[overhead 20:32:40Z] machine CPU 20% > 20%: waiting
+[overhead 20:32:55Z] machine CPU 21% > 20%: waiting
+[overhead 20:33:10Z] machine CPU 22% > 20%: waiting
+[overhead 20:33:25Z] machine CPU 33% > 20%: waiting
+[overhead 20:33:40Z] machine CPU 21% > 20%: waiting
+[overhead 20:34:15Z] machine CPU 22% > 20%: waiting
+[overhead 20:34:30Z] machine CPU 24% > 20%: waiting
+[overhead 20:34:45Z] machine CPU 30% > 20%: waiting
+[overhead 20:35:00Z] machine CPU 29% > 20%: waiting
+[overhead 20:35:15Z] machine CPU 27% > 20%: waiting
+[overhead 20:35:30Z] machine CPU 26% > 20%: waiting
+[overhead 20:35:45Z] machine CPU 24% > 20%: waiting
+[overhead 20:36:01Z] machine CPU 20% > 20%: waiting
+[overhead 20:36:16Z] machine CPU 23% > 20%: waiting
+[overhead 20:36:31Z] machine CPU 26% > 20%: waiting
+[overhead 20:37:16Z] machine CPU 21% > 20%: waiting
+[overhead 20:37:31Z] machine CPU 25% > 20%: waiting
+[overhead 20:38:16Z] machine CPU 23% > 20%: waiting
+[overhead 20:38:31Z] machine CPU 21% > 20%: waiting
+[overhead 20:38:46Z] machine CPU 21% > 20%: waiting
+[overhead 20:39:01Z] machine CPU 22% > 20%: waiting
+[overhead 20:39:16Z] machine CPU 24% > 20%: waiting
+[overhead 20:39:31Z] machine CPU 28% > 20%: waiting
+[overhead 20:39:46Z] machine CPU 25% > 20%: waiting
+[overhead 20:40:01Z] machine CPU 21% > 20%: waiting
+[overhead 20:40:16Z] machine CPU 24% > 20%: waiting
+[overhead 20:40:41Z] machine CPU 22% > 20%: waiting
+[overhead 20:40:56Z] machine CPU 24% > 20%: waiting
+[overhead 20:41:46Z] machine CPU 22% > 20%: waiting
+[overhead 20:42:01Z] machine CPU 20% > 20%: waiting
+[overhead 20:42:16Z] machine CPU 20% > 20%: waiting
+[overhead 20:42:46Z] machine CPU 24% > 20%: waiting
+[overhead 20:43:01Z] machine CPU 20% > 20%: waiting
+[overhead 20:43:16Z] machine CPU 23% > 20%: waiting
+[overhead 20:43:31Z] machine CPU 21% > 20%: waiting
+[overhead 20:43:46Z] machine CPU 25% > 20%: waiting
+[overhead 20:44:01Z] machine CPU 22% > 20%: waiting
+[overhead 20:44:16Z] machine CPU 21% > 20%: waiting
+[overhead 20:44:51Z] machine CPU 22% > 20%: waiting
+[overhead 20:45:16Z] machine CPU 21% > 20%: waiting
+[overhead 20:45:31Z] machine CPU 20% > 20%: waiting
+[overhead 20:45:51Z] machine CPU 22% > 20%: waiting
+[overhead 20:46:16Z] machine CPU 21% > 20%: waiting
+[overhead 20:47:16Z] machine CPU 32% > 20%: waiting
+[overhead 20:47:31Z] machine CPU 25% > 20%: waiting
+[overhead 20:47:51Z] machine CPU 20% > 20%: waiting
+[overhead 20:48:21Z] machine CPU 36% > 20%: waiting
+[overhead 20:48:46Z] machine CPU 23% > 20%: waiting
+[overhead 20:49:01Z] machine CPU 21% > 20%: waiting
+[overhead 20:49:22Z] machine CPU 21% > 20%: waiting
+[overhead 20:50:39Z] run 6 (round 3, on): starting the app
+[overhead 20:50:51Z] run 6: warm-up 180 s
+[overhead 20:53:53Z] run 6: measured window 600 s
+[overhead 21:03:54Z] run 6: memory (jcmd GC.run x2, class histogram, NMT)
+[overhead 21:03:58Z] run 6 (on): app CPU 286.0 s, p99 312.312 ms, dropped 0, unexpected 3.0E-6, host CPU 29%, gate FAIL
+[overhead 21:03:58Z] result <scratch>\wo02perf\sets\main-9\result.json: INVALID [off-run CPU CV 4.39% > 2% (01 7.3 item 4), run 6 (on): k6 gate FAIL with the agent (load not sustained, C-46), peak relative CPU +17.68% > 8%]

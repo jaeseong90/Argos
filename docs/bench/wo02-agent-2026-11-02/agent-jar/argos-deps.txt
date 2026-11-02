@@ -1,0 +1,3 @@
+# Argos APM - bundled third-party modules of argos-agent-0.0.0-SNAPSHOT.jar
+# Format: group:artifact:version:license (SPDX identifier)
+net.bytebuddy:byte-buddy:1.18.15:Apache-2.0

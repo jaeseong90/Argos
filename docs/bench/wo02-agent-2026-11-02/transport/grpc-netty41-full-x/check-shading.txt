@@ -1,0 +1,13 @@
+ok   [packages] 7242 classes, all below io/argos/agent/
+ok   [root-exposure] root classes only in io/argos/agent/bootstrap/ (+ Premain-Class io.argos.agent.AgentPremain)
+ok   [root-entries] outside inst/ only bootstrap classes, the Premain-Class, META-INF notices/SBOM, manifest
+ok   [meta-inf] LICENSE, NOTICE, THIRD-PARTY-NOTICES, argos-deps.txt, sbom/agent.cdx.json, manifest
+ok   [signatures] no signature files
+ok   [major-version] 7242 classes: own major 52, shaded <= 52 (1482 shaded below 52; read from jar entries)
+ok   [unsafe] no sun.misc.Unsafe reference outside the allow-list (17 entries)
+ok   [native] no native libraries
+ok   [size] 11953440 bytes <= 15 MB (15000000 bytes)
+ok   [duplicates] no duplicate classes or entries
+check-shading: OK (7242 classes, 11953440 bytes, <repo>/test/agent/transport-poc/build/poc/grpc-netty41-full-x/argos-agent-poc-grpc-netty41-full-x.jar)
+
+exit=0

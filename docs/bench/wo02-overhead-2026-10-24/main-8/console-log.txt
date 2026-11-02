@@ -1,0 +1,63 @@
+[overhead 17:53:13Z] set <scratch>\wo02perf\sets\main-8 (process, 3 rounds of [off, on], warm-up 180 s, window 600 s, 1000/s)
+[overhead 17:53:20Z] machine CPU 34% > 20%: waiting
+[overhead 17:53:45Z] machine CPU 23% > 20%: waiting
+[overhead 17:54:00Z] machine CPU 31% > 20%: waiting
+[overhead 17:54:15Z] machine CPU 29% > 20%: waiting
+[overhead 17:54:30Z] machine CPU 36% > 20%: waiting
+[overhead 17:55:05Z] machine CPU 24% > 20%: waiting
+[overhead 17:56:17Z] run 1 (round 1, off): starting the app
+[overhead 17:56:26Z] run 1: warm-up 180 s
+[overhead 17:59:27Z] run 1: attempt 1 discarded (background CPU 22% > 22% during the warm-up), repeating
+[overhead 18:00:12Z] machine CPU 22% > 20%: waiting
+[overhead 18:00:37Z] machine CPU 69% > 20%: waiting
+[overhead 18:00:52Z] machine CPU 38% > 20%: waiting
+[overhead 18:01:07Z] machine CPU 51% > 20%: waiting
+[overhead 18:01:22Z] machine CPU 40% > 20%: waiting
+[overhead 18:01:37Z] machine CPU 26% > 20%: waiting
+[overhead 18:01:52Z] machine CPU 43% > 20%: waiting
+[overhead 18:02:07Z] machine CPU 44% > 20%: waiting
+[overhead 18:02:22Z] machine CPU 99% > 20%: waiting
+[overhead 18:02:37Z] machine CPU 93% > 20%: waiting
+[overhead 18:02:52Z] machine CPU 97% > 20%: waiting
+[overhead 18:03:07Z] machine CPU 92% > 20%: waiting
+[overhead 18:03:22Z] machine CPU 91% > 20%: waiting
+[overhead 18:03:37Z] machine CPU 99% > 20%: waiting
+[overhead 18:03:52Z] machine CPU 88% > 20%: waiting
+[overhead 18:04:07Z] machine CPU 91% > 20%: waiting
+[overhead 18:04:22Z] machine CPU 83% > 20%: waiting
+[overhead 18:04:37Z] machine CPU 91% > 20%: waiting
+[overhead 18:04:52Z] machine CPU 89% > 20%: waiting
+[overhead 18:05:07Z] machine CPU 31% > 20%: waiting
+[overhead 18:05:22Z] machine CPU 28% > 20%: waiting
+[overhead 18:05:37Z] machine CPU 22% > 20%: waiting
+[overhead 18:05:57Z] machine CPU 25% > 20%: waiting
+[overhead 18:06:12Z] machine CPU 28% > 20%: waiting
+[overhead 18:06:47Z] machine CPU 27% > 20%: waiting
+[overhead 18:07:02Z] machine CPU 27% > 20%: waiting
+[overhead 18:07:17Z] machine CPU 34% > 20%: waiting
+[overhead 18:07:32Z] machine CPU 21% > 20%: waiting
+[overhead 18:07:52Z] machine CPU 41% > 20%: waiting
+[overhead 18:08:17Z] machine CPU 23% > 20%: waiting
+[overhead 18:08:32Z] machine CPU 50% > 20%: waiting
+[overhead 18:08:47Z] machine CPU 58% > 20%: waiting
+[overhead 18:09:02Z] machine CPU 70% > 20%: waiting
+[overhead 18:09:17Z] machine CPU 85% > 20%: waiting
+[overhead 18:09:32Z] machine CPU 76% > 20%: waiting
+[overhead 18:09:47Z] machine CPU 27% > 20%: waiting
+[overhead 18:10:02Z] machine CPU 26% > 20%: waiting
+[overhead 18:10:17Z] machine CPU 39% > 20%: waiting
+[overhead 18:10:32Z] machine CPU 50% > 20%: waiting
+[overhead 18:10:47Z] machine CPU 37% > 20%: waiting
+[overhead 18:11:02Z] machine CPU 39% > 20%: waiting
+[overhead 18:11:17Z] machine CPU 34% > 20%: waiting
+[overhead 18:11:32Z] machine CPU 32% > 20%: waiting
+[overhead 18:11:48Z] machine CPU 24% > 20%: waiting
+[overhead 18:12:03Z] machine CPU 23% > 20%: waiting
+[overhead 18:12:18Z] machine CPU 25% > 20%: waiting
+[overhead 18:12:33Z] machine CPU 31% > 20%: waiting
+[overhead 18:12:48Z] machine CPU 24% > 20%: waiting
+[overhead 18:13:03Z] machine CPU 27% > 20%: waiting
+[overhead 18:14:20Z] run 1 (round 1, off): starting the app
+[overhead 18:14:29Z] run 1: warm-up 180 s
+[overhead 18:17:31Z] run 1: measured window 600 s
+[overhead 18:27:33Z] run 1: attempt 2 discarded (background CPU 23% (limit 22%), gate PASS in the window), repeating

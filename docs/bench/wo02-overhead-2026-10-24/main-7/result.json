@@ -1,0 +1,40 @@
+{
+  "kind": "load",
+  "label": "main-7: process mode, JDK 21.0.10, shop-boot3, shared Windows machine",
+  "mode": "process",
+  "virtualThreads": false,
+  "criteria": "N-01, N-03, N-26 (Gate 0: N-01 mean, N-03)",
+  "runs": [
+    {
+      "index": 1,
+      "round": 1,
+      "variant": "off",
+      "appCpuSeconds": 251,
+      "wallSeconds": 600.6827444,
+      "requests": 600000,
+      "dropped": 0,
+      "unexpectedRate": 0,
+      "p50": 0.516,
+      "p95": 29.032,
+      "p99": 312.211,
+      "p999": 314.896,
+      "hostCpuPercentMean": 25.248734898901834,
+      "loaderCpuPercentMean": 25.248734898901834,
+      "cpuBeforePercent": 10.856775647483175,
+      "backgroundCpuPercent": 17.450967410710277,
+      "attempt": 4,
+      "discardedAttempts": 3,
+      "gate": "PASS"
+    }
+  ],
+  "validity": {
+    "offCpuSeconds": [251],
+    "offCpuCv": null,
+    "offCpuCvLimit": 0.02,
+    "offCpuCvOk": false,
+    "gateProblems": []
+  },
+  "comparisons": {},
+  "verdict": "INVALID",
+  "reasons": ["off-run CPU CV NaN% > 2% (01 7.3 item 4)"]
+}

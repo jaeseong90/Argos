@@ -1,0 +1,53 @@
+ok   [packages] 7264 classes, all below io/argos/agent/
+ok   [root-exposure] root classes only in io/argos/agent/bootstrap/ (+ Premain-Class io.argos.agent.AgentPremain)
+ok   [root-entries] outside inst/ only bootstrap classes, the Premain-Class, META-INF notices/SBOM, manifest
+ok   [meta-inf] LICENSE, NOTICE, THIRD-PARTY-NOTICES, argos-deps.txt, sbom/agent.cdx.json, manifest
+ok   [signatures] no signature files
+ok   [major-version] 7264 classes: own major 52, shaded <= 52 (1494 shaded below 52; read from jar entries)
+FAIL [unsafe] classes referencing sun.misc.Unsafe outside unsafe-allowlist.txt (F-A35):
+    io.argos.agent.shaded.com.google.common.hash.LittleEndianByteArray$UnsafeByteArray
+    io.argos.agent.shaded.com.google.common.hash.LittleEndianByteArray$UnsafeByteArray$1
+    io.argos.agent.shaded.com.google.common.hash.LittleEndianByteArray$UnsafeByteArray$2
+    io.argos.agent.shaded.com.google.common.util.concurrent.AbstractFutureState$UnsafeAtomicHelper
+    io.argos.agent.shaded.com.google.protobuf.MessageSchema
+    io.argos.agent.shaded.com.google.protobuf.UnsafeUtil
+    io.argos.agent.shaded.com.google.protobuf.UnsafeUtil$1
+    io.argos.agent.shaded.com.google.protobuf.UnsafeUtil$Android32MemoryAccessor
+    io.argos.agent.shaded.com.google.protobuf.UnsafeUtil$Android64MemoryAccessor
+    io.argos.agent.shaded.com.google.protobuf.UnsafeUtil$JvmMemoryAccessor
+    io.argos.agent.shaded.com.google.protobuf.UnsafeUtil$MemoryAccessor
+    io.argos.agent.shaded.io.netty.util.internal.CleanerJava9
+    io.argos.agent.shaded.io.netty.util.internal.CleanerJava9$1
+    io.argos.agent.shaded.io.netty.util.internal.CleanerJava9$2
+    io.argos.agent.shaded.io.netty.util.internal.PlatformDependent
+    io.argos.agent.shaded.io.netty.util.internal.PlatformDependent$Mpsc$1
+    io.argos.agent.shaded.io.netty.util.internal.PlatformDependent0
+    io.argos.agent.shaded.io.netty.util.internal.PlatformDependent0$1
+    io.argos.agent.shaded.io.netty.util.internal.PlatformDependent0$2
+    io.argos.agent.shaded.io.netty.util.internal.PlatformDependent0$3
+    io.argos.agent.shaded.io.netty.util.internal.PlatformDependent0$4
+    io.argos.agent.shaded.io.netty.util.internal.PlatformDependent0$6
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseLinkedQueueConsumerNodeRef
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseLinkedQueueProducerNodeRef
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseMpscLinkedArrayQueueColdProducerFields
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseMpscLinkedArrayQueueConsumerFields
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseMpscLinkedArrayQueueProducerFields
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.LinkedQueueNode
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpmcArrayQueueConsumerIndexField
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpmcArrayQueueProducerIndexField
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpscArrayQueueConsumerIndexField
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpscArrayQueueProducerIndexField
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpscArrayQueueProducerLimitField
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.unpadded.MpscUnpaddedArrayQueueConsumerIndexField
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.unpadded.MpscUnpaddedArrayQueueProducerIndexField
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.unpadded.MpscUnpaddedArrayQueueProducerLimitField
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.util.UnsafeAccess
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.util.UnsafeLongArrayAccess
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.util.UnsafeRefArrayAccess
+ok   [native] no native libraries
+WARN [size] 12024291 bytes is above the 12 MB warning threshold (12000000 bytes, 10^6 bytes per MB)
+ok   [size] 12024291 bytes <= 15 MB (15000000 bytes)
+ok   [duplicates] no duplicate classes or entries
+check-shading: FAILED 1 check(s): unsafe (<repo>/test/agent/transport-poc/build/poc/grpc-netty41-full/argos-agent-poc-grpc-netty41-full.jar)
+
+exit=1

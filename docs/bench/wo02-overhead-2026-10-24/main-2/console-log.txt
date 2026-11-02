@@ -1,0 +1,49 @@
+[overhead 11:29:34Z] set <scratch>\wo02perf\sets\main-2 (process, 3 rounds of [off, on], warm-up 180 s, window 600 s, 1000/s)
+[overhead 11:29:42Z] machine CPU 93% > 30%: waiting
+[overhead 11:29:57Z] machine CPU 84% > 30%: waiting
+[overhead 11:30:12Z] machine CPU 90% > 30%: waiting
+[overhead 11:30:27Z] machine CPU 81% > 30%: waiting
+[overhead 11:30:42Z] machine CPU 87% > 30%: waiting
+[overhead 11:30:57Z] machine CPU 77% > 30%: waiting
+[overhead 11:31:12Z] machine CPU 78% > 30%: waiting
+[overhead 11:31:27Z] machine CPU 94% > 30%: waiting
+[overhead 11:31:42Z] machine CPU 93% > 30%: waiting
+[overhead 11:31:57Z] machine CPU 81% > 30%: waiting
+[overhead 11:32:12Z] machine CPU 85% > 30%: waiting
+[overhead 11:32:27Z] machine CPU 99% > 30%: waiting
+[overhead 11:32:42Z] machine CPU 99% > 30%: waiting
+[overhead 11:32:57Z] machine CPU 90% > 30%: waiting
+[overhead 11:33:12Z] machine CPU 84% > 30%: waiting
+[overhead 11:33:28Z] machine CPU 97% > 30%: waiting
+[overhead 11:33:43Z] machine CPU 91% > 30%: waiting
+[overhead 11:33:58Z] machine CPU 72% > 30%: waiting
+[overhead 11:34:13Z] machine CPU 81% > 30%: waiting
+[overhead 11:34:28Z] machine CPU 82% > 30%: waiting
+[overhead 11:34:43Z] machine CPU 72% > 30%: waiting
+[overhead 11:34:58Z] machine CPU 75% > 30%: waiting
+[overhead 11:35:13Z] machine CPU 77% > 30%: waiting
+[overhead 11:35:28Z] machine CPU 72% > 30%: waiting
+[overhead 11:35:43Z] machine CPU 84% > 30%: waiting
+[overhead 11:35:58Z] machine CPU 90% > 30%: waiting
+[overhead 11:36:13Z] machine CPU 54% > 30%: waiting
+[overhead 11:36:28Z] machine CPU 83% > 30%: waiting
+[overhead 11:36:43Z] machine CPU 87% > 30%: waiting
+[overhead 11:36:58Z] machine CPU 86% > 30%: waiting
+[overhead 11:37:13Z] machine CPU 90% > 30%: waiting
+[overhead 11:37:28Z] machine CPU 91% > 30%: waiting
+[overhead 11:37:43Z] machine CPU 97% > 30%: waiting
+[overhead 11:37:58Z] machine CPU 85% > 30%: waiting
+[overhead 11:38:13Z] machine CPU 67% > 30%: waiting
+[overhead 11:38:28Z] machine CPU 62% > 30%: waiting
+[overhead 11:38:43Z] machine CPU 64% > 30%: waiting
+[overhead 11:38:58Z] machine CPU 68% > 30%: waiting
+[overhead 11:39:13Z] machine CPU 78% > 30%: waiting
+[overhead 11:39:28Z] machine CPU 58% > 30%: waiting
+[overhead 11:39:51Z] run 1 (round 1, off): starting the app
+[overhead 11:40:05Z] run 1: warm-up 180 s
+[overhead 11:43:09Z] run 1: measured window 600 s
+[overhead 11:53:17Z] run 1: memory (jcmd GC.run x2, class histogram, NMT)
+[overhead 11:53:36Z] run 1 (off): app CPU 394.6 s, p99 659.877 ms, dropped 21081, unexpected 0.03004, host CPU 93%, gate INVALID
+[overhead 11:54:11Z] machine CPU 96% > 30%: waiting
+[overhead 11:54:26Z] machine CPU 100% > 30%: waiting
+[overhead 11:54:41Z] machine CPU 100% > 30%: waiting

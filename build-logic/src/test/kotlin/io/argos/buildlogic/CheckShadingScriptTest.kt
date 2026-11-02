@@ -72,9 +72,35 @@ class CheckShadingScriptTest {
     assertThat(result.exitCode).`as`(result.output).isEqualTo(0)
     assertThat(result.output)
       .contains("ok   [packages] 5 classes")
-      .contains("ok   [major-version] 5 classes with major version 52")
+      .contains("ok   [major-version] 5 classes: own major 52, shaded <= 52 (0 shaded below 52")
       .contains("check-shading: OK (5 classes")
       .doesNotContain("FAIL")
+  }
+
+  @Test
+  @DisplayName("T-BLD-001 C-22 accepts shaded third-party classes below 52 (here 50, Java 6)")
+  fun acceptsOlderShadedClasses() {
+    val entries = compliantEntries()
+    entries["inst/io/argos/agent/shaded/org/jctools/queues/MpscArrayQueue.classdata"] =
+      classFile("io/argos/agent/shaded/org/jctools/queues/MpscArrayQueue", 50)
+    val result = check(entries)
+    assertThat(result.exitCode).`as`(result.output).isEqualTo(0)
+    assertThat(result.output).contains("ok   [major-version] 6 classes: own major 52, shaded <= 52 (1 shaded below 52")
+  }
+
+  @Test
+  @DisplayName("T-BLD-001 C-22 rejects a shaded class above 52 (53) and an own class below 52 (51)")
+  fun rejectsShadedAbove52AndOwnBelow52() {
+    val entries = compliantEntries()
+    entries["inst/io/argos/agent/shaded/io/netty/util/Java9.classdata"] =
+      classFile("io/argos/agent/shaded/io/netty/util/Java9", 53)
+    entries["inst/io/argos/agent/core/Old.classdata"] = classFile("io/argos/agent/core/Old", 51)
+    assertFails(
+      check(entries),
+      "major-version",
+      "inst/io/argos/agent/shaded/io/netty/util/Java9.classdata  (major 53, shaded classes must be <= 52)",
+      "inst/io/argos/agent/core/Old.classdata  (major 51)",
+    )
   }
 
   @Test

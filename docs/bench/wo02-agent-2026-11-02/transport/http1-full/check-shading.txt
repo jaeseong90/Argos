@@ -1,0 +1,20 @@
+ok   [packages] 3412 classes, all below io/argos/agent/
+ok   [root-exposure] root classes only in io/argos/agent/bootstrap/ (+ Premain-Class io.argos.agent.AgentPremain)
+ok   [root-entries] outside inst/ only bootstrap classes, the Premain-Class, META-INF notices/SBOM, manifest
+ok   [meta-inf] LICENSE, NOTICE, THIRD-PARTY-NOTICES, argos-deps.txt, sbom/agent.cdx.json, manifest
+ok   [signatures] no signature files
+ok   [major-version] 3412 classes: own major 52, shaded <= 52 (0 shaded below 52; read from jar entries)
+FAIL [unsafe] classes referencing sun.misc.Unsafe outside unsafe-allowlist.txt (F-A35):
+    io.argos.agent.shaded.com.google.protobuf.MessageSchema
+    io.argos.agent.shaded.com.google.protobuf.UnsafeUtil
+    io.argos.agent.shaded.com.google.protobuf.UnsafeUtil$1
+    io.argos.agent.shaded.com.google.protobuf.UnsafeUtil$Android32MemoryAccessor
+    io.argos.agent.shaded.com.google.protobuf.UnsafeUtil$Android64MemoryAccessor
+    io.argos.agent.shaded.com.google.protobuf.UnsafeUtil$JvmMemoryAccessor
+    io.argos.agent.shaded.com.google.protobuf.UnsafeUtil$MemoryAccessor
+ok   [native] no native libraries
+ok   [size] 6051105 bytes <= 15 MB (15000000 bytes)
+ok   [duplicates] no duplicate classes or entries
+check-shading: FAILED 1 check(s): unsafe (<repo>/test/agent/transport-poc/build/poc/http1-full/argos-agent-poc-http1-full.jar)
+
+exit=1

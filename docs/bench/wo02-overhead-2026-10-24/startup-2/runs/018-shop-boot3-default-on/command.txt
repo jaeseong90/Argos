@@ -1,0 +1,12 @@
+<home>\.jdks\ms-21.0.10\bin\java.exe
+-Xms2g
+-Xmx2g
+-XX:+UseG1GC
+-Djava.io.tmpdir=<scratch>\wo02perf\sets\startup-2\runs\018-shop-boot3-default-on\tmp
+-javaagent:<scratch>\wo02perf\sets\startup-2\bin\argos-agent-0.0.0-SNAPSHOT.jar
+-Dargos.log.dir=<scratch>\wo02perf\sets\startup-2\runs\018-shop-boot3-default-on\agent-logs
+-Dargos.exporter=noop
+-jar
+<scratch>\wo02perf\sets\startup-2\bin\shop-boot3.jar
+--server.address=127.0.0.1
+--server.port=56773

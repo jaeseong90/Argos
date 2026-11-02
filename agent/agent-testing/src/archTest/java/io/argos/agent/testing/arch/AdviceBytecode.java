@@ -29,6 +29,7 @@ import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.LineNumberNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.VarInsnNode;
 
 /**
  * Bytecode-level advice checks that ArchUnit's model cannot express (19 §13 #8, U-8): ArchUnit has
@@ -136,7 +137,7 @@ final class AdviceBytecode {
   }
 
   /**
-   * T-AG-003a (10 §5.3 A-2, ADV-03): every advice method, enter and exit, starts with {@code if
+   * T-AG-003a (10 §5.3 A-2, ADV-03, ADR-0003 C-24): every enter advice method starts with {@code if
    * (Argos.skip(MODULE_ID)) return;}. In bytecode (labels, line numbers and frames skipped):
    *
    * <ol>
@@ -148,6 +149,12 @@ final class AdviceBytecode {
    *       {@code FCONST_0}, {@code DCONST_0}) followed by the matching {@code xRETURN}.
    * </ol>
    *
+   * <p>An exit advice method may instead start with a null check of its {@code @Advice.Enter}
+   * parameter, {@code if (enter == null) return;} (C-24: the exit decides by the enter result and
+   * never re-reads the kill switch, so a scope opened in enter is always closed): {@code ALOAD} of
+   * that parameter's slot, then {@code IFNONNULL} or {@code IFNULL}, and a return as the first
+   * instruction of the null path. The skip guard remains accepted in exit advice.
+   *
    * <p>{@code Argos.skip} checks the kill switch, the module state and the agent thread (10 §3), so
    * it is the "equivalent guard" of 19 §5.3 ADV-03. No other guard and no unguarded helper call is
    * accepted.
@@ -156,10 +163,13 @@ final class AdviceBytecode {
     String guardOwner = layout.guardHolder().replace('.', '/');
     String expected =
         "expected the first statement if (" + layout.guardHolder() + ".skip(MODULE_ID)) return;";
+    String expectedExit =
+        expected + " or, in exit advice, if (<@Advice.Enter parameter> == null) return; (C-24)";
     return new ArchCondition<>(
         "start every advice method with if ("
             + layout.guardHolder()
-            + ".skip(MODULE_ID)) return;") {
+            + ".skip(MODULE_ID)) return; (exit advice: or with a null check of the"
+            + " @Advice.Enter value)") {
       @Override
       public void check(JavaClass item, ConditionEvents events) {
         for (MethodNode method : read(item).methods) {
@@ -167,15 +177,107 @@ final class AdviceBytecode {
             continue;
           }
           String problem = guardProblem(method, guardOwner);
-          if (problem != null) {
-            events.add(
-                SimpleConditionEvent.violated(
-                    item,
-                    where(item, method, firstLine(method)) + " " + problem + "; " + expected));
+          if (problem == null) {
+            continue;
           }
+          boolean exit = isExitMethod(layout, method);
+          if (exit) {
+            String nullCheck = enterNullCheckProblem(layout, method);
+            if (nullCheck == null) {
+              continue;
+            }
+            problem = problem + " and " + nullCheck;
+          }
+          events.add(
+              SimpleConditionEvent.violated(
+                  item,
+                  where(item, method, firstLine(method))
+                      + " "
+                      + problem
+                      + "; "
+                      + (exit ? expectedExit : expected)));
         }
       }
     };
+  }
+
+  /** True for methods annotated with {@code @Advice.OnMethodExit}. */
+  static boolean isExitMethod(AgentLayout layout, MethodNode method) {
+    return hasAnnotation(layout, method.visibleAnnotations, AgentPredicates.ON_METHOD_EXIT)
+        || hasAnnotation(layout, method.invisibleAnnotations, AgentPredicates.ON_METHOD_EXIT);
+  }
+
+  private static boolean hasAnnotation(
+      AgentLayout layout, List<AnnotationNode> annotations, String member) {
+    if (annotations == null) {
+      return false;
+    }
+    return annotations.stream()
+        .map(a -> layout.adviceMemberName(Type.getType(a.desc).getClassName()))
+        .anyMatch(name -> name.equals(Optional.of(member)));
+  }
+
+  /**
+   * Why {@code method} (an exit advice) does not start with {@code if (<@Advice.Enter value> ==
+   * null) return;}, or null when it does (C-24).
+   */
+  static String enterNullCheckProblem(AgentLayout layout, MethodNode method) {
+    Type[] arguments = Type.getArgumentTypes(method.desc);
+    int slot = (method.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;
+    int enterSlot = -1;
+    for (int i = 0; i < arguments.length; i++) {
+      if (hasAnnotation(
+              layout, parameterAnnotations(method.visibleParameterAnnotations, i), "Enter")
+          || hasAnnotation(
+              layout, parameterAnnotations(method.invisibleParameterAnnotations, i), "Enter")) {
+        enterSlot = arguments[i].getSort() >= Type.ARRAY ? slot : -2;
+        break;
+      }
+      slot += arguments[i].getSize();
+    }
+    if (enterSlot == -1) {
+      return "has no @Advice.Enter parameter to test for null";
+    }
+    if (enterSlot == -2) {
+      return "its @Advice.Enter parameter is a primitive (cannot be tested for null)";
+    }
+    List<AbstractInsnNode> code = new ArrayList<>();
+    for (AbstractInsnNode insn : method.instructions) {
+      if (insn.getOpcode() >= 0) {
+        code.add(insn);
+      }
+    }
+    if (code.size() < 2
+        || !(code.get(0) instanceof VarInsnNode load)
+        || load.getOpcode() != Opcodes.ALOAD
+        || load.var != enterSlot) {
+      AbstractInsnNode first = code.isEmpty() ? null : code.get(0);
+      return "does not start with a null check of the @Advice.Enter parameter (first instruction: "
+          + (first == null ? "none" : describe(first))
+          + (first instanceof VarInsnNode variable ? " " + variable.var : "")
+          + ")";
+    }
+    AbstractInsnNode branch = code.get(1);
+    if (branch.getOpcode() != Opcodes.IFNULL && branch.getOpcode() != Opcodes.IFNONNULL) {
+      return "does not branch on the @Advice.Enter value being null (next instruction: "
+          + describe(branch)
+          + ")";
+    }
+    // IFNONNULL jumps when the value is present: the null path falls through. IFNULL jumps on null.
+    AbstractInsnNode nullPath =
+        branch.getOpcode() == Opcodes.IFNONNULL
+            ? nextReal(branch.getNext())
+            : nextReal(((JumpInsnNode) branch).label);
+    if (!returnsAtOnce(nullPath)) {
+      return "does not return at once when the @Advice.Enter value is null (found "
+          + (nullPath == null ? "no instruction" : describe(nullPath))
+          + ")";
+    }
+    return null;
+  }
+
+  private static List<AnnotationNode> parameterAnnotations(List<AnnotationNode>[] all, int index) {
+    return all == null || index >= all.length ? null : all[index];
   }
 
   /** Why {@code method} does not start with the guard, or null when it does. */

@@ -1,0 +1,355 @@
+{
+  "index": 2,
+  "round": 1,
+  "variant": "on",
+  "mode": "container",
+  "before": {
+    "cpuPercent5s": 96.90999859387665,
+    "availableMemoryMb": 516,
+    "waitedSeconds": 65.0699086,
+    "quiet": false
+  },
+  "startedAt": "2026-10-24T10:51:13.974430200Z",
+  "startup": {
+    "spawnToPortMs": -1,
+    "spawnToReadyMs": 45957
+  },
+  "warmup": {
+    "k6ExitCode": 0,
+    "requests": 9239,
+    "achievedRate": 461.95,
+    "unexpectedRate": 0,
+    "checksRate": 1,
+    "http5xxRate": 0.050005,
+    "iterationsWholeRun": 9239,
+    "dropped": 10761,
+    "droppedRate": 0.53805,
+    "latencyMs": {
+      "avg": 1273.3,
+      "min": 4.487,
+      "p50": 984.788,
+      "p95": 3189.8,
+      "p99": 4676.604,
+      "p99.9": 6494.582,
+      "max": 7678.293
+    },
+    "routes": [
+      {
+        "route": "orders.get",
+        "requests": 3695,
+        "latencyMs": {
+          "avg": 1431.943,
+          "min": 8.484,
+          "p50": 1102.122,
+          "p95": 3593.886,
+          "p99": 4911.366,
+          "p99.9": 6760.455,
+          "max": 7678.293
+        }
+      },
+      {
+        "route": "orders.page",
+        "requests": 1848,
+        "latencyMs": {
+          "avg": 1270.648,
+          "min": 12.904,
+          "p50": 980.883,
+          "p95": 3077.055,
+          "p99": 4644.029,
+          "p99.9": 6209.893,
+          "max": 6582.982
+        }
+      },
+      {
+        "route": "pay",
+        "requests": 1848,
+        "latencyMs": {
+          "avg": 924.636,
+          "min": 4.487,
+          "p50": 778.924,
+          "p95": 1575.542,
+          "p99": 3168.143,
+          "p99.9": 3460.987,
+          "max": 3660.448
+        }
+      },
+      {
+        "route": "orders.items",
+        "requests": 924,
+        "latencyMs": {
+          "avg": 1545.98,
+          "min": 56.082,
+          "p50": 1198.423,
+          "p95": 3669.387,
+          "p99": 5155.161,
+          "p99.9": 6488.342,
+          "max": 6541.982
+        }
+      },
+      {
+        "route": "slow",
+        "requests": 462,
+        "latencyMs": {
+          "avg": 1215.769,
+          "min": 370.968,
+          "p50": 1063.85,
+          "p95": 1884.043,
+          "p99": 3488.345,
+          "p99.9": 3847.611,
+          "max": 3905.607
+        }
+      },
+      {
+        "route": "error-500",
+        "requests": 462,
+        "latencyMs": {
+          "avg": 921.943,
+          "min": 13.892,
+          "p50": 790.014,
+          "p95": 1496.449,
+          "p99": 3104.064,
+          "p99.9": 3227.04,
+          "max": 3230.175
+        }
+      }
+    ],
+    "thresholdsPassed": true
+  },
+  "measure": {
+    "k6ExitCode": 99,
+    "requests": 69159,
+    "achievedRate": 987.986,
+    "unexpectedRate": 0,
+    "checksRate": 1,
+    "http5xxRate": 0.050001,
+    "iterationsWholeRun": 69159,
+    "dropped": 842,
+    "droppedRate": 0.012028,
+    "latencyMs": {
+      "avg": 105.753,
+      "min": 0.43,
+      "p50": 6.721,
+      "p95": 507.806,
+      "p99": 886.291,
+      "p99.9": 2231.861,
+      "max": 4580.602
+    },
+    "routes": [
+      {
+        "route": "orders.get",
+        "requests": 27663,
+        "latencyMs": {
+          "avg": 89.173,
+          "min": 0.43,
+          "p50": 4.578,
+          "p95": 478.713,
+          "p99": 883.917,
+          "p99.9": 2137.767,
+          "max": 4229.593
+        }
+      },
+      {
+        "route": "orders.page",
+        "requests": 13832,
+        "latencyMs": {
+          "avg": 89.935,
+          "min": 0.645,
+          "p50": 4.855,
+          "p95": 481.292,
+          "p99": 893.129,
+          "p99.9": 2160.304,
+          "max": 2747.428
+        }
+      },
+      {
+        "route": "pay",
+        "requests": 13832,
+        "latencyMs": {
+          "avg": 88.471,
+          "min": 0.861,
+          "p50": 6.943,
+          "p95": 476.253,
+          "p99": 752.036,
+          "p99.9": 2130.662,
+          "max": 4580.602
+        }
+      },
+      {
+        "route": "orders.items",
+        "requests": 6916,
+        "latencyMs": {
+          "avg": 96.922,
+          "min": 0.561,
+          "p50": 5.579,
+          "p95": 533.024,
+          "p99": 883.394,
+          "p99.9": 1971.579,
+          "max": 3086.34
+        }
+      },
+      {
+        "route": "slow",
+        "requests": 3458,
+        "latencyMs": {
+          "avg": 383.463,
+          "min": 298.164,
+          "p50": 306.902,
+          "p95": 735.706,
+          "p99": 995.234,
+          "p99.9": 2816.44,
+          "max": 3445.46
+        }
+      },
+      {
+        "route": "error-500",
+        "requests": 3458,
+        "latencyMs": {
+          "avg": 110.744,
+          "min": 1.298,
+          "p50": 7.77,
+          "p95": 589.68,
+          "p99": 1299.734,
+          "p99.9": 2330.015,
+          "max": 4051.125
+        }
+      }
+    ],
+    "thresholdsPassed": false,
+    "wallSeconds": 71.7969769,
+    "appCpuSeconds": 142.708418,
+    "appCores": 1.9876661130003648,
+    "appCpuMsPerRequest": 2.063482959556963,
+    "k6CpuSeconds": 58.181574,
+    "hostCpuPercentMean": 74.72632381203042,
+    "hostCpuPercentMax": 100,
+    "availableMemoryMbMin": 1257,
+    "appCpuTimeline": [
+      [0, 0],
+      [1.0099999999802094, 1.587596000000005],
+      [2.0199999999895226, 3.6056549999999987],
+      [3.029999999998836, 5.609065000000001],
+      [4.039999999979045, 7.600276000000008],
+      [5.039999999979045, 9.599258000000006],
+      [6.0499999999883585, 11.609273000000002],
+      [7.059999999997672, 13.602387000000007],
+      [8.069999999977881, 15.59840100000001],
+      [9.079999999987194, 17.61354800000001],
+      [10.099999999976717, 19.712002999999996],
+      [11.119999999995343, 21.796034000000006],
+      [12.129999999975553, 23.797289000000006],
+      [13.139999999984866, 25.791678000000005],
+      [14.139999999984866, 27.795750000000012],
+      [15.14999999999418, 29.784858],
+      [16.160000000003492, 31.780319000000006],
+      [17.160000000003492, 33.77376300000002],
+      [18.169999999983702, 35.770521000000016],
+      [19.179999999993015, 37.777868],
+      [20.19000000000233, 39.783519999999996],
+      [21.199999999982538, 41.839624],
+      [22.20999999999185, 43.864784],
+      [23.220000000001164, 45.911366],
+      [24.229999999981374, 47.894806],
+      [25.229999999981374, 49.929995000000005],
+      [26.25, 51.967169999999996],
+      [27.25, 53.97628200000001],
+      [28.25999999998021, 55.97456699999999],
+      [29.269999999989523, 57.98448599999999],
+      [30.279999999998836, 59.97974599999999],
+      [31.29999999998836, 62.02562999999999],
+      [32.30999999999767, 64.059434],
+      [33.31999999997788, 66.12211900000001],
+      [34.329999999987194, 68.113206],
+      [35.33999999999651, 70.13187],
+      [36.34999999997672, 72.166196],
+      [37.35999999998603, 74.17266],
+      [38.36999999999534, 76.189541],
+      [39.4199999999837, 78.280817],
+      [40.429999999993015, 80.287865],
+      [41.44000000000233, 82.31990599999999],
+      [42.44999999998254, 84.33426100000001],
+      [43.45999999999185, 86.348351],
+      [44.470000000001164, 88.363781],
+      [45.470000000001164, 90.365528],
+      [46.47999999998137, 92.363367],
+      [47.48999999999069, 94.38434400000001],
+      [48.5, 96.40827600000001],
+      [49.50999999998021, 98.423478],
+      [50.51999999998952, 100.42707399999999],
+      [51.529999999998836, 102.43824400000001],
+      [52.539999999979045, 104.45060600000001],
+      [53.539999999979045, 106.36877299999999],
+      [54.54999999998836, 108.36112999999999],
+      [55.56999999997788, 110.42196500000001],
+      [56.58999999999651, 112.485449],
+      [57.62999999997555, 114.496007],
+      [58.64999999999418, 116.50801299999999],
+      [59.6699999999837, 118.56181500000001],
+      [60.69000000000233, 120.542242],
+      [61.70999999999185, 122.596289],
+      [62.73999999999069, 124.66264199999999],
+      [63.75999999998021, 126.69262400000001],
+      [64.77999999999884, 128.73535400000003],
+      [65.80999999999767, 130.787986],
+      [66.8299999999872, 132.844855],
+      [67.86999999999534, 134.90849100000003],
+      [68.89999999999418, 136.91253999999998],
+      [69.9199999999837, 138.88787200000002],
+      [70.94999999998254, 140.54682200000002]
+    ],
+    "loaderMachineCpuPercentMean": 65.08633643176965,
+    "dockerMachineCpuPercentMean": 65.08633643176965,
+    "dockerMachineCpuPercentMax": 99.26108374384236,
+    "agentThreadCpuSeconds": 0.16222999999999999,
+    "agentThreads": ["argos-logger", "argos-sender", "argos-watch"],
+    "javaThreadsAtEnd": 229,
+    "gate": {
+      "plannedIterations": 70000,
+      "dropped": 842,
+      "droppedLimit": 700,
+      "droppedOk": false,
+      "unexpectedRate": 0,
+      "unexpectedOk": true,
+      "loaderCpuPercentMean": 65.08633643176965,
+      "loaderSaturated": false,
+      "verdict": "FAIL"
+    }
+  },
+  "memory": {
+    "agentHeapBytes": 709680,
+    "agentHeapInstances": 16778,
+    "histogramTotalBytes": 65336112,
+    "agentTopClasses": ["io.argos.agent.bootstrap.WeakContextStore$WeakKey 11989 instances 383648 bytes", "io.argos.agent.bootstrap.TraceContext 634 instances 91296 bytes", "io.argos.agent.core.trace.StepBuffer 634 instances 91296 bytes", "io.argos.agent.core.trace.Transaction 634 instances 50720 bytes", "io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$MethodToken 286 instances 22880 bytes", "io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$MethodToken$ParameterToken 388 instances 9312 bytes", "io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$FieldToken 98 instances 3920 bytes", "io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$CircularityLock$WithInnerClassLoadingLock$TrivialLock 200 instances 3200 bytes", "io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription 26 instances 3120 bytes", "io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$AnnotationToken 96 instances 2304 bytes"],
+    "nmtTotalCommittedKb": 1366612,
+    "nmtCommittedKb": {
+      "Java Heap": 1048576,
+      "Class": 16230,
+      "Thread": 29842,
+      "Code": 51433,
+      "GC": 63456,
+      "GCCardSet": 267,
+      "Compiler": 2909,
+      "Internal": 2438,
+      "Other": 1828,
+      "Symbol": 36390,
+      "Native Memory Tracking": 6644,
+      "Arena Chunk": 2264,
+      "Tracing": 0,
+      "Logging": 0,
+      "Module": 278,
+      "Safepoint": 8,
+      "Synchronization": 491,
+      "Serviceability": 18,
+      "Metaspace": 90615,
+      "String Deduplication": 1,
+      "Object Monitors": 3,
+      "Unknown": 0
+    },
+    "nmtThreads": 236,
+    "classes": 21284,
+    "metaspaceUsedKb": 103160,
+    "metaspaceCommittedKb": 104320,
+    "javaThreads": 229
+  },
+  "premainMs": 2479.379,
+  "finishedAt": "2026-10-24T10:53:50.476478900Z"
+}

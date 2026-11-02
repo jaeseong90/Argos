@@ -1,0 +1,16 @@
+queue2: main-4 start 2026-10-24T15:12:11Z
+queue2: main-4 aborted by hand 15:41Z (background floor 16-17% > threshold 15%: Defender + WSL idle); restart with 22%
+queue2: main-5 start 2026-10-24T15:40:50Z
+queue2: main-5 aborted by hand 16:45Z (attempts started in short gaps of other work); restart with --quiet 60s --retries 30
+queue2: main-6 start 2026-10-24T16:45:28Z
+queue2: main-6 aborted by hand 16:56:26Z (harness now streams the app output instead of writing ~250 MB app.log per run; the post-run file scan loaded the next warm-up)
+queue2: main-7 start 2026-10-24T16:58:35Z
+queue2: main-7 exit=1 2026-10-24T17:48:33Z
+queue2: stopped after main-7
+queue2: main-7 failed 17:48Z: run directory 02-on vanished while waiting for quiet (empty-directory clean-up by another job, disk C: 100% full); harness now recreates it after the wait
+queue2: main-8 start 2026-10-24T17:53:09Z
+queue2: main-8 aborted by hand 18:28:13Z: background floor of the shared machine 17-23% in quiet periods (Defender, WSL VM, loopback); limit 22% -> 25% (validity still decided by the off CV <= 2%)
+queue2: main-9 start 2026-10-24T18:28:13Z
+queue2: main-9 exit=4 2026-10-24T21:03:58Z
+queue2: startup-3 start 2026-10-24T21:03:58Z
+queue2: stopped by PM 2026-10-24T21:14:11Z during startup-3 (user decision: wrap up WO-02 with collected data)

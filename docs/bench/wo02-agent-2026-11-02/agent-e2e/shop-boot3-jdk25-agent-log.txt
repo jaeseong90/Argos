@@ -1,0 +1,3 @@
+2026-11-02T21:10:33.401+09:00 INFO  [argos-sender] exporter: file <home>\AppData\Local\Temp\junit-10145035272551902131\shop-boot3-jdk25-agent\out\tx.jsonl
+2026-11-02T21:10:33.442+09:00 INFO  [main] Argos agent 0.0.0-SNAPSHOT (commit 4a43e77c16472b2cfcb7566506324b7cea16b128, protocol 1) started in 300.376 ms: app=- env=default exporter=file modules=[servlet,spring-webmvc,jdbc,executor,httpclient-jdk] enabled=true jvm=25 (Oracle Corporation) log=file <home>\AppData\Local\Temp\junit-10145035272551902131\shop-boot3-jdk25-agent\logs\argos-agent.log
+2026-11-02T21:10:33.796+09:00 INFO  [main] opened java.base/java.lang to the Argos agent class loader (helper injection, 10 §4.4)

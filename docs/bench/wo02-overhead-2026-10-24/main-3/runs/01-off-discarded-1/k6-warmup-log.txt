@@ -1,0 +1,13 @@
+time="2026-10-24T21:23:41+09:00" level=warning msg="Request Failed" error="Get \"http://127.0.0.1:58166/api/orders/46\": dial tcp 127.0.0.1:58166: connectex: Only one usage of each socket address (protocol/network address/port) is normally permitted."
+
+bench.js  target=http://127.0.0.1:58166  rate=1000/s  window=180s  warm-up=0s (excluded)
+  requests=179021  achieved=994.561/s  unexpected=0.001%  5xx=5.000% (5% intended)  dropped=980 (0.544%)
+  latency ms  p50=0.502  p95=302.888  p99=315.482  p99.9=1468.686  max=2693.11  avg=22.326
+  route          share   expect  p50      p95      p99      max
+  orders.get        40%  200     0.501    2.518    72.331   2056.485
+  orders.page       20%  200     0.502    2.958    58.876   2420.149
+  pay               20%  200     0.508    3.521    82.708   1057.916
+  orders.items      10%  200     0.505    3.508    103.266  2693.11 
+  slow               5%  200     308.751  316.308  353.866  1347.682
+  error-500          5%  500     1.031    5.043    65.987   1092.038
+  thresholds passed; summary: <scratch>\wo02perf\sets\main-3\runs\01-off\k6-warmup.json

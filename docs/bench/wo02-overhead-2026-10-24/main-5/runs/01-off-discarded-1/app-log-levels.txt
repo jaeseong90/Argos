@@ -1,0 +1,3 @@
+# WARN/ERROR and exception lines of the app log, by count
+38972	ERROR o.a.c.c.C.[.[.[/].[dispatcherServlet]: Servlet.service() for servlet [dispatcherServlet] in context with path [] threw exception [Request processing failed: java.lang.IllegalStateException: order # n...
+38972	exception java.lang.IllegalStateException: order # not found for kim@example.test

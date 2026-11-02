@@ -1,0 +1,113 @@
+28460:
+
+Total Usage - 817 loaders, 21593 classes (1424 shared):
+  Non-Class: 3888 chunks,     87.91 MB capacity,   87.79 MB (>99%) committed,    87.26 MB (>99%) used,   541.25 KB ( <1%) free,     4.20 KB ( <1%) waste , deallocated: 245 blocks with 51.37 KB
+      Class: 1479 chunks,     14.07 MB capacity,   13.94 MB (>99%) committed,    13.46 MB ( 96%) used,   496.03 KB (  3%) free,   312 bytes ( <1%) waste , deallocated: 584 blocks with 142.72 KB
+       Both: 5367 chunks,    101.98 MB capacity,  101.73 MB (>99%) committed,   100.72 MB ( 99%) used,     1.01 MB ( <1%) free,     4.50 KB ( <1%) waste , deallocated: 829 blocks with 194.09 KB
+
+
+Virtual space:
+  Non-class space:      128.00 MB reserved,      88.12 MB ( 69%) committed,  2 nodes.
+      Class space:        1.00 GB reserved,      14.12 MB (  1%) committed,  1 nodes.
+             Both:        1.12 GB reserved,     102.25 MB (  9%) committed. 
+
+
+Chunk freelists:
+   Non-Class:
+
+ 16m: (none)
+  8m: (none)
+  4m:    2, capacity=8.00 MB, committed=0 bytes (  0%)
+  2m:    2, capacity=4.00 MB, committed=0 bytes (  0%)
+  1m:    2, capacity=2.00 MB, committed=0 bytes (  0%)
+512k:    2, capacity=1.00 MB, committed=0 bytes (  0%)
+256k:    2, capacity=512.00 KB, committed=0 bytes (  0%)
+128k: (none)
+ 64k: (none)
+ 32k:    2, capacity=64.00 KB, committed=0 bytes (  0%)
+ 16k:    4, capacity=64.00 KB, committed=32.00 KB ( 50%)
+  8k:   20, capacity=160.00 KB, committed=160.00 KB (100%)
+  4k:   52, capacity=208.00 KB, committed=208.00 KB (100%)
+  2k:   66, capacity=132.00 KB, committed=132.00 KB (100%)
+  1k:   60, capacity=60.00 KB, committed=60.00 KB (100%)
+Total word size: 16.17 MB, committed: 592.00 KB (  4%)
+
+       Class:
+
+ 16m: (none)
+  8m: (none)
+  4m: (none)
+  2m: (none)
+  1m:    1, capacity=1.00 MB, committed=0 bytes (  0%)
+512k:    1, capacity=512.00 KB, committed=0 bytes (  0%)
+256k:    1, capacity=256.00 KB, committed=0 bytes (  0%)
+128k: (none)
+ 64k: (none)
+ 32k:    1, capacity=32.00 KB, committed=0 bytes (  0%)
+ 16k: (none)
+  8k:    5, capacity=40.00 KB, committed=40.00 KB (100%)
+  4k:   14, capacity=56.00 KB, committed=52.00 KB ( 93%)
+  2k:   19, capacity=38.00 KB, committed=38.00 KB (100%)
+  1k:   18, capacity=18.00 KB, committed=18.00 KB (100%)
+Total word size: 1.93 MB, committed: 148.00 KB (  7%)
+
+        Both:
+
+ 16m: (none)
+  8m: (none)
+  4m:    2, capacity=8.00 MB, committed=0 bytes (  0%)
+  2m:    2, capacity=4.00 MB, committed=0 bytes (  0%)
+  1m:    3, capacity=3.00 MB, committed=0 bytes (  0%)
+512k:    3, capacity=1.50 MB, committed=0 bytes (  0%)
+256k:    3, capacity=768.00 KB, committed=0 bytes (  0%)
+128k: (none)
+ 64k: (none)
+ 32k:    3, capacity=96.00 KB, committed=0 bytes (  0%)
+ 16k:    4, capacity=64.00 KB, committed=32.00 KB ( 50%)
+  8k:   25, capacity=200.00 KB, committed=200.00 KB (100%)
+  4k:   66, capacity=264.00 KB, committed=260.00 KB ( 98%)
+  2k:   85, capacity=170.00 KB, committed=170.00 KB (100%)
+  1k:   78, capacity=78.00 KB, committed=78.00 KB (100%)
+Total word size: 18.10 MB, committed: 740.00 KB (  4%)
+
+
+
+Waste (unused committed space):(percentages refer to total committed size 102.25 MB):
+        Waste in chunks in use:      4.50 KB ( <1%)
+        Free in chunks in use:      1.01 MB ( <1%)
+                In free chunks:    740.00 KB ( <1%)
+Deallocated from chunks in use:    194.09 KB ( <1%) (829 blocks)
+                       -total-:      1.93 MB (  2%)
+
+chunk header pool: 5535 items, 414.72 KB.
+
+Internal statistics:
+
+num_allocs_failed_limit: 32.
+num_arena_births: 1932.
+num_arena_deaths: 298.
+num_vsnodes_births: 3.
+num_vsnodes_deaths: 0.
+num_space_committed: 1636.
+num_space_uncommitted: 0.
+num_chunks_returned_to_freelist: 459.
+num_chunks_taken_from_freelist: 5795.
+num_chunk_merges: 218.
+num_chunk_splits: 4131.
+num_chunks_enlarged: 3026.
+num_inconsistent_stats: 0.
+
+
+Settings:
+MaxMetaspaceSize: unlimited
+CompressedClassSpaceSize: 1.00 GB
+Initial GC threshold: 21.00 MB
+Current GC threshold: 170.44 MB
+CDS: on
+ - commit_granule_bytes: 65536.
+ - commit_granule_words: 8192.
+ - virtual_space_node_default_size: 8388608.
+ - enlarge_chunks_in_place: 1.
+ - use_allocation_guard: 0.
+
+

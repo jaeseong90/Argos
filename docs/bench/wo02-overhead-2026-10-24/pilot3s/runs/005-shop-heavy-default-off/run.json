@@ -1,0 +1,21 @@
+{
+  "app": "shop-heavy",
+  "cds": "default",
+  "variant": "off",
+  "startedAt": "2026-10-24T11:00:06.614615800Z",
+  "spawnToPortMs": 59006,
+  "spawnToReadyMs": 59395,
+  "springStartedSeconds": 57.562,
+  "springProcessRunningSeconds": 59.033,
+  "premainMs": null,
+  "stderrLines": 0,
+  "stderrFirstLine": null,
+  "index": 5,
+  "round": 1,
+  "before": {
+    "cpuPercent5s": 74.22506992954526,
+    "availableMemoryMb": 1581,
+    "waitedSeconds": 5.0121439,
+    "quiet": true
+  }
+}

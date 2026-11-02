@@ -1,0 +1,15 @@
+[overhead 11:06:05Z] set <scratch>\wo02perf\sets\main-1 (process, 3 rounds of [off, on], warm-up 180 s, window 600 s, 1000/s)
+[overhead 11:06:14Z] machine CPU 32% > 30%: waiting
+[overhead 11:06:29Z] machine CPU 43% > 30%: waiting
+[overhead 11:06:44Z] run 1 (round 1, off): starting the app
+[overhead 11:06:57Z] run 1: warm-up 180 s
+[overhead 11:09:58Z] run 1: measured window 600 s
+[overhead 11:20:00Z] run 1: memory (jcmd GC.run x2, class histogram, NMT)
+[overhead 11:20:04Z] run 1 (off): app CPU 328.4 s, p99 314.925 ms, dropped 1405, unexpected 6.5E-5, host CPU 60%, gate FAIL
+[overhead 11:20:39Z] machine CPU 59% > 30%: waiting
+[overhead 11:20:54Z] machine CPU 75% > 30%: waiting
+[overhead 11:21:09Z] machine CPU 99% > 30%: waiting
+[overhead 11:21:24Z] machine CPU 97% > 30%: waiting
+[overhead 11:21:39Z] machine CPU 90% > 30%: waiting
+[overhead 11:21:54Z] machine CPU 95% > 30%: waiting
+[overhead 11:22:09Z] machine CPU 85% > 30%: waiting

@@ -1,0 +1,19 @@
+# Argos transformed classes: <class> <modules> <loader> [retransformed]
+com.zaxxer.hikari.pool.HikariProxyConnection jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
+com.zaxxer.hikari.pool.HikariProxyPreparedStatement jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
+com.zaxxer.hikari.pool.HikariProxyStatement jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
+com.zaxxer.hikari.pool.ProxyConnection jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
+com.zaxxer.hikari.pool.ProxyPreparedStatement jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
+com.zaxxer.hikari.pool.ProxyStatement jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
+jakarta.servlet.http.HttpServlet servlet org.springframework.boot.loader.launch.LaunchedClassLoader
+java.util.concurrent.ThreadPoolExecutor executor bootstrap
+org.apache.tomcat.websocket.server.WsFilter servlet org.springframework.boot.loader.launch.LaunchedClassLoader
+org.h2.jdbc.JdbcConnection jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
+org.h2.jdbc.JdbcPreparedStatement jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
+org.h2.jdbc.JdbcStatement jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
+org.springframework.web.filter.OncePerRequestFilter servlet org.springframework.boot.loader.launch.LaunchedClassLoader
+org.springframework.web.servlet.function.support.HandlerFunctionAdapter spring-webmvc org.springframework.boot.loader.launch.LaunchedClassLoader
+org.springframework.web.servlet.mvc.HttpRequestHandlerAdapter spring-webmvc org.springframework.boot.loader.launch.LaunchedClassLoader
+org.springframework.web.servlet.mvc.SimpleControllerHandlerAdapter spring-webmvc org.springframework.boot.loader.launch.LaunchedClassLoader
+org.springframework.web.servlet.mvc.method.AbstractHandlerMethodAdapter spring-webmvc org.springframework.boot.loader.launch.LaunchedClassLoader
+sun.net.www.protocol.http.HttpURLConnection httpclient-jdk bootstrap

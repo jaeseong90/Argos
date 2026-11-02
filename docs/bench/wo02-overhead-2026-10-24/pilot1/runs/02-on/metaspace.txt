@@ -1,0 +1,113 @@
+9352:
+
+Total Usage - 819 loaders, 21658 classes (1424 shared):
+  Non-Class: 3912 chunks,     87.89 MB capacity,   87.70 MB (>99%) committed,    87.15 MB (>99%) used,   563.98 KB ( <1%) free,     3.83 KB ( <1%) waste , deallocated: 251 blocks with 58.52 KB
+      Class: 1497 chunks,     14.09 MB capacity,   13.97 MB (>99%) committed,    13.51 MB ( 96%) used,   468.10 KB (  3%) free,   168 bytes ( <1%) waste , deallocated: 625 blocks with 157.45 KB
+       Both: 5409 chunks,    101.98 MB capacity,  101.67 MB (>99%) committed,   100.66 MB ( 99%) used,     1.01 MB ( <1%) free,     3.99 KB ( <1%) waste , deallocated: 876 blocks with 215.97 KB
+
+
+Virtual space:
+  Non-class space:      128.00 MB reserved,      88.12 MB ( 69%) committed,  2 nodes.
+      Class space:        1.00 GB reserved,      14.19 MB (  1%) committed,  1 nodes.
+             Both:        1.12 GB reserved,     102.31 MB (  9%) committed. 
+
+
+Chunk freelists:
+   Non-Class:
+
+ 16m: (none)
+  8m: (none)
+  4m:    2, capacity=8.00 MB, committed=0 bytes (  0%)
+  2m:    2, capacity=4.00 MB, committed=0 bytes (  0%)
+  1m:    2, capacity=2.00 MB, committed=0 bytes (  0%)
+512k:    2, capacity=1.00 MB, committed=0 bytes (  0%)
+256k: (none)
+128k:    2, capacity=256.00 KB, committed=0 bytes (  0%)
+ 64k:    2, capacity=128.00 KB, committed=0 bytes (  0%)
+ 32k:    2, capacity=64.00 KB, committed=0 bytes (  0%)
+ 16k:   14, capacity=224.00 KB, committed=224.00 KB (100%)
+  8k:   28, capacity=224.00 KB, committed=208.00 KB ( 93%)
+  4k:   38, capacity=152.00 KB, committed=144.00 KB ( 95%)
+  2k:   62, capacity=124.00 KB, committed=120.00 KB ( 97%)
+  1k:   80, capacity=80.00 KB, committed=80.00 KB (100%)
+Total word size: 16.22 MB, committed: 776.00 KB (  5%)
+
+       Class:
+
+ 16m: (none)
+  8m: (none)
+  4m: (none)
+  2m: (none)
+  1m:    1, capacity=1.00 MB, committed=0 bytes (  0%)
+512k:    1, capacity=512.00 KB, committed=0 bytes (  0%)
+256k: (none)
+128k:    1, capacity=128.00 KB, committed=0 bytes (  0%)
+ 64k:    1, capacity=64.00 KB, committed=0 bytes (  0%)
+ 32k:    1, capacity=32.00 KB, committed=0 bytes (  0%)
+ 16k:    2, capacity=32.00 KB, committed=32.00 KB (100%)
+  8k:    7, capacity=56.00 KB, committed=56.00 KB (100%)
+  4k:   10, capacity=40.00 KB, committed=40.00 KB (100%)
+  2k:   21, capacity=42.00 KB, committed=42.00 KB (100%)
+  1k:   24, capacity=24.00 KB, committed=24.00 KB (100%)
+Total word size: 1.91 MB, committed: 194.00 KB ( 10%)
+
+        Both:
+
+ 16m: (none)
+  8m: (none)
+  4m:    2, capacity=8.00 MB, committed=0 bytes (  0%)
+  2m:    2, capacity=4.00 MB, committed=0 bytes (  0%)
+  1m:    3, capacity=3.00 MB, committed=0 bytes (  0%)
+512k:    3, capacity=1.50 MB, committed=0 bytes (  0%)
+256k: (none)
+128k:    3, capacity=384.00 KB, committed=0 bytes (  0%)
+ 64k:    3, capacity=192.00 KB, committed=0 bytes (  0%)
+ 32k:    3, capacity=96.00 KB, committed=0 bytes (  0%)
+ 16k:   16, capacity=256.00 KB, committed=256.00 KB (100%)
+  8k:   35, capacity=280.00 KB, committed=264.00 KB ( 94%)
+  4k:   48, capacity=192.00 KB, committed=184.00 KB ( 96%)
+  2k:   83, capacity=166.00 KB, committed=162.00 KB ( 98%)
+  1k:  104, capacity=104.00 KB, committed=104.00 KB (100%)
+Total word size: 18.13 MB, committed: 970.00 KB (  5%)
+
+
+
+Waste (unused committed space):(percentages refer to total committed size 102.31 MB):
+        Waste in chunks in use:      3.99 KB ( <1%)
+        Free in chunks in use:      1.01 MB ( <1%)
+                In free chunks:    970.00 KB ( <1%)
+Deallocated from chunks in use:    215.97 KB ( <1%) (876 blocks)
+                       -total-:      2.17 MB (  2%)
+
+chunk header pool: 5597 items, 423.73 KB.
+
+Internal statistics:
+
+num_allocs_failed_limit: 14.
+num_arena_births: 2026.
+num_arena_deaths: 388.
+num_vsnodes_births: 3.
+num_vsnodes_deaths: 0.
+num_space_committed: 1637.
+num_space_uncommitted: 0.
+num_chunks_returned_to_freelist: 559.
+num_chunks_taken_from_freelist: 5955.
+num_chunk_merges: 253.
+num_chunk_splits: 4168.
+num_chunks_enlarged: 3034.
+num_inconsistent_stats: 0.
+
+
+Settings:
+MaxMetaspaceSize: unlimited
+CompressedClassSpaceSize: 1.00 GB
+Initial GC threshold: 21.00 MB
+Current GC threshold: 170.56 MB
+CDS: on
+ - commit_granule_bytes: 65536.
+ - commit_granule_words: 8192.
+ - virtual_space_node_default_size: 8388608.
+ - enlarge_chunks_in_place: 1.
+ - use_allocation_guard: 0.
+
+

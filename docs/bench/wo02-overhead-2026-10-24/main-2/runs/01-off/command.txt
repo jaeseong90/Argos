@@ -1,0 +1,12 @@
+<home>\.jdks\ms-21.0.10\bin\java.exe
+-Xms1g
+-Xmx1g
+-XX:+UseG1GC
+-XX:+AlwaysPreTouch
+-Xlog:gc:file=gc.log
+-XX:NativeMemoryTracking=summary
+-Djava.io.tmpdir=<scratch>\wo02perf\sets\main-2\runs\01-off\tmp
+-jar
+<scratch>\wo02perf\sets\main-2\bin\shop-boot3.jar
+--server.address=127.0.0.1
+--server.port=61450

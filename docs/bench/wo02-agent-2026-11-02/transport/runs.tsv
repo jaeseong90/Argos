@@ -1,0 +1,213 @@
+run	scenario	agent	jdk	jvm_options	rep	exit	timed_out	cpu_before_pct	cpu_during_pct	main_uptime_ms	first_batch_ms	batches	tls	metaspace_used	classes_loaded	threads	direct_max	stdout_lines	foreign_stderr_lines	unsafe_warning_lines	agent_error	agent_warn	tmp_entries	tmp_created
+0001-resources-none-21-r1	resources	none	21		1	0	false	9.9	2.8	56	-1	0	-	865496	867	7	0	0	0	0	0	0	0	
+0002-resources-base-21-r1	resources	base	21		1	0	false	3.4	2.8	414	-1	0	-	7537520	2470	10	0	0	0	0	0	0	0	
+0003-resources-grpc-netty-lite-21-r1	resources	grpc-netty-lite	21		1	0	false	1.5	6.5	418	1342	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25555552	5701	11	10615	0	0	0	0	0	0	socket_#
+0004-resources-grpc-netty-full-21-r1	resources	grpc-netty-full	21		1	0	false	2.2	5.0	421	1160	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25467648	5701	11	10615	0	0	0	0	0	0	socket_#
+0005-resources-grpc-netty41-full-21-r1	resources	grpc-netty41-full	21		1	0	false	4.9	5.1	417	1138	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25521168	5717	11	10615	0	0	0	0	0	0	socket_#
+0006-resources-grpc-okhttp-lite-21-r1	resources	grpc-okhttp-lite	21		1	0	false	1.6	7.8	457	984	10	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21141960	4946	13	9497	0	0	0	0	0	0	
+0007-resources-grpc-okhttp-full-21-r1	resources	grpc-okhttp-full	21		1	0	false	3.7	5.0	422	922	10	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21044504	4943	13	9497	0	0	0	1	0	0	
+0008-resources-http1-lite-21-r1	resources	http1-lite	21		1	0	false	3.1	5.5	408	792	10	TLSv1.3 TLS_AES_256_GCM_SHA384	15362048	3866	10	8192	0	0	0	0	0	0	
+0009-resources-http1-full-21-r1	resources	http1-full	21		1	0	false	2.8	5.8	415	765	10	TLSv1.3 TLS_AES_256_GCM_SHA384	15310904	3858	10	8192	0	0	0	0	0	0	
+0010-resources-grpc-netty41-full-x-21-r1	resources	grpc-netty41-full-x	21		1	0	false	3.4	4.9	418	1144	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25536072	5717	11	10615	0	0	0	0	0	0	socket_#
+0011-resources-http1-full-x-21-r1	resources	http1-full-x	21		1	0	false	2.2	4.2	410	763	10	TLSv1.3 TLS_AES_256_GCM_SHA384	15304624	3858	10	8192	0	0	0	0	0	0	
+0012-resources-none-21-r2	resources	none	21		2	0	false	0.6	2.1	55	-1	0	-	859744	867	7	0	0	0	0	0	0	0	
+0013-resources-base-21-r2	resources	base	21		2	0	false	0.0	2.7	418	-1	0	-	7540736	2470	10	0	0	0	0	0	0	0	
+0014-resources-grpc-netty-lite-21-r2	resources	grpc-netty-lite	21		2	0	false	3.1	5.9	436	1180	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25557624	5701	11	10615	0	0	0	0	0	0	socket_#
+0015-resources-grpc-netty-full-21-r2	resources	grpc-netty-full	21		2	0	false	3.9	5.1	418	1149	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25451800	5698	11	10615	0	0	0	0	0	0	socket_#
+0016-resources-grpc-netty41-full-21-r2	resources	grpc-netty41-full	21		2	0	false	4.8	6.2	428	1187	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25522704	5717	11	10615	0	0	0	0	0	0	socket_#
+0017-resources-grpc-okhttp-lite-21-r2	resources	grpc-okhttp-lite	21		2	0	false	4.3	4.5	418	915	10	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21110928	4946	13	9497	0	0	0	0	0	0	
+0018-resources-grpc-okhttp-full-21-r2	resources	grpc-okhttp-full	21		2	0	false	1.4	4.4	416	913	10	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21041024	4943	13	9497	0	0	0	0	0	0	
+0019-resources-http1-lite-21-r2	resources	http1-lite	21		2	0	false	1.7	4.1	413	774	10	TLSv1.3 TLS_AES_256_GCM_SHA384	15380848	3866	10	8192	0	0	0	0	0	0	
+0020-resources-http1-full-21-r2	resources	http1-full	21		2	0	false	2.0	6.4	411	763	10	TLSv1.3 TLS_AES_256_GCM_SHA384	15301696	3858	10	8192	0	0	0	0	0	0	
+0021-resources-grpc-netty41-full-x-21-r2	resources	grpc-netty41-full-x	21		2	0	false	5.4	7.4	420	1139	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25527728	5717	11	10615	0	0	0	0	0	0	socket_#
+0022-resources-http1-full-x-21-r2	resources	http1-full-x	21		2	0	false	10.3	5.9	435	792	10	TLSv1.3 TLS_AES_256_GCM_SHA384	15308672	3858	10	8192	0	0	0	0	0	0	
+0023-resources-none-21-r3	resources	none	21		3	0	false	2.6	3.8	57	-1	0	-	861720	867	7	0	0	0	0	0	0	0	
+0024-resources-base-21-r3	resources	base	21		3	0	false	2.6	2.5	408	-1	0	-	7532008	2470	10	0	0	0	0	0	0	0	
+0025-resources-grpc-netty-lite-21-r3	resources	grpc-netty-lite	21		3	0	false	4.6	5.1	434	1155	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25576576	5704	11	10615	0	0	0	0	0	0	socket_#
+0026-resources-grpc-netty-full-21-r3	resources	grpc-netty-full	21		3	0	false	4.3	5.2	421	1143	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25449720	5701	11	10615	0	0	0	0	0	0	socket_#
+0027-resources-grpc-netty41-full-21-r3	resources	grpc-netty41-full	21		3	0	false	0.7	4.6	417	1139	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25526224	5714	11	10615	0	0	0	0	0	0	socket_#
+0028-resources-grpc-okhttp-lite-21-r3	resources	grpc-okhttp-lite	21		3	0	false	2.1	4.3	416	928	10	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21127144	4946	13	9497	0	0	0	0	0	0	
+0029-resources-grpc-okhttp-full-21-r3	resources	grpc-okhttp-full	21		3	0	false	2.9	5.1	417	890	10	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21038280	4943	13	9497	0	0	0	0	0	0	
+0030-resources-http1-lite-21-r3	resources	http1-lite	21		3	0	false	3.6	4.8	409	746	10	TLSv1.3 TLS_AES_256_GCM_SHA384	15384360	3866	10	8192	0	0	0	0	0	0	
+0031-resources-http1-full-21-r3	resources	http1-full	21		3	0	false	3.0	4.5	411	756	10	TLSv1.3 TLS_AES_256_GCM_SHA384	15302072	3858	10	8192	0	0	0	0	0	0	
+0032-resources-grpc-netty41-full-x-21-r3	resources	grpc-netty41-full-x	21		3	0	false	2.1	4.8	413	1136	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25530184	5717	11	10615	0	0	0	0	0	0	socket_#
+0033-resources-http1-full-x-21-r3	resources	http1-full-x	21		3	0	false	1.3	5.1	413	780	10	TLSv1.3 TLS_AES_256_GCM_SHA384	15313640	3858	10	8192	0	0	0	0	0	0	
+0034-resources-none-21-r4	resources	none	21		4	0	false	2.2	3.7	56	-1	0	-	862200	867	7	0	0	0	0	0	0	0	
+0035-resources-base-21-r4	resources	base	21		4	0	false	5.1	4.7	414	-1	0	-	7516136	2470	10	0	0	0	0	0	0	0	
+0036-resources-grpc-netty-lite-21-r4	resources	grpc-netty-lite	21		4	0	false	7.9	5.9	419	1148	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25562600	5706	11	10615	0	0	0	0	0	0	socket_#
+0037-resources-grpc-netty-full-21-r4	resources	grpc-netty-full	21		4	0	false	2.6	5.0	414	1136	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25451272	5701	11	10615	0	0	0	0	0	0	socket_#
+0038-resources-grpc-netty41-full-21-r4	resources	grpc-netty41-full	21		4	0	false	3.9	5.0	414	1136	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25520272	5714	11	10615	0	0	0	0	0	0	socket_#
+0039-resources-grpc-okhttp-lite-21-r4	resources	grpc-okhttp-lite	21		4	0	false	2.7	4.4	414	920	10	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21128120	4946	13	9497	0	0	0	0	0	0	
+0040-resources-grpc-okhttp-full-21-r4	resources	grpc-okhttp-full	21		4	0	false	3.4	4.5	416	898	10	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21025944	4943	13	9497	0	0	0	0	0	0	
+0041-resources-http1-lite-21-r4	resources	http1-lite	21		4	0	false	4.1	4.0	407	761	10	TLSv1.3 TLS_AES_256_GCM_SHA384	15374264	3866	10	8192	0	0	0	0	0	0	
+0042-resources-http1-full-21-r4	resources	http1-full	21		4	0	false	2.5	4.2	411	761	10	TLSv1.3 TLS_AES_256_GCM_SHA384	15308880	3858	10	8192	0	0	0	0	0	0	
+0043-resources-grpc-netty41-full-x-21-r4	resources	grpc-netty41-full-x	21		4	0	false	2.0	4.7	424	1147	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25520712	5717	11	10615	0	0	0	0	0	0	socket_#
+0044-resources-http1-full-x-21-r4	resources	http1-full-x	21		4	0	false	3.1	4.0	409	777	10	TLSv1.3 TLS_AES_256_GCM_SHA384	15310704	3858	10	8192	0	0	0	0	0	0	
+0045-resources-none-21-r5	resources	none	21		5	0	false	2.4	3.2	56	-1	0	-	861552	867	7	0	0	0	0	0	0	0	
+0046-resources-base-21-r5	resources	base	21		5	0	false	5.4	3.3	414	-1	0	-	7540144	2470	10	0	0	0	0	0	0	0	
+0047-resources-grpc-netty-lite-21-r5	resources	grpc-netty-lite	21		5	0	false	2.7	4.7	414	1143	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25570032	5704	11	10615	0	0	0	0	0	0	socket_#
+0048-resources-grpc-netty-full-21-r5	resources	grpc-netty-full	21		5	0	false	3.7	5.2	416	1135	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25434184	5701	11	10615	0	0	0	0	0	0	socket_#
+0049-resources-grpc-netty41-full-21-r5	resources	grpc-netty41-full	21		5	0	false	2.4	5.0	420	1142	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25527552	5714	11	10615	0	0	0	0	0	0	socket_#
+0050-resources-grpc-okhttp-lite-21-r5	resources	grpc-okhttp-lite	21		5	0	false	4.2	4.9	413	902	10	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21118112	4946	13	9497	0	0	0	0	0	0	
+0051-resources-grpc-okhttp-full-21-r5	resources	grpc-okhttp-full	21		5	0	false	2.9	4.4	416	907	10	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21044040	4943	13	9497	0	0	0	0	0	0	
+0052-resources-http1-lite-21-r5	resources	http1-lite	21		5	0	false	2.7	5.1	410	766	10	TLSv1.3 TLS_AES_256_GCM_SHA384	15369648	3866	10	8192	0	0	0	0	0	0	
+0053-resources-http1-full-21-r5	resources	http1-full	21		5	0	false	4.6	4.9	412	753	10	TLSv1.3 TLS_AES_256_GCM_SHA384	15296072	3858	10	8192	0	0	0	0	0	0	
+0054-resources-grpc-netty41-full-x-21-r5	resources	grpc-netty41-full-x	21		5	0	false	4.4	4.8	414	1146	10	TLSv1.3 TLS_AES_128_GCM_SHA256	25517560	5717	11	10615	0	0	0	0	0	0	socket_#
+0055-resources-http1-full-x-21-r5	resources	http1-full-x	21		5	0	false	4.5	3.8	410	745	10	TLSv1.3 TLS_AES_256_GCM_SHA384	15315816	3858	10	8192	0	0	0	0	0	0	
+0056-resources-none-8-r1	resources	none	8		1	0	false	3.4	2.3	54	-1	0	-	3257056	511	5	0	0	0	0	0	0	0	
+0057-resources-base-8-r1	resources	base	8		1	0	false	1.5	2.9	302	-1	0	-	7968616	1461	8	0	0	0	0	0	0	0	
+0058-resources-grpc-netty-lite-8-r1	resources	grpc-netty-lite	8		1	0	false	2.9	4.4	307	1433	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23978920	4354	9	946	0	0	0	0	0	0	
+0059-resources-grpc-netty-full-8-r1	resources	grpc-netty-full	8		1	0	false	0.8	4.0	303	1400	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23922456	4353	9	946	0	0	0	0	0	0	
+0060-resources-grpc-netty41-full-8-r1	resources	grpc-netty41-full	8		1	0	false	6.3	3.9	303	1371	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23857672	4329	9	2439	0	0	0	0	0	0	
+0061-resources-grpc-okhttp-lite-8-r1	resources	grpc-okhttp-lite	8		1	0	false	7.8	4.1	301	1056	9	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21665416	3985	11	0	0	0	0	0	0	0	
+0062-resources-grpc-okhttp-full-8-r1	resources	grpc-okhttp-full	8		1	0	false	1.2	4.2	305	1064	9	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21616912	3984	11	0	0	0	0	0	0	0	
+0063-resources-http1-lite-8-r1	resources	http1-lite	8		1	0	false	3.3	6.9	299	847	9	TLSv1.3 TLS_AES_256_GCM_SHA384	15425584	2742	8	0	0	0	0	0	0	0	
+0064-resources-http1-full-8-r1	resources	http1-full	8		1	0	false	1.2	4.2	303	857	9	TLSv1.3 TLS_AES_256_GCM_SHA384	15414432	2736	8	0	0	0	0	0	0	0	
+0065-resources-grpc-netty41-full-x-8-r1	resources	grpc-netty41-full-x	8		1	0	false	6.3	3.7	302	1387	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23854112	4329	9	2439	0	0	0	0	0	0	
+0066-resources-http1-full-x-8-r1	resources	http1-full-x	8		1	0	false	1.2	3.6	299	849	9	TLSv1.3 TLS_AES_256_GCM_SHA384	15427072	2736	8	0	0	0	0	0	0	0	
+0067-resources-none-8-r2	resources	none	8		2	0	false	2.1	2.4	54	-1	0	-	3257056	511	5	0	0	0	0	0	0	0	
+0068-resources-base-8-r2	resources	base	8		2	0	false	1.1	2.9	304	-1	0	-	7971472	1461	8	0	0	0	0	0	0	0	
+0069-resources-grpc-netty-lite-8-r2	resources	grpc-netty-lite	8		2	0	false	3.0	3.6	303	1389	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23978376	4354	9	945	0	0	0	0	0	0	
+0070-resources-grpc-netty-full-8-r2	resources	grpc-netty-full	8		2	0	false	1.3	4.2	306	1409	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23921784	4353	9	945	0	0	0	0	0	0	
+0071-resources-grpc-netty41-full-8-r2	resources	grpc-netty41-full	8		2	0	false	3.0	3.9	302	1383	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23862096	4329	9	2439	0	0	0	0	0	0	
+0072-resources-grpc-okhttp-lite-8-r2	resources	grpc-okhttp-lite	8		2	0	false	2.3	3.8	306	1060	9	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21663768	3985	11	0	0	0	0	0	0	0	
+0073-resources-grpc-okhttp-full-8-r2	resources	grpc-okhttp-full	8		2	0	false	4.2	3.6	299	1046	9	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21607128	3984	11	0	0	0	0	0	0	0	
+0074-resources-http1-lite-8-r2	resources	http1-lite	8		2	0	false	1.1	3.7	303	863	9	TLSv1.3 TLS_AES_256_GCM_SHA384	15433888	2742	8	0	0	0	0	0	0	0	
+0075-resources-http1-full-8-r2	resources	http1-full	8		2	0	false	1.4	3.2	300	847	9	TLSv1.3 TLS_AES_256_GCM_SHA384	15414544	2736	8	0	0	0	0	0	0	0	
+0076-resources-grpc-netty41-full-x-8-r2	resources	grpc-netty41-full-x	8		2	0	false	2.4	4.4	301	1390	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23858704	4329	9	2439	0	0	0	0	0	0	
+0077-resources-http1-full-x-8-r2	resources	http1-full-x	8		2	0	false	2.4	4.5	304	856	9	TLSv1.3 TLS_AES_256_GCM_SHA384	15411512	2736	8	0	0	0	0	0	0	0	
+0078-resources-none-8-r3	resources	none	8		3	0	false	3.3	2.2	53	-1	0	-	3257056	511	5	0	0	0	0	0	0	0	
+0079-resources-base-8-r3	resources	base	8		3	0	false	0.4	3.0	304	-1	0	-	7972176	1461	8	0	0	0	0	0	0	0	
+0080-resources-grpc-netty-lite-8-r3	resources	grpc-netty-lite	8		3	0	false	3.9	3.9	302	1402	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23984976	4354	9	945	0	0	0	0	0	0	
+0081-resources-grpc-netty-full-8-r3	resources	grpc-netty-full	8		3	0	false	0.9	4.1	304	1394	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23929840	4353	9	945	0	0	0	0	0	0	
+0082-resources-grpc-netty41-full-8-r3	resources	grpc-netty41-full	8		3	0	false	1.6	4.3	301	1393	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23855408	4329	9	2439	0	0	0	0	0	0	
+0083-resources-grpc-okhttp-lite-8-r3	resources	grpc-okhttp-lite	8		3	0	false	3.5	4.0	311	1057	9	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21662984	3985	11	0	0	0	0	0	0	0	
+0084-resources-grpc-okhttp-full-8-r3	resources	grpc-okhttp-full	8		3	0	false	2.7	3.2	309	1052	9	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21610224	3984	11	0	0	0	0	0	0	0	
+0085-resources-http1-lite-8-r3	resources	http1-lite	8		3	0	false	0.4	3.9	303	854	9	TLSv1.3 TLS_AES_256_GCM_SHA384	15434576	2742	8	0	0	0	0	0	0	0	
+0086-resources-http1-full-8-r3	resources	http1-full	8		3	0	false	1.0	3.0	307	854	9	TLSv1.3 TLS_AES_256_GCM_SHA384	15415360	2736	8	0	0	0	0	0	0	0	
+0087-resources-grpc-netty41-full-x-8-r3	resources	grpc-netty41-full-x	8		3	0	false	1.9	6.9	302	1375	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23841736	4328	9	2439	0	0	0	0	0	0	
+0088-resources-http1-full-x-8-r3	resources	http1-full-x	8		3	0	false	8.4	3.5	299	845	9	TLSv1.3 TLS_AES_256_GCM_SHA384	15410920	2736	8	0	0	0	0	0	0	0	
+0089-resources-none-8-r4	resources	none	8		4	0	false	3.6	2.5	55	-1	0	-	3257056	511	5	0	0	0	0	0	0	0	
+0090-resources-base-8-r4	resources	base	8		4	0	false	2.4	3.3	301	-1	0	-	7971608	1461	8	0	0	0	0	0	0	0	
+0091-resources-grpc-netty-lite-8-r4	resources	grpc-netty-lite	8		4	0	false	2.7	4.7	305	1406	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23984600	4354	9	945	0	0	0	0	0	0	
+0092-resources-grpc-netty-full-8-r4	resources	grpc-netty-full	8		4	0	false	1.6	4.3	310	1402	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23919800	4353	9	946	0	0	0	0	0	0	
+0093-resources-grpc-netty41-full-8-r4	resources	grpc-netty41-full	8		4	0	false	0.6	4.5	306	1383	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23855160	4329	9	2439	0	0	0	0	0	0	
+0094-resources-grpc-okhttp-lite-8-r4	resources	grpc-okhttp-lite	8		4	0	false	4.0	4.0	306	1055	9	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21660184	3985	11	0	0	0	0	0	0	0	
+0095-resources-grpc-okhttp-full-8-r4	resources	grpc-okhttp-full	8		4	0	false	3.1	3.9	299	1048	9	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21605000	3983	11	0	0	0	0	0	0	0	
+0096-resources-http1-lite-8-r4	resources	http1-lite	8		4	0	false	1.4	5.2	303	852	9	TLSv1.3 TLS_AES_256_GCM_SHA384	15433328	2742	8	0	0	0	0	0	0	0	
+0097-resources-http1-full-8-r4	resources	http1-full	8		4	0	false	11.0	3.6	300	843	9	TLSv1.3 TLS_AES_256_GCM_SHA384	15417344	2736	8	0	0	0	0	0	0	0	
+0098-resources-grpc-netty41-full-x-8-r4	resources	grpc-netty41-full-x	8		4	0	false	6.4	9.2	308	1405	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23858456	4329	9	2439	0	0	0	0	0	0	
+0099-resources-http1-full-x-8-r4	resources	http1-full-x	8		4	0	false	1.7	6.2	308	854	9	TLSv1.3 TLS_AES_256_GCM_SHA384	15415496	2736	8	0	0	0	0	0	0	0	
+0100-resources-none-8-r5	resources	none	8		5	0	false	6.8	3.6	54	-1	0	-	3257056	511	5	0	0	0	0	0	0	0	
+0101-resources-base-8-r5	resources	base	8		5	0	false	5.7	4.8	308	-1	0	-	7984896	1461	8	0	0	0	0	0	0	0	
+0102-resources-grpc-netty-lite-8-r5	resources	grpc-netty-lite	8		5	0	false	1.9	4.3	327	1418	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23978896	4354	9	2745	0	0	0	0	0	0	
+0103-resources-grpc-netty-full-8-r5	resources	grpc-netty-full	8		5	0	false	2.1	4.6	306	1420	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23915392	4353	9	946	0	0	0	0	0	0	
+0104-resources-grpc-netty41-full-8-r5	resources	grpc-netty41-full	8		5	0	false	2.5	5.4	301	1371	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23859352	4329	9	2439	0	0	0	0	0	0	
+0105-resources-grpc-okhttp-lite-8-r5	resources	grpc-okhttp-lite	8		5	0	false	2.3	3.7	310	1076	9	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21661368	3985	11	0	0	0	0	0	0	0	
+0106-resources-grpc-okhttp-full-8-r5	resources	grpc-okhttp-full	8		5	0	false	2.9	4.1	308	1055	9	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21592888	3984	11	0	0	0	0	0	0	0	
+0107-resources-http1-lite-8-r5	resources	http1-lite	8		5	0	false	2.7	4.1	300	848	9	TLSv1.3 TLS_AES_256_GCM_SHA384	15425016	2742	8	0	0	0	0	0	0	0	
+0108-resources-http1-full-8-r5	resources	http1-full	8		5	0	false	2.8	3.5	303	856	9	TLSv1.3 TLS_AES_256_GCM_SHA384	15407080	2736	8	0	0	0	0	0	0	0	
+0109-resources-grpc-netty41-full-x-8-r5	resources	grpc-netty41-full-x	8		5	0	false	1.3	4.3	301	1389	9	TLSv1.3 TLS_AES_128_GCM_SHA256	23853120	4329	9	2439	0	0	0	0	0	0	
+0110-resources-http1-full-x-8-r5	resources	http1-full-x	8		5	0	false	1.7	4.0	303	854	9	TLSv1.3 TLS_AES_256_GCM_SHA384	15419624	2736	8	0	0	0	0	0	0	0	
+0111-function-base-11-r1	function	base	11		1	0	false	3.2	2.8	402	-1	0	-	14432048	2260	9	0	0	0	0	0	0	0	
+0112-function-grpc-netty-lite-11-r1	function	grpc-netty-lite	11		1	0	false	2.8	6.3	422	1586	8	TLSv1.3 TLS_AES_128_GCM_SHA256	32938848	5396	10	10615	0	0	0	0	0	0	
+0113-function-grpc-netty-full-11-r1	function	grpc-netty-full	11		1	0	false	4.1	6.0	410	1579	8	TLSv1.3 TLS_AES_128_GCM_SHA256	32829664	5385	10	10615	0	0	0	0	0	0	
+0114-function-grpc-netty41-full-11-r1	function	grpc-netty41-full	11		1	0	false	0.5	5.8	409	1551	8	TLSv1.3 TLS_AES_128_GCM_SHA256	32790792	5402	10	10615	0	0	0	0	0	0	
+0115-function-grpc-okhttp-lite-11-r1	function	grpc-okhttp-lite	11		1	0	false	2.8	5.5	405	1120	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	28435216	4628	12	8192	0	0	0	0	0	0	
+0116-function-grpc-okhttp-full-11-r1	function	grpc-okhttp-full	11		1	0	false	2.3	5.1	412	1126	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	28322360	4624	12	8192	0	0	0	0	0	0	
+0117-function-http1-lite-11-r1	function	http1-lite	11		1	0	false	3.8	4.8	399	926	8	TLSv1.3 TLS_AES_256_GCM_SHA384	22272488	3553	9	8192	0	0	0	0	0	0	
+0118-function-http1-full-11-r1	function	http1-full	11		1	0	false	4.4	4.5	402	923	8	TLSv1.3 TLS_AES_256_GCM_SHA384	22176944	3544	9	8192	0	0	0	0	0	0	
+0119-function-grpc-netty41-full-x-11-r1	function	grpc-netty41-full-x	11		1	0	false	5.0	5.7	411	1565	8	TLSv1.3 TLS_AES_128_GCM_SHA256	32797440	5402	10	10615	0	0	0	0	0	0	
+0120-function-http1-full-x-11-r1	function	http1-full-x	11		1	0	false	5.0	5.9	432	972	8	TLSv1.3 TLS_AES_256_GCM_SHA384	22180504	3544	9	8192	0	0	0	0	0	0	
+0121-function-base-17-r1	function	base	17		1	0	false	2.3	2.9	345	-1	0	-	6816760	2225	10	0	0	0	0	0	0	0	
+0122-function-grpc-netty-lite-17-r1	function	grpc-netty-lite	17		1	0	false	3.8	5.3	343	1082	8	TLSv1.3 TLS_AES_128_GCM_SHA256	24671112	5484	11	10615	0	0	0	0	0	0	socket_#
+0123-function-grpc-netty-full-17-r1	function	grpc-netty-full	17		1	0	false	3.3	5.0	342	1077	8	TLSv1.3 TLS_AES_128_GCM_SHA256	24538320	5478	11	10615	0	0	0	0	0	0	socket_#
+0124-function-grpc-netty41-full-17-r1	function	grpc-netty41-full	17		1	0	false	1.1	5.4	344	1073	8	TLSv1.3 TLS_AES_128_GCM_SHA256	24550688	5485	11	10615	0	0	0	0	0	0	socket_#
+0125-function-grpc-okhttp-lite-17-r1	function	grpc-okhttp-lite	17		1	0	false	4.7	5.1	342	843	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	20236736	4724	13	9497	0	0	0	0	0	0	
+0126-function-grpc-okhttp-full-17-r1	function	grpc-okhttp-full	17		1	0	false	3.2	7.0	348	834	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	20172640	4720	13	9497	0	0	0	0	0	0	
+0127-function-http1-lite-17-r1	function	http1-lite	17		1	0	false	1.7	4.6	356	691	8	TLSv1.3 TLS_AES_256_GCM_SHA384	14608160	3665	10	8192	0	0	0	0	0	0	
+0128-function-http1-full-17-r1	function	http1-full	17		1	0	false	1.6	5.2	340	662	8	TLSv1.3 TLS_AES_256_GCM_SHA384	14515968	3654	10	8192	0	0	0	0	0	0	
+0129-function-grpc-netty41-full-x-17-r1	function	grpc-netty41-full-x	17		1	0	false	6.4	5.8	348	1079	8	TLSv1.3 TLS_AES_128_GCM_SHA256	24544160	5485	11	10615	0	0	0	0	0	0	socket_#
+0130-function-http1-full-x-17-r1	function	http1-full-x	17		1	0	false	5.5	4.6	339	660	8	TLSv1.3 TLS_AES_256_GCM_SHA384	14514320	3654	10	8192	0	0	0	0	0	0	
+0131-function-base-8u242-r1	function	base	8u242		1	0	false	2.7	2.5	352	-1	0	-	7778120	1443	8	0	0	0	0	0	0	0	
+0132-function-grpc-netty-lite-8u242-r1	function	grpc-netty-lite	8u242		1	0	false	1.3	3.5	301	-1	0	-	14307296	2562	8	16	0	0	0	1	0	0	
+0133-function-grpc-netty-full-8u242-r1	function	grpc-netty-full	8u242		1	0	false	3.4	4.2	301	-1	0	-	14297816	2562	8	16	0	0	0	1	0	0	
+0134-function-grpc-netty41-full-8u242-r1	function	grpc-netty41-full	8u242		1	0	false	2.8	3.9	300	-1	0	-	14428648	2580	8	16	0	0	0	1	0	0	
+0135-function-grpc-okhttp-lite-8u242-r1	function	grpc-okhttp-lite	8u242		1	0	false	3.5	3.6	302	-1	0	-	19384056	3495	11	0	0	0	0	2	3	0	
+0136-function-grpc-okhttp-full-8u242-r1	function	grpc-okhttp-full	8u242		1	0	false	2.1	4.6	317	-1	0	-	19431320	3500	11	0	0	0	0	2	3	0	
+0137-function-http1-lite-8u242-r1	function	http1-lite	8u242		1	0	false	4.6	4.3	301	776	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384	13420864	2317	8	0	0	0	0	0	0	0	
+0138-function-http1-full-8u242-r1	function	http1-full	8u242		1	0	false	2.8	3.2	303	770	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384	13399264	2311	8	0	0	0	0	0	0	0	
+0139-function-grpc-netty41-full-x-8u242-r1	function	grpc-netty41-full-x	8u242		1	0	false	3.7	3.6	298	-1	0	-	14435792	2580	8	16	0	0	0	1	0	0	
+0140-function-http1-full-x-8u242-r1	function	http1-full-x	8u242		1	0	false	4.6	3.5	302	778	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384	13404456	2311	8	0	0	0	0	0	0	0	
+0141-function-base-8u252-r1	function	base	8u252		1	0	false	5.4	3.2	329	-1	0	-	7774528	1443	8	0	0	0	0	0	0	0	
+0142-function-grpc-netty-lite-8u252-r1	function	grpc-netty-lite	8u252		1	0	false	1.0	4.5	300	1601	7	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	22151784	3939	9	1918	0	0	0	0	0	0	
+0143-function-grpc-netty-full-8u252-r1	function	grpc-netty-full	8u252		1	0	false	1.2	5.3	304	1348	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	22102832	3938	9	893	0	0	0	0	0	0	
+0144-function-grpc-netty41-full-8u252-r1	function	grpc-netty41-full	8u252		1	0	false	2.4	5.0	297	1334	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	22193360	3952	9	2395	0	0	0	0	0	0	
+0145-function-grpc-okhttp-lite-8u252-r1	function	grpc-okhttp-lite	8u252		1	0	false	1.0	3.9	318	1000	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	20104832	3611	11	0	0	0	0	0	0	0	
+0146-function-grpc-okhttp-full-8u252-r1	function	grpc-okhttp-full	8u252		1	0	false	0.6	4.8	316	1005	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	20067944	3610	11	0	0	0	0	0	0	0	
+0147-function-http1-lite-8u252-r1	function	http1-lite	8u252		1	0	false	5.6	3.7	306	789	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384	13480656	2323	8	0	0	0	0	0	0	0	
+0148-function-http1-full-8u252-r1	function	http1-full	8u252		1	0	false	3.5	3.7	304	777	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384	13452880	2317	8	0	0	0	0	0	0	0	
+0149-function-grpc-netty41-full-x-8u252-r1	function	grpc-netty41-full-x	8u252		1	0	false	0.0	4.2	301	1340	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	22198728	3951	9	2395	0	0	0	0	0	0	
+0150-function-http1-full-x-8u252-r1	function	http1-full-x	8u252		1	0	false	3.0	3.3	302	776	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384	13454616	2317	8	0	0	0	0	0	0	0	
+0151-jdk25-base-25-r1	jdk25	base	25		1	0	false	2.0	3.8	390	-1	0	-	7642568	2519	10	0	0	0	0	0	0	0	
+0152-jdk25-grpc-netty-lite-25-r1	jdk25	grpc-netty-lite	25		1	0	false	5.2	5.4	384	1025	8	TLSv1.3 TLS_AES_128_GCM_SHA256	25822800	5873	11	13496	0	4	3	0	0	0	socket_#
+0153-jdk25-grpc-netty-full-25-r1	jdk25	grpc-netty-full	25		1	0	false	1.9	5.8	399	1020	8	TLSv1.3 TLS_AES_128_GCM_SHA256	25634288	5842	11	7352	0	0	0	0	0	0	socket_#
+0154-jdk25-grpc-netty41-full-25-r1	jdk25	grpc-netty41-full	25		1	0	false	1.6	5.2	409	1015	8	TLSv1.3 TLS_AES_128_GCM_SHA256	25616928	5840	11	280	0	0	0	0	0	0	socket_#
+0155-jdk25-grpc-okhttp-lite-25-r1	jdk25	grpc-okhttp-lite	25		1	0	false	0.7	6.2	385	790	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21331416	5092	13	0	0	4	3	0	0	0	
+0156-jdk25-grpc-okhttp-full-25-r1	jdk25	grpc-okhttp-full	25		1	0	false	3.0	5.5	389	793	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21135984	5062	13	0	0	0	0	0	0	0	
+0157-jdk25-http1-lite-25-r1	jdk25	http1-lite	25		1	0	false	3.0	5.9	383	706	8	TLSv1.3 TLS_AES_256_GCM_SHA384	15691824	4023	10	0	0	4	3	0	0	0	
+0158-jdk25-http1-full-25-r1	jdk25	http1-full	25		1	0	false	0.5	5.2	380	703	8	TLSv1.3 TLS_AES_256_GCM_SHA384	15534520	3988	10	0	0	0	0	0	0	0	
+0159-jdk25-grpc-netty41-full-x-25-r1	jdk25	grpc-netty41-full-x	25		1	0	false	2.4	5.8	384	990	8	TLSv1.3 TLS_AES_128_GCM_SHA256	25609800	5837	11	280	0	0	0	0	0	0	socket_#
+0160-jdk25-http1-full-x-25-r1	jdk25	http1-full-x	25		1	0	false	1.6	5.1	381	673	8	TLSv1.3 TLS_AES_256_GCM_SHA384	15531000	3988	10	0	0	0	0	0	0	0	
+0161-jdk25-base-25-r1-deny	jdk25	base	25	--sun-misc-unsafe-memory-access=deny	1	0	false	3.9	4.3	387	-1	0	-	7648328	2519	10	0	0	0	0	0	0	0	
+0162-jdk25-grpc-netty-lite-25-r1-deny	jdk25	grpc-netty-lite	25	--sun-misc-unsafe-memory-access=deny	1	0	false	7.0	5.4	384	-1	0	-	17828576	4303	10	1	0	0	0	0	5	0	socket_#
+0163-jdk25-grpc-netty-full-25-r1-deny	jdk25	grpc-netty-full	25	--sun-misc-unsafe-memory-access=deny	1	0	false	3.2	6.5	385	1033	8	TLSv1.3 TLS_AES_128_GCM_SHA256	25638288	5845	11	7352	0	0	0	0	0	0	socket_#
+0164-jdk25-grpc-netty41-full-25-r1-deny	jdk25	grpc-netty41-full	25	--sun-misc-unsafe-memory-access=deny	1	0	false	4.5	6.0	385	1002	8	TLSv1.3 TLS_AES_128_GCM_SHA256	25616920	5837	11	280	0	0	0	0	0	0	socket_#
+0165-jdk25-grpc-okhttp-lite-25-r1-deny	jdk25	grpc-okhttp-lite	25	--sun-misc-unsafe-memory-access=deny	1	0	false	2.5	4.4	380	-1	0	-	15969608	4145	10	0	0	0	0	0	5	0	
+0166-jdk25-grpc-okhttp-full-25-r1-deny	jdk25	grpc-okhttp-full	25	--sun-misc-unsafe-memory-access=deny	1	0	false	2.5	8.4	405	853	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21136696	5062	13	0	0	0	0	0	0	0	
+0167-jdk25-http1-lite-25-r1-deny	jdk25	http1-lite	25	--sun-misc-unsafe-memory-access=deny	1	0	false	8.0	4.9	384	-1	0	-	11144200	3174	10	0	0	0	0	0	5	0	
+0168-jdk25-http1-full-25-r1-deny	jdk25	http1-full	25	--sun-misc-unsafe-memory-access=deny	1	0	false	1.5	5.6	382	675	8	TLSv1.3 TLS_AES_256_GCM_SHA384	15530712	3988	10	0	0	0	0	0	0	0	
+0169-jdk25-grpc-netty41-full-x-25-r1-deny	jdk25	grpc-netty41-full-x	25	--sun-misc-unsafe-memory-access=deny	1	0	false	2.2	5.6	382	983	8	TLSv1.3 TLS_AES_128_GCM_SHA256	25615824	5840	11	280	0	0	0	0	0	0	socket_#
+0170-jdk25-http1-full-x-25-r1-deny	jdk25	http1-full-x	25	--sun-misc-unsafe-memory-access=deny	1	0	false	0.7	5.5	390	674	8	TLSv1.3 TLS_AES_256_GCM_SHA384	15531512	3988	10	0	0	0	0	0	0	0	
+0171-classload-none-21-r1	classload	none	21	-Xlog:class+load=info:file=classload.txt	1	0	false	2.1	3.1	68	-1	0	-	859920	867	7	0	0	0	0	0	0	0	
+0172-classload-base-21-r1	classload	base	21	-Xlog:class+load=info:file=classload.txt	1	0	false	5.1	3.5	459	-1	0	-	7535224	2470	10	0	0	0	0	0	0	0	
+0173-classload-grpc-netty-lite-21-r1	classload	grpc-netty-lite	21	-Xlog:class+load=info:file=classload.txt	1	0	false	2.2	6.1	466	1231	8	TLSv1.3 TLS_AES_128_GCM_SHA256	25552352	5701	11	10615	0	0	0	0	0	0	socket_#
+0174-classload-grpc-netty-full-21-r1	classload	grpc-netty-full	21	-Xlog:class+load=info:file=classload.txt	1	0	false	2.1	6.0	456	1235	8	TLSv1.3 TLS_AES_128_GCM_SHA256	25445520	5698	11	10615	0	0	0	0	0	0	socket_#
+0175-classload-grpc-netty41-full-21-r1	classload	grpc-netty41-full	21	-Xlog:class+load=info:file=classload.txt	1	0	false	3.9	5.8	457	1252	8	TLSv1.3 TLS_AES_128_GCM_SHA256	25517360	5717	11	10615	0	0	0	0	0	0	socket_#
+0176-classload-grpc-okhttp-lite-21-r1	classload	grpc-okhttp-lite	21	-Xlog:class+load=info:file=classload.txt	1	0	false	1.0	6.3	464	983	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21130136	4946	13	9497	0	0	0	0	0	0	
+0177-classload-grpc-okhttp-full-21-r1	classload	grpc-okhttp-full	21	-Xlog:class+load=info:file=classload.txt	1	0	false	3.9	5.9	457	988	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21048944	4943	13	9497	0	0	0	0	0	0	
+0178-classload-http1-lite-21-r1	classload	http1-lite	21	-Xlog:class+load=info:file=classload.txt	1	0	false	5.7	6.2	457	840	8	TLSv1.3 TLS_AES_256_GCM_SHA384	15378016	3866	10	8192	0	0	0	0	0	0	
+0179-classload-http1-full-21-r1	classload	http1-full	21	-Xlog:class+load=info:file=classload.txt	1	0	false	4.1	5.2	445	814	8	TLSv1.3 TLS_AES_256_GCM_SHA384	15298008	3858	10	8192	0	0	0	0	0	0	
+0180-classload-grpc-netty41-full-x-21-r1	classload	grpc-netty41-full-x	21	-Xlog:class+load=info:file=classload.txt	1	0	false	1.3	7.1	477	1264	8	TLSv1.3 TLS_AES_128_GCM_SHA256	25527216	5717	11	10615	0	0	0	0	0	0	socket_#
+0181-classload-http1-full-x-21-r1	classload	http1-full-x	21	-Xlog:class+load=info:file=classload.txt	1	0	false	4.6	4.8	452	824	8	TLSv1.3 TLS_AES_256_GCM_SHA384	15290024	3858	10	8192	0	0	0	0	0	0	
+0182-classload-grpc-netty-lite-25-r1	classload	grpc-netty-lite	25	-Xlog:class+load=info:file=classload.txt	1	0	false	0.3	5.6	431	1133	8	TLSv1.3 TLS_AES_128_GCM_SHA256	25830328	5873	11	11448	0	4	3	0	0	0	socket_#
+0183-classload-grpc-netty-full-25-r1	classload	grpc-netty-full	25	-Xlog:class+load=info:file=classload.txt	1	0	false	2.0	4.8	436	1105	8	TLSv1.3 TLS_AES_128_GCM_SHA256	25627440	5842	11	7352	0	0	0	0	0	0	socket_#
+0184-classload-grpc-netty41-full-25-r1	classload	grpc-netty41-full	25	-Xlog:class+load=info:file=classload.txt	1	0	false	3.9	5.4	435	1121	8	TLSv1.3 TLS_AES_128_GCM_SHA256	25622080	5840	11	280	0	0	0	0	0	0	socket_#
+0185-classload-grpc-okhttp-lite-25-r1	classload	grpc-okhttp-lite	25	-Xlog:class+load=info:file=classload.txt	1	0	false	1.4	5.1	431	878	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21330656	5092	13	0	0	4	3	0	0	0	
+0186-classload-grpc-okhttp-full-25-r1	classload	grpc-okhttp-full	25	-Xlog:class+load=info:file=classload.txt	1	0	false	2.5	5.6	448	907	8	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21142304	5062	13	0	0	0	0	0	0	0	
+0187-classload-http1-lite-25-r1	classload	http1-lite	25	-Xlog:class+load=info:file=classload.txt	1	0	false	5.8	4.8	426	743	8	TLSv1.3 TLS_AES_256_GCM_SHA384	15692400	4023	10	0	0	4	3	0	0	0	
+0188-classload-http1-full-25-r1	classload	http1-full	25	-Xlog:class+load=info:file=classload.txt	1	0	false	2.5	4.6	431	760	8	TLSv1.3 TLS_AES_256_GCM_SHA384	15535136	3988	10	0	0	0	0	0	0	0	
+0189-classload-grpc-netty41-full-x-25-r1	classload	grpc-netty41-full-x	25	-Xlog:class+load=info:file=classload.txt	1	0	false	2.4	6.5	437	1108	8	TLSv1.3 TLS_AES_128_GCM_SHA256	25621720	5840	11	280	0	0	0	0	0	0	socket_#
+0190-classload-http1-full-x-25-r1	classload	http1-full-x	25	-Xlog:class+load=info:file=classload.txt	1	0	false	4.5	4.9	432	737	8	TLSv1.3 TLS_AES_256_GCM_SHA384	15531744	3988	10	0	0	0	0	0	0	0	
+0191-classload-grpc-netty-lite-8-r1	classload	grpc-netty-lite	8	-verbose:class	1	0	false	2.5	4.8	319	1435	7	TLSv1.3 TLS_AES_128_GCM_SHA256	23978064	4354	9	946	4423	0	0	0	0	0	
+0192-classload-grpc-netty-full-8-r1	classload	grpc-netty-full	8	-verbose:class	1	0	false	1.7	6.7	316	1423	7	TLSv1.3 TLS_AES_128_GCM_SHA256	23911328	4353	9	947	4421	0	0	0	0	0	
+0193-classload-grpc-netty41-full-8-r1	classload	grpc-netty41-full	8	-verbose:class	1	0	false	0.9	6.8	316	1417	8	TLSv1.3 TLS_AES_128_GCM_SHA256	23847352	4329	9	2439	4399	0	0	0	0	0	
+0194-classload-grpc-okhttp-lite-8-r1	classload	grpc-okhttp-lite	8	-verbose:class	1	0	false	3.7	4.4	321	1080	7	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21659856	3985	11	0	4054	0	0	0	0	0	
+0195-classload-grpc-okhttp-full-8-r1	classload	grpc-okhttp-full	8	-verbose:class	1	0	false	4.3	7.3	316	1082	7	TLSv1.2 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256	21595360	3983	11	0	4051	0	0	0	0	0	
+0196-classload-http1-lite-8-r1	classload	http1-lite	8	-verbose:class	1	0	false	1.8	5.0	316	871	8	TLSv1.3 TLS_AES_256_GCM_SHA384	15424480	2742	8	0	2806	0	0	0	0	0	
+0197-classload-http1-full-8-r1	classload	http1-full	8	-verbose:class	1	0	false	3.7	4.1	313	877	8	TLSv1.3 TLS_AES_256_GCM_SHA384	15411968	2736	8	0	2799	0	0	0	0	0	
+0198-classload-grpc-netty41-full-x-8-r1	classload	grpc-netty41-full-x	8	-verbose:class	1	0	false	3.2	4.0	308	1430	7	TLSv1.3 TLS_AES_128_GCM_SHA256	23851512	4329	9	2439	4398	0	0	0	0	0	
+0199-classload-http1-full-x-8-r1	classload	http1-full-x	8	-verbose:class	1	0	false	1.2	3.8	311	867	8	TLSv1.3 TLS_AES_256_GCM_SHA384	15406672	2736	8	0	2799	0	0	0	0	0	
+0200-c23-grpc-netty-lite-21-r1	c23	grpc-netty-lite	21	-Dio.netty.noUnsafe=false -Dio.netty.allocator.type=pooled -Dio.netty.maxDirectMemory=0	1	0	false	1.6	7.2	414	1136	6	TLSv1.3 TLS_AES_128_GCM_SHA256	25556800	5704	11	10615	0	0	0	0	0	0	socket_#
+0201-c23-grpc-netty-full-21-r1	c23	grpc-netty-full	21	-Dio.netty.noUnsafe=false -Dio.netty.allocator.type=pooled -Dio.netty.maxDirectMemory=0	1	0	false	1.2	6.2	421	1137	6	TLSv1.3 TLS_AES_128_GCM_SHA256	25459512	5698	11	10615	0	0	0	0	0	0	socket_#
+0202-c23-grpc-netty41-full-21-r1	c23	grpc-netty41-full	21	-Dio.netty.noUnsafe=false -Dio.netty.allocator.type=pooled -Dio.netty.maxDirectMemory=0	1	0	false	0.9	7.3	416	1135	6	TLSv1.3 TLS_AES_128_GCM_SHA256	25501664	5717	11	10615	0	0	0	0	0	0	socket_#
+0203-c23-grpc-netty41-full-x-21-r1	c23	grpc-netty41-full-x	21	-Dio.netty.noUnsafe=false -Dio.netty.allocator.type=pooled -Dio.netty.maxDirectMemory=0	1	0	false	3.7	7.9	419	1146	6	TLSv1.3 TLS_AES_128_GCM_SHA256	25508856	5717	11	10615	0	0	0	0	0	0	socket_#
+0204-unreachable-grpc-netty-lite-21-r1	unreachable	grpc-netty-lite	21	-Dargos.server.address=localhost:1	1	0	false	1.3	5.9	416	-1	0	-	22305072	5072	11	8472	0	0	0	0	3	0	socket_#
+0205-unreachable-grpc-netty-full-21-r1	unreachable	grpc-netty-full	21	-Dargos.server.address=localhost:1	1	0	false	3.3	5.1	423	-1	0	-	22282464	5074	11	8472	0	0	0	0	3	0	socket_#
+0206-unreachable-grpc-netty41-full-21-r1	unreachable	grpc-netty41-full	21	-Dargos.server.address=localhost:1	1	0	false	1.2	5.9	418	-1	0	-	22368952	5093	11	8472	0	0	0	0	3	0	socket_#
+0207-unreachable-grpc-okhttp-lite-21-r1	unreachable	grpc-okhttp-lite	21	-Dargos.server.address=localhost:1	1	0	false	2.6	5.9	415	-1	0	-	18641344	4450	13	8192	0	0	0	2	3	0	
+0208-unreachable-grpc-okhttp-full-21-r1	unreachable	grpc-okhttp-full	21	-Dargos.server.address=localhost:1	1	0	false	3.5	6.1	410	-1	0	-	18658648	4452	13	8192	0	0	0	2	3	0	
+0209-unreachable-http1-lite-21-r1	unreachable	http1-lite	21	-Dargos.server.address=localhost:1	1	0	false	3.6	6.8	416	-1	0	-	11587144	3168	10	8192	0	0	0	0	3	0	
+0210-unreachable-http1-full-21-r1	unreachable	http1-full	21	-Dargos.server.address=localhost:1	1	0	false	0.8	4.8	409	-1	0	-	11585472	3164	10	8192	0	0	0	0	3	0	
+0211-unreachable-grpc-netty41-full-x-21-r1	unreachable	grpc-netty41-full-x	21	-Dargos.server.address=localhost:1	1	0	false	7.2	7.0	416	-1	0	-	22377736	5093	11	8472	0	0	0	0	3	0	socket_#
+0212-unreachable-http1-full-x-21-r1	unreachable	http1-full-x	21	-Dargos.server.address=localhost:1	1	0	false	2.9	5.1	408	-1	0	-	11605936	3163	10	8192	0	0	0	0	3	0	

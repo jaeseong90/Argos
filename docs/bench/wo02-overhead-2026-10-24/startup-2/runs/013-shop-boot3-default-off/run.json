@@ -1,0 +1,26 @@
+{
+  "app": "shop-boot3",
+  "cds": "default",
+  "variant": "off",
+  "startedAt": "2026-10-24T14:58:50.945343600Z",
+  "spawnToPortMs": 7189,
+  "spawnToReadyMs": 7439,
+  "appCpuSecondsToReady": 23.421875,
+  "hostCpuPercentMean": 32.450245886083394,
+  "backgroundCpuPercentMean": 6.2126874023519925,
+  "springStartedSeconds": 6.513,
+  "springProcessRunningSeconds": 7.181,
+  "premainMs": null,
+  "stderrLines": 0,
+  "stderrFirstLine": null,
+  "index": 13,
+  "round": 7,
+  "before": {
+    "cpuPercent5s": 4.434515866634914,
+    "availableMemoryMb": 3562,
+    "waitedSeconds": 5.0045568,
+    "quiet": true
+  },
+  "attempt": 1,
+  "discardedAttempts": []
+}

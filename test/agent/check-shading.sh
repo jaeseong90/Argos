@@ -17,7 +17,9 @@
 #                                 Premain-Class and Can-Retransform-Classes, and no Add-Opens,
 #                                 Launcher-Agent-Class or Boot-Class-Path
 #   signatures       T-BLD-002    no META-INF/*.SF|*.DSA|*.RSA|*.EC (root or inst/)
-#   major-version    T-BLD-001    class file bytes 7-8 == 0x0034 (52, Java 8) for every class
+#   major-version    T-BLD-001    class file bytes 7-8 == 0x0034 (52, Java 8) for the agent's own classes,
+#                                 <= 52 for shaded third-party classes below inst/io/argos/agent/shaded/
+#                                 (ADR-0003 C-22)
 #   unsafe           T-BLD-004    no sun/misc/Unsafe reference outside unsafe-allowlist.txt
 #   native           T-BLD-002    no *.so, *.dll, *.dylib, *.jnilib, META-INF/native/
 #   size             T-BLD-006    jar <= 15 MB = 15,000,000 bytes (10^6 bytes per MB; warning above
@@ -48,6 +50,8 @@ export LC_ALL=C
 # also below 15 MiB, so the limit holds under either reading.
 readonly MAX_BYTES=15000000
 readonly WARN_BYTES=12000000
+# Shaded third-party classes (ADR-0003 C-22: major version <= 52 instead of == 52).
+readonly SHADED_PREFIX="inst/io/argos/agent/shaded/"
 readonly REQUIRED_META_INF=(
   "META-INF/MANIFEST.MF"
   "META-INF/LICENSE"
@@ -310,14 +314,26 @@ else
   ) | sed 's#^\./##' >"$work/unsafe-raw.txt"
 fi
 
-# --- major version (T-BLD-001) ---------------------------------------------------------------
-sort "$work/major-raw.txt" >"$work/major.txt"
+# --- major version (T-BLD-001, ADR-0003 C-22) ------------------------------------------------
+# Own classes must have major version 52 exactly; shaded third-party classes
+# (inst/io/argos/agent/shaded/) 52 or lower. major-raw.txt lists every class that is not 52.
+awk -v shaded="$SHADED_PREFIX" -v older_file="$work/shaded-older.txt" '
+  $1 ~ /^[0-9]+$/ && index($2, shaded) == 1 {
+    if ($1 + 0 <= 52) { older++; next }
+    print $1 " " $2 "  (major " $1 ", shaded classes must be <= 52)"; next
+  }
+  $1 ~ /^[0-9]+$/ { print $1 " " $2 "  (major " $1 ")"; next }
+  { print }
+  END { print older + 0 > older_file }' "$work/major-raw.txt" |
+  sort >"$work/major.txt"
+shaded_older="$(tr -d '\r\n ' <"$work/shaded-older.txt")"
 if [[ -s "$work/major.txt" ]]; then
-  sed -E 's/^(MAGIC|UNREADABLE) (.*)$/\2  (not a readable class file)/; s/^([0-9]+) (.*)$/\2  (major \1)/' \
+  sed -E 's/^(MAGIC|UNREADABLE) (.*)$/\2  (not a readable class file)/; s/^[0-9]+ //' \
     "$work/major.txt" >"$work/major-report.txt"
-  fail major-version "class files must have major version 52 (Java 8, F-A31):" "$work/major-report.txt"
+  fail major-version "class files must have major version 52 (own) or <= 52 (shaded) (Java 8, F-A31, C-22):" \
+    "$work/major-report.txt"
 else
-  pass major-version "$class_count classes with major version 52 (read from $scan_mode)"
+  pass major-version "$class_count classes: own major 52, shaded <= 52 (${shaded_older:-0} shaded below 52; read from $scan_mode)"
 fi
 
 # --- sun.misc.Unsafe (T-BLD-004) -------------------------------------------------------------

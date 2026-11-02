@@ -14,8 +14,10 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 
 /**
- * checkMajorVersion (19 §3.3 step 8, T-BLD-001): every `.class` and `.classdata` entry of the agent
- * jar has class file major version 52 (Java 8, F-A31).
+ * checkMajorVersion (19 §3.3 step 8, T-BLD-001, ADR-0003 C-22): the agent's own `.class` and
+ * `.classdata` entries have class file major version 52 exactly; shaded third-party classes
+ * (`inst/io/argos/agent/shaded/`) have major version 52 or lower. Both rules mean "loadable by
+ * Java 8" (F-A31).
  */
 abstract class CheckMajorVersion : DefaultTask() {
 
@@ -23,36 +25,47 @@ abstract class CheckMajorVersion : DefaultTask() {
   @get:PathSensitive(PathSensitivity.NONE)
   abstract val jar: RegularFileProperty
 
-  @get:Input abstract val expectedMajor: Property<Int>
+  /** Required major version of the agent's own classes. */
+  @get:Input abstract val ownMajor: Property<Int>
+
+  /** Highest allowed major version of shaded third-party classes. */
+  @get:Input abstract val maxShadedMajor: Property<Int>
 
   /** Empty marker file written on success, so the task is up to date for an unchanged jar. */
   @get:OutputFile abstract val resultFile: RegularFileProperty
 
   init {
     group = "verification"
-    description = "Checks that every .class/.classdata entry has major version 52 (T-BLD-001)."
-    expectedMajor.convention(ClassFiles.JAVA_8_MAJOR)
+    description =
+      "Checks class file major versions: own classes == 52, shaded classes <= 52 (T-BLD-001, C-22)."
+    ownMajor.convention(ClassFiles.JAVA_8_MAJOR)
+    maxShadedMajor.convention(ClassFiles.JAVA_8_MAJOR)
   }
 
   @TaskAction
   fun check() {
     val file = jar.get().asFile
-    val violations = ClassFiles.majorVersionViolations(file, expectedMajor.get())
+    val violations = ClassFiles.majorVersionViolations(file, ownMajor.get(), maxShadedMajor.get())
     if (violations.isNotEmpty()) {
       throw GradleException(
-        "checkMajorVersion: ${violations.size} class file(s) in ${file.name} do not have major " +
-          "version ${expectedMajor.get()} (Java 8, F-A31):\n  " + violations.joinToString("\n  ")
+        "checkMajorVersion: ${violations.size} class file(s) in ${file.name} violate the major " +
+          "version rule (own classes == ${ownMajor.get()}, shaded classes <= ${maxShadedMajor.get()}; " +
+          "Java 8, F-A31, ADR-0003 C-22):\n  " + violations.joinToString("\n  ")
       )
     }
-    val classes = ClassFiles.classEntries(file).count()
-    resultFile.get().asFile.writeText("$classes classes, major ${expectedMajor.get()}\n")
-    logger.info("checkMajorVersion: $classes classes in ${file.name} have major ${expectedMajor.get()}")
+    val counts = ClassFiles.classEntries(file).map { (name, bytes) -> name to ClassFiles.majorVersion(bytes) }
+      .groupingBy { (name, major) -> (if (ClassFiles.isShadedEntry(name)) "shaded" else "own") + " major $major" }
+      .eachCount()
+      .toSortedMap()
+    resultFile.get().asFile.writeText(counts.entries.joinToString("\n", postfix = "\n") { "${it.key}: ${it.value}" })
+    logger.info("checkMajorVersion: ${file.name}: $counts")
   }
 }
 
 /**
  * How property-name strings of shaded libraries (`io.netty.noUnsafe`, `net.bytebuddy.experimental`,
- * ...) must look after relocation (19 §3.3 step 7, 19 §13 #6, T-BLD-005).
+ * ...) must look after relocation (19 §3.3 step 7, 19 §13 #6, T-BLD-005). Decided by WO-02:
+ * [RELOCATED] (ADR-0003 C-23, ADR-0008).
  */
 enum class RelocatedStringPolicy {
   /** The agent sets the relocated names (`io.argos.agent.shaded.io.netty.noUnsafe`). */
@@ -136,5 +149,123 @@ abstract class CheckRelocatedStrings : DefaultTask() {
           reportFile.get().asFile
       )
     }
+  }
+}
+
+/**
+ * checkOwnRelocatedLiterals (ADR-0003 C-23, ADR-0005 transport): Shadow rewrites every string
+ * constant that starts with a relocated package, the constants of the agent's own classes included.
+ * A literal meant for application classes, such as the ignore-list prefix `net.bytebuddy.`, then
+ * silently reads `io.argos.agent.shaded.net.bytebuddy.` in the jar. The check fails when an own
+ * class that went through Shadow (below `inst/io/argos/agent/`, outside `shaded/`) holds a string
+ * constant in the relocated namespace (dotted or slashed form) that [allowed] does not list. Root
+ * bootstrap classes are not relocated and are not scanned.
+ */
+abstract class CheckOwnRelocatedLiterals : DefaultTask() {
+
+  @get:InputFile
+  @get:PathSensitive(PathSensitivity.NONE)
+  abstract val jar: RegularFileProperty
+
+  /** Relocation prefix (AgentShading.PREFIX). */
+  @get:Input abstract val prefix: Property<String>
+
+  /** Intended constants as `<jar entry>: <constant>`, e.g. relocated property names the agent sets. */
+  @get:Input abstract val allowed: ListProperty<String>
+
+  @get:OutputFile abstract val reportFile: RegularFileProperty
+
+  init {
+    group = "verification"
+    description = "Checks that Shadow did not relocate string literals of the agent's own classes (C-23)."
+    allowed.convention(emptyList())
+  }
+
+  @TaskAction
+  fun check() {
+    val file = jar.get().asFile
+    val dotted = prefix.get() + "."
+    val slashed = prefix.get().replace('.', '/') + "/"
+    val found = sortedSetOf<String>()
+    for ((entry, bytes) in ClassFiles.classEntries(file)) {
+      if (!entry.startsWith("inst/io/argos/agent/") || ClassFiles.isShadedEntry(entry)) continue
+      if (ClassFiles.majorVersion(bytes) == null) continue
+      for (constant in ClassFiles.stringConstants(bytes)) {
+        if (constant.startsWith(dotted) || constant.startsWith(slashed)) found += "$entry: $constant"
+      }
+    }
+    val permitted = allowed.get().toSet()
+    val violations = found.filterNot { it in permitted }
+    reportFile.get().asFile.apply { parentFile.mkdirs() }
+      .writeText(
+        "# own-class string constants in the relocated namespace of ${file.name} (${found.size})\n" +
+          found.joinToString("") { line -> (if (line in permitted) "allowed  " else "REJECTED ") + line + "\n" },
+        Charsets.UTF_8,
+      )
+    if (violations.isNotEmpty()) {
+      throw GradleException(
+        "checkOwnRelocatedLiterals: Shadow relocated ${violations.size} string literal(s) of the " +
+          "agent's own classes; build such strings at run time or list intended constants:\n  " +
+          violations.joinToString("\n  ")
+      )
+    }
+  }
+}
+
+/**
+ * checkModuleIndex (ADR-0003 C-25): the instrumentation modules the core discovers at runtime are
+ * the classes listed in the merged service file [SERVICE_FILE] of the agent jar. Every listed class
+ * must exist as `inst/<binary name>.classdata` below `io/argos/agent/`, and appear only once.
+ * Writes the module list to [reportFile].
+ */
+abstract class CheckModuleIndex : DefaultTask() {
+  companion object {
+    const val SERVICE_FILE =
+      "inst/META-INF/services/io.argos.agent.instrumentation.api.InstrumentationModule"
+  }
+
+  @get:InputFile
+  @get:PathSensitive(PathSensitivity.NONE)
+  abstract val jar: RegularFileProperty
+
+  @get:OutputFile abstract val reportFile: RegularFileProperty
+
+  init {
+    group = "verification"
+    description = "Checks that every module listed in the module index exists in the jar (C-25)."
+  }
+
+  @TaskAction
+  fun check() {
+    val file = jar.get().asFile
+    val problems = mutableListOf<String>()
+    val modules = mutableListOf<String>()
+    java.util.zip.ZipFile(file).use { zip ->
+      val index = zip.getEntry(SERVICE_FILE)
+      if (index != null) {
+        val text = zip.getInputStream(index).use { it.readBytes().toString(Charsets.UTF_8) }
+        for (raw in text.lines()) {
+          val name = raw.substringBefore('#').trim()
+          if (name.isEmpty()) continue
+          if (name in modules) problems += "$name listed more than once"
+          modules += name
+          val entry = "inst/" + name.replace('.', '/') + ".classdata"
+          when {
+            !name.startsWith("io.argos.agent.") -> problems += "$name is not an Argos class"
+            zip.getEntry(entry) == null -> problems += "$name has no $entry"
+          }
+        }
+      }
+    }
+    reportFile.get().asFile.apply { parentFile.mkdirs() }
+      .writeText(
+        "# instrumentation modules of ${file.name} ($SERVICE_FILE)\n" +
+          modules.joinToString("") { "$it\n" },
+        Charsets.UTF_8,
+      )
+    if (problems.isNotEmpty()) {
+      throw GradleException("checkModuleIndex: ${file.name}:\n  " + problems.joinToString("\n  "))
+    }
+    logger.info("checkModuleIndex: ${modules.size} module(s) in ${file.name}")
   }
 }

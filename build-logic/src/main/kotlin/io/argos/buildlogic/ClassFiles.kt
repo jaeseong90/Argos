@@ -36,13 +36,30 @@ object ClassFiles {
     return ((bytes[6].toInt() and 0xff) shl 8) or (bytes[7].toInt() and 0xff)
   }
 
-  /** Entries of [jar] whose major version is not [expected] (or that are not class files). */
-  fun majorVersionViolations(jar: File, expected: Int = JAVA_8_MAJOR): List<String> =
+  /** Jar entry prefix of shaded third-party classes (10 §4.1, ADR-0003 C-22). */
+  const val SHADED_ENTRY_PREFIX = "inst/io/argos/agent/shaded/"
+
+  /** True for a class entry of a shaded third-party library. */
+  fun isShadedEntry(name: String): Boolean = name.startsWith(SHADED_ENTRY_PREFIX)
+
+  /**
+   * Entries of [jar] that break the major version rule of ADR-0003 C-22 (or are not class files):
+   * the agent's own classes must have exactly [ownMajor], shaded third-party classes (below
+   * [SHADED_ENTRY_PREFIX]) at most [maxShadedMajor]. The goal of both is "loadable by Java 8".
+   */
+  fun majorVersionViolations(
+    jar: File,
+    ownMajor: Int = JAVA_8_MAJOR,
+    maxShadedMajor: Int = JAVA_8_MAJOR,
+  ): List<String> =
     classEntries(jar)
       .mapNotNull { (name, bytes) ->
-        when (val major = majorVersion(bytes)) {
-          null -> "$name (not a class file)"
-          expected -> null
+        val major = majorVersion(bytes)
+        when {
+          major == null -> "$name (not a class file)"
+          isShadedEntry(name) ->
+            if (major <= maxShadedMajor) null else "$name (major $major, shaded classes must be <= $maxShadedMajor)"
+          major == ownMajor -> null
           else -> "$name (major $major)"
         }
       }

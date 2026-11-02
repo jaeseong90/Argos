@@ -1,0 +1,73 @@
+{
+  "kind": "load",
+  "label": "pilot2-container",
+  "startedAt": "2026-10-24T10:47:36.788020300Z",
+  "parameters": {
+    "mode": "container",
+    "app": "shop-boot3",
+    "rounds": 1,
+    "variants": ["off", "on"],
+    "order": "per round: off, on (A-B alternation)",
+    "warmupSeconds": 20,
+    "durationSeconds": 70,
+    "rate": 1000,
+    "preAllocatedVUs": 300,
+    "maxVUs": 600,
+    "jvmOptions": ["-Xms1g", "-Xmx1g", "-XX:+UseG1GC", "-XX:+AlwaysPreTouch"],
+    "jvmOptionsAddedByHarness": ["-Xlog:gc:file=<run>/gc.log", "-XX:NativeMemoryTracking=summary"],
+    "appEnv": {},
+    "agentConfig": {
+      "exporter": "noop"
+    },
+    "agentConfigSha256": "8086f92c9bfd21d731df78340e6a56db5911151a4941cb1c3e6f1d4588409ae2",
+    "k6": "C:\\workspace\\Argos\\test\\agent\\overhead\\build\\k6\\k6.exe",
+    "k6Image": "grafana/k6:2.3.0@sha256:9c2dee7f8ed74d317e4027c06a10f169b625638189de8d4555d0b3486a5aeb34",
+    "cpus": 2,
+    "memory": "2g",
+    "maxLoadPercent": 95,
+    "maxWaitSeconds": 60,
+    "settleSeconds": 5
+  },
+  "inputs": {
+    "shop-boot3.jar": {
+      "bytes": 76163634,
+      "sha256": "e15278a7490fc2dfc3b9aea2a1d3705c7ccca00509ae7493b98a243c6edbda75",
+      "path": "C:\\workspace\\Argos\\sample-apps\\shop-boot3\\build\\sample-app\\shop-boot3.jar"
+    },
+    "ext-stub.jar": {
+      "bytes": 13869,
+      "sha256": "27fb16bcc3a7db7be7c3bef0966e69e68561e6261786a2017e7f2e0f1476c489",
+      "path": "C:\\workspace\\Argos\\sample-apps\\ext-stub\\build\\sample-app\\ext-stub.jar"
+    },
+    "argos-agent-0.0.0-SNAPSHOT.jar": {
+      "bytes": 4074064,
+      "sha256": "f108eaee6afe10033c396835bf106bec9dac8a34cae5b054209b0b5673ac3cfd",
+      "path": "C:\\workspace\\Argos\\agent\\agent-dist\\build\\libs\\argos-agent-0.0.0-SNAPSHOT.jar"
+    },
+    "bench.js": {
+      "bytes": 13113,
+      "sha256": "cc26dbd1868021f700e860045e44b3f76583cde92dbb127a52dfb982c6640919",
+      "path": "C:\\workspace\\Argos\\sample-apps\\load\\bench.js"
+    }
+  },
+  "git": {
+    "commit": "4a43e77c16472b2cfcb7566506324b7cea16b128",
+    "uncommittedEntries": 33
+  },
+  "environment": {
+    "os": "Windows 11 10.0 amd64",
+    "logicalCpus": 12,
+    "memoryMb": 15713,
+    "cpuModel": "AMD Ryzen 5 5600H with Radeon Graphics",
+    "powerPlan": "���� ����ǥ GUID: 48684d4a-8524-4093-8a63-ea7132b79c1c  (HP ����)",
+    "harnessJava": "OpenJDK 64-Bit Server VM 21+35-2513",
+    "k6": "k6 v2.3.0 (commit/e088784614, go1.27.1, linux/amd64) (grafana/k6:2.3.0@sha256:9c2dee7f8ed74d317e4027c06a10f169b625638189de8d4555d0b3486a5aeb34)",
+    "dockerServer": "29.2.1 linux/amd64",
+    "dockerInfo": "12 CPUs, 7978237952 bytes, cgroup v2, kernel 6.18.33.2-microsoft-standard-WSL2",
+    "containerJdk": "openjdk version \"21.0.12.1\" 2026-08-18 LTS\nOpenJDK Runtime Environment Temurin-21.0.12.1+1 (build 21.0.12.1+1-LTS)\nOpenJDK 64-Bit Server VM Temurin-21.0.12.1+1 (build 21.0.12.1+1-LTS, mixed mode, sharing)",
+    "image": "eclipse-temurin:21-jdk@sha256:23cc5734ff46e776f51ce66eb9ee08444fd47caabec0a95b7eb6e94be2d3696d",
+    "sidecarImage": "alpine:3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a",
+    "appContainer": "--cpus 2 --memory 2g (swap off)"
+  },
+  "finishedAt": "2026-10-24T10:53:51.831260Z"
+}

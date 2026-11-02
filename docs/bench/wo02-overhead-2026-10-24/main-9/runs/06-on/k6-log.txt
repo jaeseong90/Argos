@@ -1,0 +1,15 @@
+time="2026-10-25T05:58:07+09:00" level=warning msg="Request Failed" error="Get \"http://127.0.0.1:58116/api/orders/330/items\": dial tcp 127.0.0.1:58116: connectex: Only one usage of each socket address (protocol/network address/port) is normally permitted."
+time="2026-10-25T05:58:17+09:00" level=warning msg="Request Failed" error="Get \"http://127.0.0.1:58116/api/orders/620\": dial tcp 127.0.0.1:58116: connectex: Only one usage of each socket address (protocol/network address/port) is normally permitted."
+
+bench.js  target=http://127.0.0.1:58116  rate=1000/s  window=600s  warm-up=0s (excluded)
+  requests=600000  achieved=1000/s  unexpected=0.000%  5xx=5.000% (5% intended)  dropped=0 (0.000%)
+  latency ms  p50=0.52  p95=186.941  p99=312.312  p99.9=314.977  max=574.022  avg=15.814
+  route          share   expect  p50      p95      p99      max
+  orders.get        40%  200     0        0.562    1.063    180.99  
+  orders.page       20%  200     0.52     0.652    1.198    73.009  
+  pay               20%  200     0.527    0.662    1.336    109.634 
+  orders.items      10%  200     0.522    1.044    1.506    81.996  
+  slow               5%  200     307.684  314.63   315.161  574.022 
+  error-500          5%  500     0.66     1.169    1.849    89.857  
+  thresholds FAILED; summary: <scratch>\wo02perf\sets\main-9\runs\06-on\k6.json
+time="2026-10-25T06:03:54+09:00" level=error msg="thresholds on metrics 'checks{phase:measure}, http_req_failed{phase:measure}' have been crossed"

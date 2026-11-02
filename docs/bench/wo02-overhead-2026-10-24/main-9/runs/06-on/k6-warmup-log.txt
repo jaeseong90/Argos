@@ -1,0 +1,12 @@
+
+bench.js  target=http://127.0.0.1:58116  rate=1000/s  window=180s  warm-up=0s (excluded)
+  requests=179552  achieved=997.511/s  unexpected=0.000%  5xx=5.000% (5% intended)  dropped=449 (0.249%)
+  latency ms  p50=0.518  p95=301.002  p99=313.203  p99.9=924.211  max=1395.019  avg=18.231
+  route          share   expect  p50      p95      p99      max
+  orders.get        40%  200     0        0.728    2.709    1395.019
+  orders.page       20%  200     0.519    1.034    2.627    1122.225
+  pay               20%  200     0.527    1.052    2.97     768.483 
+  orders.items      10%  200     0.518    1.066    5.619    1299.004
+  slow               5%  200     307.9    314.702  315.669  1079.648
+  error-500          5%  500     0.676    1.612    4.419    775.44  
+  thresholds passed; summary: <scratch>\wo02perf\sets\main-9\runs\06-on\k6-warmup.json

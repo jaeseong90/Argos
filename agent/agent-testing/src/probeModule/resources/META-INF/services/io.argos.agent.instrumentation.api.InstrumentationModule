@@ -1,0 +1,3 @@
+# Test-only instrumentation modules of the probe agent jar (agent-testing, WO-02).
+io.argos.agent.testing.probe.ProbeModule
+io.argos.agent.testing.probe.ProbeJdkModule

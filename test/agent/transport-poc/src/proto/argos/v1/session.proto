@@ -1,0 +1,200 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Snapshot of docs/11-protocol-design.md §4 (session.proto) for the WO-02 P-3 transport comparison only:
+// message definitions copied verbatim, design comments removed (see the design document), Java
+// package moved below io.argos.agent so that the classes can be shaded into comparison agent jars.
+// The real protocol lives in proto/src/main/proto/argos/v1 (WO-11).
+
+syntax = "proto3";
+package argos.v1;
+option java_package = "io.argos.agent.transportpoc.proto";
+option java_multiple_files = true;
+
+import "argos/v1/common.proto";
+
+message AgentMessage {
+  oneof body {
+    AgentHello hello = 1;
+    Heartbeat heartbeat = 2;
+    DictionaryEntries dictionary_entries = 3;
+    ConfigApplyResult config_apply_result = 4;
+    CommandResult command_result = 5;
+    InstanceUpdate instance_update = 6;
+    AgentBye bye = 7;
+    AgentEvent event = 8;
+  }
+}
+
+message ServerMessage {
+  oneof body {
+    ServerHello hello = 1;
+    HeartbeatAck heartbeat_ack = 2;
+    DictionaryRequest dictionary_request = 3;
+    ConfigPush config_push = 4;
+    Command command = 5;
+    SessionClose close = 6;
+    Throttle throttle = 7;
+  }
+}
+
+message AgentHello {
+  string agent_version = 1;
+  uint32 protocol_version = 2;
+  string app_name = 3;
+  string env = 4;
+  string instance_name = 5;
+  string host = 6; uint32 pid = 7;
+  string jvm_version = 8; string jvm_vendor = 9; string os = 10; string arch = 11;
+  bool virtual_threads = 12;
+  string cgroup = 13;
+  string config_hash = 14;
+  repeated string remote_config_allow = 15;
+  IpMode ip_mode = 16; UserIdMode user_id_mode = 17;
+  QueryStringMode query_string_mode = 18; SqlParamMode sql_param_mode = 19;
+  string app_version = 20;
+  int64 sent_at_ms = 21;
+  uint64 agent_epoch = 22;
+  int64 process_start_ms = 23;
+  repeated string instrumentation_modules = 24;
+}
+
+message ServerHello {
+  bool accepted = 1;
+  RejectReason reject_reason = 2;
+  string reject_message = 3;
+  uint32 retry_after_s = 4;
+  uint32 app_id = 5; uint32 instance_id = 6;
+  string session_id = 7;
+  string server_version = 8; uint32 protocol_version = 9;
+  string min_agent_version = 10; string max_agent_version = 11;
+  int64 server_time_ms = 12;
+  map<string,string> config = 13;
+  uint32 heartbeat_interval_s = 14;
+  uint32 active_snapshot_interval_s = 15;
+  uint32 stat_window_s = 16;
+  Limits limits = 17;
+}
+
+enum RejectReason {
+  REJECT_REASON_UNSPECIFIED = 0;
+  TOKEN_INVALID = 1; TOKEN_EXPIRED = 2; TOKEN_REVOKED = 3;
+  APP_MISMATCH = 4;
+  APP_NOT_REGISTERED = 5;
+  AGENT_VERSION_TOO_NEW = 6; AGENT_VERSION_TOO_OLD = 7; PROTOCOL_UNSUPPORTED = 8;
+  PLAINTEXT_NOT_ALLOWED = 9;
+  INSTANCE_LIMIT = 10; RATE_LIMITED = 11; SERVER_SHUTTING_DOWN = 12;
+}
+
+message Limits {
+  uint32 max_message_bytes = 1;
+  uint32 max_transactions_per_batch = 2;
+  uint32 max_steps_per_batch = 3;
+  uint32 max_detail_bytes = 4;
+  uint32 max_string_bytes = 5;
+  uint32 max_frames = 6;
+  uint32 max_active_items = 7;
+  uint32 max_series_per_instance = 8;
+  uint32 max_dictionary_entries_per_hour = 9;
+}
+
+message Heartbeat {
+  int64 t1_ms = 1;
+  int64 prev_t1_ms = 2;
+  int64 prev_t4_ms = 3;
+  uint32 active_transactions = 4;
+  uint64 dropped_total = 5;
+  uint64 last_tx_seq = 6; uint64 last_profile_seq = 7; uint64 last_metric_seq = 8; uint64 last_stat_seq = 9;
+}
+message HeartbeatAck {
+  int64 t1_ms = 1;
+  int64 t2_ms = 2;
+  int64 t3_ms = 3;
+  int32 clock_offset_ms = 4;
+  InstanceState state = 5;
+}
+enum InstanceState { INSTANCE_STATE_UNSPECIFIED = 0; UP = 1; STALE = 2; DOWN = 3; WARN = 4; }
+
+message DictionaryEntry {
+  DictionaryKind kind = 1;
+  uint64 hash = 2;
+  string text = 3;
+  bool truncated = 4;
+  uint32 norm_version = 5;
+}
+message DictionaryEntries { repeated DictionaryEntry entries = 1; }
+message DictionaryRequest { repeated DictionaryRef refs = 1; }
+message DictionaryRef { DictionaryKind kind = 1; uint64 hash = 2; }
+
+message ConfigPush {
+  string change_id = 1;
+  map<string,string> values = 2;
+  bool revert = 3;
+  int64 issued_at_ms = 4;
+}
+message ConfigApplyResult {
+  string change_id = 1;
+  repeated string applied_keys = 2;
+  repeated RejectedKey rejected = 3;
+  string effective_config_hash = 4;
+  uint32 retransformed_classes = 5;
+  uint32 duration_ms = 6;
+}
+message RejectedKey { string key = 1; RejectCode code = 2; string message = 3; }
+enum RejectCode { REJECT_CODE_UNSPECIFIED = 0; NOT_ALLOWED = 1; UNKNOWN_KEY = 2; INVALID_VALUE = 3; FORBIDDEN_PATTERN = 4; LIMIT_EXCEEDED = 5; }
+
+message Command {
+  string command_id = 1;
+  CommandType type = 2;
+  int64 issued_at_ms = 3;
+  uint32 ttl_s = 4;
+  map<string,string> args = 5;
+}
+message CommandResult {
+  string command_id = 1;
+  CommandStatus status = 2;
+  uint32 chunk_index = 3; uint32 chunk_count = 4;
+  bytes payload = 5;
+  string content_type = 6;
+  string error = 7;
+  uint32 duration_ms = 8;
+  bool truncated = 9;
+}
+enum CommandStatus { COMMAND_STATUS_UNSPECIFIED = 0; OK = 1; REJECTED = 2; EXPIRED = 3; FAILED = 4; COOLDOWN = 5; }
+
+message InstanceUpdate {
+  optional string instance_name = 1;
+  optional bool virtual_threads = 2;
+  optional string app_version = 3;
+  repeated string connectors = 4;
+  optional string config_hash = 5;
+}
+
+message AgentBye {
+  ByeReason reason = 1;
+  uint64 last_tx_seq = 2; uint64 last_profile_seq = 3; uint64 last_metric_seq = 4; uint64 last_stat_seq = 5;
+}
+enum ByeReason { BYE_REASON_UNSPECIFIED = 0; SHUTDOWN = 1; AGENT_DISABLED = 2; }
+
+message AgentEvent {
+  AgentEventType type = 1;
+  string module = 2;
+  string detail = 3;
+  int64 at_ms = 4;
+}
+enum AgentEventType {
+  AGENT_EVENT_TYPE_UNSPECIFIED = 0;
+  MODULE_DISABLED = 1;
+  TRANSFORM_ERRORS = 2;
+  QUEUE_DROP_BURST = 3;
+  KILL_SWITCH_ON = 4; KILL_SWITCH_OFF = 5;
+  SELF_CPU_HIGH = 6;
+  CONFIG_FILE_RELOADED = 7;
+}
+
+message SessionClose { CloseReason reason = 1; string message = 2; uint32 retry_after_s = 3; }
+enum CloseReason { CLOSE_REASON_UNSPECIFIED = 0; TOKEN_REVOKED_CLOSE = 1; SERVER_SHUTDOWN = 2; REPLACED = 3; PROTOCOL_ERROR = 4; IDLE_TIMEOUT = 5; }
+
+message Throttle {
+  optional float profile_normal_rate = 1;
+  optional uint32 send_backoff_ms = 2;
+}

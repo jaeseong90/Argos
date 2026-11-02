@@ -1,0 +1,328 @@
+{
+  "kind": "load",
+  "label": "main-9: process mode, JDK 21.0.10, shop-boot3, shared Windows machine",
+  "mode": "process",
+  "virtualThreads": false,
+  "criteria": "N-01, N-03, N-26 (Gate 0: N-01 mean, N-03)",
+  "runs": [
+    {
+      "index": 1,
+      "round": 1,
+      "variant": "off",
+      "appCpuSeconds": 268.6875,
+      "wallSeconds": 600.6496717,
+      "requests": 600002,
+      "dropped": 0,
+      "unexpectedRate": 0,
+      "p50": 0.519,
+      "p95": 16.346,
+      "p99": 312.244,
+      "p999": 314.924,
+      "hostCpuPercentMean": 29.26409270768635,
+      "loaderCpuPercentMean": 29.26409270768635,
+      "cpuBeforePercent": 16.154115311308924,
+      "backgroundCpuPercent": 21.07547658905486,
+      "attempt": 1,
+      "discardedAttempts": 0,
+      "gate": "PASS"
+    },
+    {
+      "index": 2,
+      "round": 1,
+      "variant": "on",
+      "appCpuSeconds": 281.28125,
+      "wallSeconds": 600.7305078,
+      "requests": 600001,
+      "dropped": 0,
+      "unexpectedRate": 0,
+      "p50": 0.52,
+      "p95": 20.935,
+      "p99": 312.233,
+      "p999": 314.929,
+      "hostCpuPercentMean": 29.101360542647782,
+      "loaderCpuPercentMean": 29.101360542647782,
+      "cpuBeforePercent": 9.009770391653237,
+      "backgroundCpuPercent": 20.569864069957184,
+      "attempt": 1,
+      "discardedAttempts": 0,
+      "gate": "PASS"
+    },
+    {
+      "index": 3,
+      "round": 2,
+      "variant": "off",
+      "appCpuSeconds": 249.28125,
+      "wallSeconds": 600.8877313,
+      "requests": 599698,
+      "dropped": 302,
+      "unexpectedRate": 0,
+      "p50": 0.515,
+      "p95": 300.203,
+      "p99": 312.64,
+      "p999": 320.598,
+      "hostCpuPercentMean": 23.827645760005854,
+      "loaderCpuPercentMean": 23.827645760005854,
+      "cpuBeforePercent": 17.417403745462025,
+      "backgroundCpuPercent": 16.019536806192704,
+      "attempt": 3,
+      "discardedAttempts": 2,
+      "gate": "PASS"
+    },
+    {
+      "index": 4,
+      "round": 2,
+      "variant": "on",
+      "appCpuSeconds": 247.625,
+      "wallSeconds": 600.6548067,
+      "requests": 599994,
+      "dropped": 0,
+      "unexpectedRate": 0,
+      "p50": 0.514,
+      "p95": 118.705,
+      "p99": 312.234,
+      "p999": 314.916,
+      "hostCpuPercentMean": 17.787400543920192,
+      "loaderCpuPercentMean": 17.787400543920192,
+      "cpuBeforePercent": 12.59076470930366,
+      "backgroundCpuPercent": 10.263060108137577,
+      "attempt": 1,
+      "discardedAttempts": 0,
+      "gate": "PASS"
+    },
+    {
+      "index": 5,
+      "round": 3,
+      "variant": "off",
+      "appCpuSeconds": 269.765625,
+      "wallSeconds": 600.6601414,
+      "requests": 600000,
+      "dropped": 0,
+      "unexpectedRate": 0,
+      "p50": 0.519,
+      "p95": 41.811,
+      "p99": 312.24,
+      "p999": 314.908,
+      "hostCpuPercentMean": 32.90280987159944,
+      "loaderCpuPercentMean": 32.90280987159944,
+      "cpuBeforePercent": 14.352343241525844,
+      "backgroundCpuPercent": 24.813402834077635,
+      "attempt": 1,
+      "discardedAttempts": 0,
+      "gate": "PASS"
+    },
+    {
+      "index": 6,
+      "round": 3,
+      "variant": "on",
+      "appCpuSeconds": 286.015625,
+      "wallSeconds": 600.7313185,
+      "requests": 600000,
+      "dropped": 0,
+      "unexpectedRate": 3.0E-6,
+      "p50": 0.52,
+      "p95": 186.941,
+      "p99": 312.312,
+      "p999": 314.977,
+      "hostCpuPercentMean": 28.501466004975907,
+      "loaderCpuPercentMean": 28.501466004975907,
+      "cpuBeforePercent": 10.835763923863828,
+      "backgroundCpuPercent": 19.890217155961555,
+      "attempt": 1,
+      "discardedAttempts": 0,
+      "gate": "FAIL"
+    }
+  ],
+  "validity": {
+    "offCpuSeconds": [268.6875, 249.28125, 269.765625],
+    "offCpuCv": 0.04390328395643501,
+    "offCpuCvLimit": 0.02,
+    "offCpuCvOk": false,
+    "gateProblems": ["run 6 (on): FAIL"]
+  },
+  "comparisons": {
+    "on": {
+      "cpu": {
+        "offCpuSeconds": [268.6875, 249.28125, 269.765625],
+        "onCpuSeconds": [281.28125, 247.625, 286.015625],
+        "offMean": 262.578125,
+        "onMean": 271.640625,
+        "relative": 0.03451353763760778,
+        "pairRelatives": [0.046871365433821754, -0.006644101792653845, 0.060237474659716295],
+        "pairRelativeCi95": [-0.054438278854197185, 0.12141477105478665],
+        "check": {
+          "value": 0.03451353763760778,
+          "limit": 0.05,
+          "unit": "relative",
+          "verdict": "PASS"
+        },
+        "offCpuMsPerRequestMean": 0.43769945229239376,
+        "onCpuMsPerRequestMean": 0.45273549026303367,
+        "relativePerRequest": 0.034352425829848876
+      },
+      "peak": {
+        "windowSeconds": 60,
+        "stepSeconds": 10,
+        "windowRelatives": [0.11343104231685985, 0.10021580960010845, 0.09603178472996454, 0.08594948236744382, 0.10263274017141466, 0.11385333913749807, 0.11925236894318014, 0.13898458627892873, 0.16990406256710266, 0.17677025399133628, 0.16320880529787907, 0.16313158593601118, 0.14394655565679004, 0.14050991767418775, 0.12468485991522371, 0.1055110275404203, 0.09430948177908038, 0.07687422371744157, 0.06041652233926009, 0.03880951106412911, 0.024803887367348842, 0.02738064161763032, 0.024551299376124103, 0.03356379335675341, 0.05413209529439067, 0.07216696736449069, 0.06275236233748283, 0.05446246631559748, 0.04892399844760553, 0.041196468652138885, 0.03226165037559059, 0.02518560142808912, 0.03604993790710043, 0.04355360581575707, 0.053140211063341436, 0.06601664247265204, 0.06586857663972356, 0.052949695980105016, 0.06063065338218987, 0.045902432732245924, 0.04720463129971364, 0.03599090061770105, 0.01979174333056921, -0.008634815005353569, -0.03574298467704873, -0.025834532287095757, -0.034277179266340996, -0.0375429531174164, -0.046380634997970516, -0.05453079338470013, -0.06833004097963813, -0.09776404106606518, -0.13951936578303648, -0.16491767991009876, -0.16237502503751222],
+        "value": 0.17677025399133628,
+        "limit": 0.08,
+        "unit": "relative",
+        "verdict": "FAIL"
+      },
+      "agentThreadCpu": {
+        "agentThreadCpuSeconds": [0.42186, 0.40625, 0.42188],
+        "hostCpus": 12,
+        "value": 0.0058523112719428925,
+        "limit": 1,
+        "unit": "% of host CPU",
+        "verdict": "PASS"
+      },
+      "latency": {
+        "p50": {
+          "off": [0.519, 0.515, 0.519],
+          "on": [0.52, 0.514, 0.52],
+          "offMean": 0.5176666666666666,
+          "onMean": 0.518,
+          "diffMean": 3.3333333333333365E-4,
+          "diffCi95": [-0.002535333333333336, 0.003202000000000003],
+          "noDifference": true
+        },
+        "p95": {
+          "off": [16.346, 300.203, 41.811],
+          "on": [20.935, 118.705, 186.941],
+          "offMean": 119.45333333333332,
+          "onMean": 108.86033333333334,
+          "diffMean": -10.592999999999998,
+          "diffCi95": [-417.6329375053298, 396.44693750532974],
+          "noDifference": true
+        },
+        "p99": {
+          "off": [312.244, 312.64, 312.24],
+          "on": [312.233, 312.234, 312.312],
+          "offMean": 312.37466666666666,
+          "onMean": 312.25966666666665,
+          "diffMean": -0.1150000000000091,
+          "diffCi95": [-0.7495186544399961, 0.5195186544399779],
+          "noDifference": true,
+          "check": {
+            "value": -0.1150000000000091,
+            "limit": 15.618733333333333,
+            "unit": "ms",
+            "verdict": "PASS"
+          }
+        },
+        "p99.9": {
+          "off": [314.924, 320.598, 314.908],
+          "on": [314.929, 314.916, 314.977],
+          "offMean": 316.81,
+          "onMean": 314.9406666666667,
+          "diffMean": -1.8693333333333537,
+          "diffCi95": [-10.072670888605838, 6.334004221939131],
+          "noDifference": true
+        }
+      },
+      "routesP99": {
+        "orders.get": {
+          "offP99Mean": 3.9386666666666663,
+          "onP99Mean": 0.9336666666666668,
+          "diffMean": -3.0049999999999994,
+          "diffCi95": [-16.65199983253874, 10.64199983253874]
+        },
+        "orders.page": {
+          "offP99Mean": 4.1080000000000005,
+          "onP99Mean": 1.0263333333333333,
+          "diffMean": -3.081666666666667,
+          "diffCi95": [-16.916722947660208, 10.753389614326874]
+        },
+        "pay": {
+          "offP99Mean": 5.156,
+          "onP99Mean": 1.0963333333333334,
+          "diffMean": -4.059666666666666,
+          "diffCi95": [-22.381681220745605, 14.262347887412275]
+        },
+        "orders.items": {
+          "offP99Mean": 4.105666666666667,
+          "onP99Mean": 1.361,
+          "diffMean": -2.744666666666667,
+          "diffCi95": [-16.162952052882577, 10.673618719549244]
+        },
+        "slow": {
+          "offP99Mean": 319.827,
+          "onP99Mean": 315.1016666666667,
+          "diffMean": -4.725333333333329,
+          "diffCi95": [-25.295482724261255, 15.844816057594599]
+        },
+        "error-500": {
+          "offP99Mean": 5.197,
+          "onP99Mean": 1.5970000000000002,
+          "diffMean": -3.6,
+          "diffCi95": [-20.716605099404507, 13.516605099404506]
+        }
+      },
+      "memory": {
+        "agentHeapMb": {
+          "value": 1.3760757446289062,
+          "limit": 64,
+          "unit": "MB",
+          "verdict": "PASS",
+          "requirement": "N-02 agent heap"
+        },
+        "metaspaceIncreaseMb": {
+          "value": 6.918619791666657,
+          "limit": 32,
+          "unit": "MB",
+          "verdict": "PASS",
+          "requirement": "N-26 metaspace increase"
+        },
+        "nmtInternalOtherIncreaseMb": {
+          "value": 0.31933593749999956,
+          "limit": 16,
+          "unit": "MB",
+          "verdict": "PASS",
+          "requirement": "01 7.3 item 7 NMT Internal+Other"
+        },
+        "directMemoryIncreaseMb": {
+          "value": 0,
+          "limit": 8,
+          "unit": "MB",
+          "verdict": "PASS",
+          "requirement": "N-26 direct memory (NMT Other)"
+        },
+        "threadIncrease": {
+          "value": 3.333333333333343,
+          "limit": 6,
+          "unit": "threads",
+          "verdict": "PASS",
+          "requirement": "01 7.3 item 7 thread increase"
+        },
+        "agentThreads": {
+          "value": 3,
+          "limit": 6,
+          "unit": "threads",
+          "verdict": "PASS",
+          "requirement": "N-26 agent threads"
+        },
+        "nmtTotalCommittedIncreaseMb": 16.540690104166515,
+        "liveHeapIncreaseMb": 7.668128967285156,
+        "loadedClassIncrease": 1764
+      },
+      "gc": {
+        "offAllocatedKbPerRequestMean": 71.9223322087699,
+        "onAllocatedKbPerRequestMean": 79.47456677912989,
+        "allocatedKbPerRequestIncrease": 7.552234570359985,
+        "offPausesMean": 69.33333333333333,
+        "onPausesMean": 81,
+        "offPauseMsTotalMean": 136.279,
+        "onPauseMsTotalMean": 456.6073333333334
+      },
+      "startup": {
+        "premainMs": [517.167, 429.885, 558.098],
+        "premainMedianMs": 517.167,
+        "offReadyMedianMs": 7940,
+        "onReadyMedianMs": 11098
+      },
+      "failed": ["peak relative CPU +17.68% > 8%"]
+    }
+  },
+  "verdict": "INVALID",
+  "reasons": ["off-run CPU CV 4.39% > 2% (01 7.3 item 4)", "run 6 (on): k6 gate FAIL with the agent (load not sustained, C-46)", "peak relative CPU +17.68% > 8%"]
+}

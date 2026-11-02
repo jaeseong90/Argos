@@ -1,0 +1,13 @@
+time="2026-10-24T22:24:04+09:00" level=warning msg="Insufficient VUs, reached 600 active VUs and cannot initialize more" executor=constant-arrival-rate scenario=mix
+
+bench.js  target=http://127.0.0.1:61728  rate=1000/s  window=180s  warm-up=0s (excluded)
+  requests=177806  achieved=987.811/s  unexpected=0.000%  5xx=5.000% (5% intended)  dropped=2195 (1.219%)
+  latency ms  p50=0.999  p95=304.078  p99=352.203  p99.9=2100.648  max=3805.109  avg=29.434
+  route          share   expect  p50      p95      p99      max
+  orders.get        40%  200     0.502    7.199    281.365  3805.109
+  orders.page       20%  200     0.999    7.582    275.216  3261.379
+  pay               20%  200     1        8.962    254.712  1691.157
+  orders.items      10%  200     1.001    10.541   340.555  3396.062
+  slow               5%  200     309.265  321.857  497.106  2013.361
+  error-500          5%  500     1.502    11.996   308.47   1754.736
+  thresholds passed; summary: <scratch>\wo02perf\sets\main-3\runs\02-on\k6-warmup.json

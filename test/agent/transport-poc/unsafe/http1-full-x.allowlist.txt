@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# P-3 (WO-02) allow-list of the http1-full-x comparison jar: empty (every Unsafe-referencing class of
+# protobuf-java is never loaded and is removed, see http1-full.excluded.txt).

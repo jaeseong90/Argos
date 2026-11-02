@@ -1,0 +1,2 @@
+own major 52: 365
+shaded major 52: 3040

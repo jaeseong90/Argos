@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# P-3 (WO-02): classes of the grpc-netty41-full comparison jar that reference sun.misc.Unsafe and were
+# never loaded in the class-load runs (JDK 8, 21, 25: build/poc/bench/20261024-190700, classload-*).
+# Removed from the grpc-netty41-full-x jar (ADR-0003: exclude rather than allow-list). Original class file paths.
+com/google/common/hash/LittleEndianByteArray$UnsafeByteArray.class
+com/google/common/hash/LittleEndianByteArray$UnsafeByteArray$1.class
+com/google/common/hash/LittleEndianByteArray$UnsafeByteArray$2.class
+com/google/protobuf/MessageSchema.class
+com/google/protobuf/UnsafeUtil.class
+com/google/protobuf/UnsafeUtil$1.class
+com/google/protobuf/UnsafeUtil$Android32MemoryAccessor.class
+com/google/protobuf/UnsafeUtil$Android64MemoryAccessor.class
+com/google/protobuf/UnsafeUtil$JvmMemoryAccessor.class
+com/google/protobuf/UnsafeUtil$MemoryAccessor.class
+io/netty/util/internal/CleanerJava9$1.class
+io/netty/util/internal/CleanerJava9$2.class
+io/netty/util/internal/PlatformDependent$Mpsc$1.class
+io/netty/util/internal/PlatformDependent0$1.class
+io/netty/util/internal/PlatformDependent0$2.class
+io/netty/util/internal/PlatformDependent0$3.class
+io/netty/util/internal/PlatformDependent0$4.class
+io/netty/util/internal/PlatformDependent0$6.class
+io/netty/util/internal/shaded/org/jctools/queues/LinkedQueueNode.class
+io/netty/util/internal/shaded/org/jctools/util/UnsafeAccess.class
+io/netty/util/internal/shaded/org/jctools/util/UnsafeLongArrayAccess.class
+io/netty/util/internal/shaded/org/jctools/util/UnsafeRefArrayAccess.class

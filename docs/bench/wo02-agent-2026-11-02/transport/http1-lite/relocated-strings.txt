@@ -1,0 +1,82 @@
+# checkRelocatedStrings (T-BLD-005) for argos-agent-poc-http1-lite.jar, policy RELOCATED
+io.grpc.internal.DnsNameResolverProvider.enable_grpclb
+  original : -
+  relocated: -
+io.grpc.internal.DnsNameResolverProvider.enable_jndi
+  original : -
+  relocated: -
+io.grpc.netty.useCustomAllocator
+  original : -
+  relocated: -
+io.netty.allocator.numDirectArenas
+  original : -
+  relocated: -
+io.netty.allocator.numHeapArenas
+  original : -
+  relocated: -
+io.netty.allocator.type
+  original : -
+  relocated: -
+io.netty.eventLoopThreads
+  original : -
+  relocated: -
+io.netty.handler.ssl.openssl.useKeyManagerFactory
+  original : -
+  relocated: -
+io.netty.leakDetection.level
+  original : -
+  relocated: -
+io.netty.machineId
+  original : -
+  relocated: -
+io.netty.maxDirectMemory
+  original : -
+  relocated: -
+io.netty.native.workdir
+  original : -
+  relocated: -
+io.netty.noKeySetOptimization
+  original : -
+  relocated: -
+io.netty.noPreferDirect
+  original : -
+  relocated: -
+io.netty.noUnsafe
+  original : -
+  relocated: -
+io.netty.processId
+  original : -
+  relocated: -
+io.netty.recycler.maxCapacityPerThread
+  original : -
+  relocated: -
+io.netty.transport.noNative
+  original : -
+  relocated: -
+io.netty.tryReflectionSetAccessible
+  original : -
+  relocated: -
+io.netty.varHandle.enabled
+  original : -
+  relocated: -
+net.bytebuddy.dump
+  original : -
+  relocated: inst/io/argos/agent/shaded/net/bytebuddy/dynamic/scaffold/TypeWriter$Default.classdata, inst/io/argos/agent/shaded/net/bytebuddy/dynamic/scaffold/TypeWriter.classdata, inst/io/argos/agent/shaded/net/bytebuddy/utility/dispatcher/JavaDispatcher$DynamicClassLoader.classdata
+net.bytebuddy.experimental
+  original : -
+  relocated: inst/io/argos/agent/shaded/net/bytebuddy/utility/OpenedClassReader.classdata
+net.bytebuddy.nexus.disabled
+  original : -
+  relocated: inst/io/argos/agent/shaded/net/bytebuddy/dynamic/Nexus.classdata, inst/io/argos/agent/shaded/net/bytebuddy/dynamic/NexusAccessor$Dispatcher$CreationAction.classdata
+net.bytebuddy.raw
+  original : -
+  relocated: inst/io/argos/agent/shaded/net/bytebuddy/description/type/TypeDefinition.classdata, inst/io/argos/agent/shaded/net/bytebuddy/description/type/TypeDescription$AbstractBase.classdata
+net.bytebuddy.safe
+  original : -
+  relocated: inst/io/argos/agent/shaded/net/bytebuddy/dynamic/loading/ClassInjector$UsingUnsafe.classdata
+net.bytebuddy.securitymanager
+  original : -
+  relocated: inst/io/argos/agent/shaded/net/bytebuddy/ByteBuddy.classdata, inst/io/argos/agent/shaded/net/bytebuddy/ClassFileVersion.classdata, inst/io/argos/agent/shaded/net/bytebuddy/agent/builder/AgentBuilder$Default$ExecutingTransformer.classdata, inst/io/argos/agent/shaded/net/bytebuddy/agent/builder/AgentBuilder$Default.classdata, inst/io/argos/agent/shaded/net/bytebuddy/agent/builder/AgentBuilder$PoolStrategy$WithTypePoolCache$Simple.classdata, inst/io/argos/agent/shaded/net/bytebuddy/agent/builder/ResettableClassFileTransformer$WithDelegation.classdata, inst/io/argos/agent/shaded/net/bytebuddy/description/annotation/AnnotationDescription$ForLoadedAnnotation.classdata, inst/io/argos/agent/shaded/net/bytebuddy/description/method/MethodDescription$InDefinedShape$AbstractBase$ForLoadedExecutable.classdata, inst/io/argos/agent/shaded/net/bytebuddy/description/method/ParameterDescription$ForLoadedParameter.classdata, inst/io/argos/agent/shaded/net/bytebuddy/description/method/ParameterList$ForLoadedExecutable.classdata, inst/io/argos/agent/shaded/net/bytebuddy/description/module/ModuleDescription$ForLoadedModule.classdata, inst/io/argos/agent/shaded/net/bytebuddy/description/type/RecordComponentDescription$ForLoadedRecordComponent.classdata, inst/io/argos/agent/shaded/net/bytebuddy/description/type/TypeDefinition$Sort.classdata, inst/io/argos/agent/shaded/net/bytebuddy/description/type/TypeDescription$AbstractBase.classdata, inst/io/argos/agent/shaded/net/bytebuddy/description/type/TypeDescription$ForLoadedType.classdata, inst/io/argos/agent/shaded/net/bytebuddy/description/type/TypeDescription$Generic$AnnotationReader$Delegator.classdata, inst/io/argos/agent/shaded/net/bytebuddy/dynamic/ClassFileLocator$ForClassLoader.classdata, inst/io/argos/agent/shaded/net/bytebuddy/dynamic/ClassFileLocator$ForInstrumentation$ClassLoadingDelegate$ForDelegatingClassLoader$Dispatcher$Resolved.classdata, inst/io/argos/agent/shaded/net/bytebuddy/dynamic/ClassFileLocator$ForInstrumentation$ClassLoadingDelegate$ForDelegatingClassLoader.classdata, inst/io/argos/agent/shaded/net/bytebuddy/dynamic/ClassFileLocator$ForInstrumentation.classdata, inst/io/argos/agent/shaded/net/bytebuddy/dynamic/ClassFileLocator$ForUrl.classdata, inst/io/argos/agent/shaded/net/bytebuddy/dynamic/NexusAccessor.classdata, inst/io/argos/agent/shaded/net/bytebuddy/dynamic/loading/ByteArrayClassLoader$PersistenceHandler$UrlDefinitionAction.classdata, inst/io/argos/agent/shaded/net/bytebuddy/dynamic/loading/ByteArrayClassLoader.classdata, inst/io/argos/agent/shaded/net/bytebuddy/dynamic/loading/ClassInjector$UsingInstrumentation.classdata, inst/io/argos/agent/shaded/net/bytebuddy/dynamic/loading/ClassInjector$UsingJna.classdata, inst/io/argos/agent/shaded/net/bytebuddy/dynamic/loading/ClassInjector$UsingLookup.classdata, inst/io/argos/agent/shaded/net/bytebuddy/dynamic/loading/ClassInjector$UsingReflection.classdata, inst/io/argos/agent/shaded/net/bytebuddy/dynamic/loading/ClassInjector$UsingUnsafe.classdata, inst/io/argos/agent/shaded/net/bytebuddy/dynamic/loading/ClassReloadingStrategy.classdata, inst/io/argos/agent/shaded/net/bytebuddy/dynamic/scaffold/TypeWriter$Default.classdata, inst/io/argos/agent/shaded/net/bytebuddy/implementation/LoadedTypeInitializer$ForStaticField.classdata, inst/io/argos/agent/shaded/net/bytebuddy/implementation/bytecode/constant/MethodConstant.classdata, inst/io/argos/agent/shaded/net/bytebuddy/pool/TypePool$Default.classdata, inst/io/argos/agent/shaded/net/bytebuddy/utility/AsmClassReader$Factory$Default.classdata, inst/io/argos/agent/shaded/net/bytebuddy/utility/AsmClassReader$ForClassFileApi.classdata, inst/io/argos/agent/shaded/net/bytebuddy/utility/AsmClassWriter$Factory$Default.classdata, inst/io/argos/agent/shaded/net/bytebuddy/utility/AsmClassWriter$ForClassFileApi.classdata, inst/io/argos/agent/shaded/net/bytebuddy/utility/FileSystem.classdata, inst/io/argos/agent/shaded/net/bytebuddy/utility/GraalImageCode.classdata, inst/io/argos/agent/shaded/net/bytebuddy/utility/JavaConstant$MethodHandle.classdata, inst/io/argos/agent/shaded/net/bytebuddy/utility/JavaConstant$MethodType.classdata, inst/io/argos/agent/shaded/net/bytebuddy/utility/JavaConstant$Simple.classdata, inst/io/argos/agent/shaded/net/bytebuddy/utility/JavaModule.classdata, inst/io/argos/agent/shaded/net/bytebuddy/utility/OpenedClassReader.classdata, inst/io/argos/agent/shaded/net/bytebuddy/utility/QueueFactory.classdata, inst/io/argos/agent/shaded/net/bytebuddy/utility/dispatcher/JavaDispatcher.classdata, inst/io/argos/agent/shaded/net/bytebuddy/utility/visitor/StackAwareMethodVisitor.classdata
+net.bytebuddy.validation
+  original : -
+  relocated: inst/io/argos/agent/shaded/net/bytebuddy/ByteBuddy.classdata

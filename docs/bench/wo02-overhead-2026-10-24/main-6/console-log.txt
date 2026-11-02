@@ -1,0 +1,24 @@
+[overhead 16:45:30Z] set <scratch>\wo02perf\sets\main-6 (process, 3 rounds of [off, on], warm-up 180 s, window 600 s, 1000/s)
+[overhead 16:45:51Z] machine CPU 22% > 20%: waiting
+[overhead 16:46:06Z] machine CPU 21% > 20%: waiting
+[overhead 16:46:32Z] machine CPU 20% > 20%: waiting
+[overhead 16:46:52Z] machine CPU 29% > 20%: waiting
+[overhead 16:47:12Z] machine CPU 21% > 20%: waiting
+[overhead 16:47:32Z] machine CPU 21% > 20%: waiting
+[overhead 16:47:52Z] machine CPU 22% > 20%: waiting
+[overhead 16:48:07Z] machine CPU 21% > 20%: waiting
+[overhead 16:48:27Z] machine CPU 21% > 20%: waiting
+[overhead 16:48:57Z] machine CPU 21% > 20%: waiting
+[overhead 16:49:12Z] machine CPU 20% > 20%: waiting
+[overhead 16:49:32Z] machine CPU 21% > 20%: waiting
+[overhead 16:50:43Z] run 1 (round 1, off): starting the app
+[overhead 16:50:53Z] run 1: warm-up 180 s
+[overhead 16:53:54Z] run 1: attempt 1 discarded (background CPU 23% > 22% during the warm-up), repeating
+[overhead 16:54:34Z] machine CPU 22% > 20%: waiting
+[overhead 16:54:49Z] machine CPU 23% > 20%: waiting
+[overhead 16:55:04Z] machine CPU 26% > 20%: waiting
+[overhead 16:55:19Z] machine CPU 23% > 20%: waiting
+[overhead 16:55:34Z] machine CPU 46% > 20%: waiting
+[overhead 16:55:49Z] machine CPU 33% > 20%: waiting
+[overhead 16:56:04Z] machine CPU 49% > 20%: waiting
+[overhead 16:56:19Z] machine CPU 21% > 20%: waiting

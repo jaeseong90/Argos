@@ -1,0 +1,13 @@
+# own-code string constants in the relocated namespace (12)
+inst/io/argos/agent/transportpoc/grpcnetty/NettyProps.classdata: "io.argos.agent.shaded."
+inst/io/argos/agent/transportpoc/grpcnetty/NettyProps.classdata: "io.argos.agent.shaded.io.netty.allocator.numDirectArenas"
+inst/io/argos/agent/transportpoc/grpcnetty/NettyProps.classdata: "io.argos.agent.shaded.io.netty.allocator.type"
+inst/io/argos/agent/transportpoc/grpcnetty/NettyProps.classdata: "io.argos.agent.shaded.io.netty.eventLoopThreads"
+inst/io/argos/agent/transportpoc/grpcnetty/NettyProps.classdata: "io.argos.agent.shaded.io.netty.leakDetection.level"
+inst/io/argos/agent/transportpoc/grpcnetty/NettyProps.classdata: "io.argos.agent.shaded.io.netty.maxDirectMemory"
+inst/io/argos/agent/transportpoc/grpcnetty/NettyProps.classdata: "io.argos.agent.shaded.io.netty.noKeySetOptimization"
+inst/io/argos/agent/transportpoc/grpcnetty/NettyProps.classdata: "io.argos.agent.shaded.io.netty.noPreferDirect"
+inst/io/argos/agent/transportpoc/grpcnetty/NettyProps.classdata: "io.argos.agent.shaded.io.netty.noUnsafe"
+inst/io/argos/agent/transportpoc/grpcnetty/NettyProps.classdata: "io.argos.agent.shaded.io.netty.recycler.maxCapacityPerThread"
+inst/io/argos/agent/transportpoc/grpcnetty/NettyProps.classdata: "io.argos.agent.shaded.io.netty.tryReflectionSetAccessible"
+inst/io/argos/agent/transportpoc/grpcnetty/NettyProps.classdata: "io.argos.agent.shaded.io.netty.varHandle.enabled"

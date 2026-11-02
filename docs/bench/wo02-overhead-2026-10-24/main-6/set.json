@@ -1,0 +1,72 @@
+{
+  "kind": "load",
+  "label": "main-6: process mode, JDK 21.0.10, shop-boot3, shared Windows machine",
+  "startedAt": "2026-10-24T16:45:28.612881100Z",
+  "parameters": {
+    "mode": "process",
+    "app": "shop-boot3",
+    "rounds": 3,
+    "variants": ["off", "on"],
+    "order": "per round: off, on (A-B alternation)",
+    "warmupSeconds": 180,
+    "durationSeconds": 600,
+    "rate": 1000,
+    "preAllocatedVUs": 300,
+    "maxVUs": 600,
+    "jvmOptions": ["-Xms1g", "-Xmx1g", "-XX:+UseG1GC", "-XX:+AlwaysPreTouch"],
+    "jvmOptionsAddedByHarness": ["-Xlog:gc:file=<run>/gc.log", "-XX:NativeMemoryTracking=summary"],
+    "appEnv": {},
+    "agentConfig": {
+      "exporter": "noop"
+    },
+    "agentConfigSha256": "8086f92c9bfd21d731df78340e6a56db5911151a4941cb1c3e6f1d4588409ae2",
+    "variantDefs": {},
+    "k6": "C:\\workspace\\Argos\\test\\agent\\overhead\\build\\k6\\k6.exe",
+    "k6Image": "grafana/k6:2.3.0@sha256:9c2dee7f8ed74d317e4027c06a10f169b625638189de8d4555d0b3486a5aeb34",
+    "k6Ssh": null,
+    "appAddress": "127.0.0.1",
+    "maxLoadPercent": 20,
+    "maxWaitSeconds": 18000,
+    "settleSeconds": 30,
+    "maxBackgroundCpuPercent": 22,
+    "retriesPerRun": 30,
+    "quietSeconds": 60
+  },
+  "inputs": {
+    "shop-boot3.jar": {
+      "sha256": "e15278a7490fc2dfc3b9aea2a1d3705c7ccca00509ae7493b98a243c6edbda75",
+      "path": "C:\\workspace\\Argos\\sample-apps\\shop-boot3\\build\\sample-app\\shop-boot3.jar",
+      "bytes": 76163634
+    },
+    "ext-stub.jar": {
+      "sha256": "27fb16bcc3a7db7be7c3bef0966e69e68561e6261786a2017e7f2e0f1476c489",
+      "path": "C:\\workspace\\Argos\\sample-apps\\ext-stub\\build\\sample-app\\ext-stub.jar",
+      "bytes": 13869
+    },
+    "argos-agent-0.0.0-SNAPSHOT.jar": {
+      "sha256": "f108eaee6afe10033c396835bf106bec9dac8a34cae5b054209b0b5673ac3cfd",
+      "path": "C:\\workspace\\Argos\\agent\\agent-dist\\build\\libs\\argos-agent-0.0.0-SNAPSHOT.jar",
+      "bytes": 4074064
+    },
+    "bench.js": {
+      "sha256": "cc26dbd1868021f700e860045e44b3f76583cde92dbb127a52dfb982c6640919",
+      "path": "C:\\workspace\\Argos\\sample-apps\\load\\bench.js",
+      "bytes": 13113
+    }
+  },
+  "git": {
+    "commit": "4a43e77c16472b2cfcb7566506324b7cea16b128",
+    "uncommittedEntries": 33
+  },
+  "environment": {
+    "os": "Windows 11 10.0 amd64",
+    "logicalCpus": 12,
+    "memoryMb": 15713,
+    "cpuModel": "AMD Ryzen 5 5600H with Radeon Graphics",
+    "powerPlan": "전원 구성표 GUID: 48684d4a-8524-4093-8a63-ea7132b79c1c  (HP 권장)",
+    "java": "<home>\\.jdks\\ms-21.0.10\\bin\\java.exe",
+    "javaVersion": "openjdk version \"21.0.10\" 2026-01-20 LTS\r\nOpenJDK Runtime Environment Microsoft-13106404 (build 21.0.10+7-LTS)\r\nOpenJDK 64-Bit Server VM Microsoft-13106404 (build 21.0.10+7-LTS, mixed mode, sharing)",
+    "harnessJava": "OpenJDK 64-Bit Server VM 21+35-2513",
+    "k6": "k6.exe v2.3.0 (commit/e088784614, go1.26.8, windows/amd64) (C:\\workspace\\Argos\\test\\agent\\overhead\\build\\k6\\k6.exe)"
+  }
+}

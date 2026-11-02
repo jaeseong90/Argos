@@ -19,6 +19,11 @@ tasks.withType<JavaCompile>().configureEach {
   // JDK 21 javac warns that release 8 is obsolete; that warning would break -Werror and carries
   // no information for us (Java 8 is a product requirement, F-A31).
   options.compilerArgs.add("-Xlint:-options")
+  // ByteBuddy's class files carry SpotBugs annotations whose (LGPL) jar is not on the classpath;
+  // javac's classfile lint reports each of them when code compiles against ByteBuddy (WO-00
+  // report D, WO-02). The lint only concerns reading dependency class files, so it is off for
+  // agent modules (agent-testing does the same for its fixtures).
+  options.compilerArgs.add("-Xlint:-classfile")
 }
 
 val agentTestLauncher =

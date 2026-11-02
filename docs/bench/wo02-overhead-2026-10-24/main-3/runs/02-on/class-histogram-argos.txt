@@ -1,0 +1,407 @@
+# Extract of class-histogram.txt (jcmd GC.class_histogram after GC.run x2): the header,
+# every row of an io.argos.agent.* class (N-02) and the Total row.
+28460:
+ num     #instances         #bytes  class name (module)
+-------------------------------------------------------
+   1:        135856       18857984  [B (java.base@21.0.10)
+  27:         10907         349024  io.argos.agent.bootstrap.WeakContextStore$WeakKey
+  58:           573          82512  io.argos.agent.bootstrap.TraceContext
+  59:           573          82512  io.argos.agent.core.trace.StepBuffer
+  76:           573          45840  io.argos.agent.core.trace.Transaction
+ 131:           286          22880  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$MethodToken
+ 229:           388           9312  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$MethodToken$ParameterToken
+ 360:            98           3920  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$FieldToken
+ 408:           200           3200  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$CircularityLock$WithInnerClassLoadingLock$TrivialLock
+ 418:            26           3120  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription
+ 474:            96           2304  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$AnnotationToken
+ 535:            56           1792  io.argos.agent.shaded.net.bytebuddy.description.method.MethodDescription$ForLoadedMethod
+ 573:            45           1440  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$GenericTypeToken$Resolution$Raw$RawAnnotatedType
+ 574:            15           1440  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$LazyMethodDescription
+ 589:            34           1360  io.argos.agent.shaded.net.bytebuddy.description.type.TypeDescription$ForLoadedType
+ 643:            45           1080  io.argos.agent.shaded.net.bytebuddy.matcher.StringMatcher
+ 648:            44           1056  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant
+ 683:            23            920  io.argos.agent.shaded.net.bytebuddy.utility.JavaType
+ 705:            54            864  io.argos.agent.shaded.net.bytebuddy.ClassFileVersion
+ 710:            26            832  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$LazyAnnotationValue$ForTypeValue
+ 731:            24            768  io.argos.agent.shaded.net.bytebuddy.description.method.ParameterList$ForLoadedExecutable$OfMethod
+ 732:            32            768  io.argos.agent.shaded.net.bytebuddy.description.type.TypeDescription$Generic$OfNonGenericType$ForLoadedType
+ 733:            24            768  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$LazyAnnotationValue$ForEnumerationValue
+ 743:            46            736  io.argos.agent.shaded.net.bytebuddy.matcher.NameMatcher
+ 744:            23            736  io.argos.agent.shaded.net.bytebuddy.utility.JavaType$LatentTypeWithSimpleName
+ 753:            18            720  io.argos.agent.shaded.net.bytebuddy.matcher.ModifierMatcher$Mode
+ 797:            38            608  io.argos.agent.shaded.net.bytebuddy.utility.dispatcher.JavaDispatcher$Dispatcher$ForNonStaticMethod
+ 840:            33            528  io.argos.agent.shaded.net.bytebuddy.matcher.NegatingMatcher
+ 874:             4            480  io.argos.agent.bootstrap.ArgosThread
+ 875:            10            480  io.argos.agent.shaded.net.bytebuddy.jar.asm.ClassReader
+ 897:            19            456  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$GenericTypeToken$ForParameterizedType
+ 901:             8            448  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.assign.primitive.PrimitiveWideningDelegate
+ 902:            14            448  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$GenericTypeToken$Resolution$ForMethod$Tokenized
+ 919:            18            432  io.argos.agent.shaded.net.bytebuddy.matcher.CollectionElementMatcher
+ 920:            27            432  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$GenericTypeToken$ForRawType
+ 929:            26            416  io.argos.agent.shaded.net.bytebuddy.matcher.MethodParametersMatcher
+ 930:            26            416  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Resolution$Simple
+ 941:            17            408  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.StackManipulation$Size
+ 956:            16            384  io.argos.agent.shaded.net.bytebuddy.utility.dispatcher.JavaDispatcher$ProxiedInvocationHandler
+ 986:            15            360  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.assign.primitive.PrimitiveWideningDelegate$WideningStackManipulation
+1016:            14            336  io.argos.agent.shaded.net.bytebuddy.description.type.TypeList$Generic$Explicit
+1030:            10            320  io.argos.agent.shaded.net.bytebuddy.asm.Advice
+1031:            10            320  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForArgument$Unresolved
+1032:            20            320  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForTypeDescription
+1033:            20            320  io.argos.agent.shaded.net.bytebuddy.matcher.ErasureMatcher
+1070:             9            288  io.argos.agent.bootstrap.WeakContextStore
+1071:             9            288  io.argos.agent.core.boot.ModuleTransformer
+1072:            12            288  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForLocalValue
+1073:             9            288  io.argos.agent.shaded.net.bytebuddy.jar.asm.Type
+1074:            18            288  io.argos.agent.shaded.net.bytebuddy.matcher.MethodParameterTypesMatcher
+1075:            18            288  io.argos.agent.shaded.net.bytebuddy.matcher.ModifierMatcher
+1076:             9            288  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$GenericTypeToken$ForPrimitiveType
+1077:             9            288  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$LazyAnnotationValue$ForArray
+1117:             7            280  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.member.MethodInvocation
+1171:            10            240  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RawMatcher$ForElementMatchers
+1172:             5            240  io.argos.agent.shaded.net.bytebuddy.asm.Advice$Dispatcher$Inlining$Resolved$ForMethodEnter$WithDiscardedEnterType
+1173:             5            240  io.argos.agent.shaded.net.bytebuddy.asm.Advice$Dispatcher$Inlining$Resolved$ForMethodEnter$WithRetainedEnterType
+1174:             5            240  io.argos.agent.shaded.net.bytebuddy.asm.Advice$Dispatcher$Inlining$Resolved$ForMethodExit$WithExceptionHandler
+1175:            15            240  io.argos.agent.shaded.net.bytebuddy.asm.Advice$Dispatcher$SuppressionHandler$Suppressing
+1176:            10            240  io.argos.agent.shaded.net.bytebuddy.description.type.TypeList$Generic$ForLoadedTypes
+1177:            10            240  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.member.MethodInvocation$Invocation
+1178:            15            240  io.argos.agent.shaded.net.bytebuddy.matcher.ElementMatcher$Junction$Disjunction
+1213:             7            224  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.constant.IntegerConstant
+1214:            14            224  io.argos.agent.shaded.net.bytebuddy.matcher.ElementMatcher$Junction$Conjunction
+1247:             9            216  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$Default$Transformation
+1248:             9            216  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$ComponentTypeLocator$ForAnnotationProperty
+1249:             9            216  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$ComponentTypeLocator$ForAnnotationProperty$Bound
+1250:             9            216  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$TypeContainment$WithinType
+1276:             5            200  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.member.MethodVariableAccess
+1298:             6            192  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.member.MethodReturn
+1404:             5            160  io.argos.agent.core.log.LogLevel
+1405:            10            160  io.argos.agent.shaded.net.bytebuddy.asm.Advice$ExceptionHandler$Simple
+1406:             5            160  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForEnterValue
+1407:             5            160  io.argos.agent.shaded.net.bytebuddy.description.modifier.TypeManifestation
+1408:             5            160  io.argos.agent.shaded.net.bytebuddy.dynamic.loading.ClassLoadingStrategy$Default
+1409:            10            160  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.StackManipulation$Compound
+1410:            10            160  io.argos.agent.shaded.net.bytebuddy.utility.AsmClassReader$ForAsm
+1411:             5            160  io.argos.agent.shaded.net.bytebuddy.utility.GraalImageCode
+1482:             6            144  io.argos.agent.shaded.net.bytebuddy.description.type.TypeDefinition$Sort
+1483:             6            144  io.argos.agent.shaded.net.bytebuddy.description.type.TypeDescription$ArrayProjection
+1572:             2            128  io.argos.agent.bootstrap.CaptureConfig
+1573:             4            128  io.argos.agent.shaded.net.bytebuddy.description.modifier.Visibility
+1574:             4            128  io.argos.agent.shaded.net.bytebuddy.dynamic.loading.ClassLoadingStrategy$Default$WrappingDispatcher
+1575:             4            128  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.MethodGraph$Node$Sort
+1576:             8            128  io.argos.agent.shaded.net.bytebuddy.matcher.CollectionSizeMatcher
+1647:             5            120  io.argos.agent.core.boot.InstrumentationInstaller$WitnessMatcher
+1648:             5            120  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForThrowable
+1649:             5            120  io.argos.agent.shaded.net.bytebuddy.description.type.TypeDescription$Generic$OfNonGenericType$ForErasure
+1730:             1            112  io.argos.agent.shaded.net.bytebuddy.dynamic.loading.ByteArrayClassLoader
+1731:             7            112  io.argos.agent.shaded.net.bytebuddy.utility.dispatcher.JavaDispatcher$Dispatcher$ForInstanceCheck
+1823:             1             96  io.argos.agent.bootstrap.AgentClassLoader
+1824:             4             96  io.argos.agent.instrumentation.api.SafeMatchers$HierarchyMatcher
+1825:             4             96  io.argos.agent.instrumentation.api.Witness$1
+1826:             4             96  io.argos.agent.instrumentation.servlet.ServletInstrumentation
+1827:             4             96  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForThisReference
+1828:             3             96  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.TypeWriter$MethodPool$Record$Sort
+1829:             3             96  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.StackSize
+2031:             1             88  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$Default$ExecutingTransformer$ByteBuddy$ModuleSupport
+2071:             1             80  io.argos.agent.core.trace.TracerImpl
+2072:             5             80  io.argos.agent.shaded.net.bytebuddy.description.type.TypeDescription$LazyProxy
+2073:             2             80  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.member.FieldAccess
+2074:             5             80  io.argos.agent.shaded.net.bytebuddy.matcher.MethodSortMatcher
+2075:             5             80  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$GenericTypeToken$ForUpperBoundWildcard
+2076:             1             80  io.argos.agent.shaded.net.bytebuddy.utility.dispatcher.JavaDispatcher$DynamicClassLoader
+2401:             2             64  io.argos.agent.core.trace.IgnoreRules
+2402:             1             64  io.argos.agent.shaded.net.bytebuddy.ByteBuddy
+2403:             2             64  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$PoolStrategy$Default
+2404:             2             64  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$Factory$AdviceType
+2405:             2             64  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForField$Unresolved$WithImplicitType
+2406:             4             64  io.argos.agent.shaded.net.bytebuddy.description.type.TypeDescription$Generic$LazyProxy
+2407:             2             64  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.MethodGraph$Compiler$Default$Merger$Directional
+2408:             2             64  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.TypeValidation
+2409:             2             64  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.subclass.SubclassImplementationTarget$Factory
+2410:             2             64  io.argos.agent.shaded.net.bytebuddy.implementation.attribute.AnnotationRetention
+2411:             2             64  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.assign.Assigner$Typing
+2412:             4             64  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.constant.IntegerConstant$SingleBytePush
+2413:             1             64  io.argos.agent.shaded.net.bytebuddy.jar.asm.Label
+2414:             4             64  io.argos.agent.shaded.net.bytebuddy.matcher.CollectionItemMatcher
+2415:             4             64  io.argos.agent.shaded.net.bytebuddy.matcher.DeclaringMethodMatcher
+2416:             4             64  io.argos.agent.shaded.net.bytebuddy.matcher.EqualityMatcher
+2417:             2             64  io.argos.agent.shaded.net.bytebuddy.matcher.LatentMatcher$ForSelfDeclaredMethod
+2418:             4             64  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$GenericTypeToken$Resolution$ForField$Tokenized
+2419:             2             64  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$ReaderMode
+2641:             1             56  io.argos.agent.core.export.ExportWorker
+2642:             1             56  io.argos.agent.core.log.LogPipeline
+2766:             1             48  io.argos.agent.core.boot.TransformRecorder
+2767:             1             48  io.argos.agent.core.log.RollingFileSink
+2768:             2             48  io.argos.agent.instrumentation.jdbc.JdbcInstrumentation
+2769:             2             48  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$CircularityLock$Default
+2770:             2             48  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$WithLazyResolution$LazinessMode
+2771:             2             48  io.argos.agent.shaded.net.bytebuddy.utility.RandomString
+3223:             1             40  io.argos.agent.core.boot.HelperInjector
+3224:             1             40  io.argos.agent.core.export.TransactionQueue
+3630:             1             32  io.argos.agent.core.boot.TransformErrorListener
+3631:             1             32  io.argos.agent.core.boot.WatchThread
+3632:             1             32  io.argos.agent.core.trace.SqlIds
+3633:             1             32  io.argos.agent.shaded.net.bytebuddy.NamingStrategy$SuffixingRandom
+3634:             1             32  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$DescriptionStrategy$Default$1
+3635:             1             32  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$DescriptionStrategy$Default$2
+3636:             1             32  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$DescriptionStrategy$Default$3
+3637:             1             32  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RedefinitionStrategy$1
+3638:             1             32  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RedefinitionStrategy$2
+3639:             1             32  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RedefinitionStrategy$3
+3640:             1             32  io.argos.agent.shaded.net.bytebuddy.dynamic.loading.ByteArrayClassLoader$PersistenceHandler$1
+3641:             1             32  io.argos.agent.shaded.net.bytebuddy.dynamic.loading.ByteArrayClassLoader$PersistenceHandler$2
+3642:             1             32  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.MethodGraph$Compiler$Default
+3643:             1             32  io.argos.agent.shaded.net.bytebuddy.implementation.Implementation$Context$FrameGeneration$1
+3644:             1             32  io.argos.agent.shaded.net.bytebuddy.implementation.Implementation$Context$FrameGeneration$2
+3645:             1             32  io.argos.agent.shaded.net.bytebuddy.implementation.Implementation$Context$FrameGeneration$3
+3646:             2             32  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.assign.primitive.PrimitiveTypeAwareAssigner
+3647:             2             32  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.assign.primitive.VoidAwareAssigner
+3648:             2             32  io.argos.agent.shaded.net.bytebuddy.matcher.BooleanMatcher
+3649:             1             32  io.argos.agent.shaded.net.bytebuddy.matcher.MethodSortMatcher$Sort$1
+3650:             1             32  io.argos.agent.shaded.net.bytebuddy.matcher.MethodSortMatcher$Sort$2
+3651:             1             32  io.argos.agent.shaded.net.bytebuddy.matcher.MethodSortMatcher$Sort$3
+3652:             1             32  io.argos.agent.shaded.net.bytebuddy.matcher.MethodSortMatcher$Sort$4
+3653:             1             32  io.argos.agent.shaded.net.bytebuddy.matcher.MethodSortMatcher$Sort$5
+3654:             1             32  io.argos.agent.shaded.net.bytebuddy.matcher.StringMatcher$Mode$1
+3655:             1             32  io.argos.agent.shaded.net.bytebuddy.matcher.StringMatcher$Mode$2
+3656:             1             32  io.argos.agent.shaded.net.bytebuddy.matcher.StringMatcher$Mode$3
+3657:             1             32  io.argos.agent.shaded.net.bytebuddy.matcher.StringMatcher$Mode$4
+3658:             1             32  io.argos.agent.shaded.net.bytebuddy.matcher.StringMatcher$Mode$5
+3659:             1             32  io.argos.agent.shaded.net.bytebuddy.matcher.StringMatcher$Mode$6
+3660:             1             32  io.argos.agent.shaded.net.bytebuddy.matcher.StringMatcher$Mode$7
+3661:             1             32  io.argos.agent.shaded.net.bytebuddy.matcher.StringMatcher$Mode$8
+3662:             1             32  io.argos.agent.shaded.net.bytebuddy.matcher.StringMatcher$Mode$9
+3663:             1             32  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default
+3664:             2             32  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$GenericTypeToken$ForTypeVariable
+3665:             1             32  io.argos.agent.shaded.net.bytebuddy.utility.dispatcher.JavaDispatcher$DynamicClassLoader$Resolver$ForModuleSystem
+4405:             1             24  io.argos.agent.core.boot.AdviceFactory
+4406:             1             24  io.argos.agent.core.boot.AgentStarter$5
+4407:             1             24  io.argos.agent.core.boot.LoaderState
+4408:             1             24  io.argos.agent.core.boot.ModuleReadEdgeListener
+4409:             1             24  io.argos.agent.core.config.AgentConfig
+4410:             1             24  io.argos.agent.core.export.AgentInfo
+4411:             1             24  io.argos.agent.core.export.ExporterContext
+4412:             1             24  io.argos.agent.core.sql.SqlNormalizer
+4413:             1             24  io.argos.agent.core.trace.Dictionary
+4414:             1             24  io.argos.agent.core.trace.ServiceNames
+4415:             1             24  io.argos.agent.core.trace.TxIdGenerator
+4416:             1             24  io.argos.agent.shaded.net.bytebuddy.ClassFileVersion$VersionLocator$Resolver
+4417:             1             24  io.argos.agent.shaded.net.bytebuddy.NamingStrategy$Suffixing$BaseNameResolver$ForUnnamedType
+4418:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$ClassFileBufferStrategy$Default$1
+4419:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$ClassFileBufferStrategy$Default$2
+4420:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$Default$ExecutingTransformer$Factory$CreationAction
+4421:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$Default$NativeMethodStrategy$Disabled
+4422:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$Default$WarmupStrategy$NoOp
+4423:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$InitializationStrategy$NoOp
+4424:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$InjectionStrategy$Disabled
+4425:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$InstallationListener$NoOp
+4426:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$LambdaInstrumentationStrategy$1
+4427:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$LambdaInstrumentationStrategy$2
+4428:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$Listener$NoOp
+4429:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$LocationStrategy$ForClassLoader$1
+4430:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$LocationStrategy$ForClassLoader$2
+4431:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$PatchMode$Handler$NoOp
+4432:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RedefinitionStrategy$BatchAllocator$ForTotal
+4433:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RedefinitionStrategy$DiscoveryStrategy$SinglePass
+4434:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RedefinitionStrategy$Listener$NoOp
+4435:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RedefinitionStrategy$ResubmissionEnforcer$Disabled
+4436:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RedefinitionStrategy$ResubmissionStrategy$Disabled
+4437:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$TransformerDecorator$NoOp
+4438:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$TypeStrategy$Default$1
+4439:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$TypeStrategy$Default$2
+4440:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$TypeStrategy$Default$3
+4441:             1             24  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$TypeStrategy$Default$4
+4442:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$ArgumentHandler$Factory$1
+4443:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$ArgumentHandler$Factory$2
+4444:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$Delegator$ForRegularInvocation$Factory
+4445:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$Dispatcher$Inactive
+4446:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$Dispatcher$RelocationHandler$Disabled
+4447:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$ExceptionHandler$Default$1
+4448:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$ExceptionHandler$Default$2
+4449:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$ExceptionHandler$Default$3
+4450:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForAllArguments$Factory
+4451:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForArgument$Unresolved$Factory
+4452:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForDynamicConstant$Factory
+4453:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForField$Unresolved$Factory
+4454:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForFieldHandle$Unresolved$ReaderFactory
+4455:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForFieldHandle$Unresolved$WriterFactory
+4456:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForHandle$Factory
+4457:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForOrigin$Factory
+4458:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForReturnValue
+4459:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForReturnValue$Factory
+4460:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForSelfCallHandle$Factory
+4461:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForStubValue
+4462:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForThisReference$Factory
+4463:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForThrowable$Factory
+4464:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$ForUnusedValue$Factory
+4465:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$Sort$1
+4466:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$OffsetMapping$Sort$2
+4467:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$PostProcessor$NoOp
+4468:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$StackMapFrameHandler$Default$Initialization$1
+4469:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$StackMapFrameHandler$Default$Initialization$2
+4470:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$StackMapFrameHandler$Default$TranslationMode$1
+4471:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$StackMapFrameHandler$Default$TranslationMode$2
+4472:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.Advice$StackMapFrameHandler$Default$TranslationMode$3
+4473:             1             24  io.argos.agent.shaded.net.bytebuddy.asm.AsmVisitorWrapper$NoOp
+4474:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationSource$Empty
+4475:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant$PropertyDelegate$ForArrayType$1
+4476:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant$PropertyDelegate$ForArrayType$2
+4477:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant$PropertyDelegate$ForArrayType$3
+4478:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant$PropertyDelegate$ForArrayType$4
+4479:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant$PropertyDelegate$ForArrayType$5
+4480:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant$PropertyDelegate$ForArrayType$6
+4481:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant$PropertyDelegate$ForArrayType$7
+4482:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant$PropertyDelegate$ForArrayType$8
+4483:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant$PropertyDelegate$ForArrayType$9
+4484:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant$PropertyDelegate$ForNonArrayType$1
+4485:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant$PropertyDelegate$ForNonArrayType$2
+4486:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant$PropertyDelegate$ForNonArrayType$3
+4487:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant$PropertyDelegate$ForNonArrayType$4
+4488:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant$PropertyDelegate$ForNonArrayType$5
+4489:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant$PropertyDelegate$ForNonArrayType$6
+4490:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant$PropertyDelegate$ForNonArrayType$7
+4491:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant$PropertyDelegate$ForNonArrayType$8
+4492:             1             24  io.argos.agent.shaded.net.bytebuddy.description.annotation.AnnotationValue$ForConstant$PropertyDelegate$ForNonArrayType$9
+4493:             1             24  io.argos.agent.shaded.net.bytebuddy.description.method.MethodList$ForLoadedMethods
+4494:             1             24  io.argos.agent.shaded.net.bytebuddy.description.type.TypeDescription$Generic$AnnotationReader$NoOp
+4495:             1             24  io.argos.agent.shaded.net.bytebuddy.description.type.TypeDescription$Generic$Visitor$Reifying$1
+4496:             1             24  io.argos.agent.shaded.net.bytebuddy.description.type.TypeDescription$Generic$Visitor$Reifying$2
+4497:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.ClassFileLocator$ForClassLoader$BootLoaderProxyCreationAction
+4498:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.ClassFileLocator$NoOp
+4499:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.Transformer$NoOp
+4500:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.TypeResolutionStrategy$Disabled
+4501:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.TypeResolutionStrategy$Passive
+4502:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.VisibilityBridgeStrategy$Default$1
+4503:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.VisibilityBridgeStrategy$Default$2
+4504:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.VisibilityBridgeStrategy$Default$3
+4505:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.loading.ByteArrayClassLoader$PackageLookupStrategy$CreationAction
+4506:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.loading.ByteArrayClassLoader$SynchronizationStrategy$CreationAction
+4507:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.loading.ByteArrayClassLoader$SynchronizationStrategy$ForJava8CapableVm
+4508:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.loading.ClassFilePostProcessor$NoOp
+4509:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.loading.ClassLoaderDecorator$Factory$NoOp
+4510:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.loading.ClassLoadingStrategy$Default$InjectionDispatcher
+4511:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.loading.PackageDefinitionStrategy$Definition$Trivial
+4512:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.loading.PackageDefinitionStrategy$NoOp
+4513:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.loading.PackageDefinitionStrategy$Trivial
+4514:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.InstrumentedType$Factory$Default$1
+4515:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.InstrumentedType$Factory$Default$2
+4516:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.MethodGraph$Compiler$Default$Harmonizer$ForJavaMethod
+4517:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.TypeInitializer$None
+4518:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.TypeWriter$Default$ClassDumpAction$Dispatcher$Disabled
+4519:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.TypeWriter$Default$ForInlining$WithFullProcessing$InitializationHandler$Appending$FrameWriter$NoOp
+4520:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.inline.MethodRebaseResolver$Disabled
+4521:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.subclass.ConstructorStrategy$Default$1
+4522:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.subclass.ConstructorStrategy$Default$2
+4523:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.subclass.ConstructorStrategy$Default$3
+4524:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.subclass.ConstructorStrategy$Default$4
+4525:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.subclass.ConstructorStrategy$Default$5
+4526:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.subclass.SubclassImplementationTarget$OriginTypeResolver$1
+4527:             1             24  io.argos.agent.shaded.net.bytebuddy.dynamic.scaffold.subclass.SubclassImplementationTarget$OriginTypeResolver$2
+4528:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.Implementation$Context$Default$Factory
+4529:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.Implementation$Context$Disabled$Factory
+4530:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.Implementation$Target$AbstractBase$DefaultMethodInvocation$1
+4531:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.Implementation$Target$AbstractBase$DefaultMethodInvocation$2
+4532:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.LoadedTypeInitializer$NoOp
+4533:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.MethodCall$ArgumentLoader$ForMethodParameter$OfInstrumentedMethod
+4534:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.MethodCall$MethodInvoker$ForContextualInvocation$Factory
+4535:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.MethodCall$MethodInvoker$ForSuperMethodInvocation$Factory
+4536:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.MethodCall$TargetHandler$ForSelfOrStaticInvocation$Factory
+4537:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.MethodCall$TerminationHandler$Simple$1
+4538:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.MethodCall$TerminationHandler$Simple$2
+4539:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.MethodCall$TerminationHandler$Simple$3
+4540:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.SuperMethodCall
+4541:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.SuperMethodCall$Appender$TerminationHandler$1
+4542:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.SuperMethodCall$Appender$TerminationHandler$2
+4543:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.attribute.AnnotationValueFilter$Default$1
+4544:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.attribute.AnnotationValueFilter$Default$2
+4545:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.attribute.MethodAttributeAppender$NoOp
+4546:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.attribute.TypeAttributeAppender$ForInstrumentedType
+4547:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.auxiliary.AuxiliaryType$NamingStrategy$SuffixingRandom
+4548:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.ByteCodeAppender$Size
+4549:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.StackManipulation$Illegal
+4550:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.StackManipulation$Trivial
+4551:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.assign.reference.GenericTypeAwareAssigner
+4552:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.assign.reference.ReferenceTypeAwareAssigner
+4553:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.member.MethodVariableAccess$MethodLoading$TypeCastingHandler$NoOp
+4554:             1             24  io.argos.agent.shaded.net.bytebuddy.implementation.bytecode.member.MethodVariableAccess$OffsetLoading
+4555:             1             24  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$CacheProvider$NoOp
+4556:             1             24  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$ComponentTypeLocator$Illegal
+4557:             1             24  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$GenericTypeToken$ForTypeVariable$Formal
+4558:             1             24  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$GenericTypeToken$ForUnboundWildcard
+4559:             1             24  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$GenericTypeToken$Resolution$ForType$Tokenized
+4560:             1             24  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$GenericTypeToken$Resolution$Raw
+4561:             1             24  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$TypeContainment$SelfContained
+4562:             1             24  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Empty
+4563:             1             24  io.argos.agent.shaded.net.bytebuddy.utility.AnnotationComparator
+4564:             1             24  io.argos.agent.shaded.net.bytebuddy.utility.AsmClassReader$Factory$Default$1
+4565:             1             24  io.argos.agent.shaded.net.bytebuddy.utility.AsmClassReader$Factory$Default$2
+4566:             1             24  io.argos.agent.shaded.net.bytebuddy.utility.AsmClassReader$Factory$Default$3
+4567:             1             24  io.argos.agent.shaded.net.bytebuddy.utility.AsmClassReader$Factory$Default$4
+4568:             1             24  io.argos.agent.shaded.net.bytebuddy.utility.AsmClassReader$Factory$Default$5
+4569:             1             24  io.argos.agent.shaded.net.bytebuddy.utility.AsmClassWriter$Factory$Default$1
+4570:             1             24  io.argos.agent.shaded.net.bytebuddy.utility.AsmClassWriter$Factory$Default$2
+4571:             1             24  io.argos.agent.shaded.net.bytebuddy.utility.AsmClassWriter$Factory$Default$3
+4572:             1             24  io.argos.agent.shaded.net.bytebuddy.utility.AsmClassWriter$Factory$Default$4
+4573:             1             24  io.argos.agent.shaded.net.bytebuddy.utility.AsmClassWriter$Factory$Default$5
+4574:             1             24  io.argos.agent.shaded.net.bytebuddy.utility.AsmClassWriter$Factory$Default$EmptyAsmClassReader
+4575:             1             24  io.argos.agent.shaded.net.bytebuddy.utility.ConstructorComparator
+4576:             1             24  io.argos.agent.shaded.net.bytebuddy.utility.MethodComparator
+4577:             1             24  io.argos.agent.shaded.net.bytebuddy.utility.dispatcher.JavaDispatcher$DynamicClassLoader$Resolver$CreationAction
+5514:             1             16  io.argos.agent.bootstrap.AgentControl
+5515:             1             16  io.argos.agent.bootstrap.CallDepth$1
+5516:             1             16  io.argos.agent.bootstrap.ContextStore$DiscardingStore
+5517:             1             16  io.argos.agent.bootstrap.NoopTracer
+5518:             1             16  io.argos.agent.bootstrap.Scope$1
+5519:             1             16  io.argos.agent.core.boot.AgentStarter$1
+5520:             1             16  io.argos.agent.core.boot.AgentStarter$2
+5521:             1             16  io.argos.agent.core.boot.AgentStarter$3
+5522:             1             16  io.argos.agent.core.boot.AgentStarter$4
+5523:             1             16  io.argos.agent.core.boot.IgnoreMatchers$1
+5524:             1             16  io.argos.agent.core.boot.IgnoreMatchers$2
+5525:             1             16  io.argos.agent.core.boot.LoaderState$1
+5526:             1             16  io.argos.agent.core.boot.TransformRecorder$1
+5527:             1             16  io.argos.agent.core.boot.WatchThread$1
+5528:             1             16  io.argos.agent.core.export.ExportWorker$1
+5529:             1             16  io.argos.agent.core.export.NoopExporter
+5530:             1             16  io.argos.agent.core.log.LogPipeline$1
+5531:             1             16  io.argos.agent.core.log.Timestamps
+5532:             1             16  io.argos.agent.core.masking.Masker
+5533:             1             16  io.argos.agent.instrumentation.executor.ExecutorModule
+5534:             1             16  io.argos.agent.instrumentation.executor.ExecutorModule$1
+5535:             1             16  io.argos.agent.instrumentation.httpclient.jdk.HttpClientJdkModule
+5536:             1             16  io.argos.agent.instrumentation.httpclient.jdk.HttpClientJdkModule$1
+5537:             1             16  io.argos.agent.instrumentation.jdbc.JdbcModule
+5538:             1             16  io.argos.agent.instrumentation.servlet.ServletModule
+5539:             1             16  io.argos.agent.instrumentation.springwebmvc.SpringWebMvcModule
+5540:             1             16  io.argos.agent.instrumentation.springwebmvc.SpringWebMvcModule$HandlerAdapterInstrumentation
+5541:             1             16  io.argos.agent.shaded.net.bytebuddy.ClassFileVersion$VersionLocator$Resolved
+5542:             1             16  io.argos.agent.shaded.net.bytebuddy.agent.builder.$Proxy8
+5543:             1             16  io.argos.agent.shaded.net.bytebuddy.agent.builder.$Proxy9
+5544:             1             16  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$Default$ExecutingTransformer$Factory$ForJava9CapableVm
+5545:             1             16  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$FallbackStrategy$ByThrowableType
+5546:             1             16  io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$Listener$Compound
+5547:             1             16  io.argos.agent.shaded.net.bytebuddy.description.method.$Proxy14
+5548:             1             16  io.argos.agent.shaded.net.bytebuddy.description.method.$Proxy15
+5549:             1             16  io.argos.agent.shaded.net.bytebuddy.description.method.$Proxy6
+5550:             1             16  io.argos.agent.shaded.net.bytebuddy.description.type.$Proxy13
+5551:             1             16  io.argos.agent.shaded.net.bytebuddy.description.type.$Proxy16
+5552:             1             16  io.argos.agent.shaded.net.bytebuddy.description.type.$Proxy17
+5553:             1             16  io.argos.agent.shaded.net.bytebuddy.description.type.$Proxy18
+5554:             1             16  io.argos.agent.shaded.net.bytebuddy.description.type.$Proxy19
+5555:             1             16  io.argos.agent.shaded.net.bytebuddy.description.type.$Proxy20
+5556:             1             16  io.argos.agent.shaded.net.bytebuddy.description.type.$Proxy21
+5557:             1             16  io.argos.agent.shaded.net.bytebuddy.description.type.$Proxy22
+5558:             1             16  io.argos.agent.shaded.net.bytebuddy.description.type.$Proxy7
+5559:             1             16  io.argos.agent.shaded.net.bytebuddy.dynamic.ClassFileLocator$ForClassLoader
+5560:             1             16  io.argos.agent.shaded.net.bytebuddy.dynamic.loading.ByteArrayClassLoader$PackageLookupStrategy$ForJava9CapableVm
+5561:             1             16  io.argos.agent.shaded.net.bytebuddy.matcher.DeclaringTypeMatcher
+5562:             1             16  io.argos.agent.shaded.net.bytebuddy.matcher.LatentMatcher$Resolved
+5563:             1             16  io.argos.agent.shaded.net.bytebuddy.matcher.MethodReturnTypeMatcher
+5564:             1             16  io.argos.agent.shaded.net.bytebuddy.matcher.NullMatcher
+5565:             1             16  io.argos.agent.shaded.net.bytebuddy.matcher.StringSetMatcher
+5566:             1             16  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$CacheProvider$Simple
+5567:             1             16  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$GenericTypeToken$ForGenericArray
+5568:             1             16  io.argos.agent.shaded.net.bytebuddy.pool.TypePool$Default$LazyTypeDescription$GenericTypeToken$ForLowerBoundWildcard
+5569:             1             16  io.argos.agent.shaded.net.bytebuddy.utility.$Proxy23
+5570:             1             16  io.argos.agent.shaded.net.bytebuddy.utility.$Proxy24
+5571:             1             16  io.argos.agent.shaded.net.bytebuddy.utility.Invoker$Dispatcher
+5572:             1             16  io.argos.agent.shaded.net.bytebuddy.utility.StreamDrainer
+Total        996306       64425072

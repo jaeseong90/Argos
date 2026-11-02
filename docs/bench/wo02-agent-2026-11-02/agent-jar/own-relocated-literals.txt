@@ -1,0 +1,1 @@
+# own-class string constants in the relocated namespace of argos-agent-0.0.0-SNAPSHOT.jar (0)

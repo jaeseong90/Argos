@@ -1,0 +1,327 @@
+{
+  "kind": "load",
+  "label": "main-3: process mode, JDK 21.0.10, shop-boot3, shared Windows machine",
+  "mode": "process",
+  "virtualThreads": false,
+  "criteria": "N-01, N-03, N-26 (Gate 0: N-01 mean, N-03)",
+  "runs": [
+    {
+      "index": 1,
+      "round": 1,
+      "variant": "off",
+      "appCpuSeconds": 378.328125,
+      "wallSeconds": 600.8947362,
+      "requests": 600000,
+      "dropped": 0,
+      "unexpectedRate": 0,
+      "p50": 0.502,
+      "p95": 91.788,
+      "p99": 313.107,
+      "p999": 316.245,
+      "hostCpuPercentMean": 61.668066051919766,
+      "loaderCpuPercentMean": 61.668066051919766,
+      "cpuBeforePercent": 20.933346812268493,
+      "backgroundCpuPercent": 50.82117698964433,
+      "attempt": 5,
+      "discardedAttempts": 4,
+      "gate": "PASS"
+    },
+    {
+      "index": 2,
+      "round": 1,
+      "variant": "on",
+      "appCpuSeconds": 279.078125,
+      "wallSeconds": 600.6991332,
+      "requests": 600001,
+      "dropped": 0,
+      "unexpectedRate": 0,
+      "p50": 0.519,
+      "p95": 109.983,
+      "p99": 312.225,
+      "p999": 314.893,
+      "hostCpuPercentMean": 31.61443968502804,
+      "loaderCpuPercentMean": 31.61443968502804,
+      "cpuBeforePercent": 24.397979733881826,
+      "backgroundCpuPercent": 23.444489005187993,
+      "attempt": 4,
+      "discardedAttempts": 3,
+      "gate": "PASS"
+    },
+    {
+      "index": 3,
+      "round": 2,
+      "variant": "off",
+      "appCpuSeconds": 248.546875,
+      "wallSeconds": 600.6862633,
+      "requests": 600000,
+      "dropped": 0,
+      "unexpectedRate": 0,
+      "p50": 0.515,
+      "p95": 165.015,
+      "p99": 312.219,
+      "p999": 314.908,
+      "hostCpuPercentMean": 22.520168768724346,
+      "loaderCpuPercentMean": 22.520168768724346,
+      "cpuBeforePercent": 15.376352008788107,
+      "backgroundCpuPercent": 14.787693514255402,
+      "attempt": 1,
+      "discardedAttempts": 0,
+      "gate": "PASS"
+    },
+    {
+      "index": 4,
+      "round": 2,
+      "variant": "on",
+      "appCpuSeconds": 260.390625,
+      "wallSeconds": 600.6684168,
+      "requests": 600001,
+      "dropped": 0,
+      "unexpectedRate": 0,
+      "p50": 0.515,
+      "p95": 36.017,
+      "p99": 312.237,
+      "p999": 314.899,
+      "hostCpuPercentMean": 22.358009348025455,
+      "loaderCpuPercentMean": 22.358009348025455,
+      "cpuBeforePercent": 13.047837938201013,
+      "backgroundCpuPercent": 14.528190318992063,
+      "attempt": 1,
+      "discardedAttempts": 0,
+      "gate": "PASS"
+    },
+    {
+      "index": 5,
+      "round": 3,
+      "variant": "off",
+      "appCpuSeconds": 244.765625,
+      "wallSeconds": 600.6724028,
+      "requests": 600001,
+      "dropped": 0,
+      "unexpectedRate": 0,
+      "p50": 0.513,
+      "p95": 15.678,
+      "p99": 312.202,
+      "p999": 314.879,
+      "hostCpuPercentMean": 14.456655979445811,
+      "loaderCpuPercentMean": 14.456655979445811,
+      "cpuBeforePercent": 13.178775382751319,
+      "backgroundCpuPercent": 6.660488407065153,
+      "attempt": 1,
+      "discardedAttempts": 0,
+      "gate": "PASS"
+    },
+    {
+      "index": 6,
+      "round": 3,
+      "variant": "on",
+      "appCpuSeconds": 256.6875,
+      "wallSeconds": 600.6944239,
+      "requests": 600000,
+      "dropped": 0,
+      "unexpectedRate": 0,
+      "p50": 0.515,
+      "p95": 36.182,
+      "p99": 312.215,
+      "p999": 314.906,
+      "hostCpuPercentMean": 16.01448674095409,
+      "loaderCpuPercentMean": 16.01448674095409,
+      "cpuBeforePercent": 4.804154092002033,
+      "backgroundCpuPercent": 8.37749226010687,
+      "attempt": 1,
+      "discardedAttempts": 0,
+      "gate": "PASS"
+    }
+  ],
+  "validity": {
+    "offCpuSeconds": [378.328125, 248.546875, 244.765625],
+    "offCpuCv": 0.2617281587114901,
+    "offCpuCvLimit": 0.02,
+    "offCpuCvOk": false,
+    "gateProblems": []
+  },
+  "comparisons": {
+    "on": {
+      "cpu": {
+        "offCpuSeconds": [378.328125, 248.546875, 244.765625],
+        "onCpuSeconds": [279.078125, 260.390625, 256.6875],
+        "offMean": 290.546875,
+        "onMean": 265.3854166666667,
+        "relative": -0.08660034059334942,
+        "pairRelatives": [-0.262338413249081, 0.04765197711699254, 0.0487073092882222],
+        "pairRelativeCi95": [-0.5007147037614449, 0.3900619525322007],
+        "check": {
+          "value": -0.08660034059334942,
+          "limit": 0.05,
+          "unit": "relative",
+          "verdict": "PASS"
+        },
+        "offCpuMsPerRequestMean": 0.4842445650322064,
+        "onCpuMsPerRequestMean": 0.4423085282705084,
+        "relativePerRequest": -0.08660094462579848
+      },
+      "peak": {
+        "windowSeconds": 60,
+        "stepSeconds": 10,
+        "windowRelatives": [-0.037292731323846584, -0.05406531485534405, -0.06167025935289938, -0.05672916931063765, -0.05903791911448519, -0.06387141588039924, -0.06203904758877721, -0.05168493664070839, -0.057892409760372465, -0.04881259851256736, -0.05083498709799006, -0.047092405422576755, -0.04228282123252325, -0.04003921616702388, -0.0402154646923325, -0.041626410542378034, -0.05146282402364355, -0.05131561429180709, -0.06866566751503644, -0.07602806928309669, -0.06336450406415339, -0.06267485452993637, -0.043221246671236835, -0.04575289470884003, -0.038207531797607164, -0.048929625779695285, -0.06582553132675317, -0.08916310387902904, -0.11544362060636604, -0.1278618690480836, -0.15334033433999317, -0.15156505403168663, -0.15356665532373892, -0.14682516601292384, -0.15228703715521663, -0.15461398832063733, -0.13186058886392127, -0.12616774831600996, -0.11918940922089305, -0.10603136884139697, -0.10156764508837857, -0.09242414542518307, -0.08913729572391949, -0.08325339826382028, -0.09039597618368722, -0.10742471095707584, -0.1160978152041261, -0.11477740072170006, -0.12035471501292316, -0.13128100030927015, -0.12224845007268004, -0.12258907435799271, -0.09820414826466706, -0.11139855088246964, -0.11438202247912843],
+        "value": -0.037292731323846584,
+        "limit": 0.08,
+        "unit": "relative",
+        "verdict": "PASS"
+      },
+      "agentThreadCpu": {
+        "agentThreadCpuSeconds": [0.51564, 0.45313, 0.35937],
+        "hostCpus": 12,
+        "value": 0.007153331447490759,
+        "limit": 1,
+        "unit": "% of host CPU",
+        "verdict": "PASS"
+      },
+      "latency": {
+        "p50": {
+          "off": [0.502, 0.515, 0.513],
+          "on": [0.519, 0.515, 0.515],
+          "offMean": 0.5099999999999999,
+          "onMean": 0.5163333333333333,
+          "diffMean": 0.006333333333333339,
+          "diffCi95": [-0.016750077090123994, 0.029416743756790674],
+          "noDifference": true
+        },
+        "p95": {
+          "off": [91.788, 165.015, 15.678],
+          "on": [109.983, 36.017, 36.182],
+          "offMean": 90.827,
+          "onMean": 60.72733333333334,
+          "diffMean": -30.09966666666666,
+          "diffCi95": [-242.89876071818247, 182.69942738484917],
+          "noDifference": true
+        },
+        "p99": {
+          "off": [313.107, 312.219, 312.202],
+          "on": [312.225, 312.237, 312.215],
+          "offMean": 312.50933333333336,
+          "onMean": 312.22566666666665,
+          "diffMean": -0.28366666666666634,
+          "diffCi95": [-1.5709958158366863, 1.0036624825033538],
+          "noDifference": true,
+          "check": {
+            "value": -0.28366666666666634,
+            "limit": 15.625466666666668,
+            "unit": "ms",
+            "verdict": "PASS"
+          }
+        },
+        "p99.9": {
+          "off": [316.245, 314.908, 314.879],
+          "on": [314.893, 314.899, 314.906],
+          "offMean": 315.344,
+          "onMean": 314.8993333333333,
+          "diffMean": -0.4446666666666867,
+          "diffCi95": [-2.3973064527863763, 1.507973119453003],
+          "noDifference": true
+        }
+      },
+      "routesP99": {
+        "orders.get": {
+          "offP99Mean": 1.6073333333333333,
+          "onP99Mean": 0.6896666666666667,
+          "diffMean": -0.9176666666666665,
+          "diffCi95": [-4.898728792320504, 3.0633954589871704]
+        },
+        "orders.page": {
+          "offP99Mean": 1.7919999999999998,
+          "onP99Mean": 0.7936666666666667,
+          "diffMean": -0.9983333333333334,
+          "diffCi95": [-5.363012494795885, 3.366345828129218]
+        },
+        "pay": {
+          "offP99Mean": 1.9393333333333331,
+          "onP99Mean": 0.8126666666666668,
+          "diffMean": -1.1266666666666667,
+          "diffCi95": [-6.034971051455448, 3.7816377181221146]
+        },
+        "orders.items": {
+          "offP99Mean": 2.039,
+          "onP99Mean": 1.0866666666666667,
+          "diffMean": -0.9523333333333334,
+          "diffCi95": [-5.095427698326016, 3.1907610316593487]
+        },
+        "slow": {
+          "offP99Mean": 315.80133333333333,
+          "onP99Mean": 315.0443333333333,
+          "diffMean": -0.756999999999986,
+          "diffCi95": [-4.029578843548911, 2.515578843548939]
+        },
+        "error-500": {
+          "offP99Mean": 2.631,
+          "onP99Mean": 1.3126666666666666,
+          "diffMean": -1.3183333333333331,
+          "diffCi95": [-7.100907003741758, 4.464240337075092]
+        }
+      },
+      "memory": {
+        "agentHeapMb": {
+          "value": 1.2619857788085938,
+          "limit": 64,
+          "unit": "MB",
+          "verdict": "PASS",
+          "requirement": "N-02 agent heap"
+        },
+        "metaspaceIncreaseMb": {
+          "value": 6.9287109375,
+          "limit": 32,
+          "unit": "MB",
+          "verdict": "PASS",
+          "requirement": "N-26 metaspace increase"
+        },
+        "nmtInternalOtherIncreaseMb": {
+          "value": 0.3147786458333339,
+          "limit": 16,
+          "unit": "MB",
+          "verdict": "PASS",
+          "requirement": "01 7.3 item 7 NMT Internal+Other"
+        },
+        "directMemoryIncreaseMb": {
+          "value": 0,
+          "limit": 8,
+          "unit": "MB",
+          "verdict": "PASS",
+          "requirement": "N-26 direct memory (NMT Other)"
+        },
+        "threadIncrease": {
+          "value": 3,
+          "limit": 6,
+          "unit": "threads",
+          "verdict": "PASS",
+          "requirement": "01 7.3 item 7 thread increase"
+        },
+        "agentThreads": {
+          "value": 3,
+          "limit": 6,
+          "unit": "threads",
+          "verdict": "PASS",
+          "requirement": "N-26 agent threads"
+        },
+        "nmtTotalCommittedIncreaseMb": 16.6689453125,
+        "loadedClassIncrease": 1790.6666666666679
+      },
+      "gc": {
+        "offAllocatedKbPerRequestMean": 71.21688467917738,
+        "onAllocatedKbPerRequestMean": 79.2478409008874,
+        "allocatedKbPerRequestIncrease": 8.030956221710014,
+        "offPausesMean": 68.66666666666667,
+        "onPausesMean": 81,
+        "offPauseMsTotalMean": 162.7773333333333,
+        "onPauseMsTotalMean": 451.82766666666674
+      },
+      "startup": {
+        "premainMs": [402.092, 417.686, 467.453],
+        "premainMedianMs": 417.686,
+        "offReadyMedianMs": 8163,
+        "onReadyMedianMs": 9630
+      },
+      "failed": []
+    }
+  },
+  "verdict": "INVALID",
+  "reasons": ["off-run CPU CV 26.17% > 2% (01 7.3 item 4)"]
+}

@@ -450,17 +450,23 @@ public final class AdviceRules {
                 + " writing classes is forbidden (DSN-02-01, 10 §5.3 A-6)");
   }
 
-  /** T-AG-003a [ADV-03, A-2]: if (Argos.skip(MODULE_ID)) return; first (ASM). */
+  /**
+   * T-AG-003a [ADV-03, A-2, ADR-0003 C-24]: if (Argos.skip(MODULE_ID)) return; first; exit advice
+   * may instead start with if (enter == null) return; on its @Advice.Enter value (ASM).
+   */
   public static ArchRule guardFirst(AgentLayout layout) {
     return classes()
         .that(adviceClasses(layout))
         .should(AdviceBytecode.callTheGuardFirst(layout))
         .as(
             "T-AG-003a [ADV-03] enter and exit advice methods start with"
-                + " if (Argos.skip(MODULE_ID)) return;")
+                + " if (Argos.skip(MODULE_ID)) return; (exit advice: or with"
+                + " if (<@Advice.Enter value> == null) return;, C-24)")
         .because(
             "Argos.skip checks the kill switch, the module state and agent threads; they must"
-                + " exit before any other advice code runs (10 §3, A-2)");
+                + " exit before any other advice code runs (10 §3, A-2). An exit advice decides by"
+                + " the enter result instead of re-reading the kill switch, so a scope opened in"
+                + " enter is always closed (ADR-0003 C-24)");
   }
 
   /** T-AG-003b [ADV-03, A-3]: no synchronized methods or blocks (ASM). */

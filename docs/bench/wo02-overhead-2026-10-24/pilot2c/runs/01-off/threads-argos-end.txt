@@ -1,0 +1,5 @@
+# Extract of threads-end.txt (jcmd Thread.print): the first two lines, then the
+# header line of every thread whose name starts with argos- (cpu= is the thread CPU time).
+# Threads in the full dump: 234; argos- threads: 0.
+1:
+2026-10-24 10:49:51

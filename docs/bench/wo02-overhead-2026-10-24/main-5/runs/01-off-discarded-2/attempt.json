@@ -1,0 +1,123 @@
+{
+  "index": 1,
+  "round": 1,
+  "variant": "off",
+  "mode": "process",
+  "before": {
+    "cpuPercent5s": 19.473406098682776,
+    "availableMemoryMb": 4165,
+    "waitedSeconds": 15.0285999,
+    "quietChecks": 3,
+    "quiet": true
+  },
+  "startedAt": "2026-10-24T16:40:45.703913Z",
+  "startup": {
+    "spawnToPortMs": 8783,
+    "spawnToReadyMs": 9125
+  },
+  "warmup": {
+    "k6ExitCode": 0,
+    "requests": 179422,
+    "achievedRate": 996.789,
+    "unexpectedRate": 0,
+    "checksRate": 1,
+    "http5xxRate": 0.049999,
+    "iterationsWholeRun": 179422,
+    "dropped": 579,
+    "droppedRate": 0.003217,
+    "latencyMs": {
+      "avg": 18.548,
+      "min": 0,
+      "p50": 0.524,
+      "p95": 300.955,
+      "p99": 313.264,
+      "p99.9": 1026.89,
+      "max": 1604.183
+    },
+    "routes": [
+      {
+        "route": "orders.get",
+        "requests": 71769,
+        "latencyMs": {
+          "avg": 4.05,
+          "min": 0,
+          "p50": 0,
+          "p95": 1,
+          "p99": 4.023,
+          "p99.9": 1216.011,
+          "max": 1604.183
+        }
+      },
+      {
+        "route": "orders.page",
+        "requests": 35885,
+        "latencyMs": {
+          "avg": 2.371,
+          "min": 0,
+          "p50": 0.524,
+          "p95": 1.074,
+          "p99": 4.181,
+          "p99.9": 603.51,
+          "max": 1233.242
+        }
+      },
+      {
+        "route": "pay",
+        "requests": 35884,
+        "latencyMs": {
+          "avg": 1.984,
+          "min": 0,
+          "p50": 0.53,
+          "p95": 1.085,
+          "p99": 4.585,
+          "p99.9": 481.135,
+          "max": 865.78
+        }
+      },
+      {
+        "route": "orders.items",
+        "requests": 17942,
+        "latencyMs": {
+          "avg": 4.807,
+          "min": 0,
+          "p50": 0.524,
+          "p95": 1.179,
+          "p99": 7.621,
+          "p99.9": 1246.178,
+          "max": 1493.36
+        }
+      },
+      {
+        "route": "slow",
+        "requests": 8971,
+        "latencyMs": {
+          "avg": 308.911,
+          "min": 300.046,
+          "p50": 307.77,
+          "p95": 314.713,
+          "p99": 316.676,
+          "p99.9": 872.006,
+          "max": 1167.377
+        }
+      },
+      {
+        "route": "error-500",
+        "requests": 8971,
+        "latencyMs": {
+          "avg": 2.615,
+          "min": 0,
+          "p50": 1.021,
+          "p95": 1.844,
+          "p99": 8.766,
+          "p99.9": 494.601,
+          "max": 856.539
+        }
+      }
+    ],
+    "thresholdsPassed": true,
+    "hostCpuPercentMean": 37.42729488346236,
+    "backgroundCpuPercentMean": 26.16643174242239
+  },
+  "discarded": "background CPU 26% > 22% during the warm-up",
+  "attempt": 2
+}

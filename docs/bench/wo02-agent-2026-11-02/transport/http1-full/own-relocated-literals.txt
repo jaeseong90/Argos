@@ -1,0 +1,2 @@
+# own-code string constants in the relocated namespace (0)
+

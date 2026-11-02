@@ -8,8 +8,9 @@
 //                    THIRD-PARTY-NOTICES, argos-deps.txt, sbom/agent.cdx.json) + manifest
 //                    -> build/libs/argos-agent-<version>.jar
 //   4-5. generateDepsManifest, generateThirdPartyNotices, cyclonedxDirectBom feed step 3.
-//   6-8. checkShading, checkRelocatedStrings, checkMajorVersion run from verifyAgentJar, which is
-//        part of check and finalizes agentJar.
+//   6-8. checkShading, checkRelocatedStrings, checkMajorVersion (and checkModuleIndex, C-25,
+//        checkOwnRelocatedLiterals, C-23) run from verifyAgentJar, which is part of check and
+//        finalizes agentJar.
 // No temporary files are extracted at runtime; nothing here may add Add-Opens,
 // Launcher-Agent-Class or Boot-Class-Path to the manifest (DSN-02-03).
 
@@ -21,6 +22,8 @@ import io.argos.buildlogic.AgentShading
 import io.argos.buildlogic.ArgosProject
 import io.argos.buildlogic.CheckLicenses
 import io.argos.buildlogic.CheckMajorVersion
+import io.argos.buildlogic.CheckModuleIndex
+import io.argos.buildlogic.CheckOwnRelocatedLiterals
 import io.argos.buildlogic.CheckRelocatedStrings
 import io.argos.buildlogic.GenerateDepsManifest
 import io.argos.buildlogic.GenerateThirdPartyNotices
@@ -30,6 +33,7 @@ import io.argos.buildlogic.argosGitCommit
 import io.argos.buildlogic.argosProtocolVersion
 import io.argos.buildlogic.argosSourceDateInstant
 import org.cyclonedx.gradle.CyclonedxDirectTask
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.cyclonedx.model.Component
 import org.cyclonedx.model.ExternalReference
 
@@ -101,6 +105,10 @@ shadowJar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
   }
   exclude(AgentShading.EXCLUDED_ENTRIES)
+  // sun.misc.Unsafe users of shaded libraries are removed, not allow-listed (ADR-0003, F-A35).
+  // Both the original and the relocated path, so the rule holds whichever form Shadow filters on.
+  exclude(AgentShading.UNSAFE_EXCLUDED_CLASSES)
+  exclude(AgentShading.UNSAFE_EXCLUDED_CLASSES.map { AgentShading.PREFIX.replace('.', '/') + "/" + it })
 }
 
 // Stage 2.
@@ -138,11 +146,23 @@ val generateDepsManifest =
     outputFile = layout.buildDirectory.file("agent-meta-inf/argos-deps.txt")
   }
 
+// Jars of the bundled third-party modules: their original NOTICE files go into
+// THIRD-PARTY-NOTICES (O-L04, Apache-2.0 4(d)).
+val bundledArtifacts = configurations.runtimeClasspath.get().incoming.artifacts
+
 val generateThirdPartyNotices =
   tasks.register<GenerateThirdPartyNotices>("generateThirdPartyNotices") {
     runtimeRoot = agentRuntimeRoot
     artifactName = agentFileName
     licenses = shippedLicenses
+    noticeSources.from(bundledArtifacts.artifactFiles)
+    noticeSourceKeys =
+      bundledArtifacts.resolvedArtifacts.map { artifacts ->
+        artifacts.mapNotNull { artifact ->
+          val id = artifact.id.componentIdentifier as? ModuleComponentIdentifier
+          id?.let { "${artifact.file.name}=${it.group}:${it.module}" }
+        }
+      }
     outputFile = layout.buildDirectory.file("agent-meta-inf/THIRD-PARTY-NOTICES")
   }
 
@@ -263,7 +283,7 @@ val checkShading =
     doLast { marker.get().asFile.writeText("check-shading.sh passed\n") }
   }
 
-// Step 7, T-BLD-005 (skeleton until 10 §10.3 / WO-02 decide the policy, 19 §13 #6).
+// Step 7, T-BLD-005: policy RELOCATED (ADR-0003 C-23, decided in WO-02, ADR-0008).
 val checkRelocatedStrings =
   tasks.register<CheckRelocatedStrings>("checkRelocatedStrings") {
     jar = agentJarFile
@@ -280,16 +300,52 @@ val checkMajorVersion =
     resultFile = layout.buildDirectory.file("reports/agent-jar/major-version.txt")
   }
 
+// ADR-0003 C-25: the module index the core reads at runtime lists only classes of the jar.
+val checkModuleIndex =
+  tasks.register<CheckModuleIndex>("checkModuleIndex") {
+    jar = agentJarFile
+    reportFile = layout.buildDirectory.file("reports/agent-jar/modules.txt")
+  }
+
+// ADR-0003 C-23 side effect (ADR-0005 transport): Shadow also relocates string literals of the
+// agent's own classes (IgnoreMatchers' "net.bytebuddy." became "io.argos.agent.shaded.net.bytebuddy.").
+// Own classes may hold relocated-namespace constants only when listed here as "<entry>: <constant>".
+val checkOwnRelocatedLiterals =
+  tasks.register<CheckOwnRelocatedLiterals>("checkOwnRelocatedLiterals") {
+    jar = agentJarFile
+    prefix = AgentShading.PREFIX
+    reportFile = layout.buildDirectory.file("reports/agent-jar/own-relocated-literals.txt")
+  }
+
 val verifyAgentJar =
   tasks.register("verifyAgentJar") {
     group = "verification"
-    description = "Verifies the agent jar: shading, relocated strings, major version (18 §2.2)."
-    dependsOn(checkShading, checkRelocatedStrings, checkMajorVersion)
+    description =
+      "Verifies the agent jar: shading, relocated strings (library and own), major version, module index (18 §2.2)."
+    dependsOn(checkShading, checkRelocatedStrings, checkOwnRelocatedLiterals, checkMajorVersion, checkModuleIndex)
   }
 
 agentJar { finalizedBy(verifyAgentJar) }
 
 tasks.assemble { dependsOn(agentJar) }
+
+// The agent jar for other projects (agent-testing attach and integration tests):
+//   dependencies { x(project(path = ":agent:agent-dist", configuration = "agentJarElements")) }
+configurations.consumable("agentJarElements") {
+  attributes {
+    attribute(Category.CATEGORY_ATTRIBUTE, objects.named("argos-agent-jar"))
+  }
+  outgoing.artifact(agentJar)
+}
+
+// Stage 1 output (relocated classes as .class): agent-testing compiles its test-only probe module
+// against the relocated ByteBuddy/api names, so the probe needs no relocation step of its own.
+configurations.consumable("agentInstElements") {
+  attributes {
+    attribute(Category.CATEGORY_ATTRIBUTE, objects.named("argos-agent-inst-jar"))
+  }
+  outgoing.artifact(shadowJar)
+}
 
 tasks.check { dependsOn(verifyAgentJar) }
 

@@ -1,0 +1,142 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Snapshot of docs/11-protocol-design.md §4 (data.proto) for the WO-02 P-3 transport comparison only:
+// message definitions copied verbatim, design comments removed (see the design document), Java
+// package moved below io.argos.agent so that the classes can be shaded into comparison agent jars.
+// The real protocol lives in proto/src/main/proto/argos/v1 (WO-11). One fix: the session.proto
+// import below (Ack.throttle needs Throttle).
+
+syntax = "proto3";
+package argos.v1;
+option java_package = "io.argos.agent.transportpoc.proto";
+option java_multiple_files = true;
+
+import "argos/v1/common.proto";
+// Not in 11 §4.3: Ack.throttle uses Throttle of session.proto, so data.proto must import it.
+import "argos/v1/session.proto";
+
+message BatchHeader {
+  uint32 instance_id = 1;
+  uint64 agent_epoch = 2;
+  uint64 seq = 3;
+  int64 sent_at_ms = 4;
+}
+
+message Ack {
+  uint64 last_seq = 1;
+  AckStatus status = 2;
+  uint32 dropped_items = 3;
+  Throttle throttle = 4;
+}
+enum AckStatus { ACK_STATUS_UNSPECIFIED = 0; ACK_OK = 1; ACK_DUPLICATE = 2; ACK_PARTIAL_DROP = 3; }
+
+message TransactionBatch { BatchHeader header = 1; repeated TransactionRecord records = 2; }
+
+message TransactionRecord {
+  uint64 tx_id = 1;
+  bytes trace_id = 2;
+  uint64 span_id = 3; uint64 parent_span_id = 4;
+  bool incoming_trace = 5;
+  uint32 caller_app_id = 6;
+  TransactionKind kind = 7;
+  uint64 service_id = 8;
+  int64 start_ts_ms = 9;
+  uint64 elapsed_us = 10;
+  string http_method = 11;
+  uint32 http_status = 12;
+  string url_path = 13;
+  bool error = 14;
+  uint64 error_class_id = 15;
+  string error_message = 16;
+  uint64 error_top_frame_id = 17;
+  bytes remote_ip = 18;
+  string user_id = 19;
+  uint32 sql_count = 20; uint32 sql_time_ms = 21;
+  uint32 ext_count = 22; uint32 ext_time_ms = 23;
+  uint32 dbc_wait_ms = 24;
+  optional int64 cpu_time_us = 25;
+  optional uint64 alloc_bytes = 26;
+  uint64 thread_name_id = 27;
+  bool virtual_thread = 28;
+  bool profile_captured = 29;
+  repeated uint64 sql_ids = 30;
+  uint32 dispatch_count = 31;
+  bool streaming = 32; bool timed_out = 33;
+  repeated KeyValue headers = 34;
+  string request_id = 35;
+  uint64 app_version_id = 36;
+}
+
+message ProfileBatch { BatchHeader header = 1; repeated TransactionProfile profiles = 2; }
+
+message TransactionProfile {
+  uint64 tx_id = 1;
+  int64 start_ts_ms = 2;
+  repeated ProfileStep steps = 3;
+  bool truncated = 4;
+  uint32 total_steps = 5;
+}
+
+message ProfileStep {
+  uint32 seq = 1; uint32 parent_seq = 2;
+  StepType type = 3;
+  uint32 start_offset_us = 4;
+  uint32 elapsed_us = 5;
+  uint32 fetch_us = 6;
+  uint64 name_id = 7;
+  uint64 target_id = 8;
+  uint32 rows = 9;
+  uint32 status = 10;
+  FailureKind failure = 11;
+  bool error = 12;
+  string detail = 13;
+  repeated uint64 frame_ids = 14;
+  uint32 batch_size = 15;
+  uint32 repeat_count = 16;
+}
+
+message MetricBatch {
+  BatchHeader header = 1;
+  repeated MetricSeries series = 2;
+  repeated MetricSample samples = 3;
+}
+message MetricSeries { uint32 index = 1; string name = 2; MetricKind kind = 3; }
+message MetricSample { uint32 series_index = 1; int64 ts_ms = 2; double value = 3; }
+
+message StatBatch {
+  BatchHeader header = 1;
+  int64 window_start_ms = 2; uint32 window_len_s = 3;
+  repeated SqlStat sql = 4;
+  repeated ExtStat ext = 5;
+  repeated CounterDelta counters = 6;
+}
+message SqlStat {
+  uint64 sql_id = 1; uint64 db_id = 2; TransactionKind kind = 3;
+  uint32 count = 4; uint32 error_count = 5;
+  uint64 sum_us = 6; uint32 max_us = 7;
+  uint64 fetch_rows = 8;
+  uint64 dbc_wait_sum_us = 9;
+}
+message ExtStat {
+  uint64 host_id = 1; TransactionKind kind = 2;
+  uint32 count = 3; uint32 error_count = 4; uint32 timeout_count = 5; uint32 connect_fail_count = 6;
+  uint64 sum_us = 7; uint32 max_us = 8;
+}
+message CounterDelta { string name = 1; uint64 delta = 2; }
+
+message ActiveTransactionSnapshot {
+  BatchHeader header = 1;
+  int64 snapshot_ts_ms = 2;
+  uint32 total_active = 3;
+  repeated ActiveTransaction items = 4;
+  bool truncated = 5;
+}
+message ActiveTransaction {
+  uint64 tx_id = 1; uint64 service_id = 2; TransactionKind kind = 3;
+  int64 start_ts_ms = 4; uint32 elapsed_ms = 5;
+  ActiveState state = 6;
+  uint64 state_name_id = 7;
+  uint64 thread_name_id = 8; int64 thread_id = 9; bool virtual_thread = 10;
+  string user_id = 11; bytes remote_ip = 12;
+}
+enum ActiveState { ACTIVE_STATE_UNSPECIFIED = 0; IN_METHOD = 1; IN_SQL = 2; IN_DBC_WAIT = 3; IN_HTTP = 4; IN_ASYNC = 5; }

@@ -1,0 +1,27 @@
+{
+  "app": "shop-boot3",
+  "cds": "default",
+  "variant": "on",
+  "startedAt": "2026-10-24T21:08:35.509353100Z",
+  "spawnToPortMs": 9212,
+  "spawnToReadyMs": 9474,
+  "appCpuSecondsToReady": 31.96875,
+  "hostCpuPercentMean": 44.75792330146271,
+  "backgroundCpuPercentMean": 16.63922812312212,
+  "springStartedSeconds": 7.91,
+  "springProcessRunningSeconds": 9.202,
+  "premainMs": 382.996,
+  "stderrLines": 1,
+  "stderrFirstLine": "OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended",
+  "index": 15,
+  "round": 8,
+  "before": {
+    "cpuPercent5s": 14.866314792410018,
+    "availableMemoryMb": 4109,
+    "waitedSeconds": 20.0267435,
+    "quietChecks": 1,
+    "quiet": true
+  },
+  "attempt": 1,
+  "discardedAttempts": []
+}

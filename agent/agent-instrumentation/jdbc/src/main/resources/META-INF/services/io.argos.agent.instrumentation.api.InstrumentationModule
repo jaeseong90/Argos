@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: Apache-2.0
+# Instrumentation module of this Gradle module (ADR-0003 C-25, merged by agent-dist).
+io.argos.agent.instrumentation.jdbc.JdbcModule

@@ -1,0 +1,101 @@
+ok   [packages] 6953 classes, all below io/argos/agent/
+ok   [root-exposure] root classes only in io/argos/agent/bootstrap/ (+ Premain-Class io.argos.agent.AgentPremain)
+ok   [root-entries] outside inst/ only bootstrap classes, the Premain-Class, META-INF notices/SBOM, manifest
+ok   [meta-inf] LICENSE, NOTICE, THIRD-PARTY-NOTICES, argos-deps.txt, sbom/agent.cdx.json, manifest
+ok   [signatures] no signature files
+FAIL [major-version] class files must have major version 52 (own) or <= 52 (shaded) (Java 8, F-A31, C-22):
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/BaseLinkedVarHandleQueue.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/BaseLinkedVarHandleQueueConsumerNodeRef.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/BaseLinkedVarHandleQueuePad0.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/BaseLinkedVarHandleQueuePad1.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/BaseLinkedVarHandleQueuePad2.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/BaseLinkedVarHandleQueueProducerNodeRef.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/BaseMpscLinkedVarHandleArrayQueue$WeakIterator.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/BaseMpscLinkedVarHandleArrayQueue.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/BaseMpscLinkedVarHandleArrayQueueColdProducerFields.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/BaseMpscLinkedVarHandleArrayQueueConsumerFields.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/BaseMpscLinkedVarHandleArrayQueuePad1.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/BaseMpscLinkedVarHandleArrayQueuePad2.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/BaseMpscLinkedVarHandleArrayQueuePad3.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/BaseMpscLinkedVarHandleArrayQueueProducerFields.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/ConcurrentCircularVarHandleArrayQueue$WeakIterator.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/ConcurrentCircularVarHandleArrayQueue.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/ConcurrentCircularVarHandleArrayQueueL0Pad.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/ConcurrentSequencedCircularVarHandleArrayQueue.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/LinkedQueueVarHandleNode.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/MpmcVarHandleArrayQueue.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/MpmcVarHandleArrayQueueConsumerIndexField.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/MpmcVarHandleArrayQueueL1Pad.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/MpmcVarHandleArrayQueueL2Pad.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/MpmcVarHandleArrayQueueL3Pad.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/MpmcVarHandleArrayQueueProducerIndexField.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/MpscChunkedVarHandleArrayQueue.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/MpscChunkedVarHandleArrayQueueColdProducerFields.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/MpscUnboundedVarHandleArrayQueue.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/MpscVarHandleArrayQueue.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/MpscVarHandleArrayQueueConsumerIndexField.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/MpscVarHandleArrayQueueL1Pad.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/MpscVarHandleArrayQueueL2Pad.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/MpscVarHandleArrayQueueL3Pad.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/MpscVarHandleArrayQueueMidPad.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/MpscVarHandleArrayQueueProducerIndexField.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/MpscVarHandleArrayQueueProducerLimitField.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/SpscLinkedVarHandleQueue.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/VarHandleQueueUtil.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/package-info.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/unpadded/ConcurrentCircularVarHandleUnpaddedArrayQueue$WeakIterator.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/unpadded/ConcurrentCircularVarHandleUnpaddedArrayQueue.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/unpadded/ConcurrentCircularVarHandleUnpaddedArrayQueueL0Pad.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/unpadded/MpscVarHandleUnpaddedArrayQueue.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/unpadded/MpscVarHandleUnpaddedArrayQueueConsumerIndexField.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/unpadded/MpscVarHandleUnpaddedArrayQueueL1Pad.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/unpadded/MpscVarHandleUnpaddedArrayQueueL2Pad.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/unpadded/MpscVarHandleUnpaddedArrayQueueL3Pad.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/unpadded/MpscVarHandleUnpaddedArrayQueueMidPad.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/unpadded/MpscVarHandleUnpaddedArrayQueueProducerIndexField.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/unpadded/MpscVarHandleUnpaddedArrayQueueProducerLimitField.classdata  (major 55, shaded classes must be <= 52)
+    inst/io/argos/agent/shaded/io/netty/util/internal/shaded/org/jctools/queues/varhandle/unpadded/package-info.classdata  (major 55, shaded classes must be <= 52)
+FAIL [unsafe] classes referencing sun.misc.Unsafe outside unsafe-allowlist.txt (F-A35):
+    io.argos.agent.shaded.com.google.common.hash.LittleEndianByteArray$UnsafeByteArray
+    io.argos.agent.shaded.com.google.common.hash.LittleEndianByteArray$UnsafeByteArray$1
+    io.argos.agent.shaded.com.google.common.hash.LittleEndianByteArray$UnsafeByteArray$2
+    io.argos.agent.shaded.com.google.common.util.concurrent.AbstractFutureState$UnsafeAtomicHelper
+    io.argos.agent.shaded.com.google.protobuf.MessageSchema
+    io.argos.agent.shaded.com.google.protobuf.UnsafeUtil
+    io.argos.agent.shaded.com.google.protobuf.UnsafeUtil$1
+    io.argos.agent.shaded.com.google.protobuf.UnsafeUtil$Android32MemoryAccessor
+    io.argos.agent.shaded.com.google.protobuf.UnsafeUtil$Android64MemoryAccessor
+    io.argos.agent.shaded.com.google.protobuf.UnsafeUtil$JvmMemoryAccessor
+    io.argos.agent.shaded.com.google.protobuf.UnsafeUtil$MemoryAccessor
+    io.argos.agent.shaded.io.netty.util.internal.CleanerJava9
+    io.argos.agent.shaded.io.netty.util.internal.CleanerJava9$1
+    io.argos.agent.shaded.io.netty.util.internal.PlatformDependent
+    io.argos.agent.shaded.io.netty.util.internal.PlatformDependent$Mpsc$1
+    io.argos.agent.shaded.io.netty.util.internal.PlatformDependent0
+    io.argos.agent.shaded.io.netty.util.internal.PlatformDependent0$1
+    io.argos.agent.shaded.io.netty.util.internal.PlatformDependent0$2
+    io.argos.agent.shaded.io.netty.util.internal.PlatformDependent0$3
+    io.argos.agent.shaded.io.netty.util.internal.PlatformDependent0$5
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseLinkedQueueConsumerNodeRef
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseLinkedQueueProducerNodeRef
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseMpscLinkedArrayQueueColdProducerFields
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseMpscLinkedArrayQueueConsumerFields
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseMpscLinkedArrayQueueProducerFields
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.LinkedQueueNode
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpmcArrayQueueConsumerIndexField
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpmcArrayQueueProducerIndexField
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpscArrayQueueConsumerIndexField
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpscArrayQueueProducerIndexField
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpscArrayQueueProducerLimitField
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.unpadded.MpscUnpaddedArrayQueueConsumerIndexField
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.unpadded.MpscUnpaddedArrayQueueProducerIndexField
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.unpadded.MpscUnpaddedArrayQueueProducerLimitField
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.util.UnsafeAccess
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.util.UnsafeLongArrayAccess
+    io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.util.UnsafeRefArrayAccess
+ok   [native] no native libraries
+ok   [size] 10974272 bytes <= 15 MB (15000000 bytes)
+ok   [duplicates] no duplicate classes or entries
+check-shading: FAILED 2 check(s): major-version unsafe (<repo>/test/agent/transport-poc/build/poc/grpc-netty-lite/argos-agent-poc-grpc-netty-lite.jar)
+
+exit=1

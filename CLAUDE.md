@@ -53,11 +53,18 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
                                                   # checkLicenses, checkSpdx, build-logic 테스트, UI test·lint·typecheck
 ./gradlew spotlessApply                           # Java 포맷·SPDX 헤더 자동 수정
 ./gradlew :agent:agent-dist:agentJar              # 에이전트 단일 jar → agent/agent-dist/build/libs/argos-agent-<버전>.jar
-./gradlew :agent:agent-dist:check verifyAgentJar  # checkShading, checkMajorVersion(52), checkRelocatedStrings
+./gradlew :agent:agent-dist:check verifyAgentJar  # checkShading, checkMajorVersion(자체 52·셰이딩 ≤ 52), checkRelocatedStrings·checkOwnRelocatedLiterals(C-23), checkModuleIndex
 ./gradlew :agent:agent-testing:archTest           # Advice·패키지 경계 규칙(T-AG-001~004, ADV-04, B-1~B-4, AGT-01~03)
 ./gradlew checkLicenses checkDevOnlyLicenses      # 라이선스 허용 목록(테스트 전용 예외: docs/licenses/dev-only.md)
 ./gradlew integrationTest                         # Testcontainers(Docker), 샘플 앱 shop-boot3 스모크 3변형·시드 센티널, 저장소 스키마·생성기·쿼리(실제 ClickHouse). check에 포함되지 않음
 ./gradlew integrationTest -Pqueries.profile=ci    # CI와 같다: 저장소 정합 T-ST-030~033·053을 생성기 1/100 프로파일로(12스레드 개발 머신에서 전체 약 6분)
+./gradlew :agent:agent-testing:integrationTest -Pagent.attach.jdks=8,11,17,21,25 -Pagent.e2e=shop-boot2@8,shop-boot2@11,shop-boot2@17,shop-boot2@21,shop-boot3@17,shop-boot3@21,shop-boot3@25
+                                                  # 에이전트 부착(JDK별 시나리오)·샘플 앱 종단 매트릭스(T-AG-010·040·070 PoC, T-BLD-006, C-27 플래그, JDK 25는 deny).
+                                                  # 기본은 부착 JDK 8·21 + shop-boot3@21, -Pagent.e2e=none이면 종단 생략. 결과 agent/agent-testing/build/reports/agent-e2e/
+./gradlew :test:agent:transport-poc:transportPocJars :test:agent:transport-poc:transportPocTest
+                                                  # P-3 전송 비교 jar 9종·보고서, proto 테스트, 스모크(JDK 8·21). 알려진 발견(ADR-0005 P1·P3)은 단언하고 -Ptransport.poc.strict=true면 실패로 셈
+./gradlew :test:agent:transport-poc:transportPocBench -Ptransport.poc.jdk8u242=<JRE> -Ptransport.poc.jdk8u252=<JRE>
+                                                  # P-3 측정 매트릭스(약 35분) → test/agent/transport-poc/build/poc/bench/<시각>/summary.md. 조용한 머신에서
 test/storage/bench/bench-server.sh start          # 저장소 PoC 벤치용 단독 ClickHouse(127.0.0.1:18123, 비밀번호는 test/storage/bench/build/). 절차는 test/storage/bench/README.md
 ./gradlew :test:storage:generator:storageBench -Pbench.machine-profile=<id> -Pstorage.profile=local -Pstorage.target=url:http://127.0.0.1:18123/ -Pstorage.apply-schema=true
                                                   # 저장소 PoC 벌크 생성·적재(13 §15, 18 §9; profile ci 1/100, local 1/20, full). 리플레이는 storageGenerate -Pstorage.mode=replay
@@ -66,6 +73,8 @@ test/storage/bench/bench-server.sh start          # 저장소 PoC 벤치용 단�
 ./gradlew securityTest                            # 보안 테스트 스위트. check에 포함되지 않음
 ./gradlew matrixTest -Pmatrix.combo=<id>          # 호환성 매트릭스 1개 조합을 로컬 실행(Docker·해당 JDK 필요). 전체 매트릭스는 신뢰 러너 전용
 ./gradlew benchTest -Pbench.machine-profile=<id>  # 오버헤드 벤치(벤치 머신 전용)
+test/agent/overhead/run-overhead.sh <load|startup|report> --out DIR
+                                                  # WO-02 P-2 오버헤드 하네스(01 §7.3, k6는 fetch-k6.sh). 전용 장비 절차는 docs/poc/agent-overhead.md 9장
 ./gradlew :sample-apps:<app>:sampleSmoke          # 샘플 앱을 에이전트 없이 기동해 엔드포인트 카탈로그 검증(전 변형, check 미포함).
                                                   # 1개 변형은 sampleSmoke<Variant>, 루트 sampleSmoke는 50변형 전부. -Psample.startupRuns=5는 기동 중앙값
 ./gradlew :sample-apps:<app>:sampleAppJar         # 실행 jar → sample-apps/<app>/build/sample-app/<app>.jar (WAR 앱은 :war)

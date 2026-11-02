@@ -42,6 +42,39 @@ class AgentJarChecksTest {
   }
 
   @Test
+  @Tag("req:F-A31")
+  @DisplayName(
+    "T-BLD-001 C-22: own classes must be exactly 52 (51 and 53 fail); shaded classes <= 52 (50 passes, 53 fails)"
+  )
+  fun majorVersionRuleOfC22() {
+    val compliant =
+      agentJar(
+        "io/argos/agent/bootstrap/A.class" to classFile("io/argos/agent/bootstrap/A"),
+        "inst/io/argos/agent/shaded/org/jctools/Queue.classdata" to
+          classFile("io/argos/agent/shaded/org/jctools/Queue", 50),
+        "inst/io/argos/agent/shaded/net/bytebuddy/ByteBuddy.classdata" to
+          classFile("io/argos/agent/shaded/net/bytebuddy/ByteBuddy", 52),
+      )
+    assertThat(ClassFiles.majorVersionViolations(compliant)).isEmpty()
+
+    val violating =
+      agentJar(
+        "io/argos/agent/bootstrap/Old.class" to classFile("io/argos/agent/bootstrap/Old", 51),
+        "inst/io/argos/agent/core/New.classdata" to classFile("io/argos/agent/core/New", 53),
+        "inst/io/argos/agent/shaded/io/netty/Java9.classdata" to
+          classFile("io/argos/agent/shaded/io/netty/Java9", 53),
+        "inst/io/argos/agent/shaded/org/jctools/Ok.classdata" to
+          classFile("io/argos/agent/shaded/org/jctools/Ok", 50),
+      )
+    assertThat(ClassFiles.majorVersionViolations(violating))
+      .containsExactly(
+        "io/argos/agent/bootstrap/Old.class (major 51)",
+        "inst/io/argos/agent/core/New.classdata (major 53)",
+        "inst/io/argos/agent/shaded/io/netty/Java9.classdata (major 53, shaded classes must be <= 52)",
+      )
+  }
+
+  @Test
   @Tag("req:F-A35")
   @DisplayName("T-BLD-005 reads string constants from the constant pool")
   fun readsStringConstants() {
@@ -55,6 +88,7 @@ class AgentJarChecksTest {
       .writeText(
         """
         import io.argos.buildlogic.CheckMajorVersion
+        import io.argos.buildlogic.CheckOwnRelocatedLiterals
         import io.argos.buildlogic.CheckRelocatedStrings
         import io.argos.buildlogic.RelocatedStringPolicy
 
@@ -70,6 +104,12 @@ class AgentJarChecksTest {
           propertyNames = ['io.netty.noUnsafe', 'net.bytebuddy.experimental']
           policy = RelocatedStringPolicy.valueOf(providers.gradleProperty('policy').getOrElse('UNDECIDED'))
           reportFile = layout.buildDirectory.file('relocated-strings.txt')
+        }
+        tasks.register('checkOwnRelocatedLiterals', CheckOwnRelocatedLiterals) {
+          jar = file('${jar.name}')
+          prefix = 'io.argos.agent.shaded'
+          allowed = providers.gradleProperty('allowed').map { [it] }.orElse([])
+          reportFile = layout.buildDirectory.file('own-literals.txt')
         }
         """
           .trimIndent()
@@ -92,8 +132,42 @@ class AgentJarChecksTest {
     val result = runner("checkMajorVersion").buildAndFail()
     assertThat(result.task(":checkMajorVersion")?.outcome).isEqualTo(TaskOutcome.FAILED)
     assertThat(result.output)
-      .contains("checkMajorVersion: 1 class file(s) in agent.jar do not have major version 52")
+      .contains("checkMajorVersion: 1 class file(s) in agent.jar violate the major version rule")
+      .contains("own classes == 52, shaded classes <= 52")
       .contains("inst/io/argos/agent/core/Java11.classdata (major 55)")
+  }
+
+  @Test
+  @Tag("req:F-A31")
+  @DisplayName("T-BLD-001 C-22 the checkMajorVersion task fails on a shaded Java 9 class and passes a shaded Java 6 class")
+  fun checkMajorVersionTaskShadedRule() {
+    taskProject(
+      agentJar(
+        "io/argos/agent/bootstrap/A.class" to classFile("io/argos/agent/bootstrap/A"),
+        "inst/io/argos/agent/shaded/org/jctools/Old.classdata" to
+          classFile("io/argos/agent/shaded/org/jctools/Old", 50),
+        "inst/io/argos/agent/shaded/io/netty/Java9.classdata" to
+          classFile("io/argos/agent/shaded/io/netty/Java9", 53),
+      )
+    )
+    val failed = runner("checkMajorVersion").buildAndFail()
+    assertThat(failed.output)
+      .contains("checkMajorVersion: 1 class file(s) in agent.jar violate the major version rule")
+      .contains("inst/io/argos/agent/shaded/io/netty/Java9.classdata (major 53, shaded classes must be <= 52)")
+      .doesNotContain("org/jctools/Old")
+
+    taskProject(
+      agentJar(
+        "io/argos/agent/bootstrap/A.class" to classFile("io/argos/agent/bootstrap/A"),
+        "inst/io/argos/agent/shaded/org/jctools/Old.classdata" to
+          classFile("io/argos/agent/shaded/org/jctools/Old", 50),
+      )
+    )
+    val passed = runner("checkMajorVersion").build()
+    assertThat(passed.task(":checkMajorVersion")?.outcome).isEqualTo(TaskOutcome.SUCCESS)
+    assertThat(File(dir, "build/major.txt").readText())
+      .contains("own major 52: 1")
+      .contains("shaded major 50: 1")
   }
 
   @Test
@@ -127,5 +201,55 @@ class AgentJarChecksTest {
 
     val original = runner("checkRelocatedStrings", "-Ppolicy=ORIGINAL").buildAndFail()
     assertThat(original.output).contains("io.argos.agent.shaded.io.netty.noUnsafe in")
+  }
+  @Test
+  @Tag("req:F-A35")
+  @DisplayName(
+    "C-23 checkOwnRelocatedLiterals fails on an own literal Shadow relocated; shaded and root classes are not scanned"
+  )
+  fun checkOwnRelocatedLiterals() {
+    taskProject(
+      agentJar(
+        "io/argos/agent/bootstrap/AgentClassLoader.class" to
+          classFile("io/argos/agent/bootstrap/AgentClassLoader", strings = listOf("io.argos.agent.shaded.")),
+        "inst/io/argos/agent/shaded/io/netty/util/internal/PlatformDependent.classdata" to
+          classFile(
+            "io/argos/agent/shaded/io/netty/util/internal/PlatformDependent",
+            strings = listOf("io.argos.agent.shaded.io.netty.noUnsafe"),
+          ),
+        "inst/io/argos/agent/core/boot/IgnoreMatchers.classdata" to
+          classFile(
+            "io/argos/agent/core/boot/IgnoreMatchers",
+            strings = listOf("io.argos.", "io.argos.agent.shaded.net.bytebuddy.", "io/argos/agent/shaded/x/Y"),
+          ),
+      )
+    )
+    val failed = runner("checkOwnRelocatedLiterals").buildAndFail()
+    assertThat(failed.task(":checkOwnRelocatedLiterals")?.outcome).isEqualTo(TaskOutcome.FAILED)
+    assertThat(failed.output)
+      .contains("checkOwnRelocatedLiterals: Shadow relocated 2 string literal(s)")
+      .contains("inst/io/argos/agent/core/boot/IgnoreMatchers.classdata: io.argos.agent.shaded.net.bytebuddy.")
+      .contains("inst/io/argos/agent/core/boot/IgnoreMatchers.classdata: io/argos/agent/shaded/x/Y")
+      .doesNotContain("PlatformDependent.classdata: ")
+      .doesNotContain("AgentClassLoader")
+
+    taskProject(
+      agentJar(
+        "inst/io/argos/agent/core/transport/NettyProps.classdata" to
+          classFile(
+            "io/argos/agent/core/transport/NettyProps",
+            strings = listOf("io.argos.agent.shaded.io.netty.noUnsafe", "true"),
+          )
+      )
+    )
+    val allowed =
+      runner(
+          "checkOwnRelocatedLiterals",
+          "-Pallowed=inst/io/argos/agent/core/transport/NettyProps.classdata: io.argos.agent.shaded.io.netty.noUnsafe",
+        )
+        .build()
+    assertThat(allowed.task(":checkOwnRelocatedLiterals")?.outcome).isEqualTo(TaskOutcome.SUCCESS)
+    assertThat(File(dir, "build/own-literals.txt").readText())
+      .contains("allowed  inst/io/argos/agent/core/transport/NettyProps.classdata: io.argos.agent.shaded.io.netty.noUnsafe")
   }
 }
