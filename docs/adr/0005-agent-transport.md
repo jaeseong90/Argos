@@ -2,7 +2,7 @@
 
 | 항목 | 내용 |
 |---|---|
-| 상태 | Proposed |
+| 상태 | Accepted (provisional, 2026-11-03 PM, maintainer confirmation pending). 결정 1~7 채택, "PM 결정 필요" (P1) Netty 4.1·(P2) 허용 조건 확대·(P3) Windows 예외는 [ADR-0009](0009-gate0-pm-decisions.md) C-72~C-75 |
 | 날짜 | 2026-10-24 |
 | 결정자 | 제안: WO-02 전송 레인. 결정: PM·메인테이너(아래 "PM 결정 필요" 3건 포함) |
 | 관련 | 02 §11 P-3·§12 A-1·A-14, DSN-02-11, DSN-10-11, 10 §10.3·§14·§18 U-4·U-6, 11 §2·§3·§15 #2~#4, 19 §3.3·§3.4·§13 #4~#6, ADR-0003 C-22·C-23, ADR-0008(셰이딩·ByteBuddy `Unsafe`), F-A35, N-26, N-30, T-BLD-001·004·005·006 |
@@ -93,8 +93,8 @@ Windows (T-BLD-006).
 
 ## 확인 사항
 
-- [ ] PM이 A-1(grpc-netty)과 A-14(javalite 불채택)를 확정하고 02 §12 표를 갱신했다.
-- [ ] PM이 (P1) Netty 계열, (P2) `Unsafe` 허용 조건, (P3) Windows temp 파일을 결정했다.
+- [x] PM이 A-1(grpc-netty)과 A-14(javalite 불채택)를 확정하고 02 §12 표를 갱신했다(2026-11-03, ADR-0009 C-72).
+- [x] PM이 (P1) Netty 계열, (P2) `Unsafe` 허용 조건, (P3) Windows temp 파일을 결정했다(2026-11-03, ADR-0009 C-73~C-75).
 - [x] 코어 담당이 `IgnoreMatchers`의 relocate되는 리터럴(`net.bytebuddy.`)을 고치고 agent-dist에 자체 리터럴 검사를 넣었다. WO-02 통합(2026-11-02): `IgnoreMatchers.APP_BYTEBUDDY_PREFIX`를 실행 시점에 만들고, `:agent:agent-dist:checkOwnRelocatedLiterals`(`verifyAgentJar`에 포함, 허용 목록 비어 있음)를 추가했다. 옛 리터럴로 되돌리면 이 검사가 `IgnoreMatchers.classdata: io.argos.agent.shaded.net.bytebuddy.`로 실패함을 확인했다(`docs/poc/agent-poc.md` 12장).
 - [ ] 11 문서 data.proto에 `import "argos/v1/session.proto"`(Ack의 `Throttle`)를 추가했다(P-3 스냅샷에서 컴파일 오류로 발견).
 - [ ] 전용 장비에서 `./gradlew :test:agent:transport-poc:transportPocBench`를 다시 돌려 수치를 확인했다.

@@ -299,7 +299,7 @@ Apache-2.0이므로 참고·차용할 수 있으나 원 저작권 헤더·`NOTIC
 
 | # | 질문 | 추천 | 확정 시점 |
 |---|---|---|---|
-| A-1 | 전송 스택 | grpc-netty(NIO·JDK TLS·Unsafe off). P-3 비교 후 | Phase 0 |
+| A-1 | 전송 스택 | gRPC over grpc-netty(NIO·JDK TLS·Unsafe off), Netty 4.1 | 확정(ADR-0005, ADR-0009 C-72·C-73, provisional) |
 | A-2 | 역할 분리 시 내부 버스 | gRPC fan-out(의존성 추가 없음) | 1.x 착수 |
 | A-3 | 프로파일 step을 메모리에 기록 후 종료 시 결정하는 방식의 메모리 비용 | step 상한 1,000 + detail 지연 생성 + 큐 시간 기반(120초분) | Phase 0 (P-2) |
 | A-4 | SQL 원문 보관 | PostgreSQL `dictionary`(64KB 상한, 90일 미참조 정리) | 확정 |
@@ -307,12 +307,12 @@ Apache-2.0이므로 참고·차용할 수 있으나 원 저작권 헤더·`NOTIC
 | A-6 | 트랜잭션 상세 조회의 ts | `tx_id`에서 복원, URL ts는 힌트 | 확정(DSN-02-09) |
 | A-7 | 멀티테넌시 예약 | 컬럼 대신 ClickHouse DB 이름·테이블 접두를 설정값으로 | 확정 |
 | A-8 | 환경 태그 | (name, env) → app_id, env는 모든 테이블 LowCardinality 컬럼 | 확정(DSN-02-14) |
-| A-9 | 1.0부터 ReplicatedMergeTree + 내장 Keeper 여부 | 1.0은 MergeTree. 전환 절차는 17 문서에 | Phase 0 후 |
-| A-10 | `xlog.sql_ids` 배열(SQL 포함 검색·관련 트랜잭션 30일) 채택 여부 | P-4 Q11 비용 측정 후 | Phase 0 |
-| A-11 | 백분위 함수(tDigest / BFloat16 / DD) | P-4 Q14 값 오차 비교 후 | Phase 0 |
+| A-9 | 1.0부터 ReplicatedMergeTree + 내장 Keeper 여부 | 1.0은 MergeTree. 전환 절차(`convert_to_replicated`)는 17 문서 런북에 | 확정(ADR-0006 결정 2, provisional) |
+| A-10 | `xlog.sql_ids` 배열(SQL 포함 검색·관련 트랜잭션 30일) 채택 여부 | 채택(최대 64개) | 확정(ADR-0006 결정 3, provisional) |
+| A-11 | 백분위 함수(tDigest / BFloat16 / DD) | 트랜잭션 롤업 `quantilesDD(0.01, 0.5, 0.95, 0.99)`. 코덱(ZSTD(1))·bloom(fpp 0.01, G4, `idx_user` G1)도 함께 확정 | 확정(ADR-0007 C-53~C-56, provisional) |
 | A-12 | 에이전트 큐 크기 단위 | 건수·시간(120초분)·바이트 삼중 상한(DSN-10-09), 디스크 스풀은 1.x | 확정 |
 | A-13 | 1초 카운터(Jennifer 수준 실시간) | 1.0은 5초. 1.x에서 에이전트 부하 측정 후 | 1.x |
-| A-14 | `protobuf-javalite` 채택(에이전트 jar 크기) | P-3에서 `map`·`optional` 지원 확인 후 | Phase 0 |
+| A-14 | `protobuf-javalite` 채택(에이전트 jar 크기) | 불채택. 에이전트도 protobuf-java(JDK 24+ `Unsafe` 경고·deny 실패) | 확정(ADR-0005, ADR-0009 C-72, provisional) |
 | A-15 | 알림 평가용 백분위(HdrHistogram 메모리 윈도)와 롤업 백분위(A-11)의 값 차이 허용 | 허용. "알림 p95는 메모리 윈도 기준"을 문서에 명시 | 확정 |
 
 ## 13. 설계 문서 간 정합 결정 (PM, 2026-10-23)
