@@ -16,6 +16,9 @@
 #                                 sbom/agent.cdx.json} present and well-formed; MANIFEST.MF has
 #                                 Premain-Class and Can-Retransform-Classes, and no Add-Opens,
 #                                 Launcher-Agent-Class or Boot-Class-Path
+#                    T-BLD-010    MANIFEST.MF has Implementation-Version (the agent's release-build
+#                                 marker, read fail-closed: a jar without it ignores argos.test.*),
+#                                 equal to the expected version (see Env) when one is known
 #   signatures       T-BLD-002    no META-INF/*.SF|*.DSA|*.RSA|*.EC (root or inst/)
 #   major-version    T-BLD-001    class file bytes 7-8 == 0x0034 (52, Java 8) for the agent's own classes,
 #                                 <= 52 for shaded third-party classes below inst/io/argos/agent/shaded/
@@ -29,6 +32,11 @@
 #
 # Usage:   test/agent/check-shading.sh <argos-agent.jar>
 # Env:     ARGOS_UNSAFE_ALLOWLIST  allow-list file (default: unsafe-allowlist.txt next to this script)
+#          ARGOS_EXPECTED_VERSION  version the manifest's Implementation-Version must equal (the
+#                                  Gradle checkShading task passes the project version); default:
+#                                  <version> of a jar named argos-agent-<version>.jar (<version>
+#                                  starting with a digit, the agentJar file name), otherwise only
+#                                  the presence of Implementation-Version is checked
 #          JAVA_HOME               JDK whose `jar` tool lists and extracts the jar (default: PATH)
 # Exit:    0 when every check passes, 1 otherwise (usage errors included).
 #
@@ -221,10 +229,33 @@ for attribute in Add-Opens Launcher-Agent-Class Boot-Class-Path; do
     echo "MANIFEST.MF must not declare $attribute (DSN-02-03)" >>"$work/meta.txt"
   fi
 done
+# Implementation-Version (T-BLD-010): the agent treats a packaged jar without it as a release build
+# (fail-closed), so every jar states it, and it must be the version the jar was built as.
+impl_version="$(awk '
+  tolower(substr($0, 1, 23)) == "implementation-version:" {
+    value = substr($0, 24); gsub(/^[ \t]+|[ \t]+$/, "", value); print value; exit
+  }' "$work/manifest.txt")"
+expected_version="${ARGOS_EXPECTED_VERSION:-}"
+expected_source="ARGOS_EXPECTED_VERSION"
+jar_name="$(basename "$jar_arg")"
+if [[ -z "$expected_version" && "$jar_name" =~ ^argos-agent-([0-9][^/]*)\.jar$ ]]; then
+  expected_version="${BASH_REMATCH[1]}"
+  expected_source="file name $jar_name"
+fi
+if [[ -z "$impl_version" ]]; then
+  echo "MANIFEST.MF lacks Implementation-Version (the agent's release-build marker; without it argos.test.* is ignored, T-BLD-010)" >>"$work/meta.txt"
+elif [[ -n "$expected_version" && "$impl_version" != "$expected_version" ]]; then
+  echo "MANIFEST.MF Implementation-Version '$impl_version' does not match the expected version '$expected_version' ($expected_source)" >>"$work/meta.txt"
+fi
+if [[ -n "$expected_version" ]]; then
+  version_note="Implementation-Version $impl_version as expected ($expected_source)"
+else
+  version_note="Implementation-Version $impl_version (no expected version: set ARGOS_EXPECTED_VERSION)"
+fi
 if [[ -s "$work/meta.txt" ]]; then
   fail meta-inf "required META-INF content:" "$work/meta.txt"
 else
-  pass meta-inf "LICENSE, NOTICE, THIRD-PARTY-NOTICES, argos-deps.txt, sbom/agent.cdx.json, manifest"
+  pass meta-inf "LICENSE, NOTICE, THIRD-PARTY-NOTICES, argos-deps.txt, sbom/agent.cdx.json, manifest, $version_note"
 fi
 
 # --- signature files -------------------------------------------------------------------------

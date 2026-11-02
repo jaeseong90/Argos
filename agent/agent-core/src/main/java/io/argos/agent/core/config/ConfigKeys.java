@@ -66,11 +66,34 @@ public final class ConfigKeys {
   public static final String DEBUG_TRANSFORM_LIST = "debug.transform-list";
 
   /**
-   * Test-only fault injection (18 §5.x {@code -Dargos.test.faults=<spec>}, T-AG-040): {@code
-   * advice-throw:<module id>[,...]}. Release builds will ignore {@code argos.test.*} (T-BLD-010,
-   * not implemented in WO-02).
+   * Test-only fault injection (18 §5.7, 10 §19 {@code -Dargos.test.faults=<spec>[,<spec>...]},
+   * T-AG-040/041): {@code advice-throw:<module id>}, {@code transform-error:<module id>}, {@code
+   * helper-nocdef:<module id>}. Ignored in release builds (T-BLD-010, {@link #TEST_PREFIX}).
    */
   public static final String TEST_FAULTS = "test.faults";
+
+  /**
+   * Test-only exporter selection (18 §5.4, 10 §19): {@code file:<dir>} (JSONL in {@code
+   * <dir>/argos-transactions.jsonl}), {@code noop} (encodes every transaction, then drops it) or
+   * {@code grpc} (the default exporter). Wins over {@link #EXPORTER}; ignored in release builds.
+   */
+  public static final String TEST_EXPORTER = "test.exporter";
+
+  /**
+   * Transformation log (18 §5.6, DSN-18-05, T-AG-005): every transformed class with its loader and
+   * modules, every {@code onError} event and the {@code ClassCircularityError} count, rewritten by
+   * the watch thread like {@link #DEBUG_TRANSFORM_LIST}.
+   */
+  public static final String DEBUG_TRANSFORM_LOG = "debug.transform-log";
+
+  /**
+   * Test-only namespace of the agent (18 §15, DSN-18-15): {@code argos.test.*} keys are ignored in
+   * release builds (T-BLD-010).
+   */
+  public static final String TEST_PREFIX = "test.";
+
+  /** Test-only namespace of the server ({@code argos.testing.*}); never read by the agent. */
+  public static final String TESTING_PREFIX = "testing.";
 
   /** Path of an {@code argos-agent.yml}; YAML loading arrives with WO-10. */
   public static final String CONFIG_FILE = "config";
@@ -160,7 +183,9 @@ public final class ConfigKeys {
                   EXPORTER_FILE_PATH,
                   EXPORTER_FILE_MAX_MB,
                   DEBUG_TRANSFORM_LIST,
+                  DEBUG_TRANSFORM_LOG,
                   TEST_FAULTS,
+                  TEST_EXPORTER,
                   CONFIG_FILE)));
 
   /** System property prefix ({@code -Dargos.<key>}). */
@@ -173,5 +198,10 @@ public final class ConfigKeys {
    */
   public static String environmentName(String key) {
     return "ARGOS_" + key.replace('.', '_').replace('-', '_').toUpperCase(Locale.ROOT);
+  }
+
+  /** True for keys of the test-only namespaces ({@code test.*}, {@code testing.*}). */
+  public static boolean isTestOnly(String key) {
+    return key.startsWith(TEST_PREFIX) || key.startsWith(TESTING_PREFIX);
   }
 }

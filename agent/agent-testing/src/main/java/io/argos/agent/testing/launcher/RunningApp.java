@@ -2,268 +2,171 @@
 package io.argos.agent.testing.launcher;
 
 import io.argos.agent.testing.baseline.TransformList;
-import io.argos.agent.testing.export.JsonlTransactions;
+import io.argos.agent.testing.baseline.TransformLog;
+import io.argos.agent.testing.collector.Collected;
+import io.argos.agent.testing.export.FileExporterReader;
+import io.argos.agent.testing.jvm.JcmdClient;
 import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
-import java.util.stream.Stream;
 
 /**
- * A sample app started by {@link AppLauncher}. {@link #close()} stops it: {@code destroy()}, then
- * {@code destroyForcibly()} after 15 s. On Windows both terminate the process without running JVM
- * shutdown hooks, so tests wait for what the agent writes periodically (JSONL about every 100 ms,
- * transformed-class list about every 2 s) instead of relying on the agent's shutdown flush.
+ * A sample app started by {@link AppLauncher} (18 §5.2, DSN-18-04): a local process ({@link
+ * ProcessApp}) or a container ({@link ContainerApp}), with the same view.
+ *
+ * <p>Stop semantics: {@link #close()} and {@link #gracefulStop()} ask the process to end (SIGTERM
+ * on Linux and macOS, so JVM shutdown hooks and the agent's shutdown flush run); {@link #kill9()}
+ * ends it at once. On Windows both end the process without shutdown hooks, so tests wait for what
+ * the agent writes periodically (JSONL about every 100 ms, transform list and log about every 2 s)
+ * instead of relying on the shutdown flush.
  */
-public final class RunningApp implements AutoCloseable {
-  private final SampleApp app;
-  private final Process process;
-  private final int port;
-  private final Path dir;
-  private final List<String> command;
-  private final int jdk;
-  private final HttpClient client =
-      HttpClient.newBuilder()
-          .version(HttpClient.Version.HTTP_1_1)
-          .connectTimeout(Duration.ofSeconds(5))
-          .followRedirects(HttpClient.Redirect.NEVER)
-          .build();
-  private long spawnToPortMillis = -1;
-  private long spawnToReadyMillis = -1;
-  private TempWatch tempWatch;
+public interface RunningApp extends AutoCloseable {
+  SampleApp app();
 
-  RunningApp(SampleApp app, Process process, int port, Path dir, List<String> command, int jdk) {
-    this.app = app;
-    this.process = process;
-    this.port = port;
-    this.dir = dir;
-    this.command = List.copyOf(command);
-    this.jdk = jdk;
-  }
+  /** Feature version of the JDK the app runs on. */
+  int jdk();
 
-  /** The result of one HTTP call. */
-  public record HttpResult(int status, String body, Map<String, List<String>> headers) {}
+  /** The HTTP port on 127.0.0.1 (the mapped port of a container). */
+  int port();
 
-  void tempWatch(TempWatch watch) {
-    this.tempWatch = watch;
-  }
+  /** The process id (-1 for a container). */
+  long pid();
 
-  void startup(long toPort, long toReady) {
-    this.spawnToPortMillis = toPort;
-    this.spawnToReadyMillis = toReady;
-  }
-
-  void checkAlive(long deadlineNanos) {
-    if (!process.isAlive()) {
-      throw new IllegalStateException(
-          app.name()
-              + " exited with code "
-              + process.exitValue()
-              + " before it was ready\n"
-              + describe());
-    }
-    if (System.nanoTime() > deadlineNanos) {
-      throw new IllegalStateException(app.name() + " was not ready in time\n" + describe());
-    }
-  }
-
-  public SampleApp app() {
-    return app;
-  }
-
-  public int jdk() {
-    return jdk;
-  }
-
-  public int port() {
-    return port;
-  }
-
-  public long pid() {
-    return process.pid();
-  }
-
-  public boolean isAlive() {
-    return process.isAlive();
-  }
+  boolean isAlive();
 
   /** The run's work directory (see {@link AppLauncher}). */
-  public Path workDir() {
-    return dir;
+  Path workDir();
+
+  /** The agent's {@code log.dir} ({@code <workDir>/logs}). */
+  default Path agentLogDir() {
+    return workDir().resolve("logs");
   }
 
-  public List<String> command() {
-    return command;
+  /** The command line that started the app. */
+  List<String> command();
+
+  /**
+   * Whether the run has the Argos agent ({@code -javaagent:.../argos-agent.jar}, see {@link
+   * AppLauncher}).
+   */
+  default boolean agentAttached() {
+    return command().stream()
+        .anyMatch(arg -> arg.startsWith("-javaagent:") && arg.endsWith("argos-agent.jar"));
   }
 
-  /** ADR-0004 C-49: process creation to port binding, in ms. */
-  public long spawnToPortMillis() {
-    return spawnToPortMillis;
+  default String baseUrl() {
+    return "http://127.0.0.1:" + port();
   }
 
-  /** Process creation to the first 200 of the readiness path, in ms. */
-  public long spawnToReadyMillis() {
-    return spawnToReadyMillis;
+  /** One HTTP/1.1 call (no body, no redirects, 30 s timeout). */
+  HttpResult call(String method, String path, Map<String, String> headers)
+      throws IOException, InterruptedException;
+
+  default HttpResult get(String path) throws IOException, InterruptedException {
+    return call("GET", path, Map.of());
   }
 
-  public String baseUrl() {
-    return "http://127.0.0.1:" + port;
+  /**
+   * A small open-model load for integration tests: {@code rps} GET requests per second for {@code
+   * duration}, cycling through {@code paths} (not the overhead benchmark: that is {@code
+   * test/bench}).
+   */
+  LoadResult load(int rps, Duration duration, String... paths) throws InterruptedException;
+
+  /**
+   * What the agent sent: the fake collector's view when the launcher had one, else the JSONL of
+   * {@code argos.test.exporter=file:<workDir>/out}.
+   */
+  Collected collected();
+
+  /** The JSONL exporter output ({@code <workDir>/out/argos-transactions.jsonl}). */
+  default FileExporterReader transactions() {
+    return FileExporterReader.inDirectory(workDir().resolve("out"));
   }
 
-  public HttpResult get(String path) throws IOException, InterruptedException {
-    return request("GET", path, Map.of());
+  /** {@code jcmd <pid> ...} with the app's own JDK. */
+  JcmdClient jcmd();
+
+  /**
+   * The agent's self-diagnostics (18 §5.2, 10 §19): not available until WO-10 adds the command; the
+   * returned object says so instead of returning zeros.
+   */
+  SelfDiagnostics selfDiagnostics();
+
+  /** Process creation to port binding (ADR-0004 C-49, N-04). */
+  Duration startupTime();
+
+  /** Process creation to the first 200 of the readiness path. */
+  Duration readyTime();
+
+  default long spawnToPortMillis() {
+    return startupTime().toMillis();
   }
 
-  /** One HTTP/1.1 call to the app (no body, no redirects, 30 s timeout). */
-  public HttpResult request(String method, String path, Map<String, String> headers)
-      throws IOException, InterruptedException {
-    HttpRequest.Builder request =
-        HttpRequest.newBuilder(URI.create(baseUrl() + path))
-            .timeout(Duration.ofSeconds(30))
-            .method(method, HttpRequest.BodyPublishers.noBody());
-    headers.forEach(request::header);
-    HttpResponse<String> response =
-        client.send(request.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-    return new HttpResult(response.statusCode(), response.body(), response.headers().map());
+  default long spawnToReadyMillis() {
+    return readyTime().toMillis();
   }
 
-  /** The JSONL exporter output ({@code out/tx.jsonl}). */
-  public JsonlTransactions transactions() {
-    return new JsonlTransactions(dir.resolve("out").resolve("tx.jsonl"));
+  /** Ends the process at once (SIGKILL / TerminateProcess). */
+  void kill9();
+
+  /** Asks the process to end and waits up to 15 s (see the class comment for Windows). */
+  void gracefulStop();
+
+  List<String> stdoutLines();
+
+  List<String> stderrLines();
+
+  /** The agent log ({@code logs/argos-agent.log}), empty when absent. */
+  String agentLog();
+
+  /** {@code -Dargos.debug.transform-list} ({@code <workDir>/out/transformed.txt}). */
+  default Path transformListFile() {
+    return workDir().resolve("out").resolve("transformed.txt");
   }
 
-  public Path transformListFile() {
-    return dir.resolve("out").resolve("transformed.txt");
+  /** {@code -Dargos.debug.transform-log} ({@code <workDir>/out/transform.log}). */
+  default Path transformLogFile() {
+    return workDir().resolve("out").resolve("transform.log");
   }
 
   /** The transformed-class list as written so far (empty before the first write). */
-  public TransformList transformList() {
+  default TransformList transformList() {
     return TransformList.read(transformListFile());
   }
 
+  /** The transform log as written so far (empty before the first write). */
+  default TransformLog transformLog() {
+    return TransformLog.read(transformLogFile());
+  }
+
   /** Waits (polling every 200 ms) until the transformed-class list satisfies {@code condition}. */
-  public TransformList awaitTransformList(Predicate<TransformList> condition, Duration timeout) {
-    long deadline = System.nanoTime() + timeout.toNanos();
-    TransformList list = transformList();
-    while (!condition.test(list) && System.nanoTime() < deadline) {
-      try {
-        Thread.sleep(200);
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        break;
-      }
-      list = transformList();
-    }
-    return list;
+  default TransformList awaitTransformList(Predicate<TransformList> condition, Duration timeout) {
+    return Polling.await(this::transformList, condition, timeout);
   }
 
-  public List<String> stdoutLines() {
-    return lines(dir.resolve("stdout.log"));
-  }
-
-  public List<String> stderrLines() {
-    return lines(dir.resolve("stderr.log"));
-  }
-
-  /** The agent log ({@code logs/argos-agent.log}), empty when absent. */
-  public String agentLog() {
-    Path log = dir.resolve("logs").resolve("argos-agent.log");
-    try {
-      return Files.exists(log) ? Files.readString(log, StandardCharsets.UTF_8) : "";
-    } catch (IOException e) {
-      throw new UncheckedIOException(e);
-    }
+  /** Waits (polling every 200 ms) until the transform log satisfies {@code condition}. */
+  default TransformLog awaitTransformLog(Predicate<TransformLog> condition, Duration timeout) {
+    return Polling.await(this::transformLog, condition, timeout);
   }
 
   /**
    * Every entry created in the app's temp directory since before the spawn (T-BLD-006): top-level
-   * entries seen by a watch service (also ones deleted again) plus the current tree, relative
-   * paths.
+   * entries seen by a watch service (also ones deleted again) plus the current tree.
    */
-  public Set<String> tempCreated() {
-    return tempWatch == null ? Set.of() : tempWatch.created();
-  }
+  Set<String> tempCreated();
 
   /** Top-level temp entries seen by the watch service, with ms after the watch started. */
-  public Map<String, Long> tempEvents() {
-    return tempWatch == null ? Map.of() : tempWatch.events();
-  }
-
-  /** Names in the app's temp directory ({@code java.io.tmpdir}, TMP/TEMP/TMPDIR). */
-  public List<String> tempEntries() {
-    List<String> names = new ArrayList<>();
-    try (Stream<Path> entries = Files.list(dir.resolve("tmp"))) {
-      entries.forEach(path -> names.add(path.getFileName().toString()));
-    } catch (IOException e) {
-      throw new UncheckedIOException(e);
-    }
-    return names;
-  }
+  Map<String, Long> tempEvents();
 
   /** Command, startup and the tail of stdout/stderr, for assertion messages. */
-  public String describe() {
-    List<String> out = stdoutLines();
-    List<String> err = stderrLines();
-    return "app "
-        + app.name()
-        + " on JDK "
-        + jdk
-        + " in "
-        + dir
-        + "\ncommand: "
-        + String.join(" ", command)
-        + "\nstdout (last 40 lines):\n"
-        + String.join("\n", out.subList(Math.max(0, out.size() - 40), out.size()))
-        + "\nstderr:\n"
-        + String.join("\n", err);
-  }
-
-  private static List<String> lines(Path file) {
-    try {
-      return Files.exists(file)
-          ? new ArrayList<>(Files.readAllLines(file, StandardCharsets.UTF_8))
-          : new ArrayList<>();
-    } catch (IOException e) {
-      // A line in progress may not be valid UTF-8 yet; read leniently.
-      try {
-        return new ArrayList<>(
-            new String(Files.readAllBytes(file), StandardCharsets.UTF_8).lines().toList());
-      } catch (IOException again) {
-        throw new UncheckedIOException(again);
-      }
-    }
-  }
+  String describe();
 
   /** Stops the app (see the class comment) and waits for the process to end. */
   @Override
-  public void close() {
-    if (tempWatch != null) {
-      tempWatch.close();
-    }
-    if (!process.isAlive()) {
-      return;
-    }
-    process.destroy();
-    try {
-      if (!process.waitFor(15, TimeUnit.SECONDS)) {
-        process.destroyForcibly();
-        process.waitFor(15, TimeUnit.SECONDS);
-      }
-    } catch (InterruptedException e) {
-      process.destroyForcibly();
-      Thread.currentThread().interrupt();
-    }
-  }
+  void close();
 }

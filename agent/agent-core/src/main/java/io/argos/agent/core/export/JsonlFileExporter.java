@@ -74,6 +74,11 @@ public final class JsonlFileExporter implements Exporter {
    * and {@code summary_overflow}. Times are milliseconds with microsecond precision.
    */
   String write(Transaction tx) {
+    return encode(tx, dictionary);
+  }
+
+  /** The JSON line of {@code tx} ({@link #write}); also the encoding step of {@code noop}. */
+  static String encode(Transaction tx, Dictionary dictionary) {
     TraceContext ctx = tx.context();
     StringBuilder text = new StringBuilder(512);
     JsonWriter json = new JsonWriter(text).beginObject();

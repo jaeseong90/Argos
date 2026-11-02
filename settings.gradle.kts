@@ -107,6 +107,18 @@ include(":test:storage:generator")
 // its comparison jars, smoke and bench run only through the transportPoc* tasks, never in build.
 include(":test:agent:transport-poc")
 
-// Agent overhead harness (WO-02 P-2, 01 §7.3, 18 §7). Development-only; build and check compile and
-// unit-test it, the measurement runs as a standalone jar (test/agent/overhead/README.md).
-include(":test:agent:overhead")
+// Agent overhead bench harness (18 §7, DSN-18-07, 01 §7.3; the WO-02 P-2 harness formalised by
+// WO-05). Development-only; build and check compile and unit-test it, benchTest runs the protocol
+// on a dedicated machine (-Pbench.machine-profile), the measurement itself runs as a standalone jar
+// (test/bench/README.md).
+include(":test:bench")
+
+// Performance and long-run layers of 18 §2.1/§2.2 whose runners are later work orders (WO-05
+// skeletons). Development-only (ArgosProject.isDevelopmentOnly). Each project carries its task,
+// which requires -Pbench.machine-profile=<id> and then fails naming the owning WO (test/README.md):
+//   load/fake-agents   serverLoadTest  fake agents at protocol level (18 §8)        WO-29
+//   soak               soakTest        72-hour soak (18 §11.2)                       WO-52
+//   chaos              chaosTest       toxiproxy and docker scenarios (18 §11.1)     WO-52
+include(":test:load:fake-agents")
+include(":test:soak")
+include(":test:chaos")

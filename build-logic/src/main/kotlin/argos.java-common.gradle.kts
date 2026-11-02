@@ -3,14 +3,17 @@
 // argos.java-common: applied to every Java module (19 §3.2).
 // Spotless (google-java-format + SPDX header), Error Prone with -Werror, -Xlint:all -Werror,
 // reproducible archives (19 §3.7), dependency locking, JUnit 5 test suites with test logging,
-// the archTest suite (wired into check) and the license allow-list checks (argos.license-check:
-// checkLicenses in check, checkDevOnlyLicenses as a separate CI check).
+// the archTest suite (wired into check), the unit-test layer rules of 18 §2.2
+// (checkUnitTestSources in check, slow-test warning after `test`) and the license allow-list
+// checks (argos.license-check: checkLicenses in check, checkDevOnlyLicenses as a separate CI check).
 
 import com.diffplug.gradle.spotless.SpotlessTask
 import io.argos.buildlogic.ArgosProject
 import io.argos.buildlogic.argosArchivesName
 import io.argos.buildlogic.argosLibs
 import io.argos.buildlogic.library
+import io.argos.buildlogic.testing.CheckUnitTestSources
+import io.argos.buildlogic.testing.SlowUnitTestWarning
 import io.argos.buildlogic.versionOf
 import net.ltgt.gradle.errorprone.errorprone
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
@@ -110,6 +113,21 @@ tasks.withType<Test>().configureEach {
 }
 
 tasks.named("check") { dependsOn(testing.suites.named("archTest")) }
+
+// Unit-test layer rules (18 §2.2, test/README.md). src/test holds unit tests only: tests tagged
+// slow/integration or using Testcontainers fail check (move them to src/integrationTest), and
+// every `test` run lists its tests slower than 1 s as a warning (timing is machine-dependent, so it
+// never fails the build). Network use cannot be detected cheaply and remains a review rule.
+val checkUnitTestSources =
+  tasks.register<CheckUnitTestSources>("checkUnitTestSources") {
+    sources.from(fileTree("src/test") { include("**/*.java", "**/*.kt") })
+    projectDirectory = layout.projectDirectory
+    marker = layout.buildDirectory.file("test-layers/checkUnitTestSources.ok")
+  }
+
+tasks.named("check") { dependsOn(checkUnitTestSources) }
+
+tasks.named<Test>("test") { doLast(SlowUnitTestWarning(reports.junitXml.outputLocation)) }
 
 // Writes lock state for every resolvable configuration:
 //   ./gradlew resolveAndLockAll --write-locks --no-configuration-cache

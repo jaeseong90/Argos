@@ -189,4 +189,173 @@ class ExportTest {
     values.put("exporter", exporter);
     return new ExporterContext(AgentConfig.of(values), dictionary, new AgentInfo("1", "c", "1"));
   }
+
+  private ExporterContext testContext(String testExporter) {
+    Map<String, String> values = new HashMap<String, String>();
+    // test.exporter wins over the PoC key.
+    values.put("exporter", "grpc");
+    values.put("test.exporter", testExporter);
+    return new ExporterContext(AgentConfig.of(values), dictionary, new AgentInfo("1", "c", "1"));
+  }
+
+  @Test
+  @Tag("req:N-01")
+  @DisplayName(
+      "18 §5.4 test.exporter: file:<dir> writes <dir>/argos-transactions.jsonl, noop encodes and"
+          + " drops, grpc and unknown names fall back to noop")
+  void testExporter() throws Exception {
+    File out = new File(dir, "file-exporter");
+    Exporter file = Exporters.create(testContext("file:" + out.getPath()), dir);
+    assertThat(Exporters.configuredName(testContext("file:" + out.getPath()).config()))
+        .isEqualTo("file");
+    File jsonl = new File(out, Exporters.DEFAULT_FILE_NAME).getAbsoluteFile();
+    assertThat(file.describe()).isEqualTo("file " + jsonl);
+    file.export(Collections.singletonList(transaction("GET /t", "select 1")));
+    file.flush();
+    file.close();
+    assertThat(Files.readAllLines(jsonl.toPath(), StandardCharsets.UTF_8))
+        .singleElement()
+        .asString()
+        .contains("\"service\":\"GET /t\"");
+    // Without a directory: the log directory.
+    Exporter inLogDir = Exporters.create(testContext("file"), dir);
+    assertThat(inLogDir.describe())
+        .isEqualTo("file " + new File(dir, Exporters.DEFAULT_FILE_NAME).getAbsoluteFile());
+    inLogDir.close();
+
+    Exporter noop = Exporters.create(testContext("NOOP"), dir);
+    assertThat(noop).isInstanceOf(NoopExporter.class);
+    assertThat(noop.describe()).isEqualTo("noop (encode, then drop)");
+    Transaction tx = transaction("GET /n", "select 2");
+    noop.export(Collections.singletonList(tx));
+    assertThat(((NoopExporter) noop).exported()).isEqualTo(1);
+    assertThat(((NoopExporter) noop).encodedChars())
+        .isEqualTo(JsonlFileExporter.encode(tx, dictionary).length());
+    // exporter=noop (P-2 baseline) does not encode.
+    NoopExporter plain = (NoopExporter) Exporters.create(context("noop"), dir);
+    plain.export(Collections.singletonList(tx));
+    assertThat(plain.encodedChars()).isZero();
+    assertThat(plain.describe()).isEqualTo("noop");
+
+    // grpc is the default name; this build has no transport (WO-11): one WARN, noop.
+    assertThat(Exporters.create(testContext("grpc"), dir)).isInstanceOf(NoopExporter.class);
+    assertThat(Exporters.create(testContext("kafka:x"), dir)).isInstanceOf(NoopExporter.class);
+  }
+
+  @Test
+  @Tag("req:DSN-18-15")
+  @DisplayName(
+      "T-BLD-010 release build marker: Implementation-Version without -SNAPSHOT is a release")
+  void releaseMarker() throws Exception {
+    assertThat(AgentInfo.isReleaseVersion("0.0.0-SNAPSHOT")).isFalse();
+    assertThat(AgentInfo.isReleaseVersion("1.2.0-SNAPSHOT")).isFalse();
+    assertThat(AgentInfo.isReleaseVersion(" 1.2.0-SNAPSHOT ")).isFalse();
+    assertThat(AgentInfo.isReleaseVersion("1.2.3")).isTrue();
+    assertThat(AgentInfo.isReleaseVersion("0.1.0-beta.1")).isTrue();
+    assertThat(AgentInfo.isReleaseVersion("1.0.0-rc.2")).isTrue();
+    assertThat(AgentInfo.isReleaseVersion("1.0.0-snapshot")).isTrue();
+    // Fail-closed: a version a packaged jar does not state is not a development version.
+    assertThat(AgentInfo.isReleaseVersion(AgentInfo.UNKNOWN)).isTrue();
+    assertThat(AgentInfo.isReleaseVersion(null)).isTrue();
+    assertThat(AgentInfo.isReleaseVersion(" ")).isTrue();
+
+    for (String version : new String[] {"0.0.0-SNAPSHOT", "0.0.0", "0.3.0"}) {
+      File jar =
+          jarWithManifest(
+              "agent-" + version + ".jar",
+              Collections.singletonMap("Implementation-Version", version));
+      AgentInfo info = AgentInfo.fromJar(jar);
+      assertThat(info.version()).isEqualTo(version);
+      assertThat(info.isReleaseBuild()).as(version).isEqualTo(!version.endsWith("-SNAPSHOT"));
+    }
+  }
+
+  @Test
+  @Tag("req:DSN-18-15")
+  @DisplayName(
+      "T-BLD-010 release build marker fails closed: only no jar or a -SNAPSHOT version is a"
+          + " development build; a jar without Implementation-Version, without manifest, unreadable"
+          + " or missing is a release build")
+  void releaseMarkerFailsClosed() throws Exception {
+    // No jar (agent classes outside a packaged jar, unit tests): development.
+    AgentInfo noJar = AgentInfo.fromJar(null);
+    assertThat(noJar.version()).isEqualTo(AgentInfo.UNKNOWN);
+    assertThat(noJar.isReleaseBuild()).isFalse();
+    assertThat(AgentInfo.unreadable(null).isReleaseBuild()).isFalse();
+
+    // -SNAPSHOT: development; 0.0.0: release (the attributes are read unchanged).
+    Map<String, String> snapshot = new HashMap<String, String>();
+    snapshot.put("Implementation-Version", "0.0.0-SNAPSHOT");
+    snapshot.put("Argos-Commit", "abc1234");
+    snapshot.put("Argos-Protocol-Version", "1");
+    AgentInfo dev = AgentInfo.fromJar(jarWithManifest("snapshot.jar", snapshot));
+    assertThat(dev.version()).isEqualTo("0.0.0-SNAPSHOT");
+    assertThat(dev.commit()).isEqualTo("abc1234");
+    assertThat(dev.protocolVersion()).isEqualTo("1");
+    assertThat(dev.isReleaseBuild()).isFalse();
+    AgentInfo release =
+        AgentInfo.fromJar(
+            jarWithManifest(
+                "release.jar", Collections.singletonMap("Implementation-Version", "0.0.0")));
+    assertThat(release.version()).isEqualTo("0.0.0");
+    assertThat(release.isReleaseBuild()).isTrue();
+
+    // Packaged jar without Implementation-Version (other attributes present): release.
+    Map<String, String> noVersion = new HashMap<String, String>();
+    noVersion.put("Argos-Commit", "abc1234");
+    noVersion.put("Argos-Protocol-Version", "1");
+    AgentInfo missing = AgentInfo.fromJar(jarWithManifest("no-version.jar", noVersion));
+    assertThat(missing.version()).isEqualTo(AgentInfo.UNKNOWN);
+    assertThat(missing.commit()).isEqualTo("abc1234");
+    assertThat(missing.isReleaseBuild()).isTrue();
+    // Blank Implementation-Version: release.
+    assertThat(
+            AgentInfo.fromJar(
+                    jarWithManifest(
+                        "blank-version.jar",
+                        Collections.singletonMap("Implementation-Version", "  ")))
+                .isReleaseBuild())
+        .isTrue();
+
+    // Packaged jar without MANIFEST.MF: release.
+    File noManifest = new File(dir, "no-manifest.jar");
+    try (java.util.zip.ZipOutputStream out =
+        new java.util.zip.ZipOutputStream(new java.io.FileOutputStream(noManifest))) {
+      out.putNextEntry(new java.util.zip.ZipEntry("io/argos/agent/AgentPremain.class"));
+      out.write(new byte[] {(byte) 0xCA, (byte) 0xFE});
+      out.closeEntry();
+    }
+    AgentInfo withoutManifest = AgentInfo.fromJar(noManifest);
+    assertThat(withoutManifest.version()).isEqualTo(AgentInfo.UNKNOWN);
+    assertThat(withoutManifest.isReleaseBuild()).isTrue();
+
+    // A file that is not a jar (IOException): release.
+    File garbage = new File(dir, "garbage.jar");
+    Files.write(garbage.toPath(), "not a zip file".getBytes(StandardCharsets.UTF_8));
+    assertThat(AgentInfo.fromJar(garbage).isReleaseBuild()).isTrue();
+
+    // A path that is not a file (missing jar, directory): release.
+    assertThat(AgentInfo.fromJar(new File(dir, "missing.jar")).isReleaseBuild()).isTrue();
+    assertThat(AgentInfo.fromJar(dir).isReleaseBuild()).isTrue();
+
+    // AgentStarter's fallback when reading the manifest throws: release for a packaged jar.
+    AgentInfo fallback = AgentInfo.unreadable(garbage);
+    assertThat(fallback.version()).isEqualTo(AgentInfo.UNKNOWN);
+    assertThat(fallback.isReleaseBuild()).isTrue();
+  }
+
+  /** A jar with only a manifest of the given main attributes. */
+  private File jarWithManifest(String name, Map<String, String> attributes) throws Exception {
+    File jar = new File(dir, name);
+    java.util.jar.Manifest manifest = new java.util.jar.Manifest();
+    manifest.getMainAttributes().put(java.util.jar.Attributes.Name.MANIFEST_VERSION, "1.0");
+    for (Map.Entry<String, String> attribute : attributes.entrySet()) {
+      manifest.getMainAttributes().putValue(attribute.getKey(), attribute.getValue());
+    }
+    try (java.util.jar.JarOutputStream out =
+        new java.util.jar.JarOutputStream(new java.io.FileOutputStream(jar), manifest)) {
+      out.flush();
+    }
+    return jar;
+  }
 }

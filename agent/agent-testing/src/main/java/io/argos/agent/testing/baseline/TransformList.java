@@ -21,7 +21,8 @@ import java.util.List;
  * java.util.concurrent.ThreadPoolExecutor executor bootstrap retransformed
  * </pre>
  *
- * <p>WO-05 turns this into the recorded baseline and diff (T-AG-005, 18 §5.6).
+ * <p>The baseline and its diff (T-AG-005, 18 §5.6) use the transform log ({@link TransformLog},
+ * {@link TransformBaseline}), which carries the same lines plus the failures.
  */
 public final class TransformList {
   /** First line of the file. */

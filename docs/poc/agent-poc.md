@@ -868,7 +868,7 @@ check-shading: OK (2648 classes, 4074167 bytes, agent/agent-dist/build/libs/argo
 
 ## 13. P-2 오버헤드
 
-P-2는 [`docs/poc/agent-overhead.md`](agent-overhead.md)가 다룬다(01 §7.3 11항 대응표, 하네스 `test/agent/overhead`, 원시 자료 [`docs/bench/wo02-overhead-2026-10-24/`](../bench/wo02-overhead-2026-10-24/README.md)).
+P-2는 [`docs/poc/agent-overhead.md`](agent-overhead.md)가 다룬다(01 §7.3 11항 대응표, 하네스 `test/agent/overhead`(WO-05에서 [`test/bench`](../../test/bench/README.md)로 이동), 원시 자료 [`docs/bench/wo02-overhead-2026-10-24/`](../bench/wo02-overhead-2026-10-24/README.md)).
 
 - 공유 노트북에서는 유효(VALID) 세트가 0개라 **Gate 0 오버헤드를 판정하지 않았다**. 판정은 사람이 전용 장비(앱 서버 + 부하기)에서 그 문서 9장 절차로 낸다(측정 약 7.5시간). WO-02 수동 수락 기준 "사람이 1회 재실행해 재현"도 그 실행으로 채운다.
 - 참고값(판정 아님): no-op 상대 CPU +3.45~4.9%(한도 5% 근처, 위험), p99 차이 없음, shop-boot3 기동 기본 CDS +1.71~1.72초·`-Xshare:off` +2.01~2.09초(N-04 +2초 한도 근처이거나 넘음, 가장 큰 위험), 메모리·스레드는 여유가 크다.

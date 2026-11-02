@@ -88,6 +88,7 @@ class AgentJarChecksTest {
       .writeText(
         """
         import io.argos.buildlogic.CheckMajorVersion
+        import io.argos.buildlogic.CheckManifestVersion
         import io.argos.buildlogic.CheckOwnRelocatedLiterals
         import io.argos.buildlogic.CheckRelocatedStrings
         import io.argos.buildlogic.RelocatedStringPolicy
@@ -110,6 +111,11 @@ class AgentJarChecksTest {
           prefix = 'io.argos.agent.shaded'
           allowed = providers.gradleProperty('allowed').map { [it] }.orElse([])
           reportFile = layout.buildDirectory.file('own-literals.txt')
+        }
+        tasks.register('checkManifestVersion', CheckManifestVersion) {
+          jar = file('${jar.name}')
+          expectedVersion = providers.gradleProperty('expected').getOrElse('0.0.0-SNAPSHOT')
+          resultFile = layout.buildDirectory.file('manifest-version.txt')
         }
         """
           .trimIndent()
@@ -251,5 +257,47 @@ class AgentJarChecksTest {
     assertThat(allowed.task(":checkOwnRelocatedLiterals")?.outcome).isEqualTo(TaskOutcome.SUCCESS)
     assertThat(File(dir, "build/own-literals.txt").readText())
       .contains("allowed  inst/io/argos/agent/core/transport/NettyProps.classdata: io.argos.agent.shaded.io.netty.noUnsafe")
+  }
+
+  private fun manifestJar(manifest: Map<String, String>?): File =
+    writeJar(
+      File(dir, "agent.jar"),
+      manifest,
+      linkedMapOf("io/argos/agent/bootstrap/A.class" to classFile("io/argos/agent/bootstrap/A")),
+    )
+
+  @Test
+  @Tag("req:DSN-18-15")
+  @DisplayName(
+    "T-BLD-010 checkManifestVersion fails without Implementation-Version (attribute, blank or no manifest) and on another version; passes on the project version"
+  )
+  fun checkManifestVersion() {
+    val premain = "Premain-Class" to "io.argos.agent.AgentPremain"
+    for (manifest in listOf(mapOf(premain), mapOf(premain, "Implementation-Version" to " "), null)) {
+      taskProject(manifestJar(manifest))
+      val missing = runner("checkManifestVersion").buildAndFail()
+      assertThat(missing.task(":checkManifestVersion")?.outcome).`as`("$manifest").isEqualTo(TaskOutcome.FAILED)
+      assertThat(missing.output)
+        .contains("checkManifestVersion: agent.jar has no Implementation-Version in META-INF/MANIFEST.MF")
+        .contains("expected '0.0.0-SNAPSHOT'")
+        .contains("ignores argos.test.* (T-BLD-010)")
+    }
+
+    taskProject(manifestJar(mapOf(premain, "Implementation-Version" to "0.0.0-SNAPSHOT")))
+    val stale = runner("checkManifestVersion", "-Pexpected=1.0.0").buildAndFail()
+    assertThat(stale.task(":checkManifestVersion")?.outcome).isEqualTo(TaskOutcome.FAILED)
+    assertThat(stale.output)
+      .contains("checkManifestVersion: agent.jar has Implementation-Version '0.0.0-SNAPSHOT', expected the project version '1.0.0'")
+
+    val snapshot = runner("checkManifestVersion").build()
+    assertThat(snapshot.task(":checkManifestVersion")?.outcome).isEqualTo(TaskOutcome.SUCCESS)
+    assertThat(File(dir, "build/manifest-version.txt").readText())
+      .isEqualTo("Implementation-Version: 0.0.0-SNAPSHOT\nrelease build (argos.test.* ignored): false\n")
+
+    taskProject(manifestJar(mapOf(premain, "Implementation-Version" to "1.0.0")))
+    val release = runner("checkManifestVersion", "-Pexpected=1.0.0").build()
+    assertThat(release.task(":checkManifestVersion")?.outcome).isEqualTo(TaskOutcome.SUCCESS)
+    assertThat(File(dir, "build/manifest-version.txt").readText())
+      .isEqualTo("Implementation-Version: 1.0.0\nrelease build (argos.test.* ignored): true\n")
   }
 }

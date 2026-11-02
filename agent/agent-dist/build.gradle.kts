@@ -9,8 +9,8 @@
 //                    -> build/libs/argos-agent-<version>.jar
 //   4-5. generateDepsManifest, generateThirdPartyNotices, cyclonedxDirectBom feed step 3.
 //   6-8. checkShading, checkRelocatedStrings, checkMajorVersion (and checkModuleIndex, C-25,
-//        checkOwnRelocatedLiterals, C-23) run from verifyAgentJar, which is part of check and
-//        finalizes agentJar.
+//        checkOwnRelocatedLiterals, C-23, checkManifestVersion, T-BLD-010) run from
+//        verifyAgentJar, which is part of check and finalizes agentJar.
 // No temporary files are extracted at runtime; nothing here may add Add-Opens,
 // Launcher-Agent-Class or Boot-Class-Path to the manifest (DSN-02-03).
 
@@ -22,6 +22,7 @@ import io.argos.buildlogic.AgentShading
 import io.argos.buildlogic.ArgosProject
 import io.argos.buildlogic.CheckLicenses
 import io.argos.buildlogic.CheckMajorVersion
+import io.argos.buildlogic.CheckManifestVersion
 import io.argos.buildlogic.CheckModuleIndex
 import io.argos.buildlogic.CheckOwnRelocatedLiterals
 import io.argos.buildlogic.CheckRelocatedStrings
@@ -268,9 +269,11 @@ val checkShading =
     val allowlist = layout.settingsDirectory.file("test/agent/unsafe-allowlist.txt").asFile
     val jar = agentJarFile
     val jdkHome = buildJdkHome
+    val expectedVersion = version.toString()
     val marker = layout.buildDirectory.file("reports/agent-jar/check-shading.ok")
     inputs.file(jar).withPathSensitivity(PathSensitivity.NONE)
     inputs.files(script, allowlist).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.property("expectedVersion", expectedVersion)
     outputs.file(marker)
     // Git Bash on Windows (the WSL bash launcher cannot read Windows paths), bash elsewhere.
     executable = argosBash().get()
@@ -279,6 +282,8 @@ val checkShading =
         listOf(script.invariantSeparatorsPath, jar.get().asFile.invariantSeparatorsPath)
       }
     )
+    // The manifest's Implementation-Version must equal the project version (T-BLD-010).
+    environment("ARGOS_EXPECTED_VERSION", expectedVersion)
     doFirst { environment("JAVA_HOME", jdkHome.get()) }
     doLast { marker.get().asFile.writeText("check-shading.sh passed\n") }
   }
@@ -298,6 +303,15 @@ val checkMajorVersion =
   tasks.register<CheckMajorVersion>("checkMajorVersion") {
     jar = agentJarFile
     resultFile = layout.buildDirectory.file("reports/agent-jar/major-version.txt")
+  }
+
+// Step 3 manifest, T-BLD-010: the agent's release-build marker (Implementation-Version, read
+// fail-closed by AgentInfo) is present and equals the project version.
+val checkManifestVersion =
+  tasks.register<CheckManifestVersion>("checkManifestVersion") {
+    jar = agentJarFile
+    expectedVersion = version.toString()
+    resultFile = layout.buildDirectory.file("reports/agent-jar/manifest-version.txt")
   }
 
 // ADR-0003 C-25: the module index the core reads at runtime lists only classes of the jar.
@@ -321,8 +335,15 @@ val verifyAgentJar =
   tasks.register("verifyAgentJar") {
     group = "verification"
     description =
-      "Verifies the agent jar: shading, relocated strings (library and own), major version, module index (18 §2.2)."
-    dependsOn(checkShading, checkRelocatedStrings, checkOwnRelocatedLiterals, checkMajorVersion, checkModuleIndex)
+      "Verifies the agent jar: shading, relocated strings (library and own), major version, manifest version, module index (18 §2.2)."
+    dependsOn(
+      checkShading,
+      checkRelocatedStrings,
+      checkOwnRelocatedLiterals,
+      checkMajorVersion,
+      checkManifestVersion,
+      checkModuleIndex,
+    )
   }
 
 agentJar { finalizedBy(verifyAgentJar) }

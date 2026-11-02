@@ -39,7 +39,8 @@ final class InstrumentationInstaller {
       AgentBuilder.Listener recorder,
       AgentBuilder.Listener errors,
       HelperInjector helpers,
-      LoaderState loaderState) {
+      LoaderState loaderState,
+      TestFaults faults) {
     long start = System.nanoTime();
     AdviceFactory advices = new AdviceFactory(agentLoader);
     AgentBuilder builder =
@@ -57,11 +58,12 @@ final class InstrumentationInstaller {
     for (InstrumentationModule module : modules) {
       ElementMatcher<ClassLoader> witness =
           new WitnessMatcher(module.moduleId(), module.witness(), loaderState);
+      boolean injectedFailure = faults.transformFails(module.id());
       for (TypeInstrumentation type : module.types()) {
         builder =
             builder
                 .type(type.typeMatcher(), witness)
-                .transform(new ModuleTransformer(module, type, advices, helpers));
+                .transform(new ModuleTransformer(module, type, advices, helpers, injectedFailure));
         types++;
       }
     }

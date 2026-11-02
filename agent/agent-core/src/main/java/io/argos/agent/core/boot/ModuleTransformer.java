@@ -23,15 +23,20 @@ final class ModuleTransformer implements AgentBuilder.Transformer {
   private final AdviceFactory advices;
   private final HelperInjector helpers;
 
+  /** {@code argos.test.faults=transform-error:<module>} (test builds only, T-AG-041). */
+  private final boolean injectedFailure;
+
   ModuleTransformer(
       InstrumentationModule module,
       TypeInstrumentation instrumentation,
       AdviceFactory advices,
-      HelperInjector helpers) {
+      HelperInjector helpers,
+      boolean injectedFailure) {
     this.module = module;
     this.instrumentation = instrumentation;
     this.advices = advices;
     this.helpers = helpers;
+    this.injectedFailure = injectedFailure;
   }
 
   @Override
@@ -42,6 +47,9 @@ final class ModuleTransformer implements AgentBuilder.Transformer {
       JavaModule javaModule,
       ProtectionDomain protectionDomain) {
     TransformRecorder.markModule(module.moduleId());
+    if (injectedFailure) {
+      throw TestFaults.transformFailure(module.id());
+    }
     helpers.inject(module, classLoader, protectionDomain, javaModule);
     Applier applier = new Applier(builder);
     instrumentation.transform(applier);

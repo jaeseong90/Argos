@@ -57,6 +57,52 @@ class AgentConfigTest {
   }
 
   @Test
+  @org.junit.jupiter.api.Tag("req:DSN-18-15")
+  @DisplayName(
+      "T-BLD-010 release builds ignore argos.test.* and argos.testing.* (system properties and"
+          + " ARGOS_TEST_*); development builds read argos.test.*")
+  void releaseBuildIgnoresTestNamespace() {
+    Properties properties = new Properties();
+    properties.setProperty("argos.test.faults", "advice-throw:servlet");
+    properties.setProperty("argos.test.exporter", "file:/tmp/x");
+    properties.setProperty("argos.testing.limits", "1");
+    properties.setProperty("argos.app.name", "shop");
+    properties.setProperty("argos.debug.transform-log", "/tmp/transform.log");
+    Map<String, String> environment = new HashMap<String, String>();
+    environment.put("ARGOS_TEST_FAULTS", "advice-throw:jdbc");
+
+    AgentConfig release = AgentConfig.load(properties, environment, true);
+    assertThat(release.isSet(ConfigKeys.TEST_FAULTS)).isFalse();
+    assertThat(release.isSet(ConfigKeys.TEST_EXPORTER)).isFalse();
+    assertThat(release.getList(ConfigKeys.TEST_FAULTS)).isEmpty();
+    assertThat(release.get(ConfigKeys.TEST_EXPORTER, null)).isNull();
+    // Other settings are unaffected (debug.* is not a test namespace).
+    assertThat(release.get(ConfigKeys.APP_NAME, null)).isEqualTo("shop");
+    assertThat(release.get(ConfigKeys.DEBUG_TRANSFORM_LOG, null)).isEqualTo("/tmp/transform.log");
+    assertThat(release.warnings())
+        .singleElement()
+        .asString()
+        .isEqualTo(
+            "test-only settings ignored in a release build (T-BLD-010): [ARGOS_TEST_FAULTS,"
+                + " argos.test.exporter, argos.test.faults, argos.testing.limits]");
+
+    AgentConfig development = AgentConfig.load(properties, environment, false);
+    // ARGOS_TEST_FAULTS wins over -Dargos.test.faults (environment is the later source).
+    assertThat(development.getList(ConfigKeys.TEST_FAULTS)).containsExactly("advice-throw:jdbc");
+    assertThat(development.get(ConfigKeys.TEST_EXPORTER, null)).isEqualTo("file:/tmp/x");
+    // argos.testing.* is the server's namespace: unknown to the agent in every build.
+    assertThat(development.warnings())
+        .singleElement()
+        .asString()
+        .contains("unknown configuration key 'testing.limits'");
+    assertThat(AgentConfig.load(properties, environment).getList(ConfigKeys.TEST_FAULTS))
+        .containsExactly("advice-throw:jdbc");
+    assertThat(ConfigKeys.isTestOnly("test.faults")).isTrue();
+    assertThat(ConfigKeys.isTestOnly("testing.x")).isTrue();
+    assertThat(ConfigKeys.isTestOnly("tests")).isFalse();
+  }
+
+  @Test
   @DisplayName("booleans are case-insensitive; empty values count as unset")
   void conversions() {
     Map<String, String> values = new HashMap<String, String>();

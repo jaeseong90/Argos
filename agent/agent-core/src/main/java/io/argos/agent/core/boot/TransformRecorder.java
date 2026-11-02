@@ -33,13 +33,29 @@ import net.bytebuddy.utility.JavaModule;
  * java.util.concurrent.ThreadPoolExecutor test-probe-jdk bootstrap retransformed
  * </pre>
  *
+ * <p>With {@code debug.transform-log=<file>} (18 §5.6, T-AG-005) the same classes go to that file
+ * with a {@code T} prefix, followed by every transformation failure ({@code E}, reported by {@link
+ * TransformErrorListener} or by a type matcher that met a {@code ClassCircularityError}) and a
+ * summary line with the counts:
+ *
+ * <pre>
+ * # Argos transform log: T &lt;class&gt; &lt;modules&gt; &lt;loader&gt; [retransformed] | E &lt;class&gt; &lt;modules&gt; &lt;loader&gt; &lt;error&gt;
+ * T example.trivial.TrivialApp$Handler test-probe app
+ * E com.example.Broken jdbc app java.lang.IllegalStateException
+ * # summary transformed=2 onError=1 classCircularityError=0
+ * </pre>
+ *
  * <p>With {@code debug.transform-timing=true} the time from discovery to completion of every
  * transformed class is logged at INFO (10 §4.3).
  */
 final class TransformRecorder extends AgentBuilder.Listener.Adapter {
   static final int MAX_ENTRIES = 100_000;
+  static final int MAX_ERROR_ENTRIES = 10_000;
   static final String HEADER =
       "# Argos transformed classes: <class> <modules> <loader> [retransformed]";
+  static final String LOG_HEADER =
+      "# Argos transform log: T <class> <modules> <loader> [retransformed]"
+          + " | E <class> <modules> <loader> <error>";
 
   private static final ThreadLocal<long[]> CURRENT =
       new ThreadLocal<long[]>() {
@@ -51,10 +67,15 @@ final class TransformRecorder extends AgentBuilder.Listener.Adapter {
       };
 
   private final File listFile;
+  private final File logFile;
   private final boolean timing;
   private final String[] moduleNames;
   private final ConcurrentHashMap<String, String> entries = new ConcurrentHashMap<String, String>();
+  private final ConcurrentHashMap<String, String> errorEntries =
+      new ConcurrentHashMap<String, String>();
   private final AtomicLong transformed = new AtomicLong();
+  private final AtomicLong errors = new AtomicLong();
+  private final AtomicLong circularity = new AtomicLong();
   private final AtomicLong version = new AtomicLong();
   private long writtenVersion = -1;
 
@@ -63,9 +84,23 @@ final class TransformRecorder extends AgentBuilder.Listener.Adapter {
    * @param moduleNames module id to module name (index = module id)
    */
   TransformRecorder(File listFile, boolean timing, String[] moduleNames) {
+    this(listFile, null, timing, moduleNames);
+  }
+
+  /**
+   * @param listFile {@code debug.transform-list} file, or null
+   * @param logFile {@code debug.transform-log} file, or null
+   * @param moduleNames module id to module name (index = module id)
+   */
+  TransformRecorder(File listFile, File logFile, boolean timing, String[] moduleNames) {
     this.listFile = listFile;
+    this.logFile = logFile;
     this.timing = timing;
     this.moduleNames = moduleNames.clone();
+  }
+
+  private boolean recording() {
+    return listFile != null || logFile != null;
   }
 
   /** Called by {@link ModuleTransformer}: {@code moduleId} transforms the current type. */
@@ -101,7 +136,7 @@ final class TransformRecorder extends AgentBuilder.Listener.Adapter {
     long[] current = CURRENT.get();
     long bits = current[0];
     transformed.incrementAndGet();
-    if (listFile != null && entries.size() < MAX_ENTRIES) {
+    if (recording() && entries.size() < MAX_ENTRIES) {
       entries.put(
           type.getName() + " " + loaderName(classLoader),
           type.getName()
@@ -125,6 +160,50 @@ final class TransformRecorder extends AgentBuilder.Listener.Adapter {
   public void onComplete(
       String typeName, ClassLoader classLoader, JavaModule module, boolean loaded) {
     CURRENT.get()[0] = 0;
+  }
+
+  /**
+   * A transformation failure ({@link TransformErrorListener#onError}); {@code moduleBits} are the
+   * modules that were transforming the type.
+   */
+  void recordError(String typeName, ClassLoader classLoader, long moduleBits, Throwable error) {
+    errors.incrementAndGet();
+    if (error instanceof ClassCircularityError) {
+      circularity.incrementAndGet();
+    }
+    addError(typeName, loaderName(classLoader), modules(moduleBits), error);
+  }
+
+  /**
+   * A type matcher met an error while resolving {@code typeName} ({@code SafeMatchers}, 10 §14):
+   * only a {@code ClassCircularityError} is recorded (other resolution failures of foreign types
+   * are normal: missing optional dependencies).
+   */
+  void recordResolutionError(String typeName, Throwable error) {
+    if (error instanceof ClassCircularityError) {
+      circularity.incrementAndGet();
+      addError(typeName, "-", "-", error);
+    }
+  }
+
+  private void addError(String typeName, String loader, String modules, Throwable error) {
+    if (logFile != null && errorEntries.size() < MAX_ERROR_ENTRIES) {
+      String className = error == null ? "-" : error.getClass().getName();
+      errorEntries.put(
+          typeName + " " + loader + " " + className,
+          "E " + typeName + " " + modules + " " + loader + " " + className);
+    }
+    version.incrementAndGet();
+  }
+
+  /** {@code onError} events so far. */
+  long errorCount() {
+    return errors.get();
+  }
+
+  /** {@code ClassCircularityError}s so far (in {@code onError} and in type matchers). */
+  long circularityCount() {
+    return circularity.get();
   }
 
   private String modules(long bits) {
@@ -163,9 +242,9 @@ final class TransformRecorder extends AgentBuilder.Listener.Adapter {
     return transformed.get();
   }
 
-  /** Writes the list file when it changed (watch thread and shutdown hook). */
+  /** Writes the list and log files when they changed (watch thread and shutdown hook). */
   synchronized void writeIfChanged() {
-    if (listFile == null) {
+    if (!recording()) {
       return;
     }
     long current = version.get();
@@ -174,25 +253,51 @@ final class TransformRecorder extends AgentBuilder.Listener.Adapter {
     }
     List<String> lines = new ArrayList<String>(entries.values());
     Collections.sort(lines);
-    StringBuilder text = new StringBuilder(HEADER).append('\n');
-    for (String line : lines) {
-      text.append(line).append('\n');
+    boolean written = true;
+    if (listFile != null) {
+      StringBuilder text = new StringBuilder(HEADER).append('\n');
+      for (String line : lines) {
+        text.append(line).append('\n');
+      }
+      written = write(listFile, text, "debug.transform-list");
     }
+    if (logFile != null) {
+      StringBuilder text = new StringBuilder(LOG_HEADER).append('\n');
+      for (String line : lines) {
+        text.append("T ").append(line).append('\n');
+      }
+      List<String> failures = new ArrayList<String>(errorEntries.values());
+      Collections.sort(failures);
+      for (String line : failures) {
+        text.append(line).append('\n');
+      }
+      text.append("# summary transformed=")
+          .append(transformed.get())
+          .append(" onError=")
+          .append(errors.get())
+          .append(" classCircularityError=")
+          .append(circularity.get())
+          .append('\n');
+      written &= write(logFile, text, "debug.transform-log");
+    }
+    if (written) {
+      writtenVersion = current;
+    }
+  }
+
+  private static boolean write(File file, StringBuilder text, String key) {
     try {
-      File parent = listFile.getAbsoluteFile().getParentFile();
+      File parent = file.getAbsoluteFile().getParentFile();
       if (parent != null && !parent.isDirectory() && !parent.mkdirs() && !parent.isDirectory()) {
         throw new IOException("cannot create " + parent);
       }
-      try (OutputStream out = Files.newOutputStream(listFile.toPath())) {
+      try (OutputStream out = Files.newOutputStream(file.toPath())) {
         out.write(text.toString().getBytes(StandardCharsets.UTF_8));
       }
-      writtenVersion = current;
+      return true;
     } catch (IOException e) {
-      AgentLogger.warnOnce(
-          "transform-list-write",
-          "cannot write debug.transform-list {}: {}",
-          listFile,
-          e.toString());
+      AgentLogger.warnOnce(key + "-write", "cannot write {} {}: {}", key, file, e.toString());
+      return false;
     }
   }
 }

@@ -31,32 +31,32 @@ import java.util.Set;
  *
  * <p>Results: modules sorted by {@link InstrumentationModule#moduleId()}; modules in {@code
  * instrumentation.disabled} are reported {@code DISABLED_BY_CONFIG} and not installed; a module
- * with an invalid or duplicate id is skipped with a WARN. {@code argos.test.faults} puts the named
- * modules into {@link ModuleHealth#TEST_FAULT} (T-AG-040).
+ * with an invalid or duplicate id is skipped with a WARN. {@code argos.test.faults} ({@link
+ * TestFaults}) puts the modules of {@code advice-throw:<module>} into {@link
+ * ModuleHealth#TEST_FAULT} (T-AG-040); its other faults act at transformation time. A fault spec
+ * that names no installed module (unknown, or off by {@code instrumentation.disabled}) gets one
+ * WARN after discovery.
  */
 final class ModuleRegistry {
   static final String SERVICE_FILE =
       "META-INF/services/io.argos.agent.instrumentation.api.InstrumentationModule";
-
-  static final String FAULT_ADVICE_THROW = "advice-throw:";
 
   private ModuleRegistry() {}
 
   /** Modules to install (enabled by configuration), in module id order. */
   static List<InstrumentationModule> load(
       ClassLoader agentLoader, AgentConfig config, AgentControl control) {
+    return load(agentLoader, config, control, TestFaults.from(config));
+  }
+
+  /** {@link #load(ClassLoader, AgentConfig, AgentControl)} with already parsed test faults. */
+  static List<InstrumentationModule> load(
+      ClassLoader agentLoader, AgentConfig config, AgentControl control, TestFaults faults) {
     Set<String> disabled = new HashSet<String>(config.getList(ConfigKeys.INSTRUMENTATION_DISABLED));
-    Set<String> faults = new HashSet<String>();
-    for (String fault : config.getList(ConfigKeys.TEST_FAULTS)) {
-      if (fault.startsWith(FAULT_ADVICE_THROW)) {
-        faults.add(fault.substring(FAULT_ADVICE_THROW.length()));
-      } else {
-        AgentLogger.warn(
-            "argos.test.faults: unsupported fault '{}' (advice-throw:<module>)", fault);
-      }
-    }
     List<InstrumentationModule> modules = new ArrayList<InstrumentationModule>();
     Set<String> ids = new HashSet<String>();
+    List<String> installed = new ArrayList<String>();
+    List<String> disabledFound = new ArrayList<String>();
     boolean[] moduleIds = new boolean[ModuleHealth.MAX_MODULES];
     for (String className : classNames(agentLoader)) {
       InstrumentationModule module = instantiate(agentLoader, className);
@@ -86,16 +86,20 @@ final class ModuleRegistry {
       if (disabled.contains(id)) {
         control.setModuleState(moduleId, ModuleHealth.DISABLED_BY_CONFIG);
         AgentLogger.info("instrumentation module {} disabled by instrumentation.disabled", id);
+        disabledFound.add(id);
         continue;
       }
-      if (faults.contains(id)) {
+      faults.announce(id);
+      if (faults.adviceThrows(id)) {
         control.setModuleState(moduleId, ModuleHealth.TEST_FAULT);
-        AgentLogger.warn("argos.test.faults: advice of module {} throws (test fault)", id);
       } else {
         control.setModuleState(moduleId, ModuleHealth.ENABLED);
       }
       modules.add(module);
+      installed.add(id);
     }
+    // A fault spec that matches no installed module injects nothing: say so (18 §5.7).
+    faults.reportUnmatched(installed, disabledFound);
     Collections.sort(
         modules,
         new Comparator<InstrumentationModule>() {

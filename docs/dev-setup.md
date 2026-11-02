@@ -111,11 +111,17 @@ pnpm -C ui dev
 | `./gradlew :agent:agent-dist:check` | Agent jar checks: shading (`checkShading`), relocated property strings (`checkRelocatedStrings`), class file major version 52 (`checkMajorVersion`) | — |
 | `./gradlew verifyAgentJar` | Agent jar verification included in `check` | — |
 | `pnpm -C ui test` | UI unit and component tests (Vitest) | — |
+| `./gradlew traceabilityReport` | Requirement to test report from the test sources and the last JUnit results (`build/reports/traceability.md`, `.json`); runs no test | — |
 
-`matrixTest` (compatibility matrix) and `benchTest` (overhead benchmark) are not part of the pull
-request workflow. Run a single combination locally with `./gradlew matrixTest -Pmatrix.combo=<id>`
-(needs Docker and the JDK of that combination, 18 §2.2); the full matrix runs only on trusted
-self-hosted runners. `benchTest` requires `-Pbench.machine-profile=<id>`.
+`matrixTest` (compatibility matrix) and `benchTest` (overhead benchmark, `test/bench`) are not part
+of the pull request workflow. Run a single combination locally with
+`./gradlew matrixTest -Pmatrix.combo=<id>` or a group with `-Pmatrix.group=<group>` (needs Docker
+and the JDK of that combination, 18 §2.2); the full matrix runs only on trusted self-hosted runners,
+and without a runner label or a selection `matrixTest` is skipped with a warning. `benchTest`,
+`serverLoadTest`, `storageBench`, `soakTest` and `chaosTest` require
+`-Pbench.machine-profile=<id>` and fail before building anything without it; `serverLoadTest`,
+`soakTest` and `chaosTest` are placeholders until WO-29 and WO-52. Test layers, test IDs and
+requirement tags: [test/README.md](../test/README.md).
 
 ## 4. Static checks
 

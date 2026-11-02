@@ -39,8 +39,18 @@ public final class ProbeModule implements InstrumentationModule {
     return Witness.hasClassesNamed("example.trivial.TrivialApp");
   }
 
+  /**
+   * Test-only initialization fault (T-AG-044, 18 §5.7): with {@code -Dprobe.init-throw=true} this
+   * module fails while the agent builds its transformer, i.e. inside the agent's start sequence.
+   * Not in the {@code argos.} namespace: the agent's configuration never sees it.
+   */
+  static final String INIT_THROW_PROPERTY = "probe.init-throw";
+
   @Override
   public List<TypeInstrumentation> types() {
+    if (Boolean.getBoolean(INIT_THROW_PROPERTY)) {
+      throw new IllegalStateException("probe.init-throw: injected initialization failure");
+    }
     return Arrays.<TypeInstrumentation>asList(
         new TypeInstrumentation() {
           @Override

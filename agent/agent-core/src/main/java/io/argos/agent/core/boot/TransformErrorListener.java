@@ -20,13 +20,19 @@ final class TransformErrorListener extends AgentBuilder.Listener.Adapter {
   private final AgentControl control;
   private final int threshold;
   private final String[] moduleNames;
+  private final TransformRecorder recorder;
   private final AtomicLong errors = new AtomicLong();
   private final AtomicLong circularity = new AtomicLong();
 
-  TransformErrorListener(AgentControl control, int threshold, String[] moduleNames) {
+  /**
+   * @param recorder receives every failure for {@code debug.transform-log} (T-AG-005)
+   */
+  TransformErrorListener(
+      AgentControl control, int threshold, String[] moduleNames, TransformRecorder recorder) {
     this.control = control;
     this.threshold = threshold;
     this.moduleNames = moduleNames.clone();
+    this.recorder = recorder;
   }
 
   @Override
@@ -41,6 +47,7 @@ final class TransformErrorListener extends AgentBuilder.Listener.Adapter {
     if (throwable instanceof ClassCircularityError) {
       circularity.incrementAndGet();
     }
+    recorder.recordError(typeName, classLoader, bits, throwable);
     if (count <= LOGGED_ERRORS) {
       AgentLogger.warn(
           "transformation of {} ({}) failed, class left unchanged: {}",

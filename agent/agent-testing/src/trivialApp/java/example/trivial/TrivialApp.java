@@ -62,6 +62,11 @@ public final class TrivialApp {
     try (OutputStream out = new FileOutputStream(args[0])) {
       results.store(out, "TrivialApp results");
     }
+    // Optional second argument: stay alive that many ms (an agent that failed to start has no
+    // shutdown hook; its asynchronous logger writes about every 50 ms, T-AG-044).
+    if (args.length > 1) {
+      Thread.sleep(Long.parseLong(args[1]));
+    }
     System.out.println(DONE);
   }
 

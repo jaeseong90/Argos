@@ -1,0 +1,20 @@
+# Transformed-class baseline (18 §5.6, DSN-18-05, T-AG-005): <class> <modules> <loader>
+# shop-boot3 on JDK 25. Re-record: ./gradlew :agent:agent-testing:integrationTest -Pagent.baseline.record=true; review the diff in the PR.
+com.zaxxer.hikari.pool.HikariProxyConnection jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
+com.zaxxer.hikari.pool.HikariProxyPreparedStatement jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
+com.zaxxer.hikari.pool.HikariProxyStatement jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
+com.zaxxer.hikari.pool.ProxyConnection jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
+com.zaxxer.hikari.pool.ProxyPreparedStatement jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
+com.zaxxer.hikari.pool.ProxyStatement jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
+jakarta.servlet.http.HttpServlet servlet org.springframework.boot.loader.launch.LaunchedClassLoader
+java.util.concurrent.ThreadPoolExecutor executor bootstrap
+org.apache.tomcat.websocket.server.WsFilter servlet org.springframework.boot.loader.launch.LaunchedClassLoader
+org.h2.jdbc.JdbcConnection jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
+org.h2.jdbc.JdbcPreparedStatement jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
+org.h2.jdbc.JdbcStatement jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
+org.springframework.web.filter.OncePerRequestFilter servlet org.springframework.boot.loader.launch.LaunchedClassLoader
+org.springframework.web.servlet.function.support.HandlerFunctionAdapter spring-webmvc org.springframework.boot.loader.launch.LaunchedClassLoader
+org.springframework.web.servlet.mvc.HttpRequestHandlerAdapter spring-webmvc org.springframework.boot.loader.launch.LaunchedClassLoader
+org.springframework.web.servlet.mvc.SimpleControllerHandlerAdapter spring-webmvc org.springframework.boot.loader.launch.LaunchedClassLoader
+org.springframework.web.servlet.mvc.method.AbstractHandlerMethodAdapter spring-webmvc org.springframework.boot.loader.launch.LaunchedClassLoader
+sun.net.www.protocol.http.HttpURLConnection httpclient-jdk bootstrap

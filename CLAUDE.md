@@ -50,17 +50,24 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
 ./gradlew build                                   # 전체: 컴파일 + check + UI(pnpm install·build·lint·typecheck·test)
 ./gradlew build -Pargos.ui.skip=true              # Java만 (빠른 반복용, PR 전에는 전체 build)
 ./gradlew check                                   # test, archTest, contractTest, verifyAgentJar, spotlessCheck, Error Prone,
-                                                  # checkLicenses, checkSpdx, build-logic 테스트, UI test·lint·typecheck
+                                                  # checkLicenses, checkSpdx, checkUnitTestSources, build-logic 테스트, UI test·lint·typecheck.
+                                                  # 루트 가드(argos.test-layers)가 check 구성(18 §2.2)과 성능 태스크의 -Pbench.machine-profile을 그래프 단계에서 검사(test/README.md)
 ./gradlew spotlessApply                           # Java 포맷·SPDX 헤더 자동 수정
 ./gradlew :agent:agent-dist:agentJar              # 에이전트 단일 jar → agent/agent-dist/build/libs/argos-agent-<버전>.jar
-./gradlew :agent:agent-dist:check verifyAgentJar  # checkShading, checkMajorVersion(자체 52·셰이딩 ≤ 52), checkRelocatedStrings·checkOwnRelocatedLiterals(C-23), checkModuleIndex
+./gradlew :agent:agent-dist:check verifyAgentJar  # checkShading, checkMajorVersion(자체 52·셰이딩 ≤ 52), checkRelocatedStrings·checkOwnRelocatedLiterals(C-23), checkModuleIndex,
+                                                  # checkManifestVersion(Implementation-Version = 프로젝트 버전, T-BLD-010 릴리스 판정 fail-closed)
 ./gradlew :agent:agent-testing:archTest           # Advice·패키지 경계 규칙(T-AG-001~004, ADV-04, B-1~B-4, AGT-01~03)
 ./gradlew checkLicenses checkDevOnlyLicenses      # 라이선스 허용 목록(테스트 전용 예외: docs/licenses/dev-only.md)
 ./gradlew integrationTest                         # Testcontainers(Docker), 샘플 앱 shop-boot3 스모크 3변형·시드 센티널, 저장소 스키마·생성기·쿼리(실제 ClickHouse). check에 포함되지 않음
-./gradlew integrationTest -Pqueries.profile=ci    # CI와 같다: 저장소 정합 T-ST-030~033·053을 생성기 1/100 프로파일로(12스레드 개발 머신에서 전체 약 6분)
+./gradlew integrationTest -Pqueries.profile=ci    # CI와 같다: 저장소 정합 T-ST-030~033·053을 생성기 1/100 프로파일로(12스레드 개발 머신에서 전체 약 7분)
 ./gradlew :agent:agent-testing:integrationTest -Pagent.attach.jdks=8,11,17,21,25 -Pagent.e2e=shop-boot2@8,shop-boot2@11,shop-boot2@17,shop-boot2@21,shop-boot3@17,shop-boot3@21,shop-boot3@25
-                                                  # 에이전트 부착(JDK별 시나리오)·샘플 앱 종단 매트릭스(T-AG-010·040·070 PoC, T-BLD-006, C-27 플래그, JDK 25는 deny).
-                                                  # 기본은 부착 JDK 8·21 + shop-boot3@21, -Pagent.e2e=none이면 종단 생략. 결과 agent/agent-testing/build/reports/agent-e2e/
+                                                  # 에이전트 하네스(agent/agent-testing/README.md) 위의 부착(JDK별)·샘플 앱 종단 매트릭스와 FakeCollector
+                                                  # (T-AG-005·010·040·041·044·050·053·070, T-BLD-006·010, C-27 플래그, JDK 25는 deny).
+                                                  # 기본은 부착 JDK 8·21 + shop-boot3@21, -Pagent.e2e=none이면 종단 생략. 결과 agent/agent-testing/build/reports/agent-e2e/(<app>-jdk<N>-transform.log 포함).
+                                                  # -Pagent.baseline.record=true는 변환 베이스라인(agent/agent-testing/baselines/transformed-classes) 재녹화(계측을 바꾸는 WO는 diff를 PR에),
+                                                  # -Pagent.e2e에 WAR 조합(shop-war-javax@8·11·17·21, shop-war-jakarta@17·21·25)을 넣으면 독립 Tomcat(127.0.0.1)에서 WarAppAgentTest
+                                                  # (조합당 약 30~50초, 기본에는 WAR 조합이 없어 skip). 예: -Pagent.e2e=shop-war-jakarta@21 --tests '*WarAppAgentTest'
+                                                  # -Pagent.container=true는 컨테이너 모드 테스트 추가(Docker, JDK 이미지는 다이제스트 고정, -Pagent.container.image.<jdk>=<image>@sha256:<digest>로 교체)
 ./gradlew :test:agent:transport-poc:transportPocJars :test:agent:transport-poc:transportPocTest
                                                   # P-3 전송 비교 jar 9종·보고서, proto 테스트, 스모크(JDK 8·21). 알려진 발견(ADR-0005 P1·P3)은 단언하고 -Ptransport.poc.strict=true면 실패로 셈
 ./gradlew :test:agent:transport-poc:transportPocBench -Ptransport.poc.jdk8u242=<JRE> -Ptransport.poc.jdk8u252=<JRE>
@@ -71,10 +78,18 @@ test/storage/bench/bench-server.sh start          # 저장소 PoC 벤치용 단�
 ./gradlew :test:storage:queries:storageQueries -Pqueries.args="--url http://127.0.0.1:18123" -Pqueries.cold=none
                                                   # Q01~Q20 러너 → test/storage/queries/build/reports/storage-queries/bench/report.md
 ./gradlew securityTest                            # 보안 테스트 스위트. check에 포함되지 않음
-./gradlew matrixTest -Pmatrix.combo=<id>          # 호환성 매트릭스 1개 조합을 로컬 실행(Docker·해당 JDK 필요). 전체 매트릭스는 신뢰 러너 전용
-./gradlew benchTest -Pbench.machine-profile=<id>  # 오버헤드 벤치(벤치 머신 전용)
-test/agent/overhead/run-overhead.sh <load|startup|report> --out DIR
-                                                  # WO-02 P-2 오버헤드 하네스(01 §7.3, k6는 fetch-k6.sh). 전용 장비 절차는 docs/poc/agent-overhead.md 9장
+./gradlew matrixTest -Pmatrix.combo=<id>          # 호환성 매트릭스 1개 조합(또는 -Pmatrix.group=<group>)을 로컬 실행(Docker·해당 JDK 필요). 전체 매트릭스는 신뢰 러너 전용.
+                                                  # 라벨(ARGOS_RUNNER_LABELS=argos-matrix)·선택이 없으면 SKIPPED + WARNING 1줄
+./gradlew :test:bench:benchTest -Pbench.machine-profile=<id>
+                                                  # 오버헤드 벤치 전체 프로토콜(18 §7, bench-protocol.sh: main·startup·container·vt, 약 5시간). 벤치 머신 전용
+./gradlew serverLoadTest -Pbench.machine-profile=<id>   # soakTest·chaosTest도 같다. 러너는 WO-29·WO-52 몫이라 지금은 담당 WO를 밝히고 실패(측정 없음).
+                                                  # benchTest·serverLoadTest·storageBench·soakTest·chaosTest는 프로필이 없으면 아무것도 빌드하기 전에 실패
+test/bench/bench-run.sh --app shop-boot3 --jdk 21 --rounds 3 --exporter noop
+                                                  # 18 §7.3 A-B-A-B-A-B 세트 + 보고서 docs/bench/<날짜>-<커밋7>.md(--exporter drop은 WO-02 P-2 설정 재현). 전용 장비 절차는 docs/poc/agent-overhead.md 9장
+test/bench/bench-run.sh --smoke --startup --exporter drop --machine-profile <이름>
+                                                  # 공유 머신에서 측정 체인만 확인(약 7분, 보고서는 항상 INVALID)
+test/bench/bench.sh <load|startup|report|publish> ...   # 벤치 하네스 직접 실행(k6는 test/bench/fetch-k6.sh). 사용법 test/bench/README.md
+./gradlew traceabilityReport                      # 요구 → 테스트 ID → 테스트 → 마지막 결과 → build/reports/traceability.md·.json(테스트 실행 없음, test/README.md 6장)
 ./gradlew :sample-apps:<app>:sampleSmoke          # 샘플 앱을 에이전트 없이 기동해 엔드포인트 카탈로그 검증(전 변형, check 미포함).
                                                   # 1개 변형은 sampleSmoke<Variant>, 루트 sampleSmoke는 50변형 전부. -Psample.startupRuns=5는 기동 중앙값
 ./gradlew :sample-apps:<app>:sampleAppJar         # 실행 jar → sample-apps/<app>/build/sample-app/<app>.jar (WAR 앱은 :war)

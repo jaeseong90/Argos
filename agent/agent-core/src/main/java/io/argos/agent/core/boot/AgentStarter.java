@@ -54,9 +54,18 @@ public final class AgentStarter {
       AgentControl control,
       long premainStartNanos) {
     long p3 = System.nanoTime();
+    AgentInfo info;
+    try {
+      info = AgentInfo.fromJar(agentJar);
+    } catch (Throwable t) {
+      // Fail-closed (T-BLD-010): a packaged jar whose manifest cannot be read is a release build.
+      info = AgentInfo.unreadable(agentJar);
+    }
     AgentConfig config;
     try {
-      config = AgentConfig.fromSystem();
+      // T-BLD-010: a release build ignores argos.test.* (the jar's Implementation-Version; only a
+      // -SNAPSHOT version enables the test hooks, a missing or unreadable one does not).
+      config = AgentConfig.fromSystem(info.isReleaseBuild());
     } catch (Throwable t) {
       config = AgentConfig.of(java.util.Collections.<String, String>emptyMap());
     }
@@ -67,7 +76,7 @@ public final class AgentStarter {
       logDestination = "unavailable (" + t + ")";
     }
     try {
-      run(inst, agentJar, agentArgs, control, config, logDestination, premainStartNanos, p3);
+      run(inst, agentJar, agentArgs, control, config, info, logDestination, premainStartNanos, p3);
     } catch (Throwable t) {
       control.setEnabled(false);
       AgentLogger.error(
@@ -81,6 +90,7 @@ public final class AgentStarter {
       String agentArgs,
       AgentControl control,
       AgentConfig config,
+      AgentInfo info,
       String logDestination,
       long premainStartNanos,
       long p3) {
@@ -95,7 +105,6 @@ public final class AgentStarter {
     }
     boolean enabled = config.getBoolean(ConfigKeys.ENABLED, true);
     control.setEnabled(enabled);
-    AgentInfo info = AgentInfo.fromJar(agentJar);
 
     // P5: tracer, export queue, module states.
     long p5 = System.nanoTime();
@@ -125,17 +134,9 @@ public final class AgentStarter {
       AgentLogger.warn("configuration: {}", warning);
     }
     control.installTracer(tracer);
-    SafeMatchers.setErrorSink(
-        new SafeMatchers.ErrorSink() {
-          @Override
-          public void onResolutionError(String typeName, Throwable error) {
-            if (AgentLogger.isDebugEnabled()) {
-              AgentLogger.debug("type resolution failed in a matcher: {}: {}", typeName, error);
-            }
-          }
-        });
     ClassLoader agentLoader = AgentStarter.class.getClassLoader();
-    List<InstrumentationModule> modules = ModuleRegistry.load(agentLoader, config, control);
+    TestFaults faults = TestFaults.from(config);
+    List<InstrumentationModule> modules = ModuleRegistry.load(agentLoader, config, control, faults);
 
     // P6: agent builder.
     long p6 = System.nanoTime();
@@ -146,16 +147,29 @@ public final class AgentStarter {
       moduleList.append(moduleList.length() == 0 ? "" : ",").append(module.id());
     }
     String listPath = config.get(ConfigKeys.DEBUG_TRANSFORM_LIST, null);
+    String logPath = config.get(ConfigKeys.DEBUG_TRANSFORM_LOG, null);
     final TransformRecorder recorder =
         new TransformRecorder(
             listPath == null ? null : new File(listPath),
+            logPath == null ? null : new File(logPath),
             config.getBoolean(ConfigKeys.DEBUG_TRANSFORM_TIMING, false),
             moduleNames);
+    SafeMatchers.setErrorSink(
+        new SafeMatchers.ErrorSink() {
+          @Override
+          public void onResolutionError(String typeName, Throwable error) {
+            recorder.recordResolutionError(typeName, error);
+            if (AgentLogger.isDebugEnabled()) {
+              AgentLogger.debug("type resolution failed in a matcher: {}: {}", typeName, error);
+            }
+          }
+        });
     TransformErrorListener errors =
         new TransformErrorListener(
             control,
             config.getInt(ConfigKeys.INSTRUMENTATION_TRANSFORM_ERROR_THRESHOLD, 10, 1, 1_000_000),
-            moduleNames);
+            moduleNames,
+            recorder);
     if (!modules.isEmpty()) {
       LoaderState loaderState = new LoaderState();
       InstrumentationInstaller.install(
@@ -165,8 +179,9 @@ public final class AgentStarter {
           config.getList(ConfigKeys.INSTRUMENTATION_EXCLUDE_CLASSES),
           recorder,
           errors,
-          new HelperInjector(inst, agentLoader, loaderState),
-          loaderState);
+          new HelperInjector(inst, agentLoader, loaderState, faults),
+          loaderState,
+          faults);
     }
 
     // P7: agent threads (premain does not wait for them).

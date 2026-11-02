@@ -11,7 +11,8 @@ import java.util.Properties;
 
 /**
  * Effective agent configuration (10 §15, 02 §7): system properties {@code -Dargos.<key>}, then
- * environment variables {@code ARGOS_<KEY>} (the later source wins). Immutable.
+ * environment variables {@code ARGOS_<KEY>} (the later source wins). Immutable. Release builds
+ * ignore the test-only namespaces ({@link #load(Properties, Map, boolean)}, T-BLD-010).
  *
  * <p>WO-02 scope: no YAML file yet ({@code argos.config} is reported and ignored; WO-10 adds the
  * file as the lowest-precedence source), values are read as strings and converted on access with
@@ -35,21 +36,41 @@ public final class AgentConfig {
 
   /**
    * Reads the configuration of this JVM ({@link System#getProperties()}, {@link System#getenv()}).
+   *
+   * @param releaseBuild true for a release build of the agent ({@code AgentInfo.isReleaseBuild()}):
+   *     the test-only namespaces {@code argos.test.*} and {@code argos.testing.*} are then ignored
+   *     (18 §15, DSN-18-15, T-BLD-010)
    */
-  public static AgentConfig fromSystem() {
-    return load(System.getProperties(), System.getenv());
+  public static AgentConfig fromSystem(boolean releaseBuild) {
+    return load(System.getProperties(), System.getenv(), releaseBuild);
   }
 
-  /** Reads {@code argos.*} properties and {@code ARGOS_*} variables of known keys. */
+  /** {@link #load(Properties, Map, boolean)} of a development (snapshot) build. */
   public static AgentConfig load(Properties properties, Map<String, String> environment) {
+    return load(properties, environment, false);
+  }
+
+  /**
+   * Reads {@code argos.*} properties and {@code ARGOS_*} variables of known keys. This is the
+   * single place where the agent reads its settings, so the release-build gate of the test-only
+   * namespaces lives here: with {@code releaseBuild}, {@code argos.test.*}/{@code ARGOS_TEST_*} and
+   * {@code argos.testing.*} are dropped (one warning names them) and have no effect (T-BLD-010).
+   */
+  public static AgentConfig load(
+      Properties properties, Map<String, String> environment, boolean releaseBuild) {
     Map<String, String> values = new LinkedHashMap<String, String>();
     Map<String, String> sources = new LinkedHashMap<String, String>();
     List<String> warnings = new ArrayList<String>();
+    List<String> ignoredTestSettings = new ArrayList<String>();
     for (String name : properties.stringPropertyNames()) {
       if (!name.startsWith(ConfigKeys.PROPERTY_PREFIX)) {
         continue;
       }
       String key = name.substring(ConfigKeys.PROPERTY_PREFIX.length());
+      if (releaseBuild && ConfigKeys.isTestOnly(key)) {
+        ignoredTestSettings.add(name);
+        continue;
+      }
       if (!ConfigKeys.KNOWN.contains(key)) {
         warnings.add("unknown configuration key '" + key + "' (system property " + name + ")");
         continue;
@@ -58,11 +79,21 @@ public final class AgentConfig {
       sources.put(key, SOURCE_PROPERTY);
     }
     for (String key : ConfigKeys.KNOWN) {
-      String value = environment.get(ConfigKeys.environmentName(key));
+      String variable = ConfigKeys.environmentName(key);
+      String value = environment.get(variable);
       if (value != null) {
+        if (releaseBuild && ConfigKeys.isTestOnly(key)) {
+          ignoredTestSettings.add(variable);
+          continue;
+        }
         values.put(key, value.trim());
         sources.put(key, SOURCE_ENVIRONMENT);
       }
+    }
+    if (!ignoredTestSettings.isEmpty()) {
+      Collections.sort(ignoredTestSettings);
+      warnings.add(
+          "test-only settings ignored in a release build (T-BLD-010): " + ignoredTestSettings);
     }
     if (values.containsKey(ConfigKeys.CONFIG_FILE)) {
       warnings.add(

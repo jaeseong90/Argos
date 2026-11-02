@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Agent log allow-list of the normal scenario (18 §5.10, T-AG-060, AgentLogAssert): every WARN line
+# of the agent log must match one regular expression below (Java regex, matched against the whole
+# message after "[thread] "); ERROR lines are never allowed. Lines starting with # are comments.
+#
+# Adding a line needs a reason and the work order that removes it again. The goal is an empty list
+# (03 §3.1 "정상 시나리오 로그 ERROR 0·WARN 0").
+
+# C-5 (WO-02 report): the default exporter `grpc` has no transport before WO-11; the agent logs this
+# once and drops transactions (noop). Harness runs use argos.test.exporter=file, so it only shows
+# when a test selects the default exporter. Remove with WO-11.
+exporter 'grpc' is not available in this agent build \(io\.argos\.agent\.core\.transport\.GrpcExporterFactory missing\); transactions are recorded and dropped \(noop\)

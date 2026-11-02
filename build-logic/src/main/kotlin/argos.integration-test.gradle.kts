@@ -1,11 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// argos.integration-test: test layers beyond unit tests (19 §3.6, 18 §2.2). None of these suites
-// is part of check; CI runs them as separate jobs.
+// argos.integration-test: test layers beyond unit tests (19 §3.2, §3.6, 18 §2.2). None of these
+// suites is part of check (argos.test-layers fails the build if one is wired into it); CI runs them
+// as separate jobs. test/README.md lists every layer and how to run it.
 //   integrationTest  src/integrationTest  Testcontainers, fake collector, one sample app (PR)
 //   securityTest     src/securityTest     SEC suite (PR light / nightly full)
-//   matrixTest       src/matrixTest       sample apps x JDKs; self-hosted runners only
-//   benchTest        src/benchTest        overhead protocol; requires -Pbench.machine-profile
+//   matrixTest       src/matrixTest       sample apps x JDKs; agent-testing only has sources.
+//                                         Runs on a self-hosted 'argos-matrix' runner
+//                                         (ARGOS_RUNNER_LABELS) or with -Pmatrix.combo=<id> /
+//                                         -Pmatrix.group=<group>; otherwise SKIPPED with a warning.
+//   benchTest        src/benchTest        overhead protocol; the runner lives in test/bench (18 §7).
+//                                         Requires -Pbench.machine-profile=<id> (argos.test-layers
+//                                         fails fast without it; the task checks it again).
+
+import io.argos.buildlogic.testing.MachineProfile
+import io.argos.buildlogic.testing.MatrixGate
+import io.argos.buildlogic.testing.TestLayers
 
 plugins { id("argos.java-common") }
 
@@ -19,13 +29,10 @@ plugins { id("argos.java-common") }
  */
 val bytecodeVerificationFlags = listOf("-XX:+UnlockDiagnosticVMOptions", "-XX:+BytecodeVerificationLocal")
 
-/** Runner label that marks the trusted self-hosted matrix runner (DSN-19-06, O-S05). */
-val matrixRunnerLabel = "argos-matrix"
-
-val runnerLabels =
-  providers.environmentVariable("ARGOS_RUNNER_LABELS").getOrElse("").split(',').map { it.trim() }
+val runnerLabels = providers.environmentVariable(TestLayers.RUNNER_LABELS_ENV).orNull
 val matrixCombo = providers.gradleProperty("matrix.combo").orNull
-val benchMachineProfile = providers.gradleProperty("bench.machine-profile").orNull
+val matrixGroup = providers.gradleProperty("matrix.group").orNull
+val benchMachineProfile = providers.gradleProperty(TestLayers.MACHINE_PROFILE_PROPERTY).orNull
 
 testing {
   suites {
@@ -49,20 +56,18 @@ testing {
       targets.configureEach {
         testTask.configure {
           // Local copies only: the onlyIf spec is serialized by the configuration cache.
-          val label = matrixRunnerLabel
-          val onTrustedRunner = label in runnerLabels
+          val run = MatrixGate.shouldRun(runnerLabels, matrixCombo, matrixGroup)
           val combo = matrixCombo
+          val group = matrixGroup
           jvmArgs(bytecodeVerificationFlags)
           if (combo != null) systemProperty("argos.matrix.combo", combo)
-          // Runs on the self-hosted matrix runner, or locally when a combination is chosen
-          // explicitly (-Pmatrix.combo=<id>, docs/dev-setup.md). Otherwise skip with a warning.
-          onlyIf("runner label '$label' present or -Pmatrix.combo set") { task ->
-            val run = onTrustedRunner || combo != null
+          if (group != null) systemProperty("argos.matrix.group", group)
+          val reason = "runner label '${TestLayers.MATRIX_RUNNER_LABEL}' present, or -Pmatrix.combo / -Pmatrix.group set"
+          onlyIf(reason) { task ->
             if (!run) {
-              task.logger.warn(
-                "WARNING: ${task.path} skipped: not on a self-hosted '$label' runner " +
-                  "(ARGOS_RUNNER_LABELS) and no -Pmatrix.combo=<id> given."
-              )
+              // Projects without matrix tests stay quiet; the one with tests says why it skipped.
+              val hasTests = (task as Test).testClassesDirs.files.any { dir -> dir.walk().any { it.isFile } }
+              if (hasTests) task.logger.warn(MatrixGate.skipWarning(task.path))
             }
             run
           }
@@ -76,9 +81,10 @@ testing {
         testTask.configure {
           val profile = benchMachineProfile
           if (profile != null) systemProperty("argos.bench.machineProfile", profile)
+          val taskPath = path
           doFirst {
-            if (profile == null) {
-              throw GradleException("benchTest requires -Pbench.machine-profile=<id> (18 §2.2)")
+            if (!MachineProfile.isValid(profile)) {
+              throw GradleException(MachineProfile.missingMessage(listOf(taskPath), profile))
             }
           }
         }

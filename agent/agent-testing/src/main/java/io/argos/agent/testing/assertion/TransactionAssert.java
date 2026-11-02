@@ -2,21 +2,29 @@
 package io.argos.agent.testing.assertion;
 
 import io.argos.agent.testing.export.TransactionRecord;
+import io.argos.agent.testing.export.TransactionRecord.StepRecord;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Predicate;
 import org.assertj.core.api.AbstractAssert;
 
 /**
- * AssertJ assertions on one exported transaction (WO-02 minimal form of the 18 §5.5 DSL; WO-05 adds
- * collections, steps trees and counters).
+ * Assertions on one collected transaction (18 §5.5):
  *
  * <pre>
  * assertThatTransaction(tx)
  *     .hasKind("HTTP").hasService("GET /api/orders/{id}").hasStatus(200).isNotError()
- *     .hasElapsed().hasStepCount("SQL", 1);
+ *     .cpuTimeMs().isMissing()                  // unsupported on JSONL: fails with the reason
+ *     .steps().ofType("SQL").hasSize(1)
+ *     .transaction().noStepFromThread(startsWith("argos-"));
  * </pre>
+ *
+ * Fields the record's source cannot carry ({@code env}, {@code version}, {@code cpu_time_ms} on the
+ * JSONL exporter; step threads) fail as {@link Unsupported} instead of passing.
  */
 public final class TransactionAssert extends AbstractAssert<TransactionAssert, TransactionRecord> {
 
-  private TransactionAssert(TransactionRecord actual) {
+  TransactionAssert(TransactionRecord actual) {
     super(actual, TransactionAssert.class);
   }
 
@@ -24,6 +32,7 @@ public final class TransactionAssert extends AbstractAssert<TransactionAssert, T
     return new TransactionAssert(actual);
   }
 
+  /** {@code HTTP}, {@code BATCH}, {@code MESSAGE}. */
   public TransactionAssert hasKind(String kind) {
     isNotNull();
     if (!kind.equals(actual.kind())) {
@@ -82,6 +91,16 @@ public final class TransactionAssert extends AbstractAssert<TransactionAssert, T
     return this;
   }
 
+  /** {@code app.env} of the transaction's instance (F-A21/A25). */
+  public TransactionAssert hasEnv(String env) {
+    return field("env").isEqualTo(env);
+  }
+
+  /** {@code app.version} of the transaction's instance (F-A21). */
+  public TransactionAssert hasVersion(String version) {
+    return field("version").isEqualTo(version);
+  }
+
   /** Elapsed time present and not negative (D-01). */
   public TransactionAssert hasElapsed() {
     isNotNull();
@@ -109,5 +128,128 @@ public final class TransactionAssert extends AbstractAssert<TransactionAssert, T
       failWithMessage("expected %s %s step(s) but found %s in%n%s", count, type, steps, actual);
     }
     return this;
+  }
+
+  /** The elapsed time ({@code elapsed_ms}). */
+  public ValueAssert<TransactionAssert> elapsedMs() {
+    return field("elapsed_ms");
+  }
+
+  /** CPU time; missing (not 0) when the agent cannot measure it (virtual threads, D-23). */
+  public ValueAssert<TransactionAssert> cpuTimeMs() {
+    return field("cpu_time_ms");
+  }
+
+  /** Allocated bytes; missing (not 0) when the agent cannot measure it (D-23). */
+  public ValueAssert<TransactionAssert> allocBytes() {
+    return field("alloc_bytes");
+  }
+
+  /** Any field by its record name; unsupported fields fail. */
+  public ValueAssert<TransactionAssert> field(String name) {
+    isNotNull();
+    if (!actual.source().supportsTransactionField(name)) {
+      throw Unsupported.error(
+          "transaction field '" + name + "'", actual.source().name(), arrivesWith(name));
+    }
+    return new ValueAssert<>(this, name, actual.field(name), actual.toString());
+  }
+
+  /** The transaction's steps. */
+  public StepsAssert steps() {
+    isNotNull();
+    return new StepsAssert(this, actual.steps());
+  }
+
+  /**
+   * The transaction ran on a thread that {@code thread} rejects (e.g. not {@code argos-*}). A
+   * transaction without a thread name fails ("thread unknown"): the check needs the value.
+   */
+  public TransactionAssert isNotFromThread(Predicate<String> thread) {
+    field("thread");
+    if (actual.thread() == null || actual.thread().isEmpty()) {
+      failWithMessage(
+          "thread unknown: cannot check that the transaction is not from thread %s:%n%s",
+          thread, actual);
+    }
+    if (thread.test(actual.thread())) {
+      failWithMessage(
+          "expected the transaction not to come from thread %s but it ran on <%s>:%n%s",
+          thread, actual.thread(), actual);
+    }
+    return this;
+  }
+
+  /**
+   * No step was recorded by a thread that {@code thread} accepts (18 §5.8 re-entrance: {@code
+   * startsWith("argos-")}). Needs the step's thread in the source; the JSONL exporter has none.
+   */
+  public TransactionAssert noStepFromThread(Predicate<String> thread) {
+    isNotNull();
+    if (!actual.source().supportsStepField("thread")) {
+      throw Unsupported.error(
+          "the thread of a step", actual.source().name(), "WO-10/WO-11 (step thread)");
+    }
+    for (StepRecord step : actual.steps()) {
+      if (step.thread() != null && thread.test(step.thread())) {
+        failWithMessage(
+            "expected no step from thread %s but found %s in%n%s", thread, step, actual);
+      }
+    }
+    return this;
+  }
+
+  /**
+   * The step tree, one line per step in sequence order: two spaces per depth, then {@code <type>
+   * <name>} ({@code SQL select ...}).
+   */
+  public static List<String> stepTree(TransactionRecord tx) {
+    List<StepRecord> steps = tx.steps();
+    List<String> lines = new ArrayList<>();
+    for (StepRecord step : steps) {
+      int depth = 0;
+      Integer parent = step.parent();
+      int guard = 0;
+      while (parent != null && parent >= 0 && guard++ < steps.size()) {
+        depth++;
+        parent = parentOf(steps, parent);
+      }
+      lines.add("  ".repeat(depth) + step.type() + " " + step.name());
+    }
+    return lines;
+  }
+
+  private static Integer parentOf(List<StepRecord> steps, int seq) {
+    for (StepRecord step : steps) {
+      if (step.seq() != null && step.seq() == seq) {
+        return step.parent();
+      }
+    }
+    return null;
+  }
+
+  /** The step tree ({@link #stepTree(TransactionRecord)}) is exactly {@code lines}. */
+  public TransactionAssert hasStepTree(String... lines) {
+    isNotNull();
+    List<String> tree = stepTree(actual);
+    if (!tree.equals(List.of(lines))) {
+      failWithMessage(
+          "expected step tree%n%s%nbut was%n%s%nin%n%s",
+          String.join("\n", lines), String.join("\n", tree), actual);
+    }
+    return this;
+  }
+
+  /** The transaction under test. */
+  public TransactionRecord actualRecord() {
+    return actual;
+  }
+
+  static String arrivesWith(String field) {
+    return switch (field) {
+      case "env", "version" -> "WO-10 (app.env/app.version) and WO-11 (gRPC exporter)";
+      case "cpu_time_ms", "alloc_bytes" -> "WO-10 (CPU and allocation deltas)";
+      default -> "the gRPC exporter of WO-11";
+    };
   }
 }

@@ -6,14 +6,22 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * One line of the agent's JSONL exporter ({@code -Dargos.exporter=file}, field reference in {@code
- * JsonlFileExporter.write}): one transaction with its steps. Missing fields read as null (strings,
- * boxed numbers) so that tests can tell "absent" from zero (18 §5.5).
+ * One collected transaction with its steps: a line of the agent's JSONL exporter ({@code
+ * -Dargos.test.exporter=file:<dir>}, field reference in {@code JsonlFileExporter.write}) or a
+ * {@code FakeCollector} record converted to the same field names. Missing fields read as null
+ * (strings, boxed numbers) so that tests can tell "absent" from zero (18 §5.5); {@link #source()}
+ * says which fields can exist at all.
  *
- * @param fields the parsed JSON object
+ * @param fields the parsed JSON object (or the converted record)
  * @param line the original line (assertion messages)
+ * @param source where the record came from
  */
-public record TransactionRecord(Map<String, Object> fields, String line) {
+public record TransactionRecord(Map<String, Object> fields, String line, RecordSource source) {
+
+  /** A JSONL record. */
+  public TransactionRecord(Map<String, Object> fields, String line) {
+    this(fields, line, RecordSource.JSONL);
+  }
 
   /** Parses one JSONL line. */
   @SuppressWarnings("unchecked")
@@ -22,7 +30,7 @@ public record TransactionRecord(Map<String, Object> fields, String line) {
     if (!(value instanceof Map)) {
       throw new IllegalArgumentException("not a JSON object: " + line);
     }
-    return new TransactionRecord((Map<String, Object>) value, line);
+    return new TransactionRecord((Map<String, Object>) value, line, RecordSource.JSONL);
   }
 
   public String txId() {
@@ -115,7 +123,7 @@ public record TransactionRecord(Map<String, Object> fields, String line) {
     List<StepRecord> steps = new ArrayList<>();
     if (fields.get("steps") instanceof List<?> values) {
       for (Object value : values) {
-        steps.add(new StepRecord((Map<String, Object>) value));
+        steps.add(new StepRecord((Map<String, Object>) value, source));
       }
     }
     return steps;
@@ -132,9 +140,14 @@ public record TransactionRecord(Map<String, Object> fields, String line) {
     return matching;
   }
 
-  /** A field by its JSONL name (fields without an accessor). */
+  /** A field by its name (fields without an accessor). */
   public Object field(String name) {
     return fields.get(name);
+  }
+
+  /** True when the field is present with a non-null value. */
+  public boolean has(String name) {
+    return fields.get(name) != null;
   }
 
   private String string(String name) {
@@ -152,11 +165,16 @@ public record TransactionRecord(Map<String, Object> fields, String line) {
   }
 
   /** One step of a transaction. */
-  public record StepRecord(Map<String, Object> fields) {
+  public record StepRecord(Map<String, Object> fields, RecordSource source) {
+    public StepRecord(Map<String, Object> fields) {
+      this(fields, RecordSource.JSONL);
+    }
+
     public Integer seq() {
       return integer("seq");
     }
 
+    /** Sequence number of the parent step, -1 or null at the top level. */
     public Integer parent() {
       return integer("parent");
     }
@@ -198,6 +216,16 @@ public record TransactionRecord(Map<String, Object> fields, String line) {
       return text("detail");
     }
 
+    /** The thread that recorded the step, when the source carries it. */
+    public String thread() {
+      return text("thread");
+    }
+
+    /** A field by its name. */
+    public Object field(String name) {
+      return fields.get(name);
+    }
+
     private Integer integer(String name) {
       return fields.get(name) instanceof Number n ? n.intValue() : null;
     }
@@ -205,6 +233,11 @@ public record TransactionRecord(Map<String, Object> fields, String line) {
     private String text(String name) {
       Object value = fields.get(name);
       return value == null ? null : String.valueOf(value);
+    }
+
+    @Override
+    public String toString() {
+      return fields.toString();
     }
   }
 }

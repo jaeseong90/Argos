@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Agent test harness (18 §5): AppLauncher, FakeCollector, assertion DSL, transform baselines,
-// matrix runner. It is never shipped, so it runs on the JDK 21 test-harness toolchain
+// Agent test harness (18 §5, WO-05): AppLauncher, FakeCollector, assertion DSL, transform
+// baselines, fail-safe/leak probes, log and Unsafe checks, matrix runner (README.md). It is never
+// shipped, so it runs on the JDK 21 test-harness toolchain
 // (DSN-19-02) and launches sample apps on other JDKs as separate processes.
 //
 // ArchUnit rules over all agent modules (19 §5.3, 10 §2 B-1..B-4, 10 §5.3) live in src/archTest:
@@ -10,9 +11,13 @@
 //   code (--release 8), so that every rule is shown to fail on a violation (T-AG-001..004).
 //   Fixtures are test-only and never packaged.
 
+import com.google.protobuf.gradle.ProtobufExtension
+import com.google.protobuf.gradle.id
 import io.argos.buildlogic.AgentShading
 import io.argos.buildlogic.ArgosProject
 import io.argos.buildlogic.argosArchivesName
+import io.argos.buildlogic.argosLibs
+import io.argos.buildlogic.versionOf
 import java.util.zip.ZipFile
 
 plugins {
@@ -20,7 +25,49 @@ plugins {
   id("argos.integration-test")
 }
 
+// The protobuf plugin comes with the build-logic classpath (see :agent:agent-dist).
+apply(plugin = "com.google.protobuf")
+
 description = "Argos agent test harness (launcher, fake collector, assertions, matrix)."
+
+// --- FakeCollector wire contract (18 §5.3) -------------------------------------------------------
+// The FakeCollector speaks the WO-02 transport PoC protocol (test/agent/transport-poc/src/proto, a
+// snapshot of 11 §4), generated here into the collectorProto source set; only
+// io.argos.agent.testing.collector.poc.PocProtocol uses the generated types (CollectorProtocol is
+// the seam). WO-11 points this at proto/argos/v1 and replaces PocProtocol.
+val collectorProto = sourceSets.create("collectorProto")
+
+collectorProto.extensions
+  .getByName<SourceDirectorySet>("proto")
+  .setSrcDirs(listOf(layout.settingsDirectory.dir("test/agent/transport-poc/src/proto")))
+
+configure<ProtobufExtension> {
+  protoc { artifact = "com.google.protobuf:protoc:${argosLibs.versionOf("protobuf")}" }
+  plugins { id("grpc") { artifact = "io.grpc:protoc-gen-grpc-java:${argosLibs.versionOf("grpc")}" } }
+  generateProtoTasks {
+    ofSourceSet(collectorProto.name).configureEach { plugins { id("grpc") { option("@generated=omit") } } }
+  }
+}
+
+// Generated code is not ours to lint (the argos.java-common -Werror would fail on protoc output).
+tasks.named<JavaCompile>(collectorProto.compileJavaTaskName) { options.compilerArgs.remove("-Werror") }
+
+dependencies {
+  "collectorProtoImplementation"(libs.protobuf.java)
+  "collectorProtoImplementation"(libs.grpc.protobuf)
+  "collectorProtoImplementation"(libs.grpc.stub)
+  // FakeCollector API (io.grpc.Status, protobuf Message) and the generated PoC stubs for tests.
+  api(collectorProto.output)
+  api(libs.protobuf.java)
+  api(libs.grpc.api)
+  api(libs.grpc.stub)
+  implementation(libs.grpc.protobuf)
+  implementation(platform(libs.netty.bom))
+  implementation(libs.grpc.netty)
+  // AppLauncher container mode (18 §5.2): Testcontainers GenericContainer.
+  implementation(platform(libs.testcontainers.bom))
+  implementation(libs.testcontainers.core)
+}
 
 val archFixtures = sourceSets.create("archFixtures")
 
@@ -175,21 +222,40 @@ val preloadAgentJar =
 val attachJdks =
   providers.gradleProperty("agent.attach.jdks").getOrElse("8,21").split(',').map { it.trim().toInt() }
 
-// --- Harness library (src/main, WO-02 minimal 18 §5.1) and sample apps with the agent -------------
-// src/main: launcher (AppLauncher, RunningApp, SampleApp), JSONL reader and records, transaction
-// assertions, transformed-class list, console output checks. integrationTest's SampleAppAgentTest
-// starts WO-01 sample apps with the release agent jar: -Pagent.e2e=<app>@<jdk>,... (default
-// shop-boot3@21; "none" skips it). Apps come from their sampleAppElements variant (WO-01 report
-// D-1); the launch descriptor (build/sample-app/<app>.properties) is produced next to the jar.
+// --- Harness library (src/main, 18 §5.1, WO-05) and sample apps with the agent --------------------
+// src/main: launcher, collector, export, assertion, baseline, leak, log, jvm (README). The
+// integrationTest's e2e classes start WO-01 sample apps with the release agent jar through
+// AppLauncher: -Pagent.e2e=<app>@<jdk>,... (default shop-boot3@21, the PR budget; "none" skips
+// them). Apps come from their sampleAppElements variant (WO-01 report D-1); the launch descriptor
+// (build/sample-app/<app>.properties) is produced next to the jar or WAR. WAR apps also stage their
+// Tomcat distributions (CATALINA_HOME, passed as argos.test.tomcatHome.<app>.<key>).
 
 dependencies {
   implementation(libs.assertj.core)
   // In-process target of the sample apps' outgoing calls (WO-02 P-6: HttpURLConnection, F-A32).
   "integrationTestImplementation"(project(":sample-apps:ext-stub"))
+  // FakeCollectorTest: a real gRPC client (grpc-netty) against the fake collector.
+  "integrationTestImplementation"(platform(libs.netty.bom))
+  "integrationTestImplementation"(libs.grpc.netty)
 }
 
-/** Jar apps the launcher can start (WAR apps need the staged Tomcat: WO-05). */
-val e2eApps = listOf("shop-boot2", "shop-boot3", "shop-boot4", "shop-heavy", "shop-batch")
+// -Pagent.container=true: ContainerModeTest runs the first -Pagent.e2e app in Docker (18 §5.2).
+val containerMode = providers.gradleProperty("agent.container").map(String::toBoolean).getOrElse(false)
+
+// -Pagent.container.image.<jdk>=<image@sha256:digest> overrides the pinned JDK image (ContainerApp).
+val containerImages: Map<String, String> =
+  providers.gradlePropertiesPrefixedBy("agent.container.image.").get().mapKeys {
+    "argos.test.container.image." + it.key.removePrefix("agent.container.image.")
+  }
+
+/**
+ * Standalone Tomcat distributions of the WAR apps (their `tomcat(...)` keys, 18 §4.1): AppLauncher
+ * stages a CATALINA_BASE over `sample-apps/<app>/build/tomcat/<key>` (README, WAR apps).
+ */
+val warTomcats = mapOf("shop-war-javax" to listOf("tomcat9"), "shop-war-jakarta" to listOf("tomcat10", "tomcat11"))
+
+/** Apps the launcher can start: jar apps directly, WAR apps in a staged standalone Tomcat. */
+val e2eApps = listOf("shop-boot2", "shop-boot3", "shop-boot4", "shop-heavy", "shop-batch") + warTomcats.keys
 
 val e2eCombos =
   providers.gradleProperty("agent.e2e").getOrElse("shop-boot3@21").split(',')
@@ -216,6 +282,28 @@ val sampleAppJars =
     }
   }
 
+// --- Harness fixtures of every test task (18 §5.6, §5.10) -----------------------------------------
+// Transform baselines (T-AG-005): agent-testing/baselines/transformed-classes/<app>-<jdk>[-vt].txt;
+// -Pagent.baseline.record=true writes them instead of comparing (review the diff in the PR).
+// Agent log allow-list (T-AG-060): fixtures/log-allowlist/agent-info.txt. Unsafe allow-list
+// (T-BLD-004): one file for check-shading.sh and UnsafeScanner, test/agent/unsafe-allowlist.txt.
+val baselineDir = layout.projectDirectory.dir("baselines/transformed-classes")
+val logAllowlist = layout.projectDirectory.file("fixtures/log-allowlist/agent-info.txt")
+val unsafeAllowlist = layout.settingsDirectory.file("test/agent/unsafe-allowlist.txt")
+val recordBaselines = providers.gradleProperty("agent.baseline.record").map(String::toBoolean).getOrElse(false)
+
+tasks.withType<Test>().configureEach {
+  inputs.files(baselineDir.asFileTree).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("baselines")
+  inputs.file(logAllowlist).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("logAllowlist")
+  inputs.file(unsafeAllowlist).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("unsafeAllowlist")
+  inputs.property("recordBaselines", recordBaselines)
+  systemProperty("argos.test.baselineDir", baselineDir.asFile.absolutePath)
+  systemProperty("argos.test.logAllowlist", logAllowlist.asFile.absolutePath)
+  systemProperty("argos.test.unsafeAllowlist", unsafeAllowlist.asFile.absolutePath)
+  systemProperty("argos.test.baseline.record", recordBaselines.toString())
+  if (recordBaselines) outputs.upToDateWhen { false }
+}
+
 tasks.named<Test>("integrationTest") {
   val launchers =
     (attachJdks + e2eJdks).distinct().associateWith { version ->
@@ -227,6 +315,20 @@ tasks.named<Test>("integrationTest") {
     // The launch descriptor next to the jar finalizes the jar task; make it an explicit input step.
     dependsOn(":sample-apps:$app:sampleLaunchDescriptor")
   }
+  // WAR apps: the unpacked Tomcat distributions (CATALINA_HOME) of the argos.sample-app plugin.
+  val tomcatHomes: Map<String, String> =
+    e2eRequestedApps
+      .flatMap { app -> warTomcats[app].orEmpty().map { key -> app to key } }
+      .associate { (app, key) ->
+        val suffix = key.replaceFirstChar(Char::uppercaseChar)
+        dependsOn(":sample-apps:$app:sampleStageTomcat$suffix")
+        val home = rootProject.project(":sample-apps:$app").layout.buildDirectory.dir("tomcat/$key").get().asFile
+        inputs.dir(home).withPropertyName("tomcat-$app-$key").withPathSensitivity(PathSensitivity.RELATIVE)
+        "$app.$key" to home.absolutePath
+      }
+  jvmArgumentProviders.add(
+    CommandLineArgumentProvider { tomcatHomes.map { (key, home) -> "-Dargos.test.tomcatHome.$key=$home" } }
+  )
   // Locals only inside the providers below (the configuration cache cannot keep script objects).
   val combos = e2eCombos.joinToString(",")
   // Transformed-class lists and JSONL of the e2e runs (T-AG-005 baseline input, PoC run table).
@@ -234,6 +336,10 @@ tasks.named<Test>("integrationTest") {
   outputs.dir(e2eReportDir).withPropertyName("e2eReports")
   val attachJdkList = attachJdks.joinToString(",")
   inputs.property("e2eCombos", combos)
+  inputs.property("containerMode", containerMode)
+  systemProperty("argos.test.container", containerMode.toString())
+  inputs.property("containerImages", containerImages)
+  containerImages.forEach { (name, image) -> systemProperty(name, image) }
   jvmArgumentProviders.add(
     CommandLineArgumentProvider {
       listOf("-Dargos.test.e2e=" + combos, "-Dargos.test.reportDir=" + e2eReportDir.get().asFile.absolutePath) +

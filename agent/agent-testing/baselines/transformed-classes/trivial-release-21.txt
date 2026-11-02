@@ -1,0 +1,3 @@
+# Transformed-class baseline (18 §5.6, DSN-18-05, T-AG-005): <class> <modules> <loader>
+# trivial-release on JDK 21. Re-record: ./gradlew :agent:agent-testing:integrationTest -Pagent.baseline.record=true; review the diff in the PR.
+java.util.concurrent.ThreadPoolExecutor executor bootstrap

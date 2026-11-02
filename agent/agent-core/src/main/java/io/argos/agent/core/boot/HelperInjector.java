@@ -32,14 +32,21 @@ final class HelperInjector {
   private final Instrumentation inst;
   private final ClassLoader agentLoader;
   private final LoaderState state;
+  private final TestFaults faults;
   private volatile Method defineClass;
   private volatile Method findLoadedClass;
   private volatile boolean javaLangOpened;
 
-  HelperInjector(Instrumentation inst, ClassLoader agentLoader, LoaderState state) {
+  /**
+   * @param faults {@code argos.test.faults}: the helpers of a {@code helper-nocdef:<module>} module
+   *     are never defined (test builds only)
+   */
+  HelperInjector(
+      Instrumentation inst, ClassLoader agentLoader, LoaderState state, TestFaults faults) {
     this.inst = inst;
     this.agentLoader = agentLoader;
     this.state = state;
+    this.faults = faults;
   }
 
   /**
@@ -55,6 +62,11 @@ final class HelperInjector {
       JavaModule targetModule) {
     List<String> helpers = module.helperClassNames();
     if (helpers.isEmpty() || state.has(target, LoaderState.HELPERS_INJECTED, module.moduleId())) {
+      return;
+    }
+    if (faults.helpersMissing(module.id())) {
+      // Injected fault: the advice is inlined, its helpers are missing (NoClassDefFoundError).
+      state.add(target, LoaderState.HELPERS_INJECTED, module.moduleId());
       return;
     }
     if (target == null) {

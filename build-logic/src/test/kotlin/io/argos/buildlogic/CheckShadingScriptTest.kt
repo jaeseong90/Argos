@@ -13,7 +13,7 @@ import org.junit.jupiter.params.provider.ValueSource
 /**
  * test/agent/check-shading.sh (19 §5.6) against a compliant jar and against crafted bad jars, one
  * defect each (T-BLD-001 major version, T-BLD-002 packages/exposure/signatures/native/duplicates,
- * T-BLD-003 META-INF, T-BLD-004 Unsafe, T-BLD-006 size).
+ * T-BLD-003 META-INF, T-BLD-004 Unsafe, T-BLD-006 size, T-BLD-010 Implementation-Version).
  */
 @Tag("req:F-A31")
 class CheckShadingScriptTest {
@@ -27,6 +27,7 @@ class CheckShadingScriptTest {
       "Agent-Class" to "io.argos.agent.AgentPremain",
       "Can-Retransform-Classes" to "true",
       "Can-Redefine-Classes" to "false",
+      "Implementation-Version" to "0.0.0-SNAPSHOT",
     )
 
   /** A jar with every element 19 §5.6 requires and nothing it forbids. */
@@ -54,8 +55,9 @@ class CheckShadingScriptTest {
     entries: Map<String, ByteArray> = compliantEntries(),
     manifestAttributes: Map<String, String>? = manifest,
     env: Map<String, String> = emptyMap(),
+    jarName: String = "argos-agent.jar",
   ): ScriptResult {
-    val jar = writeJar(File(dir, "argos-agent.jar"), manifestAttributes, entries)
+    val jar = writeJar(File(dir, jarName), manifestAttributes, entries)
     return runScript(script, listOf(jar.invariantSeparatorsPath), env)
   }
 
@@ -215,6 +217,88 @@ class CheckShadingScriptTest {
       "MANIFEST.MF must not declare Add-Opens",
       "MANIFEST.MF must not declare Boot-Class-Path",
     )
+  }
+
+  @Test
+  @Tag("req:DSN-18-15")
+  @DisplayName("T-BLD-010 rejects a manifest without Implementation-Version (or a blank one)")
+  fun rejectsMissingImplementationVersion() {
+    val attributes = LinkedHashMap(manifest)
+    attributes.remove("Implementation-Version")
+    assertFails(
+      check(manifestAttributes = attributes),
+      "meta-inf",
+      "MANIFEST.MF lacks Implementation-Version (the agent's release-build marker; without it argos.test.* is ignored, T-BLD-010)",
+    )
+    // Also when the expected version is known (environment and file name).
+    assertFails(
+      check(
+        manifestAttributes = attributes,
+        env = mapOf("ARGOS_EXPECTED_VERSION" to "0.0.0-SNAPSHOT"),
+        jarName = "argos-agent-0.0.0-SNAPSHOT.jar",
+      ),
+      "meta-inf",
+      "MANIFEST.MF lacks Implementation-Version",
+    )
+    attributes["Implementation-Version"] = "   "
+    assertFails(check(manifestAttributes = attributes), "meta-inf", "MANIFEST.MF lacks Implementation-Version")
+  }
+
+  @Test
+  @Tag("req:DSN-18-15")
+  @DisplayName("T-BLD-010 Implementation-Version must equal ARGOS_EXPECTED_VERSION (the project version)")
+  fun implementationVersionMatchesExpectedVersion() {
+    val matching = check(env = mapOf("ARGOS_EXPECTED_VERSION" to "0.0.0-SNAPSHOT"))
+    assertThat(matching.exitCode).`as`(matching.output).isEqualTo(0)
+    assertThat(matching.output)
+      .contains("ok   [meta-inf]")
+      .contains("Implementation-Version 0.0.0-SNAPSHOT as expected (ARGOS_EXPECTED_VERSION)")
+
+    assertFails(
+      check(env = mapOf("ARGOS_EXPECTED_VERSION" to "1.2.3")),
+      "meta-inf",
+      "MANIFEST.MF Implementation-Version '0.0.0-SNAPSHOT' does not match the expected version '1.2.3' (ARGOS_EXPECTED_VERSION)",
+    )
+    // The environment wins over the file name.
+    assertFails(
+      check(env = mapOf("ARGOS_EXPECTED_VERSION" to "1.2.3"), jarName = "argos-agent-0.0.0-SNAPSHOT.jar"),
+      "meta-inf",
+      "does not match the expected version '1.2.3' (ARGOS_EXPECTED_VERSION)",
+    )
+  }
+
+  @Test
+  @Tag("req:DSN-18-15")
+  @DisplayName(
+    "T-BLD-010 without ARGOS_EXPECTED_VERSION the version of argos-agent-<version>.jar is expected; other names check presence only"
+  )
+  fun implementationVersionMatchesFileName() {
+    val matching = check(jarName = "argos-agent-0.0.0-SNAPSHOT.jar")
+    assertThat(matching.exitCode).`as`(matching.output).isEqualTo(0)
+    assertThat(matching.output)
+      .contains("Implementation-Version 0.0.0-SNAPSHOT as expected (file name argos-agent-0.0.0-SNAPSHOT.jar)")
+
+    // A release-named jar that still says SNAPSHOT (or the reverse) is stale.
+    assertFails(
+      check(jarName = "argos-agent-1.0.0.jar"),
+      "meta-inf",
+      "MANIFEST.MF Implementation-Version '0.0.0-SNAPSHOT' does not match the expected version '1.0.0' (file name argos-agent-1.0.0.jar)",
+    )
+    val release = LinkedHashMap(manifest)
+    release["Implementation-Version"] = "1.0.0"
+    assertFails(
+      check(manifestAttributes = release, jarName = "argos-agent-1.0.0-SNAPSHOT.jar"),
+      "meta-inf",
+      "MANIFEST.MF Implementation-Version '1.0.0' does not match the expected version '1.0.0-SNAPSHOT'",
+    )
+
+    // No version in the name (argos-agent.jar, P-3 comparison jars): presence only.
+    for (name in listOf("argos-agent.jar", "argos-agent-poc-grpcNetty.jar")) {
+      val presence = check(jarName = name)
+      assertThat(presence.exitCode).`as`(presence.output).isEqualTo(0)
+      assertThat(presence.output)
+        .contains("Implementation-Version 0.0.0-SNAPSHOT (no expected version: set ARGOS_EXPECTED_VERSION)")
+    }
   }
 
   @Test

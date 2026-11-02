@@ -213,6 +213,60 @@ abstract class CheckOwnRelocatedLiterals : DefaultTask() {
 }
 
 /**
+ * checkManifestVersion (19 §3.3 step 3, T-BLD-010, DSN-18-15): the jar's `Implementation-Version`
+ * is present and equals [expectedVersion] (the project version). The agent reads this attribute to
+ * decide whether it is a release build that ignores `argos.test.*`; it fails closed (a packaged
+ * jar without the attribute counts as a release, `AgentInfo.fromJar`), and this check keeps a
+ * build from producing a jar whose marker is missing or does not match the version it was built as.
+ */
+abstract class CheckManifestVersion : DefaultTask() {
+
+  @get:InputFile
+  @get:PathSensitive(PathSensitivity.NONE)
+  abstract val jar: RegularFileProperty
+
+  /** The project version the jar must state (`0.0.0-SNAPSHOT`, or `-Pversion=X.Y.Z` on tag builds). */
+  @get:Input abstract val expectedVersion: Property<String>
+
+  /** The checked version and whether the agent treats the jar as a release build. */
+  @get:OutputFile abstract val resultFile: RegularFileProperty
+
+  init {
+    group = "verification"
+    description = "Checks that the jar's Implementation-Version is present and equals the project version (T-BLD-010)."
+  }
+
+  @TaskAction
+  fun check() {
+    val file = jar.get().asFile
+    val actual =
+      java.util.jar.JarFile(file, false).use { jarFile ->
+        jarFile.manifest?.mainAttributes?.getValue(java.util.jar.Attributes.Name.IMPLEMENTATION_VERSION)?.trim()
+      }
+    val expected = expectedVersion.get()
+    if (actual.isNullOrEmpty()) {
+      throw GradleException(
+        "checkManifestVersion: ${file.name} has no Implementation-Version in META-INF/MANIFEST.MF " +
+          "(expected '$expected', 19 §3.3 step 3); the agent treats such a jar as a release build " +
+          "and ignores argos.test.* (T-BLD-010)"
+      )
+    }
+    if (actual != expected) {
+      throw GradleException(
+        "checkManifestVersion: ${file.name} has Implementation-Version '$actual', expected the " +
+          "project version '$expected' (19 §3.3 step 3, T-BLD-010)"
+      )
+    }
+    resultFile.get().asFile.apply { parentFile.mkdirs() }
+      .writeText(
+        "Implementation-Version: $actual\nrelease build (argos.test.* ignored): ${!actual.endsWith("-SNAPSHOT")}\n",
+        Charsets.UTF_8,
+      )
+    logger.info("checkManifestVersion: ${file.name}: Implementation-Version $actual")
+  }
+}
+
+/**
  * checkModuleIndex (ADR-0003 C-25): the instrumentation modules the core discovers at runtime are
  * the classes listed in the merged service file [SERVICE_FILE] of the agent jar. Every listed class
  * must exist as `inst/<binary name>.classdata` below `io/argos/agent/`, and appear only once.

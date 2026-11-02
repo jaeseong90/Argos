@@ -22,8 +22,9 @@ Verification: `./gradlew :agent:agent-dist:verifyAgentJar` (also part of `check`
 
 | Task | Test ID | Checks |
 |---|---|---|
-| `checkShading` | T-BLD-001..004, T-BLD-006 | runs [`test/agent/check-shading.sh`](../../test/agent/check-shading.sh) (19 §5.6): packages, root exposure, META-INF files and manifest, signatures, major version (own classes 52, shaded classes <= 52, ADR-0003 C-22), `sun.misc.Unsafe` outside [`unsafe-allowlist.txt`](../../test/agent/unsafe-allowlist.txt) (empty), native libraries, size, duplicates |
+| `checkShading` | T-BLD-001..004, T-BLD-006, T-BLD-010 | runs [`test/agent/check-shading.sh`](../../test/agent/check-shading.sh) (19 §5.6): packages, root exposure, META-INF files and manifest (including `Implementation-Version` equal to the project version, passed as `ARGOS_EXPECTED_VERSION`), signatures, major version (own classes 52, shaded classes <= 52, ADR-0003 C-22), `sun.misc.Unsafe` outside [`unsafe-allowlist.txt`](../../test/agent/unsafe-allowlist.txt) (empty), native libraries, size, duplicates |
 | `checkMajorVersion` | T-BLD-001 | own `.class`/`.classdata` entries major 52, shaded entries (`inst/io/argos/agent/shaded/`) major <= 52 (C-22) |
+| `checkManifestVersion` | T-BLD-010 | the manifest's `Implementation-Version` is present and equals the project version: it is the agent's release-build marker, read fail-closed (a packaged jar without it, or with an unreadable manifest, counts as a release build and ignores `argos.test.*`; only `-SNAPSHOT` versions honour them); report `build/reports/agent-jar/manifest-version.txt` |
 | `checkRelocatedStrings` | T-BLD-005 | property-name constants (`net.bytebuddy.*`, `io.netty.*`) only in relocated form, policy RELOCATED (C-23, ADR-0008) |
 | `checkOwnRelocatedLiterals` | T-BLD-005 | no string constant of the agent's own relocated classes (`inst/io/argos/agent/`, outside `shaded/`) lies in the relocated namespace: Shadow rewrites literals such as `"net.bytebuddy."` too, so build them at run time (C-23, ADR-0005 transport); report `build/reports/agent-jar/own-relocated-literals.txt` |
 | `checkModuleIndex` | C-25 | every class in `inst/META-INF/services/io.argos.agent.instrumentation.api.InstrumentationModule` exists in the jar |
@@ -32,4 +33,5 @@ Verification: `./gradlew :agent:agent-dist:verifyAgentJar` (also part of `check`
 THIRD-PARTY-NOTICES carries each bundled module's original `META-INF/NOTICE` text and the
 licenses of code embedded in its jar (`META-INF/licenses/*`, e.g. ByteBuddy's ASM, BSD-3-Clause).
 
-The script can also be run directly: `bash test/agent/check-shading.sh agent/agent-dist/build/libs/argos-agent-<version>.jar`.
+The script can also be run directly: `bash test/agent/check-shading.sh agent/agent-dist/build/libs/argos-agent-<version>.jar`
+(the expected `Implementation-Version` is then the `<version>` of the file name, or `ARGOS_EXPECTED_VERSION`).

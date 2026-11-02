@@ -43,22 +43,22 @@
 | 공유 상태 | 같은 시간에 다음 작업이 함께 돌았다. 영향은 실행마다 1초 머신 CPU(`machine.json`), 직전 5초 부하, 배경 CPU로 남겼다(6.1).<br>- WO-03(ClickHouse 적재·리뷰·Gradle 빌드)<br>- WO-02 다른 레인의 빌드·테스트<br>- Windows Defender 실시간 검사<br>- WSL2 VM<br>- 대화형 사용자 프로그램 |
 | 시간 | 2026-10-24 10:43Z~21:14Z(KST 19:43~06:14). 이 문서의 시각은 모두 UTC다 |
 
-## 3. 하네스 (`test/agent/overhead`)
+## 3. 하네스 (`test/agent/overhead`, WO-05에서 `test/bench`로 이동)
 
 01 §7.3 프로토콜을 그대로 돌리는 측정기다.
-- 개발 전용 Gradle 프로젝트 `:test:agent:overhead`이고 배포하지 않는다. `build`·`check`는 컴파일과 단위 테스트(통계·파서·판정 33건)만 한다.
+- **WO-05에서 `test/bench`(Gradle `:test:bench`, `benchTest`)로 옮겼다.** 실행 스크립트는 `run-overhead.sh` → `test/bench/bench.sh`, 실행 jar는 `overhead-bench.jar` → `test/bench/build/bench/bench-harness.jar`다. 이 장의 서술과 2026-10-25 상태는 WO-02 당시 기준이고, 아래 명령표는 옮긴 뒤의 경로다. 사용법 전체는 [`test/bench/README.md`](../../test/bench/README.md)에 있다.
+- 개발 전용 Gradle 프로젝트이고 배포하지 않는다. WO-02 당시 `build`·`check`는 컴파일과 단위 테스트(통계·파서·판정 33건)만 했다.
 - 측정은 Gradle 데몬 없이 실행 jar로 돈다.
-- WO-05가 `test/bench`(`benchTest`)로 옮기고, WO-51이 주간 벤치로 만든다(18 §7, DSN-18-07).
-- 사용법 전체는 `test/agent/overhead/README.md`에 있다.
+- WO-51이 주간 벤치로 만든다(18 §7, DSN-18-07).
 
 2026-10-25 정리 시점의 상태: `./gradlew :test:agent:overhead:check :test:agent:overhead:overheadJar -Pargos.ui.skip=true --rerun-tasks`가 통과한다(의존성 검증 strict, 단위 33/33). 다시 만든 `overhead-bench.jar`의 SHA-256(`90cfbe96…6c8f`)은 측정에 쓴 jar와 같다.
 
 | 명령 | 하는 일 |
 |---|---|
-| `test/agent/overhead/fetch-k6.sh` | k6 v2.3.0 네이티브 바이너리를 받아 SHA-256을 확인하고 `test/agent/overhead/build/k6/`에 둔다. 버전은 `run-bench.sh`가 이미지로 고정한 것과 같다 |
-| `run-overhead.sh load --out DIR` | A-B-A-B-A-B 부하 세트(2~7항). 주요 옵션:<br>- `--mode container`(9항)<br>- `--vt`(10항)<br>- `--variants off,on,otel --otel-agent JAR`(11항 참조점)<br>- `--k6-ssh user@host --app-address IP`(1항: 부하기를 다른 머신에서)<br>- `--variant-defs`(진단용 에이전트 변형) |
-| `run-overhead.sh startup --out DIR` | 기동 세트(8항, C-49). 앱 × CDS(기본, `-Xshare:off`) × 변형을 번갈아 10회씩 잰다 |
-| `run-overhead.sh --no-build report --out DIR` | 원시 파일에서 `result.json`·`report.md`를 다시 만든다(측정 없음) |
+| `test/bench/fetch-k6.sh` | k6 v2.3.0 네이티브 바이너리를 받아 SHA-256을 확인하고 `test/bench/build/k6/`에 둔다. 버전은 `run-bench.sh`가 이미지로 고정한 것과 같다 |
+| `test/bench/bench.sh load --out DIR` | A-B-A-B-A-B 부하 세트(2~7항). 주요 옵션:<br>- `--mode container`(9항)<br>- `--vt`(10항)<br>- `--variants off,on,otel --otel-agent JAR`(11항 참조점)<br>- `--k6-ssh user@host --app-address IP`(1항: 부하기를 다른 머신에서)<br>- `--variant-defs`(진단용 에이전트 변형)<br>- `--exporter noop\|drop\|grpc`(WO-05. WO-02 측정 설정은 `drop`) |
+| `test/bench/bench.sh startup --out DIR` | 기동 세트(8항, C-49). 앱 × CDS(기본, `-Xshare:off`) × 변형을 번갈아 10회씩 잰다 |
+| `test/bench/bench.sh --no-build report --out DIR` | 원시 파일에서 `result.json`·`report.md`를 다시 만든다(측정 없음) |
 
 부하 세트의 실행 1회(앱 1회 기동)는 다음 순서로 돈다.
 
@@ -388,7 +388,9 @@ k6 CPU는 측정 구간마다 294~420 CPU초였다(약 0.5~0.7코어, `run.json`
 
 ## 9. 전용 장비 재실행 절차 (사람용)
 
-Gate 0 판정과 WO-02 수동 수락("사람이 1회 재실행해 재현")을 위한 절차다. 하네스 명령은 이번에 쓴 것과 같고, 바뀌는 것은 장비와 옵션 값뿐이다.
+Gate 0 판정과 WO-02 수동 수락("사람이 1회 재실행해 재현")을 위한 절차다. WO-05 수동 수락("사람이 벤치 러너로 WO-02 수치를 1회 재현")도 이 절차로 채운다. 하네스는 WO-05에서 `test/bench`로 옮겼고(`bench.sh`, 옵션은 WO-02와 같다), 18 §7.1 환경 기록 `bench-env.sh`와 18 §7.6 보고서 생성 `bench.sh publish`가 더해졌다. 같은 순서를 한 번에 도는 `benchTest`(`bench-protocol.sh`)도 있다(`test/bench/README.md`). 바뀌는 것은 장비와 옵션 값뿐이다.
+
+- 익스포터: WO-02는 `-Dargos.exporter=noop`(기록 후 인코딩 없이 버림)으로 쟀다. WO-02 수치 재현은 이 설정인 `--exporter drop`으로 잰다. 18 §5.4의 no-op(`--exporter noop`, 기본값)은 인코딩까지 하고 버리므로 그 비용만큼 수치가 다를 수 있다. 아래 1~5단계 명령에는 `--exporter drop`을 붙였다.
 
 ### 9.1 준비물
 
@@ -398,7 +400,7 @@ Gate 0 판정과 WO-02 수동 수락("사람이 1회 재실행해 재현")을 �
   - 필요 소프트웨어: JDK 21(측정 JDK 빌드를 고정·기록한다. 이번에는 Microsoft Build of OpenJDK 21.0.10+7), git, bash, curl, Docker Engine(cgroup v2), ssh 클라이언트.
 - **부하기 1대**
   - Linux. 앱 서버와 같은 L2 스위치에 둔다.
-  - k6 v2.3.0이 `PATH`에 있어야 한다. 저장소를 받아 `test/agent/overhead/fetch-k6.sh`를 돌리고 `sudo install test/agent/overhead/build/k6/k6 /usr/local/bin/k6`로 설치한다. SHA-256은 스크립트가 확인한다.
+  - k6 v2.3.0이 `PATH`에 있어야 한다. 저장소를 받아 `test/bench/fetch-k6.sh`를 돌리고 `sudo install test/bench/build/k6/k6 /usr/local/bin/k6`로 설치한다. SHA-256은 스크립트가 확인한다.
 - 앱 서버에서 부하기로 키 인증 ssh가 되어야 한다. `ssh -o BatchMode=yes <user>@<부하기> 'k6 version && head -n1 /proc/stat'`가 암호 없이 끝나야 한다.
 - 방화벽은 부하기에서 앱 서버의 임시 포트(TCP)로 들어오는 연결을 허용한다. 하네스가 실행마다 빈 포트를 고른다.
 - OTel 참조점용 `opentelemetry-javaagent-2.32.0.jar`
@@ -415,8 +417,8 @@ cat /sys/kernel/mm/transparent_hugepage/enabled      # 값은 기록만 한다(�
 
 git clone <저장소> argos && cd argos && git checkout <판정할 커밋>
 export JAVA_HOME=/opt/jdk-21.0.10                    # 측정 JDK
-./gradlew -Pargos.ui.skip=true :test:agent:overhead:check
-./gradlew -Pargos.ui.skip=true :test:agent:overhead:overheadJar :agent:agent-dist:agentJar \
+./gradlew -Pargos.ui.skip=true :test:bench:check
+./gradlew -Pargos.ui.skip=true :test:bench:benchJar :agent:agent-dist:agentJar \
   :sample-apps:ext-stub:sampleAppJar :sample-apps:shop-boot3:sampleAppJar :sample-apps:shop-heavy:sampleAppJar
 ./gradlew --stop                                     # 측정 중 Gradle 데몬이 없어야 한다
 sha256sum agent/agent-dist/build/libs/argos-agent-*.jar sample-apps/*/build/sample-app/*.jar
@@ -425,13 +427,17 @@ sha256sum agent/agent-dist/build/libs/argos-agent-*.jar sample-apps/*/build/samp
 공통 변수(저장소 루트에서)
 
 ```bash
-R=test/agent/overhead/run-overhead.sh
+R=test/bench/bench.sh
 J="$JAVA_HOME/bin/java"
 LOAD=<user>@<부하기>                # ssh 대상
 APP_IP=<앱 서버 IP>                 # 부하기에서 닿는 주소
-OUT=build/overhead/$(date -u +%Y%m%d)-$(git rev-parse --short HEAD)
+PROFILE=<벤치 머신 프로파일 id>      # 예: argos-bench-app (-Pbench.machine-profile과 같은 값)
+OUT=build/bench/$(date -u +%Y%m%d)-$(git rev-parse --short HEAD)
 SSH=(--k6-ssh "$LOAD" --app-address "$APP_IP")
 QUIET=(--max-load 10 --max-background 10)   # ext-stub CPU도 배경에 들어가므로 5%는 너무 빡빡하다
+EXP=(--exporter drop --env-record "$OUT/env-record.json")   # WO-02 설정(위 "익스포터"), 18 §7.1 기록
+# 18 §7.1 환경 기록. governor가 performance가 아니면 여기서 멈춘다(exit 4).
+test/bench/bench-env.sh --out "$OUT/env-record.json" --machine-profile "$PROFILE" --java "$J" --loader "$LOAD"
 ```
 
 ### 9.3 실행 순서
@@ -440,7 +446,7 @@ QUIET=(--max-load 10 --max-background 10)   # ext-stub CPU도 배경에 들어�
 
 0. **ssh 경로 확인용 짧은 파일럿**(필수, 약 5분)
    ```bash
-   $R --no-build load --out $OUT/pilot --java "$J" "${SSH[@]}" --rounds 1 --warmup 20s --duration 40s
+   $R --no-build load --out $OUT/pilot --java "$J" "${SSH[@]}" "${EXP[@]}" --rounds 1 --warmup 20s --duration 40s
    ```
    `--k6-ssh` 경로는 이번에 실제 2대 구성으로 돌린 적이 없다(H-4). `pilot/report.md`에서 다음을 확인한 뒤 본 세트로 넘어간다.
    - 부하기 CPU(`loader CPU %`)가 채워졌는가
@@ -449,34 +455,34 @@ QUIET=(--max-load 10 --max-background 10)   # ext-stub CPU도 배경에 들어�
    이 파일럿은 판정에 쓰지 않는다(CV 계산 불가로 INVALID가 정상이다).
 1. **main**(2~7항, Gate 0 CPU·p99, 약 85분)
    ```bash
-   $R --no-build load --out $OUT/main --java "$J" "${SSH[@]}" "${QUIET[@]}" --label "main: dedicated"
+   $R --no-build load --out $OUT/main --java "$J" "${SSH[@]}" "${QUIET[@]}" "${EXP[@]}" --label "main: dedicated"
    ```
    기본값: `--heap 2g`, 3회차 × off/on, 웜업 3분, 측정 10분, 1,000/s.
 2. **startup**(8항, N-04·N-27·N-30, Gate 0 기동, 약 50분)
    ```bash
-   $R --no-build startup --out $OUT/startup --java "$J" --max-load 10 --label "startup: dedicated"
+   $R --no-build startup --out $OUT/startup --java "$J" "${EXP[@]}" --max-load 10 --label "startup: dedicated"
    ```
    기본값: shop-boot3·shop-heavy × 기본 CDS·`-Xshare:off` × off/on 10회, `-Xms2g -Xmx2g -XX:+UseG1GC`.
 3. **diag**(기동 비용 분해, 판정 아님, 약 25분)
    ```bash
-   $R --no-build startup --out $OUT/diag --java "$J" --apps shop-boot3,shop-heavy --cds default --runs 5 \
+   $R --no-build startup --out $OUT/diag --java "$J" "${EXP[@]}" --apps shop-boot3,shop-heavy --cds default --runs 5 \
      --variants off,on,nomod,nameonly \
      --variant-defs "nomod:instrumentation.disabled=servlet,spring-webmvc,jdbc,executor,httpclient-jdk|nameonly:instrumentation.disabled=servlet,jdbc" \
      --max-load 10 --label "diag: premain only / name-only matchers / all modules"
    ```
 4. **container**(9항, N-29, 약 90분)
    ```bash
-   $R --no-build load --out $OUT/container --mode container --cpus 2 --memory 4g --heap 2g "${QUIET[@]}" \
+   $R --no-build load --out $OUT/container --mode container --cpus 2 --memory 4g --heap 2g "${QUIET[@]}" "${EXP[@]}" \
      --label "container: --cpus 2 --memory 4g"
    ```
    하네스 제약상 `--k6-ssh`는 process 모드 전용이다. 이 세트의 k6·ext-stub는 같은 호스트의 컨테이너로 돌고, 앱 컨테이너 밖의 코어를 쓴다(1항 편차로 기록한다). off 실행이 C-46 게이트를 통과하지 못하면 결과를 쓰지 말고 PM에게 9항 부하율 결정을 요청한다(H-6).
 5. **vt**(10항, N-28, 약 85분)
    ```bash
-   $R --no-build load --out $OUT/vt --vt --java "$J" "${SSH[@]}" "${QUIET[@]}" --label "vt: SAMPLE_VT=true"
+   $R --no-build load --out $OUT/vt --vt --java "$J" "${SSH[@]}" "${QUIET[@]}" "${EXP[@]}" --label "vt: SAMPLE_VT=true"
    ```
 6. **otel**(11항 참조점, 판정 아님)
    ```bash
-   $R --no-build load --out $OUT/otel --java "$J" "${SSH[@]}" "${QUIET[@]}" \
+   $R --no-build load --out $OUT/otel --java "$J" "${SSH[@]}" "${QUIET[@]}" "${EXP[@]}" \
      --variants off,on,otel --otel-agent /path/opentelemetry-javaagent-2.32.0.jar --label "otel reference"
    ```
    프로토콜 길이 그대로 3회차 × 3변형이면 약 2시간이다. 시간이 부족하면 `--rounds 2 --warmup 2m --duration 5m`(약 50분)로 줄이고, 단축했다고 기록한다.
@@ -485,7 +491,7 @@ QUIET=(--max-load 10 --max-background 10)   # ext-stub CPU도 배경에 들어�
 
 ### 9.4 결과 처리
 
-1. 세트가 INVALID면(예: off CV > 2%) 원인을 없앤 뒤 **세트 전체를** 다시 돌린다. 실행을 골라 쓰지 않는다. 판정을 다시 계산할 때는 `$R --no-build report --out $OUT/<세트>`를 쓴다.
+1. 세트가 INVALID면(예: off CV > 2%) 원인을 없앤 뒤 **세트 전체를** 다시 돌린다. 실행을 골라 쓰지 않는다. 판정을 다시 계산할 때는 `$R --no-build report --out $OUT/<세트>`를 쓴다. 18 §7.6 보고서는 `$R --no-build publish --sets $OUT/main,$OUT/startup,$OUT/container,$OUT/vt --out docs/bench`로 만든다(`docs/bench/<YYYY-MM-DD>-<commit7>.md`, N-01~N-04·N-26~N-30 판정, 그래프, 재현 명령. 직전 승인 보고서가 있으면 `--baseline`으로 18 §7.7 WARN을 본다).
 2. 원시 자료를 `docs/bench/<YYYY-MM-DD>-<커밋>/`에 넣는다(01 §7.3 11항). 이번 디렉터리의 README 규칙을 따른다.
    - 넣는 것: `set.json`·`result.json`·`report.md`·하네스 콘솔 출력, 실행별 `run.json`·`attempt.json`·k6 요약·`machine.json`·NMT·메타스페이스·`argos-*` 스레드와 `io.argos.agent.*` 히스토그램 발췌
    - 빼는 것: gc 로그, 앱 로그, jar, 1MB 초과 파일

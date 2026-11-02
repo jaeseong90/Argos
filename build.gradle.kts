@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Root project: lifecycle tasks and repository-wide checks only (checkSpdx, build-logic tests; see
-// build-logic/src/main/kotlin/argos.repository-checks.gradle.kts). Module builds use the convention
+// Root project: lifecycle tasks and repository-wide checks only. Module builds use the convention
 // plugins in build-logic/.
+//   argos.repository-checks  checkSpdx and the build-logic tests in check
+//                            (build-logic/src/main/kotlin/argos.repository-checks.gradle.kts)
+//   argos.test-layers        task-graph guards of the test layers (composition of check,
+//                            -Pbench.machine-profile) and traceabilityReport (test/README.md)
 
-plugins { id("argos.repository-checks") }
+plugins {
+  id("argos.repository-checks")
+  id("argos.test-layers")
+}
 
 description = "Argos APM: on-premises Java APM (agent, collector server, UI)."

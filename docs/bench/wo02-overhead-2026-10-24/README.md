@@ -6,6 +6,8 @@ and unrelated work ran at the same time. They are **reference values only**. No 
 and Gate 0 overhead (03 §4) is **not** decided by this data; it is decided by the human re-run on
 dedicated hardware described in section 9 of the PoC document.
 
+The harness `test/agent/overhead` was moved to [`test/bench`](../../../test/bench/README.md) by WO-05 (`test/bench/bench.sh --no-build report --out <set>` recomputes a set).
+
 ## Run conditions
 
 | Item | Value |

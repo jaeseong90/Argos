@@ -61,9 +61,37 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   transport yet), and answers `java -jar argos-agent.jar --version` and `--check` (JDK version only).
   The proof-of-concept configuration keys (`exporter`, `exporter.file.*`, `debug.transform-list`,
   `test.faults`) may change before the first release.
-- Development-only agent tools: `test/agent/transport-poc` (P-3 transport comparison) and
-  `test/agent/overhead` (P-2 overhead harness). Results: `docs/poc/agent-poc.md` and
+- Development-only agent tools: `test/agent/transport-poc` (P-3 transport comparison) and the P-2
+  overhead harness (now `test/bench`). Results: `docs/poc/agent-poc.md` and
   `docs/poc/agent-overhead.md`.
+- Agent test harness in `agent/agent-testing` (development only): `AppLauncher` (sample app x JDK x
+  agent settings; Spring Boot jars and WAR apps in a standalone Tomcat bound to 127.0.0.1; local
+  process or container with JDK images pinned by digest; JVM presets with
+  `-XX:+BytecodeVerificationLocal` and `--sun-misc-unsafe-memory-access=deny` on JDK 25), an
+  in-process gRPC `FakeCollector` with fault injection (latency, failures, hang, rejected
+  authentication, stream close, restart, TLS modes) and no inbound size limit, an assertion DSL that
+  tells missing values from zero, recorded transform baselines with diff, fail-safe, re-entrance and
+  leak probes that never pass without data, agent log allow-list and Unsafe scan. The WO-02 attach
+  and sample-app tests run on it.
+- Agent test hooks for development builds: `argos.test.exporter` (`file:<dir>`, `noop`, `grpc`),
+  the fault specs `transform-error` and `helper-nocdef` of `argos.test.faults`, and the diagnostic
+  transform log `argos.debug.transform-log`. A fault spec that names no installed or enabled module,
+  or a single advice point, logs one warning and injects nothing. Without these settings the agent
+  behaves as before.
+- Test layers: `check` always runs `test`, `archTest`, `contractTest` and `verifyAgentJar` and never
+  the integration, security, matrix or performance tasks (a task-graph guard fails the build
+  otherwise); unit-test layer rules (`checkUnitTestSources`); `matrixTest` is skipped with a warning
+  outside the matrix runner; `benchTest`, `serverLoadTest`, `storageBench`, `soakTest` and
+  `chaosTest` require `-Pbench.machine-profile=<id>` (`serverLoadTest`, `soakTest` and `chaosTest`
+  are placeholders without a runner yet). Test ID and requirement tag conventions in
+  `test/README.md`, and `./gradlew traceabilityReport` (requirement to test to last result, Markdown
+  and JSON).
+- Overhead bench harness `test/bench` (development only, formerly `test/agent/overhead`): environment
+  record that stops on unfit machines, A-B-A-B-A-B runner, CPU from `/proc` and cgroup v2, latency
+  re-aggregated from raw k6 output with bootstrap confidence intervals, memory, thread and startup
+  measurements, container and virtual-thread variants, the `docs/bench/<date>-<commit>.md` report
+  with verdicts for N-01..N-04 and N-26..N-30 (INVALID when the off-run CPU variation exceeds 2%)
+  and the regression warning against an approved report.
 
 ### Changed
 
@@ -79,5 +107,14 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   tools rebuild rollups through a staging table and `REPLACE PARTITION`, use deduplication tokens of the
   form `<wal_instance_id>:<epoch>:<first>-<last>`, and pin the Testcontainers resource reaper image by
   digest.
+
+### Security
+
+- Release builds of the agent ignore `argos.test.*` and `argos.testing.*` settings (system properties
+  and `ARGOS_TEST_*` environment variables) and log one warning naming them. The check fails closed:
+  only an agent jar whose `Implementation-Version` ends with `-SNAPSHOT` honours them, and a jar
+  without that attribute or with an unreadable manifest counts as a release build. The agent jar
+  checks (`checkManifestVersion`, `test/agent/check-shading.sh`) require the attribute and its match
+  with the project version.
 
 [Unreleased]: https://github.com/argos-apm/argos/commits/main

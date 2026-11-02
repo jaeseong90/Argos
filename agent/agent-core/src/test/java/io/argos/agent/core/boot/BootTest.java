@@ -289,4 +289,137 @@ class BootTest {
             "java.lang.String probe bootstrap retransformed");
     assertThat(recorder.transformedCount()).isEqualTo(2);
   }
+
+  @Test
+  @Tag("req:N-27")
+  @DisplayName(
+      "T-AG-005 debug.transform-log: transformed classes, onError events and ClassCircularityError"
+          + " counts")
+  void transformLog() throws IOException {
+    File log = new File(dir, "out/transform.log");
+    String[] names = new String[64];
+    names[7] = "probe";
+    TransformRecorder recorder = new TransformRecorder(null, log, false, names);
+    TransformErrorListener errors =
+        new TransformErrorListener(TestControls.newControl(), 1_000_000, names, recorder);
+    recorder.onDiscovery("java.lang.String", null, null, true);
+    TransformRecorder.markModule(7);
+    recorder.onTransformation(
+        TypeDescription.ForLoadedType.of(String.class), null, null, true, null);
+    recorder.onComplete("java.lang.String", null, null, true);
+    recorder.onDiscovery("a.Broken", null, null, false);
+    TransformRecorder.markModule(7);
+    errors.onError(
+        "a.Broken", ClassLoader.getSystemClassLoader(), null, false, new IllegalStateException());
+    errors.onError("a.Circular", null, null, false, new ClassCircularityError("a.Circular"));
+    recorder.recordResolutionError("b.Matcher", new ClassCircularityError("b.Matcher"));
+    // Other resolution failures of foreign types are normal (optional dependencies).
+    recorder.recordResolutionError("b.Missing", new NoClassDefFoundError("b/Missing"));
+    recorder.writeIfChanged();
+    assertThat(Files.readAllLines(log.toPath(), StandardCharsets.UTF_8))
+        .containsExactly(
+            TransformRecorder.LOG_HEADER,
+            "T java.lang.String probe bootstrap retransformed",
+            "E a.Broken probe app java.lang.IllegalStateException",
+            "E a.Circular - bootstrap java.lang.ClassCircularityError",
+            "E b.Matcher - - java.lang.ClassCircularityError",
+            "# summary transformed=1 onError=2 classCircularityError=2");
+    assertThat(recorder.errorCount()).isEqualTo(2);
+    assertThat(recorder.circularityCount()).isEqualTo(2);
+    assertThat(errors.errors()).isEqualTo(2);
+    assertThat(errors.circularityErrors()).isEqualTo(1);
+  }
+
+  @Test
+  @Tag("req:F-A15")
+  @DisplayName(
+      "18 §5.7 argos.test.faults: advice-throw, transform-error and helper-nocdef specs; an"
+          + " injected transformation failure throws for the module")
+  void testFaults() {
+    Map<String, String> values = new HashMap<String, String>();
+    values.put(
+        "test.faults", "advice-throw:a, transform-error:b,helper-nocdef:c,helper-nocdef:a,bogus");
+    TestFaults faults = TestFaults.from(AgentConfig.of(values));
+    assertThat(faults.adviceThrows("a")).isTrue();
+    assertThat(faults.adviceThrows("b")).isFalse();
+    assertThat(faults.transformFails("b")).isTrue();
+    assertThat(faults.transformFails("a")).isFalse();
+    assertThat(faults.helpersMissing("c")).isTrue();
+    assertThat(faults.helpersMissing("a")).isTrue();
+    assertThat(faults.helpersMissing("b")).isFalse();
+    assertThat(TestFaults.from(AgentConfig.of(Collections.<String, String>emptyMap())))
+        .isSameAs(TestFaults.NONE);
+    assertThat(TestFaults.NONE.transformFails("b")).isFalse();
+
+    TransformRecorder.takeModules();
+    ModuleTransformer failing = new ModuleTransformer(new Good(), null, null, null, true);
+    org.assertj.core.api.Assertions.assertThatThrownBy(
+            () -> failing.transform(null, null, null, null, null))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("argos.test.faults: injected transformation failure of module good");
+    // The failure is attributed to the module (TransformErrorListener counts it).
+    assertThat(TransformRecorder.takeModules()).isEqualTo(1L << 40);
+  }
+
+  @Test
+  @Tag("req:F-A15")
+  @DisplayName(
+      "18 §5.7 argos.test.faults never injects silently: point-level specs (.enter/.exit) are"
+          + " rejected with one WARN each, a spec whose module is unknown or turned off gets one"
+          + " WARN, a valid spec none; no setting is NONE")
+  void testFaultTargets() {
+    List<String> warnings = new ArrayList<String>();
+    TestFaults faults =
+        TestFaults.parse(
+            Arrays.asList(
+                "advice-throw:servlet.enter",
+                "advice-throw:jdbc.exit",
+                "transform-error:jdbc.enter",
+                "advice-throw:good",
+                "transform-error:nosuch",
+                "helper-nocdef:off",
+                "advice-throw:nosuch",
+                "advice-throw:nosuch"),
+            warnings);
+    assertThat(warnings)
+        .containsExactly(
+            "argos.test.faults: point-level fault 'advice-throw:servlet.enter' is not supported;"
+                + " use advice-throw:<module>",
+            "argos.test.faults: point-level fault 'advice-throw:jdbc.exit' is not supported; use"
+                + " advice-throw:<module>",
+            "argos.test.faults: point-level fault 'transform-error:jdbc.enter' is not supported;"
+                + " use transform-error:<module>");
+    // A rejected point-level spec injects nothing, not even at module level.
+    for (String module : Arrays.asList("servlet", "servlet.enter", "jdbc", "jdbc.exit")) {
+      assertThat(faults.adviceThrows(module)).as(module).isFalse();
+      assertThat(faults.transformFails(module)).as(module).isFalse();
+    }
+    assertThat(faults.adviceThrows("good")).isTrue();
+
+    List<String> installed = Arrays.asList("second", "good");
+    assertThat(faults.unmatched(installed, Collections.singletonList("off")))
+        .containsExactly(
+            "argos.test.faults: 'advice-throw:nosuch' names no installed module (installed:"
+                + " [good, second])",
+            "argos.test.faults: 'transform-error:nosuch' names no installed module (installed:"
+                + " [good, second])",
+            "argos.test.faults: 'helper-nocdef:off' names module off, which"
+                + " instrumentation.disabled turns off: no fault is injected");
+
+    List<String> none = new ArrayList<String>();
+    TestFaults valid =
+        TestFaults.parse(Arrays.asList("advice-throw:good", "helper-nocdef:second"), none);
+    assertThat(none).isEmpty();
+    assertThat(valid.unmatched(installed, Collections.<String>emptyList())).isEmpty();
+    assertThat(valid.adviceThrows("good")).isTrue();
+    assertThat(valid.helpersMissing("second")).isTrue();
+
+    // Only rejected specs, or no setting at all: no fault and nothing to report.
+    assertThat(TestFaults.parse(Arrays.asList("advice-throw:servlet.enter"), none))
+        .isSameAs(TestFaults.NONE);
+    assertThat(TestFaults.parse(Collections.<String>emptyList(), none)).isSameAs(TestFaults.NONE);
+    assertThat(TestFaults.from(AgentConfig.of(Collections.<String, String>emptyMap())))
+        .isSameAs(TestFaults.NONE);
+    assertThat(TestFaults.NONE.unmatched(installed, Collections.singletonList("off"))).isEmpty();
+  }
 }
