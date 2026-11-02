@@ -199,6 +199,18 @@ public final class GeneratorConfig {
     if (tickMs < 10 || tickMs > 1000 || 1000 % tickMs != 0) {
       throw new IllegalArgumentException("tick-ms must divide 1000 and be at least 10: " + tickMs);
     }
+    if ((long) activeSqls * apps > sqls) {
+      // The active set of an instance is drawn from the statements of its application (sqls /
+      // apps); a larger active-sqls would be cut silently and miss the intended load (C-62).
+      throw new IllegalArgumentException(
+          "active-sqls "
+              + activeSqls
+              + " exceeds the SQL statements per application (sqls "
+              + sqls
+              + " / apps "
+              + apps
+              + "): raise --sqls to at least active-sqls x apps");
+    }
   }
 
   /** The defaults of docs/13 §15. */
@@ -208,17 +220,28 @@ public final class GeneratorConfig {
     return new GeneratorConfig(values);
   }
 
-  /** Parses {@code --key=value} arguments over the defaults. */
+  /**
+   * Parses {@code --key=value} arguments over the defaults. The values are validated together, so
+   * the order of the arguments does not matter (e.g. {@code --active-sqls} before {@code --sqls}).
+   */
   public static GeneratorConfig parse(List<String> args) {
-    GeneratorConfig config = defaults();
+    Map<String, String> values = new LinkedHashMap<>(defaults().values);
     for (String arg : args) {
       if (!arg.startsWith("--") || arg.indexOf('=') < 3) {
         throw new IllegalArgumentException("Expected --key=value, got: " + arg);
       }
       int eq = arg.indexOf('=');
-      config = config.with(arg.substring(2, eq), arg.substring(eq + 1));
+      String key = arg.substring(2, eq);
+      String value = arg.substring(eq + 1);
+      if (!KEYS.containsKey(key)) {
+        throw new IllegalArgumentException("Unknown parameter: --" + key + "\n" + usage());
+      }
+      if (key.equals("profile") && !value.isEmpty() && !PROFILES.containsKey(value)) {
+        throw new IllegalArgumentException("Unknown profile " + value + ", one of " + PROFILES);
+      }
+      values.put(key, value);
     }
-    return config;
+    return new GeneratorConfig(values);
   }
 
   /** A copy with {@code key} set to {@code value}. */

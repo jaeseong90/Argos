@@ -19,7 +19,7 @@ SELECT toStartOfInterval(ts, toIntervalSecond({seconds:UInt32})) AS b,
        count() AS cnt,
        countIf(error = 1) AS err,
        avg(elapsed_ms) AS avg_ms,
-       quantilesTDigest(0.5, 0.95, 0.99)(elapsed_ms) AS q
+       quantilesDD(0.01, 0.5, 0.95, 0.99)(elapsed_ms) AS q
 FROM {db}.{p}xlog
 WHERE app_id = {app:UInt32} AND kind = 'HTTP'
   AND ts >= {end_minute:DateTime} - toIntervalHour({hours:UInt32}) AND ts < {end_minute:DateTime}
@@ -33,7 +33,7 @@ SELECT toStartOfInterval(ts, toIntervalSecond({seconds:UInt32})) AS b,
        count() AS cnt,
        countIf(error = 1) AS err,
        avg(elapsed_ms) AS avg_ms,
-       quantilesTDigest(0.5, 0.95, 0.99)(elapsed_ms) AS q
+       quantilesDD(0.01, 0.5, 0.95, 0.99)(elapsed_ms) AS q
 FROM {db}.{p}xlog
 WHERE app_id = {app:UInt32} AND kind = 'HTTP'
   AND ts >= {end_minute:DateTime} - toIntervalHour({hours:UInt32}) AND ts < {end_minute:DateTime}

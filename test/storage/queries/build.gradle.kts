@@ -62,6 +62,12 @@ tasks.named<Test>("integrationTest") {
     systemProperty("argos.queries.profile", it)
     maxHeapSize = "2g" // the generator encodes bulk blocks of up to 500,000 rows in memory
   }
+  // -Pqueries.benchrun=full: BenchRunIT runs the whole catalog with every procedure on any profile
+  // (on -Pqueries.profile=ci it is otherwise a harness smoke run without the copy procedures).
+  // (System properties are task inputs: switching the mode reruns the task.)
+  providers.gradleProperty("queries.benchrun").orNull?.let {
+    systemProperty("argos.queries.benchrun", it)
+  }
 }
 
 // Runs the query catalog against a ClickHouse server and writes the Markdown report

@@ -2,13 +2,16 @@
 package io.argos.storage.generator;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
 import io.argos.storage.generator.model.Topology;
 import io.argos.storage.generator.model.Transaction;
 import io.argos.storage.generator.rows.Table;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -134,6 +137,62 @@ class LoadOptionsTest {
     assertThat((double) f.summary.get("profileStepsPerSecondAchieved"))
         .isCloseTo(stepRate, within(stepRate * 0.05));
     assertThat((double) f.summary.get("normalCaptureRateMean")).isBetween(0.2, 1.0);
+  }
+
+  @Test
+  @DisplayName(
+      "C-62 Q17 3b options: 500 instances and an active SQL set above the 13 §14 200 are accepted"
+          + " when the catalog holds them; a larger active set than sqls / apps is refused")
+  void statisticsLoadOptions() {
+    GeneratorConfig load =
+        GeneratorConfig.defaults()
+            .with("sqls", "6000")
+            .with("instances-per-app", "50")
+            .with("active-sqls", "600");
+    assertThat(load.apps * load.instancesPerApp).isEqualTo(500);
+    assertThat(load.activeSqls).isEqualTo(600);
+    assertThatThrownBy(() -> GeneratorConfig.defaults().with("active-sqls", "201"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("raise --sqls to at least active-sqls x apps");
+    assertThat(GeneratorConfig.defaults().with("active-sqls", "200").activeSqls).isEqualTo(200);
+    // The command line is validated as a whole: the order of the arguments does not matter.
+    GeneratorConfig cli =
+        GeneratorConfig.parse(
+            List.of("--active-sqls=1000", "--instances-per-app=50", "--sqls=10000"));
+    assertThat(cli.activeSqls).isEqualTo(1000);
+    assertThat(cli.sqls).isEqualTo(10000);
+    assertThatThrownBy(() -> GeneratorConfig.parse(List.of("--active-sqls=1000")))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("raise --sqls");
+  }
+
+  @Test
+  @DisplayName(
+      "C-62 the run prints the achieved statistics rows/s (sql_stat_raw + ext_stat_raw) and"
+          + " whether it reached the N-06 bar of 10,000")
+  void statisticsRateLine() {
+    // The rates of a real (short) simulation: the default run of this class (50 instances).
+    Map<String, Object> rates = Generator.ratesPerSimulatedSecond(seconds.range, seconds.manifest);
+    double simulated = (seconds.range.end() - seconds.range.start()) / 1000.0;
+    assertThat((double) rates.get("statistics"))
+        .isCloseTo(
+            (seconds.manifest.rows(Table.SQL_STAT_RAW) + seconds.manifest.rows(Table.EXT_STAT_RAW))
+                / simulated,
+            within(1e-6));
+    assertThat(Generator.statisticsLine(rates))
+        .startsWith("argos storage generator: statistics rows/simulated s: ")
+        .endsWith("; N-06 bar 10,000: NOT reached");
+
+    Map<String, Object> reached = new LinkedHashMap<>();
+    reached.put("sql_stat_raw", 10_286.4);
+    reached.put("ext_stat_raw", 125.6);
+    reached.put("statistics", 10_412.0);
+    assertThat(Generator.statisticsLine(reached))
+        .isEqualTo(
+            "argos storage generator: statistics rows/simulated s: 10,412 (sql_stat_raw 10,286 +"
+                + " ext_stat_raw 126); N-06 bar 10,000: reached");
+    reached.put("statistics", 9_999.9);
+    assertThat(Generator.statisticsLine(reached)).endsWith("N-06 bar 10,000: NOT reached");
   }
 
   @Test

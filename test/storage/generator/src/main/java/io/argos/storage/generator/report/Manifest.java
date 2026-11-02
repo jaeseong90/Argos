@@ -52,7 +52,7 @@ public final class Manifest {
   private long batchTransactions;
   private long capturedTransactions;
   private long summarizedTransactions;
-  private long timeoutFlagged;
+  private long timedOutCount;
   private long lateBatches;
   private final long sampleThreshold;
   private final List<Map<String, Object>> txSamples = new ArrayList<>();
@@ -110,8 +110,8 @@ public final class Manifest {
       if ((tx.flags & Transaction.FLAG_SUMMARIZED) != 0) {
         summarizedTransactions++;
       }
-      if (tx.timeoutFlag) {
-        timeoutFlagged++;
+      if (tx.timedOut) {
+        timedOutCount++;
       }
       sample(tx);
     } else if (row instanceof StatRow stat) {
@@ -343,7 +343,7 @@ public final class Manifest {
     tx.put("batch", batchTransactions);
     tx.put("profileCaptured", capturedTransactions);
     tx.put("summarized", summarizedTransactions);
-    tx.put("timeoutFlag", timeoutFlagged);
+    tx.put("timedOut", timedOutCount);
     tx.put("lateFlag", xlogLateRows());
     tx.put("lateAgentBatches", lateBatches);
     m.put("transactions", tx);

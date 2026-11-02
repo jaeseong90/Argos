@@ -47,7 +47,11 @@ class GeneratorClickHouseIT {
 
   @BeforeAll
   static void start() throws IOException {
-    server = ArgosClickHouse.builder().memoryLimit(2 * MemoryBudget.GIB).start();
+    server =
+        ArgosClickHouse.builder()
+            .memoryLimit(2 * MemoryBudget.GIB)
+            .writerTablePrefixes("gb_", "gr_", "gt_")
+            .start();
     reader = server.client(Account.READER);
     reports =
         Path.of(System.getProperty("argos.reportDir", "build/reports/storage-generator-tests"));
@@ -114,26 +118,39 @@ class GeneratorClickHouseIT {
     }
     assertThat(resent).isGreaterThanOrEqualTo(Table.ALL.size());
 
-    // D-03 (Q12 shape): per minute, xlog = app_stat_1m = service_stat_1m = instance_stat_1m.
+    // D-03 (Q12 shape, ADR-0007 C-65 form): per minute, xlog = app_stat_1m = service_stat_1m =
+    // instance_stat_1m; the sources in UNION ALL with a src label, grouped by minute, compared with
+    // sumIf in HAVING, so a minute missing in one source counts 0 there whatever join_use_nulls is.
     String perMinute =
-        "SELECT count() FROM (SELECT m, xc, ac, sc, ic FROM"
-            + " (SELECT toStartOfMinute(ts) AS m, count() AS xc FROM "
+        "SELECT count() FROM (SELECT m, sumIf(c, src = 'xlog') AS xc, sumIf(c, src = 'app') AS ac,"
+            + " sumIf(c, src = 'service') AS sc, sumIf(c, src = 'instance') AS ic FROM ("
+            + "SELECT 'xlog' AS src, toStartOfMinute(ts) AS m, count() AS c FROM "
             + p
-            + "xlog GROUP BY m) AS x"
-            + " FULL JOIN (SELECT minute AS m, sum(count) AS ac FROM "
+            + "xlog GROUP BY m UNION ALL SELECT 'app', minute, sum(count) FROM "
             + p
-            + "app_stat_1m"
-            + " GROUP BY m) AS a USING m"
-            + " FULL JOIN (SELECT minute AS m, sum(count) AS sc FROM "
+            + "app_stat_1m GROUP BY minute UNION ALL SELECT 'service', minute, sum(count) FROM "
             + p
-            + "service_stat_1m"
-            + " GROUP BY m) AS s USING m"
-            + " FULL JOIN (SELECT minute AS m, sum(count) AS ic FROM "
+            + "service_stat_1m GROUP BY minute UNION ALL SELECT 'instance', minute, sum(count) FROM "
             + p
-            + "instance_stat_1m"
-            + " GROUP BY m) AS i USING m"
-            + " WHERE xc != ac OR xc != sc OR xc != ic)";
+            + "instance_stat_1m GROUP BY minute) GROUP BY m HAVING xc != ac OR xc != sc OR xc != ic)";
     assertThat(count(perMinute)).as("minutes with a mismatch").isZero();
+    assertThat(
+            server
+                .client(Account.MIGRATOR)
+                .execute(perMinute, java.util.Map.of("join_use_nulls", "1"))
+                .body()
+                .strip())
+        .as("minutes with a mismatch, join_use_nulls = 1")
+        .isEqualTo("0");
+    // The check sees a one-sided minute: a rollup row without xlog rows is one mismatch.
+    assertThat(
+            count(
+                perMinute.replace(
+                    "GROUP BY minute) GROUP BY m",
+                    "GROUP BY minute UNION ALL SELECT 'instance', toDateTime('2000-01-01 00:00:00'),"
+                        + " 1) GROUP BY m")))
+        .as("negative control: a minute found only in instance_stat_1m")
+        .isEqualTo(1);
     assertThat(count("SELECT sum(count) FROM " + p + "app_stat_1h"))
         .isEqualTo(result.manifest().rows(Table.XLOG));
 

@@ -7,6 +7,8 @@ import io.argos.storage.clickhouse.ClickHouseException;
 import io.argos.storage.clickhouse.ClickHouseHttp;
 import io.argos.storage.clickhouse.ClickHouseHttp.Response;
 import io.argos.storage.schema.SchemaParameters;
+import java.time.Instant;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
@@ -40,7 +42,9 @@ class ConfirmationItemsIT {
   @DisplayName("13§17 #2 quantilesBFloat16 and quantilesDD support -State/-MergeState; state sizes")
   void quantileStates() {
     String values =
-        "SELECT toStartOfMinute(toDateTime('2026-10-24 00:00:00', 'UTC') + number % 60 * 60) AS minute,"
+        "SELECT toStartOfMinute(toDateTime('"
+            + Workload.seconds(Workload.at(LocalTime.MIDNIGHT))
+            + "', 'UTC') + number % 60 * 60) AS minute,"
             + " toUInt32(greatest(1, exp(log(80) + sqrt(-2 * log((cityHash64(number) % 1000000 + 1) / 1000001))"
             + " * cos(2 * pi() * (cityHash64(number, 1) % 1000000) / 1000000)))) AS v"
             + " FROM numbers(600000)";
@@ -133,11 +137,12 @@ class ConfirmationItemsIT {
             + table
             + " (d Date, x UInt64) ENGINE = MergeTree"
             + " PARTITION BY d ORDER BY x");
-    migrator.execute("INSERT INTO " + table + " SELECT '2026-10-01', number FROM numbers(100000)");
+    String day = "'" + Workload.day(0) + "'";
+    migrator.execute("INSERT INTO " + table + " SELECT " + day + ", number FROM numbers(100000)");
     ClickHouseException tooBig =
         migrator
             .failure(
-                "ALTER TABLE " + table + " DROP PARTITION '2026-10-01'",
+                "ALTER TABLE " + table + " DROP PARTITION " + day,
                 Map.of("max_partition_size_to_drop", "1"))
             .orElseThrow();
     assertThat(tooBig.errorName()).isEqualTo("TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT");
@@ -146,7 +151,7 @@ class ConfirmationItemsIT {
             .failure("ALTER TABLE " + table + " MODIFY SETTING max_partition_size_to_drop = 1")
             .orElseThrow();
     assertThat(tableLevel.errorName()).isEqualTo("UNKNOWN_SETTING");
-    migrator.execute("ALTER TABLE " + table + " DROP PARTITION '2026-10-01'");
+    migrator.execute("ALTER TABLE " + table + " DROP PARTITION " + day);
     assertThat(migrator.scalarLong("SELECT count() FROM " + table)).isZero();
   }
 
@@ -178,11 +183,15 @@ class ConfirmationItemsIT {
       "13§17 #8 bloom_filter on Array(UInt64) serves has(): fewer rows read than without it")
   void arrayBloomFilter() {
     String table = p.table("xlog");
+    Instant start = Workload.at(LocalTime.NOON);
+    Workload.requireRetained("xlog", start, start.plusMillis(299_999));
     migrator.execute(
         "INSERT INTO "
             + table
             + " (app_id, env, instance_id, ts, tx_id, kind, elapsed_ms, sql_ids)"
-            + " SELECT 1, 'prod', 11, addMilliseconds(toDateTime64('2026-10-24 12:00:00', 3, 'UTC'), number),"
+            + " SELECT 1, 'prod', 11, addMilliseconds(toDateTime64('"
+            + Workload.millis(start)
+            + "', 3, 'UTC'), number),"
             + " number, 'HTTP', 10, if(number BETWEEN 150000 AND 150010, [424242, number], [number % 997,"
             + " number % 991 + 1000]) FROM numbers(300000)");
     String query = "SELECT count() FROM " + table + " WHERE has(sql_ids, 424242)";
@@ -211,7 +220,9 @@ class ConfirmationItemsIT {
                 "SELECT compression_codec FROM system.columns WHERE database = 'argos' AND table = '"
                     + p.tablePrefix()
                     + "metric' AND name = 'value'"))
-        .isEqualTo("CODEC(Gorilla(8), LZ4)");
+        .isEqualTo("CODEC(Gorilla(8), ZSTD(1))");
+    Instant t0 = Workload.at(LocalTime.MIDNIGHT);
+    Workload.requireRetained("metric", t0, t0.plusSeconds(10));
     Fixture.writer()
         .insert(
             "INSERT INTO "
@@ -219,10 +230,14 @@ class ConfirmationItemsIT {
                 + " (app_id, env, instance_id, name, kind, ts, value, delta)"
                 + " FORMAT TabSeparated",
             """
-            1\tprod\t1\tg\tgauge\t2026-10-24 00:00:00\t0.1\t0
-            1\tprod\t1\tg\tgauge\t2026-10-24 00:00:05\t-1.7976931348623157E308\t0
-            1\tprod\t1\tg\tgauge\t2026-10-24 00:00:10\t123456789.125\t0
-            """,
+            1\tprod\t1\tg\tgauge\t%s\t0.1\t0
+            1\tprod\t1\tg\tgauge\t%s\t-1.7976931348623157E308\t0
+            1\tprod\t1\tg\tgauge\t%s\t123456789.125\t0
+            """
+                .formatted(
+                    Workload.seconds(t0),
+                    Workload.seconds(t0.plusSeconds(5)),
+                    Workload.seconds(t0.plusSeconds(10))),
             Map.of("insert_deduplication_token", "argos:metric:gorilla"));
     assertThat(
             migrator.rows(
@@ -281,7 +296,10 @@ class ConfirmationItemsIT {
   @Tag("req:SEC-76")
   @DisplayName("26.8: a view without SQL SECURITY DEFINER makes the INSERT-only writer fail")
   void viewsNeedDefiner() {
-    String source = p.table("sec_src");
+    // The writer inserts into raw tables only (C-60): the source of this probe is a table named
+    // like a raw table under its own prefix (granted like an installation with that prefix).
+    SchemaParameters sec = SchemaParameters.defaults().withTablePrefix("confsec_");
+    String source = sec.table("xlog");
     migrator.execute(
         "CREATE TABLE IF NOT EXISTS " + source + " (x UInt32) ENGINE = MergeTree ORDER BY x");
     migrator.execute(
@@ -335,22 +353,35 @@ class ConfirmationItemsIT {
   @Test
   @Tag("req:SEC-33")
   @DisplayName(
-      "12 open item 6: a deletion mutation (migrator) is polled to completion in system.mutations (reader)")
+      "12 open item 6, C-60: a deletion mutation (migrator) is polled to completion in"
+          + " system.mutations by the migrator itself")
   void deletionMutationPolling() throws InterruptedException {
     String table = p.table("xlog");
     String name = p.tablePrefix() + "xlog";
+    // Three days: from 10:00 two days before the anchor day, one row every 10 s.
+    Instant start = Workload.at(-2, LocalTime.of(10, 0));
+    Workload.requireRetained("xlog", start, start.plusSeconds(10L * 19_999));
+    String firstDay = Workload.day(-2);
     migrator.execute(
         "INSERT INTO "
             + table
             + " (app_id, env, instance_id, ts, tx_id, kind, user_id, user_id_mode)"
-            + " SELECT 7, 'prod', 71, addMilliseconds(toDateTime64('2026-10-22 10:00:00', 3, 'UTC'),"
+            + " SELECT 7, 'prod', 71, addMilliseconds(toDateTime64('"
+            + Workload.millis(start)
+            + "', 3, 'UTC'),"
             + " number * 10000), 1000000 + number, 'HTTP', if(number % 100 = 0, 'u-del', ''),"
             + " if(number % 100 = 0, 'hashed', 'off') FROM numbers(20000)");
     ClickHouseHttp reader = Fixture.reader();
     String parts =
         "SELECT partition, name FROM system.parts WHERE database = 'argos' AND table = '"
             + name
-            + "' AND active AND partition IN ('2026-10-22', '2026-10-23', '2026-10-24') ORDER BY name";
+            + "' AND active AND partition IN ('"
+            + firstDay
+            + "', '"
+            + Workload.day(-1)
+            + "', '"
+            + Workload.day(0)
+            + "') ORDER BY name";
     List<List<String>> before = reader.rows(parts);
     String perDay =
         "SELECT toDate(ts) AS d, countIf(user_id = 'u-del'), count() FROM "
@@ -364,13 +395,16 @@ class ConfirmationItemsIT {
     migrator.execute(
         "ALTER TABLE "
             + table
-            + " DELETE IN PARTITION '2026-10-22'"
-            + " WHERE toDate(ts) = '2026-10-22' AND app_id = 7 AND user_id = 'u-del'");
+            + " DELETE IN PARTITION '"
+            + firstDay
+            + "' WHERE toDate(ts) = '"
+            + firstDay
+            + "' AND app_id = 7 AND user_id = 'u-del'");
     List<String> status = List.of();
     for (int i = 0; i < 120 && !status.equals(List.of("1", "")); i++) {
       Thread.sleep(250);
       status =
-          reader
+          migrator
               .rows(
                   "SELECT is_done, latest_fail_reason FROM system.mutations WHERE database = 'argos'"
                       + " AND table = '"
@@ -381,13 +415,13 @@ class ConfirmationItemsIT {
     long millis = (System.nanoTime() - started) / 1_000_000;
 
     assertThat(status).containsExactly("1", "");
-    // Day 2026-10-22 lost exactly its 'u-del' rows; the other days are untouched.
+    // The first day lost exactly its 'u-del' rows; the other days are untouched.
     List<List<String>> countsAfter = migrator.rows(perDay);
     assertThat(countsAfter).hasSameSizeAs(countsBefore).hasSize(3);
     for (int i = 0; i < countsBefore.size(); i++) {
       List<String> b = countsBefore.get(i);
       List<String> a = countsAfter.get(i);
-      if (b.get(0).equals("2026-10-22")) {
+      if (b.get(0).equals(firstDay)) {
         assertThat(a.get(1)).isEqualTo("0");
         assertThat(Long.parseLong(a.get(2)))
             .isEqualTo(Long.parseLong(b.get(2)) - Long.parseLong(b.get(1)));

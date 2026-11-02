@@ -6,12 +6,20 @@
 --                   and compressed bytes per row (B_x, B_p, B_m, B_s, B_e, B_r) of every table of
 --                   the loaded data (T-ST-041 targets: xlog >= 3, profile_step >= 5, metric >= 8)
 --   variants        a sample of the five raw tables copied (INSERT ... SELECT, argos_migrator) into
---                   five variants of their V001 definition: column codecs on / off x default codec
---                   LZ4 (server default) / ZSTD(1) (MergeTree setting default_compression_codec,
---                   which equals a server <compression> default for columns without CODEC), and
---                   proposed (the PoC codec proposal, ProposedCodecs: default ZSTD(1), column codec
---                   LZ4 stages -> ZSTD(1), xlog parent_span_id / trace_id without CODEC(NONE), tx_id
---                   Delta + ZSTD(1)). Each table is copied from its own latest full 24 hours (its
+--                   six variants of their V001 definition (CompressionComparison):
+--                     base          V001 as deployed (ADR-0007 C-54): server default ZSTD(1)
+--                                   (config.d), column codecs with ZSTD(1) stages, xlog trace_id /
+--                                   parent_span_id without CODEC(NONE), xlog tx_id Delta + ZSTD(1)
+--                     lz4           V001 before ADR-0007 (LegacyCodecs; the WO-03 base): LZ4 stages,
+--                                   CODEC(NONE) on trace_id / parent_span_id, default LZ4
+--                     lz4_nocodec   no column codecs, default LZ4 (WO-03 nocodec)
+--                     lz4cols_zstd  pre-ADR-0007 column codecs, default ZSTD(1) (WO-03 zstd)
+--                     nocodec       no column codecs, default ZSTD(1) (WO-03 zstd_nocodec)
+--                     proposed      the WO-03 proposal (ProposedCodecs) on the pre-ADR-0007 V001
+--                                   = base + profile_step.tx_id Delta + ZSTD(1)
+--                   A default other than the server's is the MergeTree setting
+--                   default_compression_codec (equal to a server <compression> default for columns
+--                   without CODEC). Each table is copied from its own latest full 24 hours (its
 --                   whole range when it holds less, e.g. profile_step), the merges of a variant are
 --                   left to settle (no merge running, the same part count twice; bounded) and the
 --                   final part count is recorded; every variant is copied twice (--q20-repeats) and
@@ -20,7 +28,7 @@
 -- Criterion: recorded; the codec decision follows from the table (Gate 0).
 --
 -- @id        Q20
--- @title     Compression: LZ4 vs ZSTD(1) default x column codecs on/off, proposal; B_* per table
+-- @title     Compression: V001 (ZSTD(1)) vs pre-ADR-0007 LZ4, codecs on/off, proposal; B_* per table
 -- @source    docs/13 §14, §15 Q20; N-19; T-ST-041, T-ST-050
 -- @kind      procedure
 -- @account   migrator

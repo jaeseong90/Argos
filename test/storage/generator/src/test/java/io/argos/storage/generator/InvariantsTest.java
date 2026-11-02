@@ -152,11 +152,13 @@ class InvariantsTest {
   void versions() {
     Topology t = f.topology;
     for (Topology.Instance i : t.instances) {
-      assertThat(i.versionIdAt(f.range.start())).isEqualTo(i.app.versionIds[0]);
+      assertThat(i.appVersionIdAt(f.range.start())).isEqualTo(i.app.appVersionIds[0]);
       long after = i.restartEnd + 1;
       long expected =
-          i.indexInApp == t.config.instancesPerApp - 1 ? i.app.versionIds[2] : i.app.versionIds[1];
-      assertThat(i.versionIdAt(after)).isEqualTo(expected);
+          i.indexInApp == t.config.instancesPerApp - 1
+              ? i.app.appVersionIds[2]
+              : i.app.appVersionIds[1];
+      assertThat(i.appVersionIdAt(after)).isEqualTo(expected);
       assertThat(i.upAt(i.restartAt)).isFalse();
       assertThat(i.restartEnd).isLessThan(f.range.end());
     }

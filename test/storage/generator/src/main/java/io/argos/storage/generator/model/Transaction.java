@@ -114,7 +114,7 @@ public final class Transaction implements Row {
   public boolean argosTrace;
 
   public int callerAppId;
-  public long versionId;
+  public long appVersionId;
   public int remoteIpv4;
   public String userId = "";
   public String requestId = "";
@@ -122,7 +122,7 @@ public final class Transaction implements Row {
   public int sqlCount;
   public int sqlTimeMs;
   public long[] sqlIds = new long[0];
-  public int dbcTimeMs;
+  public int dbcWaitMs;
   public int dbcOffsetMs;
   public final List<ExtCall> extCalls = new ArrayList<>();
   public int extTimeMs;
@@ -130,7 +130,7 @@ public final class Transaction implements Row {
   public long allocBytes;
   public boolean profileCaptured;
   public boolean streaming;
-  public boolean timeoutFlag;
+  public boolean timedOut;
   public int dispatchCount;
   public int flags;
   public int preMs;
@@ -181,7 +181,7 @@ public final class Transaction implements Row {
     w.u8(incomingTrace ? 1 : 0);
     w.i32(callerAppId);
     w.i64(service.id);
-    w.i64(versionId);
+    w.i64(appVersionId);
     w.string(service.httpMethod);
     w.u16(httpStatus);
     w.i32(elapsedMs);
@@ -196,7 +196,7 @@ public final class Transaction implements Row {
     w.string(requestId);
     w.u16(Math.min(sqlCount, 0xFFFF));
     w.i32(sqlTimeMs);
-    w.i32(dbcTimeMs);
+    w.i32(dbcWaitMs);
     w.u16(Math.min(extCount(), 0xFFFF));
     w.i32(extTimeMs);
     w.i32(cpuTimeMs);
@@ -204,7 +204,7 @@ public final class Transaction implements Row {
     w.i64(kind == BATCH ? app.threadBatchId : app.threadHttpId);
     w.u8(profileCaptured ? 1 : 0);
     w.u8(streaming ? 1 : 0);
-    w.u8(timeoutFlag ? 1 : 0);
+    w.u8(timedOut ? 1 : 0);
     w.u16(dispatchCount);
     w.u8(late ? 1 : 0);
     w.u16(flags);

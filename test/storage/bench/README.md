@@ -25,21 +25,27 @@ URL=http://127.0.0.1:18123/
 # 2. Q1..Q16, Q18..Q20 (cold = server restart + page cache drop before each cold run, then 3 warm runs).
 #    Q18 compares the two deletion forms on two copies of days d - 1 and d (4 repetitions, alternating order;
 #    two 1/100 runs with 2 repetitions each ranked the forms in opposite order);
-#    Q19 includes the real retention change (ttl_change_1); Q20 includes the proposed codecs, 3 repetitions.
+#    Q19 includes the real retention change (ttl_change_1); Q20 compares V001 (base, ZSTD(1), ADR-0007 C-54)
+#    with the pre-ADR-0007 LZ4 definition (lz4) and the other variants, 3 repetitions.
 ./gradlew :test:storage:queries:storageQueries -Pqueries.args="--url $URL \
   --procedures Q05/bloom,Q11/cost,Q14,Q15,Q16,Q18,Q19,Q20 --bloom-days 3 --q18-wait-s 600 --q18-repeats 4 \
   --q20-repeats 3" \
   -Pqueries.cold="command:$PWD/test/storage/bench/bench-server.sh restart-dropcache"
 
 # 2b. Decision checks (docs/poc/clickhouse-benchmark.md 13, items 9, 11, 12), each also part of step 2:
-#   codecs (A Gate 0 decision): Q20 variants base, nocodec, zstd, zstd_nocodec, proposed, 3 repetitions
+#   codecs (ADR-0007 C-54): Q20 variants base (V001), lz4 (V001 before ADR-0007), lz4_nocodec, lz4cols_zstd,
+#   nocodec, proposed (WO-03 proposal = base + profile_step.tx_id Delta), 3 repetitions
 ./gradlew :test:storage:queries:storageQueries -Pqueries.args="--url $URL --queries none --procedures Q20 \
   --q20-repeats 3"
 #   A-6 fallback: Q05 restored_skewed (0 rows expected), fallback_2d (1 row, <= 500 ms), fallback_coverage
 #   (transactions of the last day that +-2 s and the 2 day fallback miss); NOT_APPLICABLE without a skewed clock
 ./gradlew :test:storage:queries:storageQueries -Pqueries.args="--url $URL --queries Q05 --procedures none"
 #   D-14 determinism: report table "D-14 rebuild determinism" of Q14 (state bytes and values, 1m and 1h,
-#   rebuild single-threaded vs 8 threads) on the loaded data and on the synthetic sample
+#   rebuild single-threaded vs 8 threads) on the loaded data and on the synthetic sample; on the loaded data
+#   also Q14/d14_rebuild: the rollups of the last full day rebuilt twice with the C-59 procedure (staging +
+#   REPLACE PARTITION), stored quantilesDD states compared byte for byte (criterion: 0 mismatches). Q14 is judged
+#   on the C-53 criteria (1m group p95 value error <= 2 % for p50/p95, p99 <= 5 % at 1h and above, 1m p99 rank
+#   error <= 0.5 pp)
 ./gradlew :test:storage:queries:storageQueries -Pqueries.args="--url $URL --queries none --procedures Q14 \
   --q14-source dataset --q14-days 3"
 ./gradlew :test:storage:queries:storageQueries -Pqueries.args="--url $URL --queries none --procedures Q14 \
@@ -60,14 +66,23 @@ sleep 7500   # into the 5,000 TPS step
   --q17-duration-s 1800 --q17-ingestion replay_5000_TPS"
 wait
 
-# 3b. Q17 at the N-06 load: 5,000 TPS for 1 hour with 300 instances, 200 active SQL per instance (13 section
-#     14) and 50,000 profile_step rows/s; Q17 from minute 15 to minute 45. Expected load (measured with
-#     --target=none): xlog 5,000, profile_step 50,000, sql_stat_raw ~5,300 + ext_stat_raw ~125 (statistics
-#     ~5,400, the 13 section 14 bound is 300 x 200 / 10 s = 6,000; the 10,000 of N-06 is not reachable, see
-#     docs/poc/clickhouse-benchmark.md 14.2), metric 6,000: about 66k rows/s in total.
+# 3b. Q17 at the N-06 load (Gate 0 judgement): 5,000 TPS for 1 hour with at least 10,000 statistics rows/s
+#     (ADR-0007 C-62: the N-06 bar stays; the load is raised to reach it, statistics still derived from the
+#     transactions so that D-12 holds) and 50,000 profile_step rows/s; Q17 from minute 15 to minute 45.
+#     500 instances (10 apps x 50), 600 active SQL per instance drawn from 600 statements per app
+#     (--sqls=6000; --active-sqls may not exceed sqls / apps). Statistics rows/s measured with the same
+#     options at 5,000 TPS (--target=none, 10 simulated minutes, 2026-11-02):
+#       instances x active SQL   300 x 200: 5,398   300 x 350: 7,606   500 x 200: 7,381
+#                                500 x 400: 10,086  500 x 600: 11,458  500 x 1,000: 12,846
+#     Expected load with 500 x 600: xlog 5,000, profile_step 50,000, sql_stat_raw ~11,250 + ext_stat_raw ~200
+#     (statistics ~11,450), metric 10,000 (500 instances x 100 series / 5 s): about 76k rows/s in total.
+#     The generator prints the achieved rate at the end ("statistics rows/simulated s: ... N-06 bar 10,000:
+#     reached"; report.md "Simulation" line). Record it; if it says NOT reached, the run does not judge N-06
+#     and stays a Gate 0 open item (C-62).
 ./gradlew :test:storage:generator:storageGenerate -Pstorage.mode=replay -Pstorage.target=url:$URL \
-  -Pstorage.tps-steps=5000 -Pstorage.step-duration=PT1H -Pstorage.instances-per-app=30 \
-  -Pstorage.active-sqls=200 -Pstorage.profile-step-rate=50000 -Pstorage.tick-ms=100 -PstorageXmx=3g &
+  -Pstorage.tps-steps=5000 -Pstorage.step-duration=PT1H -Pstorage.instances-per-app=50 \
+  -Pstorage.sqls=6000 -Pstorage.active-sqls=600 -Pstorage.profile-step-rate=50000 -Pstorage.tick-ms=100 \
+  -PstorageXmx=4g &
 sleep 900    # 15 minutes into the hour
 ./gradlew :test:storage:queries:storageQueries -Pqueries.args="--url $URL --queries none --procedures Q17 \
   --q17-duration-s 1800 --q17-ingestion replay_5000_TPS_N06"
@@ -94,3 +109,9 @@ Notes:
   `manifest.json`); compare it with the expected values above.
 - Column-level sizes (`system.parts_columns`) need an operator account on the host; none of the three Argos
   accounts may read them (SEC-76).
+- The writer account may insert into the five raw tables of the default prefix only (users.d/argos.xml, ADR-0007
+  C-60): load the bench server without `-Pstorage.table-prefix` / `--prefix`. The Testcontainers targets
+  (`-Pstorage.target=docker`, `--volume`) grant the writer the raw tables of the chosen prefix.
+- Per-day consistency (Q13 `daily_30d`, `nightly`) follows ADR-0007 C-57; with the generator's clock-skewed
+  instances (`skewed-instances`, D-15 clamp) it reports the days around midnight of their applications
+  (docs/poc/clickhouse-benchmark.md 17.3). The range and minute forms must be 0.

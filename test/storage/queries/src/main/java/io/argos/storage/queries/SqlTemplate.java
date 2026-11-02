@@ -13,9 +13,9 @@ import java.util.regex.Pattern;
  *
  * <ul>
  *   <li>Textual {@code {name}} (no colon): identifiers and DDL literals rendered before execution:
- *       {@code {db}}, {@code {p}}, {@code {retention.<key>}}, {@code {bloom.<index>.<param>}} of
- *       the schema parameters, plus names that a procedure supplies (table names of its copies).
- *       Values must be identifier or number characters, so rendering cannot inject SQL.
+ *       {@code {db}}, {@code {p}}, {@code {retention.<key>}} of the schema parameters (ADR-0007
+ *       C-56: no {@code {bloom.*}}), plus names that a procedure supplies (table names of its
+ *       copies). Values must be identifier or number characters, so rendering cannot inject SQL.
  *   <li>Typed {@code {name:Type}}: ClickHouse query parameters, left in the SQL and bound by the
  *       server from the {@code param_<name>} request parameters (values never enter the SQL text).
  * </ul>

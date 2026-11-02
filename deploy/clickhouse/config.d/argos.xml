@@ -43,7 +43,17 @@
   <max_concurrent_queries>50</max_concurrent_queries>
 
   <background_pool_size>4</background_pool_size>
-  <background_schedule_pool_size>8</background_schedule_pool_size>
+  <!-- background_schedule_pool_size keeps the LTS default (docs/adr/0007 C-71, B-6): 13 section 7.2
+       lowered it to 8; revisit only if the N-06 load run shows parts or DelayedInserts piling up. -->
+
+  <!-- Default compression of every MergeTree part (docs/adr/0007 C-54): ZSTD(1) instead of LZ4.
+       Columns with a CODEC clause in deploy/clickhouse/schema keep their own codec chain. -->
+  <compression>
+    <case>
+      <method>zstd</method>
+      <level>1</level>
+    </case>
+  </compression>
 
   <!-- Emergency retention shortening must be able to DROP large partitions (13 section 8). This is a
        server setting; ClickHouse 26.8 has no table-level override, only a query-level one. -->

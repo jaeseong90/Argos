@@ -11,7 +11,6 @@ public final class Block {
 
   private final Table table;
   private final long sequence;
-  private final String blockId;
   private final String token;
   private final int rows;
   private final byte[] data;
@@ -21,7 +20,7 @@ public final class Block {
   /**
    * @param table target table
    * @param sequence block number within the table in this run (0-based)
-   * @param blockId block id (bulk sequence or WAL position)
+   * @param token deduplication token ({@link DedupToken}, C-61)
    * @param rows rows in the body
    * @param data body including the format header (not copied)
    * @param receivedMs server receive time of each row (replay lag), or an empty array
@@ -30,15 +29,17 @@ public final class Block {
   public Block(
       Table table,
       long sequence,
-      String blockId,
+      String token,
       int rows,
       byte[] data,
       long[] receivedMs,
       long minReceivedMs) {
     this.table = table;
     this.sequence = sequence;
-    this.blockId = blockId;
-    this.token = DedupToken.of(table, blockId);
+    if (!DedupToken.FORMAT.matcher(token).matches()) {
+      throw new IllegalArgumentException("Not a C-61 token: " + token);
+    }
+    this.token = token;
     this.rows = rows;
     this.data = data;
     this.receivedMs = receivedMs;
@@ -53,11 +54,7 @@ public final class Block {
     return sequence;
   }
 
-  public String blockId() {
-    return blockId;
-  }
-
-  /** {@code argos:<table>:<block_id>} (DSN-13-07, C-2). */
+  /** {@code <wal_instance_id>:<epoch>:<first>-<last>} (13 §5.1, ADR-0007 C-61). */
   public String token() {
     return token;
   }

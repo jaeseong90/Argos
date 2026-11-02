@@ -55,6 +55,7 @@ final class Datasets {
    * @param start first instant
    * @param end end of the range
    * @param skewedInstances instances with a clock 60 s ahead
+   * @param skewedInstanceIds their instance ids (xlog.instance_id)
    * @param elapsed generation and load time
    * @param groundTruth distinct rows sent per raw table
    * @param manifest the generator manifest (per-day expected values), null for the fixture
@@ -69,6 +70,7 @@ final class Datasets {
       Instant start,
       Instant end,
       int skewedInstances,
+      List<Integer> skewedInstanceIds,
       Duration elapsed,
       Map<String, Long> groundTruth,
       Manifest manifest,
@@ -91,6 +93,7 @@ final class Datasets {
           start,
           end,
           skewedInstances,
+          skewedInstanceIds,
           elapsed,
           groundTruth,
           manifest,
@@ -182,6 +185,7 @@ final class Datasets {
           s.start(),
           s.end(),
           s.skewedInstances().size(),
+          List.copyOf(s.skewedInstances()),
           s.duration(),
           Map.copyOf(s.rows()),
           null,
@@ -237,6 +241,7 @@ final class Datasets {
             Instant.ofEpochMilli(range.start()),
             Instant.ofEpochMilli(range.end()),
             config.skewedInstances,
+            r.topology().skewedInstances().stream().map(i -> i.id).toList(),
             Duration.ofNanos(System.nanoTime() - started),
             truth,
             r.manifest(),

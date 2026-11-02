@@ -65,8 +65,35 @@ class DeployConfigTest {
           .contains("<" + account.user() + ">")
           .contains("from_env=\"" + account.passwordHashVariable() + "\"");
     }
-    assertThat(users).contains("<query>GRANT INSERT ON argos.*</query>");
+    assertThat(users).doesNotContain("GRANT INSERT ON argos.*");
     assertThat(users).contains("<readonly>1</readonly>");
+  }
+
+  @Test
+  @Tag("req:SEC-76")
+  @DisplayName(
+      "C-60 the writer's grants are INSERT on the five raw tables; the migrator reads"
+          + " system.mutations")
+  void writerAndMigratorGrants() throws Exception {
+    Element users = child(parse(DIR.resolve("users.d/argos.xml")), "users");
+    List<String> writer =
+        children(child(child(users, "argos_writer"), "grants")).stream()
+            .map(Element::getTextContent)
+            .toList();
+    assertThat(writer)
+        .containsExactly(
+            "GRANT INSERT ON argos.xlog",
+            "GRANT INSERT ON argos.profile_step",
+            "GRANT INSERT ON argos.metric",
+            "GRANT INSERT ON argos.sql_stat_raw",
+            "GRANT INSERT ON argos.ext_stat_raw");
+    assertThat(writer.stream().map(g -> g.substring("GRANT INSERT ON argos.".length())).toList())
+        .containsExactlyElementsOf(SchemaParameters.RAW_TABLES);
+    List<String> migrator =
+        children(child(child(users, "argos_migrator"), "grants")).stream()
+            .map(Element::getTextContent)
+            .toList();
+    assertThat(migrator).contains("GRANT SELECT ON system.mutations");
   }
 
   @Test
@@ -89,7 +116,7 @@ class DeployConfigTest {
 
   @Test
   @DisplayName("config.d keeps the 13 §7.2 values that the schema tests rely on")
-  void serverSettings() throws IOException {
+  void serverSettings() throws Exception {
     String config = Files.readString(DIR.resolve("config.d/argos.xml"), StandardCharsets.UTF_8);
     for (String expected :
         List.of(
@@ -103,6 +130,27 @@ class DeployConfigTest {
             "<select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>")) {
       assertThat(config).contains(expected);
     }
+    // C-71 (B-6): the schedule pool keeps the LTS default.
+    assertThat(child(parse(DIR.resolve("config.d/argos.xml")), "background_schedule_pool_size"))
+        .isNull();
+    assertThat(config).contains("C-71");
+  }
+
+  @Test
+  @Tag("req:N-19")
+  @DisplayName(
+      "C-54 the server default compression is ZSTD(1) for every part (one case, no limits)")
+  void defaultCompression() throws Exception {
+    Element compression = child(parse(DIR.resolve("config.d/argos.xml")), "compression");
+    assertThat(compression).isNotNull();
+    List<Element> cases = children(compression);
+    assertThat(cases).hasSize(1);
+    Element only = cases.get(0);
+    assertThat(only.getTagName()).isEqualTo("case");
+    assertThat(children(only).stream().map(Element::getTagName).toList())
+        .containsExactly("method", "level");
+    assertThat(child(only, "method").getTextContent()).isEqualTo("zstd");
+    assertThat(child(only, "level").getTextContent()).isEqualTo("1");
   }
 
   @Test
@@ -184,7 +232,8 @@ class DeployConfigTest {
     assertThat(grants)
         .containsExactly(
             "GRANT CREATE DATABASE, CREATE TABLE, CREATE VIEW, DROP DATABASE, DROP TABLE,"
-                + " DROP VIEW, ALTER, INSERT, SELECT, BACKUP ON argos.*");
+                + " DROP VIEW, ALTER, INSERT, SELECT, BACKUP ON argos.*",
+            "GRANT SELECT ON system.mutations");
     String users = Files.readString(DIR.resolve("users.d/argos.xml"), StandardCharsets.UTF_8);
     assertThat(users).doesNotContain("DICTIONARY ON", "FUNCTION ON", "NAMED COLLECTION ON");
   }

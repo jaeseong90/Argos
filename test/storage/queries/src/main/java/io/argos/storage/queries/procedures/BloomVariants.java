@@ -15,6 +15,8 @@ import io.argos.storage.queries.Stats;
 import io.argos.storage.queries.Tsv;
 import io.argos.storage.schema.SchemaParameters;
 import io.argos.storage.schema.SchemaRenderer;
+import io.argos.storage.schema.SqlScript;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -23,15 +25,22 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Bloom filter parameters for Q5 (tx_id without a time range), Q6 (trace_id over the whole range),
  * Q4/N-24 (user id) and Q11 (has(sql_ids)): the same days of xlog are copied into one table per
- * (false-positive rate, GRANULARITY) of the five xlog bloom indexes (V001 rendered with the
- * variant), then each lookup runs without a time range on every copy (cold + warm runs as
- * argos_reader). Reported per variant: skip index size (system.parts), warm median time, and the
- * marks and rows that survived the index (system.query_log ProfileEvents SelectedMarks, read_rows).
- * Recorded for the bloom decision of Gate 0.
+ * (false-positive rate, GRANULARITY) of the five xlog bloom indexes, then each lookup runs without
+ * a time range on every copy (cold + warm runs as argos_reader). Reported per variant: skip index
+ * size (system.parts), warm median time, and the marks and rows that survived the index
+ * (system.query_log ProfileEvents SelectedMarks, read_rows). Recorded for the bloom decision of
+ * Gate 0.
+ *
+ * <p>V001 holds the decided values as literals (ADR-0007 C-55: fpp 0.01, GRANULARITY 4, idx_user
+ * GRANULARITY 1) and has no bloom placeholder any more (C-56). Each variant is therefore built
+ * here: the rendered V001 xlog statement with the parameters of all five bloom indexes replaced
+ * ({@link #variantStatement}).
  */
 public final class BloomVariants {
 
@@ -42,6 +51,11 @@ public final class BloomVariants {
           new double[] {0.01, 4},
           new double[] {0.025, 1},
           new double[] {0.025, 4});
+
+  /** {@code INDEX idx_<name> <column> TYPE bloom_filter(<fpp>) GRANULARITY <n>} of V001 xlog. */
+  private static final Pattern BLOOM_INDEX =
+      Pattern.compile(
+          "(INDEX\\s+idx_\\w+\\s+\\w+\\s+TYPE\\s+bloom_filter\\()[^)]*(\\)\\s+GRANULARITY\\s+)\\d+");
 
   private static final List<String> LOOKUPS =
       List.of("bloom_tx", "bloom_trace", "bloom_user", "bloom_sql");
@@ -82,15 +96,12 @@ public final class BloomVariants {
         String name = name(v);
         String vp = name + "_";
         SchemaParameters vs = schema.withTablePrefix(schema.tablePrefix() + vp);
-        for (String index : SchemaParameters.BLOOM_INDEXES) {
-          vs = vs.withBloom(index, v[0], (int) v[1]);
-        }
         ctx.runner().stepOk(f, "bloom_drop", targets, Map.of("variant", vp));
         ctx.runner()
             .statement(
                 Account.MIGRATOR,
                 "Q05/bloom_create_" + name,
-                CompressionComparison.createStatement(renderer, vs, "xlog"),
+                variantStatement(renderer, vs, v[0], (int) v[1]),
                 Map.of());
         ctx.runner().stepOk(f, "bloom_fill", targets, Map.of("variant", vp));
         Parameters sizeParams = targets.with("table", vs.tablePrefix() + "xlog");
@@ -189,6 +200,35 @@ public final class BloomVariants {
           "bloom_targets found no lookup target in the copied days (NULL in " + r + ")");
     }
     return Map.of("btx", r.get(0), "btrace", r.get(1), "buid", r.get(2), "bsql", r.get(3));
+  }
+
+  /**
+   * The V001 xlog statement (rendered with {@code schema}, comments removed) with every bloom
+   * filter skip index set to {@code fpp} and {@code granularity}. Fails unless exactly the five
+   * xlog bloom indexes were replaced.
+   */
+  public static String variantStatement(
+      SchemaRenderer renderer, SchemaParameters schema, double fpp, int granularity) {
+    if (!(fpp > 0 && fpp < 1) || granularity < 1) {
+      throw new IllegalArgumentException("Invalid bloom variant " + fpp + "/" + granularity);
+    }
+    String create =
+        SqlScript.withoutComments(CompressionComparison.createStatement(renderer, schema, "xlog"));
+    Matcher m = BLOOM_INDEX.matcher(create);
+    StringBuilder out = new StringBuilder();
+    int replaced = 0;
+    while (m.find()) {
+      m.appendReplacement(
+          out,
+          Matcher.quoteReplacement(
+              m.group(1) + BigDecimal.valueOf(fpp).toPlainString() + m.group(2) + granularity));
+      replaced++;
+    }
+    m.appendTail(out);
+    if (replaced != 5) {
+      throw new IllegalStateException("Expected 5 xlog bloom indexes, found " + replaced);
+    }
+    return out.toString();
   }
 
   private static String name(double[] v) {

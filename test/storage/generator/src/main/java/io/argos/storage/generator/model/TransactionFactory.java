@@ -28,7 +28,7 @@ import java.util.SplittableRandom;
  */
 public final class TransactionFactory {
 
-  /** Share of outliers cut by the max-duration watchdog (timeout_flag, F-A34). */
+  /** Share of outliers cut by the max-duration watchdog (timed_out, F-A34). */
   static final double MAX_DURATION_CUT_SHARE = 0.02;
 
   /** Share of HTTP root transactions that continue an external incoming trace. */
@@ -138,7 +138,7 @@ public final class TransactionFactory {
   private int elapsed(Service service, SplittableRandom random, Transaction tx) {
     if (random.nextDouble() < config.outlierRate) {
       if (random.nextDouble() < MAX_DURATION_CUT_SHARE) {
-        tx.timeoutFlag = true;
+        tx.timedOut = true;
         return config.outlierMaxMs;
       }
       return config.outlierMinMs + random.nextInt(config.outlierMaxMs - config.outlierMinMs + 1);
@@ -344,7 +344,7 @@ public final class TransactionFactory {
       tx.elapsedMs = busy;
     }
     tx.preMs = pre;
-    tx.dbcTimeMs = dbc;
+    tx.dbcWaitMs = dbc;
     tx.extTimeMs = ext;
     // Sequential layout: pre, DBC, then SQL runs and calls interleaved with even gaps.
     int items = tx.sqlRuns.size() + tx.extCalls.size();
@@ -381,7 +381,7 @@ public final class TransactionFactory {
   /** Error, status, call outcomes, child transactions, CPU, flags and the sampler. */
   private void finish(Transaction tx, SplittableRandom random) {
     App app = tx.instance.app;
-    tx.versionId = tx.instance.versionIdAt(tx.startTrueMs);
+    tx.appVersionId = tx.instance.appVersionIdAt(tx.startTrueMs);
     tx.error = random.nextDouble() < config.errorRate;
     if (tx.error) {
       tx.errorGroup = app.errorGroups.get(app.errorGroupWeights.sample(random));

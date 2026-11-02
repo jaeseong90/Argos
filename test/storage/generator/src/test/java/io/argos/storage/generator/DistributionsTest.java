@@ -91,7 +91,7 @@ class DistributionsTest {
     // 1 % outliers plus the log-normal tail above 2 s (about 0.06 %).
     assertThat(outlierShare).isBetween(0.0090, 0.0125);
     assertThat(Collections.max(f.rootHttpElapsed)).isLessThanOrEqualTo(f.config.outlierMaxMs);
-    assertThat(f.timeoutFlags).isPositive();
+    assertThat(f.timedOutCount).isPositive();
   }
 
   @Test

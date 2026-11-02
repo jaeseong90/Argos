@@ -7,8 +7,11 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -18,13 +21,14 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
- * Renders the ClickHouse schema templates of {@code deploy/clickhouse} (13 §4.1, §13.2).
+ * Renders the ClickHouse schema templates of {@code deploy/clickhouse} (13 §4.1, §13.2, ADR-0007
+ * C-56).
  *
  * <ul>
- *   <li>{@code schema/V{NNN}__{desc}.sql}: placeholders {@code {db}}, {@code {p}}, {@code
- *       {retention.<key>}}, {@code {bloom.<index>.fpp|granularity}} and the include directive
- *       {@code {rollup:<table>}}, which inserts the SELECT of {@code rollups/<table>.sql} with an
- *       empty WHERE extension (the materialized view body).
+ *   <li>{@code schema/V{NNN}__{desc}.sql}: environment placeholders {@code {db}}, {@code {p}},
+ *       {@code {retention.<key>}} and the include directive {@code {rollup:<table>}}, which inserts
+ *       the SELECT of {@code rollups/<table>.sql} with an empty WHERE extension (the materialized
+ *       view body). No other directive is allowed (the bloom filter values are literals, C-55).
  *   <li>{@code rollups/<table>.sql}: one SELECT, placeholders {@code {db}}, {@code {p}}, {@code
  *       {where}} only. Contract: {@code {where}} follows a WHERE clause and is replaced by {@code
  *       ''} (materialized view) or by {@code AND (<predicate>)} (rebuild, D-14). The predicate
@@ -32,7 +36,13 @@ import java.util.stream.Stream;
  *       sources.
  * </ul>
  *
- * Unknown placeholders are an error. Placeholders in comments and quoted text are not touched.
+ * Rendering is two steps: {@link #expand(Path)} replaces every {@code {rollup:<table>}} directive
+ * and leaves the environment placeholders as written; {@link #render(Path, SchemaParameters)} then
+ * substitutes them. {@link #checksum(Path)} is the SHA-256 of the expanded text (C-56), so the
+ * checksum recorded in {@code ch_schema_history} does not depend on the database name, the table
+ * prefix or the retention, and changes when the script or an included rollup SELECT changes.
+ *
+ * <p>Unknown placeholders are an error. Placeholders in comments and quoted text are not touched.
  */
 public final class SchemaRenderer {
 
@@ -42,6 +52,7 @@ public final class SchemaRenderer {
   private static final Pattern CODEC =
       Pattern.compile("\\s*CODEC\\s*\\((?:[^()]|\\([^()]*\\))*\\)", Pattern.CASE_INSENSITIVE);
   private static final String ROLLUP_DIRECTIVE = "rollup:";
+  private static final String RETENTION = "retention.";
 
   private final Path clickhouseDir;
 
@@ -99,13 +110,25 @@ public final class SchemaRenderer {
 
   /** Renders one migration script into executable statements. */
   public List<String> render(Path migration, SchemaParameters params) {
-    String template = read(migration);
     Map<String, String> values = params.placeholderValues();
+    String rendered = SqlScript.replacePlaceholders(expand(migration), values::get);
+    return SqlScript.split(rendered);
+  }
+
+  /**
+   * The migration script with every {@code {rollup:<table>}} directive replaced by the rollup
+   * SELECT of {@code rollups/<table>.sql} (comments removed, {@code {where}} = {@code ''}); the
+   * environment placeholders ({@code {db}}, {@code {p}}, {@code {retention.<key>}}) stay as
+   * written, also inside the inserted SELECTs. Line endings are normalized to LF. Any other
+   * placeholder is an error (13 §13.2, C-56).
+   */
+  public String expand(Path migration) {
+    String template = read(migration).replace("\r\n", "\n");
     Set<String> rollups = rollupTables();
     List<String> unknown = new ArrayList<>();
     for (String name : SqlScript.placeholders(template)) {
       boolean known =
-          values.containsKey(name)
+          isEnvironmentPlaceholder(name)
               || (name.startsWith(ROLLUP_DIRECTIVE)
                   && rollups.contains(name.substring(ROLLUP_DIRECTIVE.length())));
       if (!known) {
@@ -116,14 +139,36 @@ public final class SchemaRenderer {
       throw new IllegalArgumentException(
           migration.getFileName() + ": unknown placeholders " + unknown);
     }
-    String rendered =
-        SqlScript.replacePlaceholders(
-            template,
-            name ->
-                name.startsWith(ROLLUP_DIRECTIVE)
-                    ? rollupSelect(name.substring(ROLLUP_DIRECTIVE.length()), params, "")
-                    : values.get(name));
-    return SqlScript.split(rendered);
+    return SqlScript.replacePlaceholders(
+        template,
+        name ->
+            name.startsWith(ROLLUP_DIRECTIVE)
+                ? SqlScript.replacePlaceholders(
+                    rollupTemplate(name.substring(ROLLUP_DIRECTIVE.length())),
+                    inner -> inner.equals("where") ? "" : "{" + inner + "}")
+                : "{" + name + "}");
+  }
+
+  /**
+   * Checksum of a migration script for {@code ch_schema_history} (C-56): lower-case hex SHA-256 of
+   * the UTF-8 bytes of {@link #expand(Path)}.
+   */
+  public String checksum(Path migration) {
+    try {
+      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      return HexFormat.of()
+          .formatHex(digest.digest(expand(migration).getBytes(StandardCharsets.UTF_8)));
+    } catch (NoSuchAlgorithmException e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  /** Environment placeholders of a migration script: {@code db}, {@code p}, retention keys. */
+  private static boolean isEnvironmentPlaceholder(String name) {
+    return name.equals("db")
+        || name.equals("p")
+        || (name.startsWith(RETENTION)
+            && SchemaParameters.RETENTION_KEYS.contains(name.substring(RETENTION.length())));
   }
 
   /**
@@ -132,15 +177,22 @@ public final class SchemaRenderer {
    * @param whereExtension {@code ""} (materialized view) or {@code "AND (<predicate>)"} (rebuild)
    */
   public String rollupSelect(String table, SchemaParameters params, String whereExtension) {
-    if (!TABLE_NAME.matcher(table).matches()) {
-      throw new IllegalArgumentException("Invalid rollup table name: " + table);
-    }
     if (!whereExtension.isEmpty() && !WHERE_EXTENSION.matcher(whereExtension).matches()) {
       throw new IllegalArgumentException(
           "{where} must be '' or 'AND <predicate>': " + whereExtension);
     }
+    Map<String, String> values =
+        Map.of("db", params.database(), "p", params.tablePrefix(), "where", whereExtension);
+    return SqlScript.replacePlaceholders(rollupTemplate(table), values::get);
+  }
+
+  /** The SELECT of {@code rollups/<table>.sql} without comments, placeholders as written. */
+  private String rollupTemplate(String table) {
+    if (!TABLE_NAME.matcher(table).matches()) {
+      throw new IllegalArgumentException("Invalid rollup table name: " + table);
+    }
     Path file = clickhouseDir.resolve("rollups").resolve(table + ".sql");
-    String text = SqlScript.withoutComments(read(file)).strip();
+    String text = SqlScript.withoutComments(read(file).replace("\r\n", "\n")).strip();
     Set<String> used = SqlScript.placeholders(text);
     if (!Set.of("db", "p", "where").containsAll(used) || !used.contains("where")) {
       throw new IllegalArgumentException(
@@ -149,17 +201,16 @@ public final class SchemaRenderer {
     if (SqlScript.split(text).size() != 1 || text.endsWith(";")) {
       throw new IllegalArgumentException(file.getFileName() + ": one SELECT without ';' expected");
     }
-    Map<String, String> values =
-        Map.of("db", params.database(), "p", params.tablePrefix(), "where", whereExtension);
-    return SqlScript.replacePlaceholders(text, values::get);
+    return text;
   }
 
   /**
    * Rebuild statement of 13 §4.1 (D-14): {@code INSERT INTO <target> <rollup SELECT> AND
    * (<predicate>)}. The target must be a staging table that then replaces the whole partition
-   * ({@code REPLACE PARTITION}): a 1m table by day ({@code toDate(ts) = D}), a 1h table by month of
-   * its 1m source ({@code toYYYYMM(minute) = M}). Inserting into the rollup table itself counts the
-   * rows twice in the 1h cascade (deploy/clickhouse/README.md "Rollup rebuild", RollupRebuildIT).
+   * ({@code REPLACE PARTITION}, ADR-0007 C-59, {@link RollupRebuild}): a 1m table by day ({@code
+   * toDate(ts) = D}), a 1h table by month of its 1m source ({@code toYYYYMM(minute) = M}).
+   * Inserting into the rollup table itself counts the rows twice in the 1h cascade
+   * (deploy/clickhouse/README.md "Rollup rebuild", RollupRebuildIT).
    */
   public String rebuildInsert(
       String rollupTable, String targetTable, SchemaParameters params, String predicate) {

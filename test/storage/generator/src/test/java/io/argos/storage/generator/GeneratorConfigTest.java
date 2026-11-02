@@ -149,7 +149,7 @@ class GeneratorConfigTest {
     assertThat(t.apps)
         .allSatisfy(
             a -> {
-              assertThat(a.versionIds).hasSize(3).doesNotHaveDuplicates();
+              assertThat(a.appVersionIds).hasSize(3).doesNotHaveDuplicates();
               assertThat(a.callee).isNotNull();
               assertThat(a.callee.env).isEqualTo(a.env);
             });

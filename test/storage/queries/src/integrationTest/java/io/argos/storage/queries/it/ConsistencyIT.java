@@ -22,7 +22,6 @@ import io.argos.storage.schema.SchemaApplier;
 import io.argos.storage.schema.SchemaParameters;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -111,9 +110,8 @@ class ConsistencyIT {
   @DisplayName(
       "T-ST-031 Q13 D-12: sum(xlog.sql_count / ext_count) = sum(sql/ext_stat_1m.count) over the"
           + " range, raw statistics = 1m and 1h rollups per day and = 1m per minute: 0 mismatches;"
-          + " per day the loaded values equal the manifest and the daily checks report exactly the"
-          + " days where the manifest's xlog and statistics differ (D-12 per-day attribution pending"
-          + " PM decision (PoC 7.3))")
+          + " per day (daily_30d, nightly) the C-57 rule: 0 days beyond the bound for every instance"
+          + " the server does not clamp, exactly the predicted groups otherwise (D-15 clamp)")
   void q13() {
     Datasets.Snapshot snap = data.snapshot();
     Manifest m = data.manifest();
@@ -148,10 +146,10 @@ class ConsistencyIT {
           .as(r.label() + " " + r.violations() + " " + firstRows(r))
           .isEqualTo(Verdict.PASS);
     }
-    // Per-day forms (13 §6.3 (14)): a statement that ends after midnight belongs to the next day's
-    // statistics window (generator stat-window=end). Known open: D-12 per-day attribution pending
-    // PM decision (PoC 7.3). The checks must run and report exactly the days on which the
-    // manifest's xlog and statistics values differ (midnight attribution), nothing else.
+    // Per-day forms (13 §6.3 (14)), ADR-0007 C-57: a statement that ends after midnight belongs to
+    // the next day's statistics window (agent attribution, generator stat-window=end). A day passes
+    // when |xlog - statistics| is at most the sql_count / ext_count of the transactions that cross
+    // one of its midnights; a larger difference is a mismatch (recorded, F-S22).
     VariantResult daily = byName.get("daily_30d");
     VariantResult nightly = byName.get("nightly");
     for (VariantResult r : List.of(daily, nightly)) {
@@ -160,54 +158,149 @@ class ConsistencyIT {
           .isNotIn(Verdict.ERROR, Verdict.INVALID, Verdict.SKIPPED);
     }
     if (m == null) {
-      // The fixture attributes the statistics to the transaction start (stat-window=start).
+      // The fixture attributes the statistics to the transaction start (stat-window=start) and
+      // has no midnight-crossing statement: every day is exact.
       assertThat(daily.verdict())
           .as(daily.label() + " " + firstRows(daily))
           .isEqualTo(Verdict.PASS);
       assertThat(nightly.verdict()).as(nightly.label()).isEqualTo(Verdict.PASS);
       return;
     }
-    Set<LocalDate> days = new TreeSet<>(m.xlogSqlCountByDay().keySet());
-    days.addAll(m.statSqlCountByDay().keySet());
-    days.addAll(m.xlogExtCountByDay().keySet());
-    days.addAll(m.statExtCountByDay().keySet());
-    Set<LocalDate> expectedDays = new TreeSet<>();
-    for (LocalDate d : days) {
-      boolean sql =
-          !m.xlogSqlCountByDay()
-              .getOrDefault(d, 0L)
-              .equals(m.statSqlCountByDay().getOrDefault(d, 0L));
-      boolean ext =
-          !m.xlogExtCountByDay()
-              .getOrDefault(d, 0L)
-              .equals(m.statExtCountByDay().getOrDefault(d, 0L));
-      if (sql || ext) {
-        expectedDays.add(d);
+    // Independent per-day values from the raw tables (raw = 1m per minute, minute_raw_1m above),
+    // once for every instance and once without the instances whose clock is 60 s ahead.
+    List<Integer> skewed = data.skewedInstanceIds();
+    assertThat(skewed).hasSize(data.skewedInstances()).isNotEmpty();
+    Map<List<String>, long[]> all = perDay("");
+    Map<List<String>, long[]> withoutSkewed =
+        perDay(
+            " AND instance_id NOT IN ("
+                + String.join(",", skewed.stream().map(String::valueOf).toList())
+                + ")");
+    // (1) C-57 is sound for every instance whose timestamps the server keeps (D-15 does not clamp
+    // them): no day exceeds the bound, and the bound is needed (days with a difference exist).
+    assertThat(exceeding(withoutSkewed))
+        .as("days beyond the C-57 bound, unclamped instances")
+        .isEmpty();
+    long differing =
+        withoutSkewed.values().stream().filter(v -> v[0] != v[1] || v[2] != v[3]).count();
+    assertThat(differing)
+        .as("days whose xlog and statistics differ (unclamped instances)")
+        .isPositive();
+    // (2) daily_30d applies the rule exactly: it reports the groups the independent values put
+    // beyond the bound, no more, no less.
+    Set<List<String>> reported = new TreeSet<>(java.util.Comparator.comparing(Object::toString));
+    for (List<String> row : daily.lastRows()) {
+      reported.add(List.of(row.get(0), row.get(1), row.get(2)));
+    }
+    Set<List<String>> expected = new TreeSet<>(java.util.Comparator.comparing(Object::toString));
+    expected.addAll(exceeding(all));
+    assertThat(reported).as("daily_30d groups = groups beyond the C-57 bound").isEqualTo(expected);
+    // (3) What remains is the D-15 clamp: the clock of these instances is 60 s ahead, so the server
+    // sets the ts of their transactions to the receive time and the window of their statistics to
+    // the window of the flush (up to 11 s after the statement ended). A statement that ends in the
+    // last seconds before midnight then lands on the next day without crossing it. Every reported
+    // group belongs to an application of a skewed instance (new conflict for the PM, PoC 17).
+    Set<String> skewedApps = new TreeSet<>();
+    for (List<String> r :
+        ctx.client(Account.MIGRATOR)
+            .rows(
+                "SELECT DISTINCT app_id FROM "
+                    + Fixture.schema().table("xlog")
+                    + " WHERE instance_id IN ("
+                    + String.join(",", skewed.stream().map(String::valueOf).toList())
+                    + ")")) {
+      skewedApps.add(r.get(0));
+    }
+    for (List<String> group : reported) {
+      assertThat(skewedApps).as("application of reported group " + group).contains(group.get(0));
+    }
+    // (4) nightly (13 §6.3 (14): one day, every application, SQL only) reports the day exactly
+    // when the summed difference exceeds the summed bound.
+    String fullDay = ctx.shared().get("full_day");
+    long deltaSql = 0;
+    long boundSql = 0;
+    for (Map.Entry<List<String>, long[]> e : all.entrySet()) {
+      if (e.getKey().get(2).equals(fullDay)) {
+        deltaSql += e.getValue()[0] - e.getValue()[1];
+        boundSql += e.getValue()[4];
       }
     }
-    Set<LocalDate> reported = new TreeSet<>();
-    for (List<String> row : daily.lastRows()) {
-      reported.add(LocalDate.parse(row.get(2)));
-    }
-    assertThat(reported)
-        .as("days reported by daily_30d = days where the manifest's xlog and statistics differ")
-        .isEqualTo(expectedDays);
-    LocalDate fullDay = LocalDate.parse(ctx.shared().get("full_day"));
-    boolean nightlyExpected =
-        !m.xlogSqlCountByDay()
-            .getOrDefault(fullDay, 0L)
-            .equals(m.statSqlCountByDay().getOrDefault(fullDay, 0L));
     assertThat(nightly.lastRows())
-        .as(
-            "nightly (13 §6.3 (14), sql only, "
-                + fullDay
-                + ") reports the day exactly when the manifest differs")
-        .hasSize(nightlyExpected ? 1 : 0);
+        .as("nightly on " + fullDay + ": |delta| " + Math.abs(deltaSql) + ", bound " + boundSql)
+        .hasSize(Math.abs(deltaSql) > boundSql ? 1 : 0);
     Evidence.record(
         "consistency",
-        "Q13 per-day (D-12, PM decision pending): days with a manifest difference / reported by"
-            + " daily_30d / nightly rows",
-        expectedDays + " / " + reported + " / " + nightly.lastRows().size());
+        "Q13 per day (C-57): groups beyond the bound (all instances) / without the skewed"
+            + " instances "
+            + skewed
+            + " / days with a difference (unclamped) / nightly rows",
+        expected
+            + " / "
+            + exceeding(withoutSkewed)
+            + " / "
+            + differing
+            + " / "
+            + nightly.lastRows());
+  }
+
+  /**
+   * Per (app, kind, day) of the dataset: sum(xlog.sql_count), sum(sql_stat_raw.count),
+   * sum(xlog.ext_count), sum(ext_stat_raw.count), and the C-57 bound (sql_count, ext_count of the
+   * transactions crossing a midnight of the day), each source restricted by {@code filter}.
+   */
+  private static Map<List<String>, long[]> perDay(String filter) {
+    String xlog = Fixture.schema().table("xlog");
+    String crossDays =
+        "arrayJoin(arrayMap(i -> toDate(ts) + i, range(toUInt32(dateDiff('day', toDate(ts),"
+            + " toDate(ts + toIntervalMillisecond(elapsed_ms)))) + 1)))";
+    String sql =
+        "SELECT app_id, kind, d, sum(a), sum(b), sum(c), sum(e), sum(f), sum(g) FROM ("
+            + "SELECT app_id, kind, toDate(ts) AS d, toInt64(sum(sql_count)) AS a, toInt64(0) AS b,"
+            + " toInt64(sum(ext_count)) AS c, toInt64(0) AS e, toInt64(0) AS f, toInt64(0) AS g"
+            + " FROM "
+            + xlog
+            + " WHERE 1"
+            + filter
+            + " GROUP BY app_id, kind, d"
+            + " UNION ALL SELECT app_id, kind, toDate(ts), 0, toInt64(sum(count)), 0, 0, 0, 0 FROM "
+            + Fixture.schema().table("sql_stat_raw")
+            + " WHERE 1"
+            + filter
+            + " GROUP BY app_id, kind, toDate(ts)"
+            + " UNION ALL SELECT app_id, kind, toDate(ts), 0, 0, 0, toInt64(sum(count)), 0, 0 FROM "
+            + Fixture.schema().table("ext_stat_raw")
+            + " WHERE 1"
+            + filter
+            + " GROUP BY app_id, kind, toDate(ts)"
+            + " UNION ALL SELECT app_id, kind, "
+            + crossDays
+            + " AS d, 0, 0, 0, 0,"
+            + " toInt64(sum(sql_count)), toInt64(sum(ext_count)) FROM "
+            + xlog
+            + " WHERE toDate(ts + toIntervalMillisecond(elapsed_ms)) > toDate(ts)"
+            + filter
+            + " GROUP BY app_id, kind, d) GROUP BY app_id, kind, d";
+    Map<List<String>, long[]> out = new java.util.LinkedHashMap<>();
+    for (List<String> r : ctx.client(Account.MIGRATOR).rows(sql)) {
+      long[] v = new long[6];
+      for (int i = 0; i < 6; i++) {
+        v[i] = Long.parseLong(r.get(3 + i));
+      }
+      out.put(List.of(r.get(0), r.get(1), r.get(2)), v);
+    }
+    return out;
+  }
+
+  /** Groups whose |xlog - statistics| exceeds the C-57 bound (SQL or outgoing calls). */
+  private static List<List<String>> exceeding(Map<List<String>, long[]> perDay) {
+    List<List<String>> out = new ArrayList<>();
+    perDay.forEach(
+        (key, v) -> {
+          if (Math.abs(v[0] - v[1]) > v[4] || Math.abs(v[2] - v[3]) > v[5]) {
+            out.add(key);
+          }
+        });
+    return out;
   }
 
   @Test
@@ -277,9 +370,13 @@ class ConsistencyIT {
                 + neg.table("sql_stat_raw")
                 + " (app_id, env, instance_id, ts, kind, sql_id, db_id, count, buckets) FORMAT TabSeparated",
             "1\tprod\t101\t" + minute + "\tHTTP\t42\t7\t1\t[0,0,0,0,0,0,0,0,0,0,0,0,0,0,1]\n",
-            Map.of("insert_deduplication_token", "argos:sql_stat_raw:negative-control"));
+            Map.of("insert_deduplication_token", "negative-control:1:0-0"));
     VariantResult r13 = runner.run(q13, q13.variant("total_30d"), p13);
     assertThat(r13.verdict()).isEqualTo(Verdict.FAIL);
+    // C-57: one statistics row without a transaction is a difference beyond the midnight bound.
+    VariantResult r13d = runner.run(q13, q13.variant("daily_30d"), p13);
+    assertThat(r13d.verdict()).as("daily_30d " + r13d.lastRows()).isEqualTo(Verdict.FAIL);
+    assertThat(r13d.metric("rows")).isEqualTo(1.0);
     // The raw row above went through the views (sql_stat_1m has it too): raw = 1m per minute.
     assertThat(runner.run(q13, q13.variant("minute_raw_1m"), p13).verdict())
         .isEqualTo(Verdict.PASS);
@@ -303,7 +400,7 @@ class ConsistencyIT {
         .execute(
             "INSERT INTO "
                 + neg.table("service_stat_1m")
-                + " (app_id, env, kind, service_id, version_id, minute, count)"
+                + " (app_id, env, kind, service_id, app_version_id, minute, count)"
                 + " VALUES (999, 'prod', 'BATCH', 1, 0, {m:DateTime}, 1)",
             Map.of("param_m", minute));
     VariantResult r12b = runner.run(q12, q12.variant("minute_30d"), p12);

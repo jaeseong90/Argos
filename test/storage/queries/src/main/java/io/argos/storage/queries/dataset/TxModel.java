@@ -173,7 +173,7 @@ public final class TxModel {
     int serviceIndex = services.sample(random);
     long serviceId = serviceId(app, serviceIndex);
     int version = (int) Math.min(2, Math.max(0, (trueMs - startMs) * 3 / Math.max(1, spanMs)));
-    long versionId = key(6, app * 10L + version);
+    long appVersionId = key(6, app * 10L + version);
     int elapsed =
         random.nextInt(100) == 0
             ? 2000 + random.nextInt(28_001)
@@ -258,7 +258,7 @@ public final class TxModel {
         caller == null ? 0 : 1,
         caller == null ? 0 : caller.app(),
         serviceId,
-        versionId,
+        appVersionId,
         method,
         status,
         elapsed,
@@ -332,7 +332,7 @@ public final class TxModel {
       int incomingTrace,
       int callerApp,
       long serviceId,
-      long versionId,
+      long appVersionId,
       String httpMethod,
       int httpStatus,
       int elapsedMs,
@@ -347,7 +347,7 @@ public final class TxModel {
       List<ExtCall> exts,
       int sqlTimeMs,
       int extTimeMs,
-      int dbcTimeMs,
+      int dbcWaitMs,
       int cpuTimeMs,
       long allocBytes,
       long threadNameId,

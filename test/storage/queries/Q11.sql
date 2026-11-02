@@ -55,10 +55,10 @@ LIMIT 1000
 CREATE TABLE IF NOT EXISTS {db}.{p}q11_with
 (
     app_id  UInt32,
-    ts      DateTime64(3, 'UTC') CODEC(DoubleDelta, LZ4),
-    tx_id   UInt64,
+    ts      DateTime64(3, 'UTC') CODEC(DoubleDelta, ZSTD(1)),
+    tx_id   UInt64 CODEC(Delta, ZSTD(1)),
     sql_ids Array(UInt64),
-    INDEX idx_sql sql_ids TYPE bloom_filter({bloom.sql.fpp}) GRANULARITY {bloom.sql.granularity}
+    INDEX idx_sql sql_ids TYPE bloom_filter(0.01) GRANULARITY 4
 )
 ENGINE = MergeTree
 PARTITION BY toDate(ts)
@@ -69,8 +69,8 @@ ORDER BY (app_id, ts, tx_id)
 CREATE TABLE IF NOT EXISTS {db}.{p}q11_without
 (
     app_id  UInt32,
-    ts      DateTime64(3, 'UTC') CODEC(DoubleDelta, LZ4),
-    tx_id   UInt64
+    ts      DateTime64(3, 'UTC') CODEC(DoubleDelta, ZSTD(1)),
+    tx_id   UInt64 CODEC(Delta, ZSTD(1))
 )
 ENGINE = MergeTree
 PARTITION BY toDate(ts)

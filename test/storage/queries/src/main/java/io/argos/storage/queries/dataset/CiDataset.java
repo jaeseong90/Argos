@@ -23,7 +23,8 @@ import java.util.function.Consumer;
 /**
  * Deterministic small dataset for the CI consistency tests (T-ST-030..033) and the query smoke run,
  * loaded through the writer path of 13 §7.4: argos_writer, explicit columns, RowBinary, one {@code
- * insert_deduplication_token = 'argos:<table>:<block_id>'} per block (13 §5.1, C-2).
+ * insert_deduplication_token = '<wal_instance_id>:<epoch>:<first>-<last>'} per block (13 §5.1,
+ * ADR-0007 C-61; a seed-derived instance id {@code fx<hex>}, epoch 1, deterministic positions).
  *
  * <p>Besides the distributions of {@link TxModel} it contains the cases that the consistency checks
  * must survive (13 §15): late arrivals (0.5 % of the transactions arrive 1..30 minutes late, in a
@@ -40,11 +41,11 @@ public final class CiDataset {
   /** xlog columns in insert order. */
   public static final String XLOG_COLUMNS =
       "app_id, env, instance_id, ts, tx_id, kind, trace_id, span_id, parent_span_id,"
-          + " incoming_trace, caller_app_id, service_id, version_id, http_method, http_status,"
+          + " incoming_trace, caller_app_id, service_id, app_version_id, http_method, http_status,"
           + " elapsed_ms, error, error_class_id, error_group_id, apdex_t_ms, remote_ip, ip_mode,"
-          + " user_id, user_id_mode, request_id, sql_count, sql_time_ms, dbc_time_ms, ext_count,"
+          + " user_id, user_id_mode, request_id, sql_count, sql_time_ms, dbc_wait_ms, ext_count,"
           + " ext_time_ms, cpu_time_ms, alloc_bytes, thread_name_id, profile_captured, streaming,"
-          + " timeout_flag, dispatch_count, late, flags, sql_ids";
+          + " timed_out, dispatch_count, late, flags, sql_ids";
 
   /** profile_step columns in insert order. */
   public static final String PROFILE_COLUMNS =
@@ -323,7 +324,7 @@ public final class CiDataset {
         tx.incomingTrace(),
         tx.callerApp(),
         tx.serviceId(),
-        tx.versionId(),
+        tx.appVersionId(),
         tx.httpMethod(),
         tx.httpStatus(),
         tx.elapsedMs(),
@@ -338,7 +339,7 @@ public final class CiDataset {
         tx.exts(),
         tx.sqlTimeMs(),
         tx.extTimeMs(),
-        tx.dbcTimeMs(),
+        tx.dbcWaitMs(),
         tx.cpuTimeMs(),
         tx.allocBytes(),
         tx.threadNameId(),
@@ -385,7 +386,7 @@ public final class CiDataset {
         .u8(tx.incomingTrace())
         .u32(tx.callerApp())
         .u64(tx.serviceId())
-        .u64(tx.versionId())
+        .u64(tx.appVersionId())
         .string(tx.httpMethod())
         .u16(tx.httpStatus())
         .u32(tx.elapsedMs())
@@ -400,7 +401,7 @@ public final class CiDataset {
         .string(tx.requestId())
         .u16(tx.sqls().size())
         .u32(tx.sqlTimeMs())
-        .u32(tx.dbcTimeMs())
+        .u32(tx.dbcWaitMs())
         .u16(tx.exts().size())
         .u32(tx.extTimeMs())
         .u32(tx.cpuTimeMs())
@@ -408,7 +409,7 @@ public final class CiDataset {
         .u64(tx.threadNameId())
         .u8(tx.profileCaptured() ? 1 : 0)
         .u8(0) // streaming
-        .u8(0) // timeout_flag
+        .u8(0) // timed_out
         .u16(1) // dispatch_count
         .u8(late ? 1 : 0)
         .u16(tx.flags())
@@ -433,7 +434,7 @@ public final class CiDataset {
         steps.add(
             w ->
                 step(
-                    w, tx, s, 1, 2, at, tx.dbcTimeMs(), 0, 0, TxModel.dbId(tx.app()), 0, 0, 0, ""));
+                    w, tx, s, 1, 2, at, tx.dbcWaitMs(), 0, 0, TxModel.dbId(tx.app()), 0, 0, 0, ""));
       }
       for (int i = 0; i < sqlSteps; i++) {
         SqlExec q = tx.sqls().get(i);
@@ -752,7 +753,7 @@ public final class CiDataset {
     List<Block> blocks = new ArrayList<>();
     for (int i = 0; i < entries.size(); i += config.blockRows()) {
       List<Entry> part = entries.subList(i, Math.min(entries.size(), i + config.blockRows()));
-      blocks.add(encode(p, table, columns, part, blockId(config.seed(), table, blocks.size())));
+      blocks.add(encode(p, table, columns, part, config.seed(), blocks.size()));
     }
     // Re-sent blocks with the same token (13 §15 "duplicate re-send 0.1 %", at least one per
     // table).
@@ -770,11 +771,11 @@ public final class CiDataset {
   private static Block one(
       SchemaParameters p, String table, String columns, List<Entry> entries, long seed) {
     entries.sort(Comparator.comparingLong(Entry::arrivalMs).thenComparingLong(Entry::tsMs));
-    return encode(p, table, columns, entries, blockId(seed, table, 0));
+    return encode(p, table, columns, entries, seed, 0);
   }
 
   private static Block encode(
-      SchemaParameters p, String table, String columns, List<Entry> entries, String blockId) {
+      SchemaParameters p, String table, String columns, List<Entry> entries, long seed, int index) {
     RowBinary w = new RowBinary();
     long min = Long.MAX_VALUE;
     long max = Long.MIN_VALUE;
@@ -787,25 +788,27 @@ public final class CiDataset {
         table,
         p.table(table),
         columns,
-        "argos:" + table + ":" + blockId,
+        token(seed, table, index, w.rows()),
         w.toByteArray(),
         w.rows(),
         min,
         max);
   }
 
-  /** A UUID-shaped block id derived from the seed (stands in for the WAL COMMIT position, C-2). */
-  static String blockId(long seed, String table, int index) {
-    long hi = TxModel.key(seed, table.hashCode());
-    long lo = TxModel.key(hi, index);
+  /**
+   * The C-61 token of block {@code index} of {@code table}: {@code fx<8 hex>:1:<first>-<last>}, a
+   * seed- and table-derived WAL instance id, epoch 1 and a deterministic range of {@code rows}
+   * record positions (stands in for the positions of the server WAL, 12 §3.8).
+   */
+  static String token(long seed, String table, int index, int rows) {
+    long instance = TxModel.key(seed, table.hashCode());
+    long first = TxModel.key(instance, index) >>> 20;
     return String.format(
         java.util.Locale.ROOT,
-        "%08x-%04x-%04x-%04x-%012x",
-        hi >>> 32,
-        (hi >>> 16) & 0xFFFF,
-        hi & 0xFFFF,
-        (lo >>> 48) & 0xFFFF,
-        lo & 0xFFFFFFFFFFFFL);
+        "fx%08x:1:%x-%x",
+        instance >>> 32,
+        first,
+        first + Math.max(1, rows) - 1);
   }
 
   private record Entry(long arrivalMs, long tsMs, Consumer<RowBinary> writer) {}

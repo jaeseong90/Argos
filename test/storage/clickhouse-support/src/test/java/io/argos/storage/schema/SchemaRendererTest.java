@@ -8,9 +8,13 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.time.LocalDate;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -35,6 +39,9 @@ class SchemaRendererTest {
           "ext_stat_1h",
           "metric_1m",
           "metric_1h");
+  private static final List<String> TRANSACTION_ROLLUPS =
+      List.of(
+          "app_stat_1m", "app_stat_1h", "service_stat_1m", "service_stat_1h", "instance_stat_1m");
 
   private final SchemaRenderer renderer = SchemaRenderer.fromRepository();
 
@@ -109,21 +116,22 @@ class SchemaRendererTest {
   }
 
   @Test
-  @DisplayName("retention and bloom variables are substituted (13 §8, PoC Q5/Q6/Q11)")
+  @DisplayName(
+      "retention variables are substituted (13 §8); bloom parameters are V001 literals (C-55)")
   void retentionAndBloom() {
     SchemaParameters params =
         SchemaParameters.defaults()
             .withRetentionDays("xlog-days", 14)
-            .withRetentionDays("rollup-1h-days", 400)
-            .withBloom("tx", 0.025, 1)
-            .withBloom("sql", 0.001, 2);
+            .withRetentionDays("rollup-1h-days", 400);
     String xlog = statement(renderer.renderAll(params), "argos.xlog\n");
 
     assertThat(xlog)
         .contains("TTL toDateTime(ts) + INTERVAL 14 DAY")
-        .contains("INDEX idx_tx      tx_id      TYPE bloom_filter(0.025)      GRANULARITY 1")
-        .contains("INDEX idx_trace   trace_id   TYPE bloom_filter(0.01)   GRANULARITY 4")
-        .contains("INDEX idx_sql     sql_ids    TYPE bloom_filter(0.001)     GRANULARITY 2");
+        .contains("INDEX idx_tx      tx_id      TYPE bloom_filter(0.01) GRANULARITY 4,")
+        .contains("INDEX idx_trace   trace_id   TYPE bloom_filter(0.01) GRANULARITY 4,")
+        .contains("INDEX idx_user    user_id    TYPE bloom_filter(0.01) GRANULARITY 1,")
+        .contains("INDEX idx_request request_id TYPE bloom_filter(0.01) GRANULARITY 4,")
+        .contains("INDEX idx_sql     sql_ids    TYPE bloom_filter(0.01) GRANULARITY 4\n");
     assertThat(statement(renderer.renderAll(params), "argos.app_stat_1h\n"))
         .contains("TTL hour + INTERVAL 400 DAY");
     assertThat(statement(renderer.renderAll(params), "argos.profile_step\n"))
@@ -131,7 +139,127 @@ class SchemaRendererTest {
   }
 
   @Test
-  @DisplayName("C-1 step type numbering and C-17 xlog columns are in the DDL")
+  @DisplayName(
+      "C-56 only {db}, {p}, {retention.*} and {rollup:<table>} in V001; {bloom.*} is refused")
+  void allowedDirectives(@TempDir Path dir) throws IOException {
+    Path v001 = renderer.migrations().get(0);
+    for (String name : SqlScript.placeholders(Files.readString(v001, StandardCharsets.UTF_8))) {
+      assertThat(
+              name.equals("db")
+                  || name.equals("p")
+                  || name.startsWith("retention.")
+                  || name.startsWith("rollup:"))
+          .as(name)
+          .isTrue();
+    }
+    Path copy = copyClickHouseDir(dir);
+    Files.writeString(
+        copy.resolve("schema/V002__bloom.sql"),
+        "ALTER TABLE {db}.{p}xlog ADD INDEX IF NOT EXISTS idx_x tx_id"
+            + " TYPE bloom_filter({bloom.tx.fpp}) GRANULARITY 4;\n",
+        StandardCharsets.UTF_8);
+    assertThatThrownBy(() -> new SchemaRenderer(copy).renderAll(SchemaParameters.defaults()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("unknown placeholders [bloom.tx.fpp]");
+    Files.writeString(
+        copy.resolve("schema/V002__bloom.sql"),
+        "ALTER TABLE {db}.{p}xlog MODIFY TTL toDateTime(ts) + INTERVAL {retention.other} DAY"
+            + " SETTINGS materialize_ttl_after_modify = 0;\n",
+        StandardCharsets.UTF_8);
+    assertThatThrownBy(() -> new SchemaRenderer(copy).renderAll(SchemaParameters.defaults()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("unknown placeholders [retention.other]");
+  }
+
+  @Test
+  @DisplayName(
+      "C-56 checksum: SHA-256 of the text after {rollup:} expansion, before {db}/{p}/{retention.*}")
+  void checksumDefinition() throws Exception {
+    Path v001 = renderer.migrations().get(0);
+    String expanded = renderer.expand(v001);
+
+    assertThat(SqlScript.placeholders(expanded)).noneMatch(n -> n.startsWith("rollup:"));
+    assertThat(SqlScript.placeholders(expanded))
+        .containsExactlyInAnyOrder(
+            "db",
+            "p",
+            "retention.xlog-days",
+            "retention.profile-days",
+            "retention.raw-days",
+            "retention.rollup-1m-days",
+            "retention.rollup-1h-days");
+    assertThat(expanded).doesNotContain("\r").contains("FROM {db}.{p}xlog\nWHERE true \nGROUP BY");
+    assertThat(renderer.checksum(v001))
+        .matches("[0-9a-f]{64}")
+        .isEqualTo(
+            HexFormat.of()
+                .formatHex(
+                    MessageDigest.getInstance("SHA-256")
+                        .digest(expanded.getBytes(StandardCharsets.UTF_8))));
+    // Rendering is the expansion with the environment placeholders substituted.
+    SchemaParameters params =
+        SchemaParameters.defaults()
+            .withDatabase("argos_c")
+            .withTablePrefix("c_")
+            .withRetentionDays("xlog-days", 9);
+    assertThat(renderer.render(v001, params))
+        .isEqualTo(
+            SqlScript.split(
+                SqlScript.replacePlaceholders(expanded, params.placeholderValues()::get)));
+    assertThat(statement(renderer.render(v001, params), "argos_c.c_app_stat_1m_mv TO"))
+        .endsWith(renderer.rollupSelect("app_stat_1m", params, ""));
+  }
+
+  @Test
+  @DisplayName(
+      "C-56 checksum: same for another database, prefix or retention; changes with a rollup file")
+  void checksumStability(@TempDir Path dir) throws IOException {
+    Path copy = copyClickHouseDir(dir);
+    SchemaRenderer copied = new SchemaRenderer(copy);
+    Path v001 = copied.migrations().get(0);
+    String original = copied.checksum(v001);
+    assertThat(original).isEqualTo(renderer.checksum(renderer.migrations().get(0)));
+
+    // The checksum is a property of the script: two sets of environment values render different
+    // statements from the same expansion.
+    List<String> a = copied.render(v001, SchemaParameters.defaults());
+    List<String> b =
+        copied.render(
+            v001,
+            SchemaParameters.defaults()
+                .withDatabase("other")
+                .withTablePrefix("t9_")
+                .withRetentionDays("raw-days", 3));
+    assertThat(a).isNotEqualTo(b);
+    assertThat(copied.checksum(v001)).isEqualTo(original);
+
+    // CRLF line endings (a checkout without the .gitattributes rule) give the same checksum.
+    String text = Files.readString(v001, StandardCharsets.UTF_8);
+    Files.writeString(v001, text.replace("\n", "\r\n"), StandardCharsets.UTF_8);
+    assertThat(copied.checksum(v001)).isEqualTo(original);
+    Files.writeString(v001, text, StandardCharsets.UTF_8);
+
+    // A changed rollup SELECT (an included file) changes the checksum.
+    Path rollup = copy.resolve("rollups/app_stat_1m.sql");
+    String select = Files.readString(rollup, StandardCharsets.UTF_8);
+    Files.writeString(
+        rollup,
+        select.replace("toStartOfMinute(ts)", "toStartOfFiveMinutes(ts)"),
+        StandardCharsets.UTF_8);
+    String changed = copied.checksum(v001);
+    assertThat(changed).isNotEqualTo(original);
+
+    // So does a changed script.
+    Files.writeString(rollup, select, StandardCharsets.UTF_8);
+    assertThat(copied.checksum(v001)).isEqualTo(original);
+    Files.writeString(
+        v001, text.replace("GRANULARITY 1,", "GRANULARITY 2,"), StandardCharsets.UTF_8);
+    assertThat(copied.checksum(v001)).isNotEqualTo(original).isNotEqualTo(changed);
+  }
+
+  @Test
+  @DisplayName(
+      "C-1 step types, C-17/C-67 column names, C-69 flags, C-70 profile_step batch_size/detail_enc")
   void alignmentDecisions() {
     List<String> statements = renderer.renderAll(SchemaParameters.defaults());
     String profile = SqlScript.withoutComments(statement(statements, "argos.profile_step\n"));
@@ -139,21 +267,85 @@ class SchemaRendererTest {
         .contains(
             "type Enum8('SQL' = 1, 'DBC' = 2, 'COMMIT' = 3, 'ROLLBACK' = 4, 'HTTP' = 5,"
                 + " 'METHOD' = 6, 'ASYNC' = 7, 'ERROR' = 8, 'STACK' = 9, 'MESSAGE' = 10,"
-                + " 'SUMMARY' = 11)");
+                + " 'SUMMARY' = 11)")
+        .contains(" batch_size UInt32,")
+        .contains(" detail_enc String,");
     String xlog = statement(statements, "argos.xlog\n");
     for (String column :
         List.of(
-            "dbc_time_ms ",
+            "dbc_wait_ms ",
             "request_id ",
             "dispatch_count ",
             "streaming ",
-            "timeout_flag ",
+            "timed_out ",
             "incoming_trace ",
-            "version_id ",
+            "app_version_id ",
             "late ",
             "flags ")) {
       assertThat(xlog).contains("\n    " + column);
     }
+    assertThat(xlog)
+        .contains("C-69 bits: 1 virtual thread, 2 leaked, 4 summarized; other bits reserved");
+    String code = SqlScript.withoutComments(String.join("\n", statements));
+    for (String old : List.of("dbc_time_ms", "timeout_flag", " version_id", "sum_dbc_time_ms")) {
+      assertThat(code).as(old).doesNotContain(old);
+    }
+    for (String table : List.of("app_stat_1m", "service_stat_1h", "instance_stat_1m")) {
+      assertThat(statement(statements, "argos." + table + "\n"))
+          .contains("sum_dbc_wait_ms   SimpleAggregateFunction(sum, UInt64),");
+    }
+    assertThat(statement(statements, "argos.service_stat_1m\n"))
+        .contains("ORDER BY (app_id, kind, service_id, app_version_id, minute)");
+    assertThat(statement(statements, "argos.error_stat_1m\n"))
+        .contains("ORDER BY (app_id, error_group_id, service_id, app_version_id, minute)");
+  }
+
+  @Test
+  @DisplayName(
+      "C-53 transaction rollups: q_elapsed is a quantilesDD(0.01, 0.5, 0.95, 0.99) state (1m State,"
+          + " 1h MergeState)")
+  void percentileStates() {
+    List<String> statements = renderer.renderAll(SchemaParameters.defaults());
+    String type = "q_elapsed         AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32)";
+    for (String table : TRANSACTION_ROLLUPS) {
+      assertThat(statement(statements, "argos." + table + "\n")).as(table).contains(type);
+      assertThat(renderer.rollupSelect(table, SchemaParameters.defaults(), ""))
+          .as(table)
+          .contains(
+              table.endsWith("_1h")
+                  ? "quantilesDDMergeState(0.01, 0.5, 0.95, 0.99)(q_elapsed) AS q_elapsed"
+                  : "quantilesDDState(0.01, 0.5, 0.95, 0.99)(elapsed_ms)")
+          .doesNotContain("TDigest")
+          .doesNotContain("BFloat16");
+    }
+    assertThat(SqlScript.withoutComments(String.join("\n", statements)))
+        .doesNotContain("TDigest")
+        .doesNotContain("BFloat16");
+  }
+
+  @Test
+  @DisplayName(
+      "C-54 codecs: no LZ4, ZSTD(1) stages, xlog trace_id/parent_span_id without CODEC(NONE),"
+          + " tx_id Delta + ZSTD(1), span_id NONE, ZSTD(3) kept")
+  void codecs() {
+    List<String> statements = renderer.renderAll(SchemaParameters.defaults());
+    assertThat(SqlScript.withoutComments(String.join("\n", statements))).doesNotContain("LZ4");
+    String xlog = statement(statements, "argos.xlog\n");
+    assertThat(xlog)
+        .contains("ts               DateTime64(3, 'UTC') CODEC(DoubleDelta, ZSTD(1)),")
+        .contains("tx_id            UInt64 CODEC(Delta, ZSTD(1)),")
+        .contains("trace_id         FixedString(16),")
+        .contains("span_id          UInt64 CODEC(NONE),")
+        .contains("parent_span_id   UInt64,")
+        .contains("elapsed_ms       UInt32 CODEC(T64, ZSTD(1)),")
+        .contains("user_id          String CODEC(ZSTD(3)),")
+        .contains("request_id       String CODEC(ZSTD(3)),")
+        .contains("alloc_bytes      Int64  CODEC(T64, ZSTD(1)),");
+    assertThat(SqlScript.withoutComments(xlog)).containsOnlyOnce("CODEC(NONE)");
+    assertThat(statement(statements, "argos.profile_step\n"))
+        .contains("detail          String CODEC(ZSTD(3)),");
+    assertThat(statement(statements, "argos.metric\n"))
+        .contains("value       Float64 CODEC(Gorilla, ZSTD(1)),");
   }
 
   @Test
@@ -177,6 +369,53 @@ class SchemaRendererTest {
 
     String view = statement(renderer.renderAll(params), "argos.r_app_stat_1m_mv TO");
     assertThat(view).endsWith(renderer.rollupSelect("app_stat_1m", params, ""));
+  }
+
+  @Test
+  @DisplayName(
+      "C-59 rebuild: staging table + REPLACE PARTITION per whole partition, 1m day before the 1h"
+          + " month of that day, never INSERT INTO a rollup table")
+  void rebuildStatements() {
+    SchemaParameters params = SchemaParameters.defaults().withTablePrefix("r_");
+    LocalDate day = LocalDate.parse("2026-10-24");
+    List<String> statements = RollupRebuild.dayStatements(renderer, params, day);
+
+    assertThat(statements).hasSize(12 * 5);
+    assertThat(statements.subList(0, 5))
+        .containsExactly(
+            "DROP TABLE IF EXISTS argos.r_app_stat_1m_rebuild SYNC",
+            "CREATE TABLE argos.r_app_stat_1m_rebuild AS argos.r_app_stat_1m",
+            renderer.rebuildInsert(
+                "app_stat_1m", "argos.r_app_stat_1m_rebuild", params, "toDate(ts) = '2026-10-24'"),
+            "ALTER TABLE argos.r_app_stat_1m REPLACE PARTITION '2026-10-24' FROM"
+                + " argos.r_app_stat_1m_rebuild",
+            "DROP TABLE argos.r_app_stat_1m_rebuild SYNC");
+    for (String s : statements) {
+      if (s.startsWith("INSERT INTO ")) {
+        assertThat(s.substring(0, s.indexOf('\n'))).as(s).endsWith("_rebuild");
+      }
+    }
+    int lastMinute = -1;
+    int firstHour = Integer.MAX_VALUE;
+    for (int i = 0; i < statements.size(); i++) {
+      String s = statements.get(i);
+      if (s.contains(" REPLACE PARTITION '2026-10-24' FROM ")) {
+        lastMinute = i;
+      }
+      if (s.contains(" REPLACE PARTITION 202610 FROM ")) {
+        firstHour = Math.min(firstHour, i);
+      }
+    }
+    assertThat(lastMinute).isLessThan(firstHour);
+    assertThat(statements.stream().filter(s -> s.startsWith("ALTER TABLE")).count()).isEqualTo(12);
+    assertThat(statements).noneMatch(s -> s.contains("app_id ="));
+    assertThat(statements)
+        .contains(
+            renderer.rebuildInsert(
+                "service_stat_1h",
+                "argos.r_service_stat_1h_rebuild",
+                params,
+                "toYYYYMM(minute) = 202610"));
   }
 
   @Test
@@ -213,7 +452,7 @@ class SchemaRendererTest {
 
     assertThat(plain).doesNotContain("CODEC");
     assertThat(plain).contains("ts               DateTime64(3, 'UTC'),");
-    assertThat(plain).contains("trace_id         FixedString(16),");
+    assertThat(plain).contains("span_id          UInt64,");
     assertThat(plain).contains("INDEX idx_tx");
   }
 
@@ -224,10 +463,22 @@ class SchemaRendererTest {
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> SchemaParameters.defaults().withTablePrefix("a.b"))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> SchemaParameters.defaults().withBloom("tx", 1.5, 1))
-        .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> SchemaParameters.defaults().withRetentionDays("xlog-days", 0))
         .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  /** A copy of deploy/clickhouse/schema and rollups that a test may change. */
+  private static Path copyClickHouseDir(Path dir) throws IOException {
+    Path source = SchemaRenderer.fromRepository().migrations().get(0).getParent().getParent();
+    for (String sub : List.of("schema", "rollups")) {
+      Files.createDirectories(dir.resolve(sub));
+      try (Stream<Path> files = Files.list(source.resolve(sub))) {
+        for (Path f : files.toList()) {
+          Files.copy(f, dir.resolve(sub).resolve(f.getFileName()));
+        }
+      }
+    }
+    return dir;
   }
 
   private static String statement(List<String> statements, String marker) {

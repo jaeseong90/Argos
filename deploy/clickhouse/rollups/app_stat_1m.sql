@@ -13,11 +13,11 @@ SELECT
     sum(elapsed_ms)                                                   AS sum_elapsed_ms,
     max(elapsed_ms)                                                   AS max_elapsed_ms,
     sum(sql_time_ms)                                                  AS sum_sql_time_ms,
-    sum(dbc_time_ms)                                                  AS sum_dbc_time_ms,
+    sum(dbc_wait_ms)                                                  AS sum_dbc_wait_ms,
     sum(ext_time_ms)                                                  AS sum_ext_time_ms,
     countIf(elapsed_ms <= apdex_t_ms)                                 AS apdex_satisfied,
     countIf(elapsed_ms > apdex_t_ms AND elapsed_ms <= 4 * apdex_t_ms) AS apdex_tolerating,
-    quantilesTDigestState(0.5, 0.95, 0.99)(elapsed_ms)                AS q_elapsed
+    quantilesDDState(0.01, 0.5, 0.95, 0.99)(elapsed_ms)              AS q_elapsed
 FROM {db}.{p}xlog
 WHERE true {where}
 GROUP BY app_id, env, kind, minute

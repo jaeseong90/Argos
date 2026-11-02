@@ -90,6 +90,14 @@ public final class ReportWriter {
           .append(num(simulation.get("activeSqlsPerInstance")))
           .append(" (0 = usual statements), statistics rows/simulated s ")
           .append(num(perSecond.get("statistics")))
+          .append(" (N-06 bar ")
+          .append(num(simulation.get("n06StatisticsRowsPerSecond")))
+          .append(": ")
+          .append(
+              Boolean.TRUE.equals(simulation.get("n06StatisticsReached"))
+                  ? "reached"
+                  : "NOT reached")
+          .append(")")
           .append(", all rows/simulated s ")
           .append(num(perSecond.get("total")));
       if (simulation.containsKey("profileStepsPerSecondAchieved")) {

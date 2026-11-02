@@ -148,7 +148,8 @@ class BenchRunIT {
     if (!smoke) {
       ProcedureResult q20 = procedures.get("Q20");
       assertThat(q20.metricValue("ratio_xlog")).isGreaterThan(1);
-      for (String variant : List.of("base", "nocodec", "zstd", "zstd_nocodec", "proposed")) {
+      for (String variant :
+          List.of("base", "lz4", "lz4_nocodec", "lz4cols_zstd", "nocodec", "proposed")) {
         assertThat(q20.metricValue("ratio_" + variant + "_xlog")).as(variant).isGreaterThan(1);
       }
       ProcedureResult q18 = procedures.get("Q18");
@@ -186,7 +187,8 @@ class BenchRunIT {
 
   @Test
   @DisplayName(
-      "Q14 on the loaded data: stored tDigest states of app_stat_1m / app_stat_1h are compared too")
+      "Q14 on the loaded data: stored quantilesDD states of app_stat_1m / app_stat_1h are compared,"
+          + " and a C-59 rebuild of the last full day leaves every DD state byte-identical (D-14)")
   void percentileAccuracyOnTheDataset() {
     Fixture.dataset();
     BenchContext ctx = Fixture.context();
@@ -198,8 +200,18 @@ class BenchRunIT {
     Map<String, ProcedureResult> byId =
         results.stream().collect(Collectors.toMap(ProcedureResult::id, p -> p));
     assertThat(byId)
-        .containsKeys("Q14", "Q14/tdigest", "Q14/bfloat16", "Q14/dd", "Q14/tdigest_stored");
-    assertThat(byId.get("Q14/tdigest_stored").metricValue("p50_err")).isFinite();
+        .containsKeys(
+            "Q14", "Q14/tdigest", "Q14/bfloat16", "Q14/dd", "Q14/dd_stored", "Q14/d14_rebuild");
+    assertThat(byId.get("Q14/dd_stored").metricValue("p50_err")).isFinite();
+    assertThat(byId.get("Q14/dd_stored").metricValue("p99_err_1h_max")).isFinite();
+    // D-14 (C-53, C-59): rebuilt twice with the C-59 procedure, the stored DD states of the five
+    // transaction rollups are byte-identical between the rebuilds and to what the views wrote.
+    ProcedureResult rebuild = byId.get("Q14/d14_rebuild");
+    Evidence.record("bench-ci", "Q14 C-59 rebuild of the stored DD states", rebuild.tables());
+    assertThat(rebuild.metricValue("rebuild_state_mismatches")).isZero();
+    assertThat(rebuild.metricValue("view_state_mismatches")).isZero();
+    assertThat(rebuild.verdict()).isEqualTo(Verdict.PASS);
+    assertThat(rebuild.tables().get(0).rows()).hasSize(5);
     for (ProcedureResult r : results) {
       assertThat(r.verdict()).as(r.toString()).isNotEqualTo(Verdict.ERROR);
       Evidence.record("bench-ci", r.id() + " (CI dataset, groups n >= 50)", r.metrics());

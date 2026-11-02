@@ -12,6 +12,7 @@ import io.argos.storage.schema.SchemaParameters;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,11 +45,11 @@ class AccountsIT {
     writer = Fixture.writer();
     reader = Fixture.reader();
     migrator = Fixture.migrator();
-    Workload w = Workload.generate(5, Instant.parse("2026-10-24T08:00:00Z"), 10, 100);
+    Workload w = Workload.generate(5, Workload.at(LocalTime.of(8, 0)), 10, 100);
     writer.insert(
         Workload.insert(p, "xlog", Workload.XLOG_COLUMNS),
         String.join("\n", w.xlog) + "\n",
-        Map.of("insert_deduplication_token", "argos:xlog:acc"));
+        Map.of("insert_deduplication_token", Workload.token("acc", 0, w.xlog.size() - 1L)));
   }
 
   @Test
@@ -89,7 +90,10 @@ class AccountsIT {
     assertThat(denied(writer, "SELECT count() FROM " + p.table("xlog"))).isEqualTo("ACCESS_DENIED");
     assertThat(denied(writer, "CREATE TABLE " + p.table("w") + " (x UInt8) ENGINE = Memory"))
         .isEqualTo("ACCESS_DENIED");
-    assertThat(denied(writer, "ALTER TABLE " + p.table("xlog") + " DROP PARTITION '2026-10-24'"))
+    assertThat(
+            denied(
+                writer,
+                "ALTER TABLE " + p.table("xlog") + " DROP PARTITION '" + Workload.day(0) + "'"))
         .isEqualTo("ACCESS_DENIED");
     assertThat(denied(writer, "TRUNCATE TABLE " + p.table("xlog"))).isEqualTo("ACCESS_DENIED");
     assertThat(denied(writer, "SELECT count() FROM system.parts")).isEqualTo("ACCESS_DENIED");
@@ -99,15 +103,99 @@ class AccountsIT {
   @Test
   @Tag("req:SEC-76")
   @DisplayName(
-      "T-SEC-76 writer constraints: dedup, sync insert, query_log and memory limit cannot be changed")
-  void writerSettingsAreConstrained() {
-    String table = p.table("writer_contract");
+      "C-60 writer: INSERT on the five raw tables only; INSERT into a rollup table is refused (the"
+          + " rollups are written by the SQL SECURITY DEFINER views)")
+  void writerInsertsIntoRawTablesOnly() {
+    // The default prefix: the grants of users.d/argos.xml itself, not the test-only file.
+    SchemaParameters base = Fixture.schema("");
+    Set<String> expected = new java.util.TreeSet<>();
+    for (String prefix : Fixture.PREFIXES) {
+      for (String table : SchemaParameters.RAW_TABLES) {
+        expected.add("GRANT INSERT ON argos." + prefix + table + " TO argos_writer");
+      }
+    }
+    Set<String> grants = new java.util.TreeSet<>();
+    writer.rows("SHOW GRANTS").forEach(r -> grants.add(r.get(0)));
+    Evidence.record(
+        "accounts",
+        "SHOW GRANTS of argos_writer (default prefix)",
+        grants.stream()
+            .filter(
+                g ->
+                    g.matches("GRANT INSERT ON argos\\.[a-z_]+ TO argos_writer")
+                        && SchemaParameters.RAW_TABLES.stream()
+                            .anyMatch(t -> g.contains("argos." + t + " ")))
+            .toList());
+    assertThat(grants).isEqualTo(expected);
+
+    String row = "1\n";
+    for (String rollup :
+        List.of(
+            "app_stat_1m",
+            "app_stat_1h",
+            "service_stat_1m",
+            "instance_stat_1m",
+            "error_stat_1m",
+            "sql_stat_1m",
+            "ext_stat_1h",
+            "metric_1m")) {
+      for (SchemaParameters schema : List.of(base, p)) {
+        assertThat(
+                insertError(
+                    writer,
+                    "INSERT INTO " + schema.table(rollup) + " (app_id) FORMAT TabSeparated",
+                    row,
+                    Map.of()))
+            .as(schema.table(rollup))
+            .isEqualTo("ACCESS_DENIED");
+      }
+    }
+    // A table outside the raw set, created by the migrator, is refused as well.
     migrator.execute(
         "CREATE TABLE IF NOT EXISTS "
-            + table
-            + " (x UInt32) ENGINE = MergeTree ORDER BY x"
-            + " SETTINGS non_replicated_deduplication_window = 100");
-    String insert = "INSERT INTO " + table + " FORMAT TabSeparated";
+            + base.table("not_raw")
+            + " (app_id UInt32) ENGINE = MergeTree ORDER BY app_id");
+    assertThat(
+            insertError(
+                writer,
+                "INSERT INTO " + base.table("not_raw") + " FORMAT TabSeparated",
+                row,
+                Map.of()))
+        .isEqualTo("ACCESS_DENIED");
+    migrator.execute("DROP TABLE " + base.table("not_raw") + " SYNC");
+
+    // The raw tables accept the writer, and the views fill the rollups with the definer's rights.
+    Workload w = Workload.generate(6, Workload.at(LocalTime.of(9, 0)), 2, 50);
+    writer.insert(
+        Workload.insert(base, "xlog", Workload.XLOG_COLUMNS),
+        String.join("\n", w.xlog) + "\n",
+        Map.of("insert_deduplication_token", Workload.token("acc-base", 0, w.xlog.size() - 1L)));
+    writer.insert(
+        Workload.insert(base, "sql_stat_raw", Workload.SQL_STAT_COLUMNS),
+        String.join("\n", w.sqlStat) + "\n",
+        Map.of(
+            "insert_deduplication_token",
+            Workload.token("acc-base", 1000, 1000 + w.sqlStat.size() - 1L)));
+    assertThat(migrator.scalarLong("SELECT count() FROM " + base.table("xlog"))).isEqualTo(100);
+    assertThat(migrator.scalarLong("SELECT sum(count) FROM " + base.table("app_stat_1h")))
+        .isEqualTo(100);
+    assertThat(migrator.scalarLong("SELECT sum(count) FROM " + base.table("sql_stat_1h")))
+        .isEqualTo(migrator.scalarLong("SELECT sum(count) FROM " + base.table("sql_stat_raw")))
+        .isPositive();
+  }
+
+  @Test
+  @Tag("req:SEC-76")
+  @DisplayName(
+      "T-SEC-76 writer constraints: dedup, sync insert, query_log and memory limit cannot be changed")
+  void writerSettingsAreConstrained() {
+    // A raw table of this class's prefix (the writer may insert into the raw tables only, C-60)
+    // that no other test of the class uses.
+    String table = p.table("ext_stat_raw");
+    // A current window start: rows older than the raw retention (14 days, ttl_only_drop_parts)
+    // would be dropped at insert time.
+    String ts = Workload.seconds(Instant.now());
+    String insert = "INSERT INTO " + table + " (app_id, ts) FORMAT TabSeparated";
     long limit = Fixture.server().memoryBudget().writerQueryBytes();
     List<Map<String, String>> refused =
         List.of(
@@ -120,44 +208,44 @@ class AccountsIT {
             Map.of("max_insert_threads", "4"),
             Map.of("readonly", "1"));
     for (Map<String, String> settings : refused) {
-      assertThat(insertError(writer, insert, "1\n", settings))
+      assertThat(insertError(writer, insert, "1\t" + ts + "\n", settings))
           .as(settings.toString())
           .isEqualTo("SETTING_CONSTRAINT_VIOLATION");
     }
     // allow_ddl = 0 is checked before the constraints: ClickHouse refuses to change it at all.
-    assertThat(insertError(writer, insert, "1\n", Map.of("allow_ddl", "1")))
+    assertThat(insertError(writer, insert, "1\t" + ts + "\n", Map.of("allow_ddl", "1")))
         .isEqualTo("QUERY_IS_PROHIBITED");
     assertThat(migrator.scalarLong("SELECT count() FROM " + table)).isZero();
 
     // The batch writer's own settings (ClickHouseInserter): the profile values passed again.
     Map<String, String> writerSettings = new LinkedHashMap<>();
-    writerSettings.put("insert_deduplication_token", "argos:writer_contract:1");
+    writerSettings.put("insert_deduplication_token", "acc-contract:1:0-1");
     writerSettings.put("deduplicate_blocks_in_dependent_materialized_views", "1");
     writerSettings.put("async_insert", "0");
     writerSettings.put("insert_deduplicate", "1");
     writerSettings.put("max_insert_threads", "1");
     writerSettings.put("max_memory_usage", Long.toString(limit / 2));
     writerSettings.put("wait_end_of_query", "1");
-    writer.insert(insert, "1\n2\n", writerSettings);
-    writer.insert(insert, "1\n2\n", writerSettings);
+    String rows = "1\t" + ts + "\n2\t" + ts + "\n";
+    writer.insert(insert, rows, writerSettings);
+    writer.insert(insert, rows, writerSettings);
     // The SQL form of deploy/clickhouse/README.md (SETTINGS before FORMAT), same token: no-op.
     writer.insert(
         "INSERT INTO "
             + table
-            + " (x) SETTINGS insert_deduplication_token = 'argos:writer_contract:1',"
+            + " (app_id, ts) SETTINGS insert_deduplication_token = 'acc-contract:1:0-1',"
             + " deduplicate_blocks_in_dependent_materialized_views = 1 FORMAT TabSeparated",
-        "1\n2\n",
+        rows,
         Map.of());
     assertThat(migrator.scalarLong("SELECT count() FROM " + table)).isEqualTo(2);
     writer.insert(
         "INSERT INTO "
             + table
-            + " (x) SETTINGS insert_deduplication_token = 'argos:writer_contract:2',"
+            + " (app_id, ts) SETTINGS insert_deduplication_token = 'acc-contract:1:2-2',"
             + " deduplicate_blocks_in_dependent_materialized_views = 1 FORMAT TabSeparated",
-        "3\n",
+        "3\t" + ts + "\n",
         Map.of());
     assertThat(migrator.scalarLong("SELECT count() FROM " + table)).isEqualTo(3);
-    migrator.execute("DROP TABLE " + table + " SYNC");
   }
 
   @Test
@@ -170,7 +258,7 @@ class AccountsIT {
             "DROP TABLE " + p.table("xlog"),
             "ALTER TABLE " + p.table("xlog") + " ADD COLUMN z UInt8",
             "ALTER TABLE " + p.table("xlog") + " DELETE WHERE 1",
-            "ALTER TABLE " + p.table("xlog") + " DROP PARTITION '2026-10-24'",
+            "ALTER TABLE " + p.table("xlog") + " DROP PARTITION '" + Workload.day(0) + "'",
             "TRUNCATE TABLE " + p.table("xlog"),
             "INSERT INTO " + p.table("xlog") + " (app_id) VALUES (1)",
             "CREATE DATABASE argos_other",
@@ -272,13 +360,20 @@ class AccountsIT {
 
   @Test
   @Tag("req:SEC-76")
-  @DisplayName("T-SEC-76 migrator: DDL inside argos only, no other database, no system tables")
+  @DisplayName(
+      "T-SEC-76 migrator: DDL inside argos only, no other database, no system table but"
+          + " system.mutations (C-60)")
   void migratorScope() {
     migrator.execute("CREATE TABLE IF NOT EXISTS " + p.table("m") + " (x UInt8) ENGINE = Memory");
     migrator.execute("DROP TABLE " + p.table("m"));
     assertThat(denied(migrator, "CREATE DATABASE argos_other")).isEqualTo("ACCESS_DENIED");
     assertThat(denied(migrator, "SELECT count() FROM system.parts")).isEqualTo("ACCESS_DENIED");
     assertThat(denied(migrator, "SELECT count() FROM system.merges")).isEqualTo("ACCESS_DENIED");
+    assertThat(denied(migrator, "SELECT count() FROM system.query_log")).isEqualTo("ACCESS_DENIED");
+    // C-60: the deletion job polls its own mutations with the migration account.
+    assertThat(denied(migrator, "SELECT count() FROM system.mutations")).isEqualTo("<succeeded>");
+    assertThat(migrator.rows("SHOW GRANTS").stream().map(r -> r.get(0)).toList())
+        .contains("GRANT SELECT ON system.mutations TO argos_migrator");
   }
 
   @Test
@@ -336,22 +431,33 @@ class AccountsIT {
             + " SQL SECURITY DEFINER AS SELECT d, count() AS c FROM "
             + source
             + " GROUP BY d");
-    writer.insert(
+    // The writer may insert into the five raw tables only (C-60, writerInsertsIntoRawTablesOnly);
+    // the migrator fills this probe table (it has INSERT for rebuilds and repairs).
+    String day = Workload.day(0);
+    migrator.insert(
         "INSERT INTO " + source + " FORMAT TabSeparated",
-        "2026-10-24\t1\n2026-10-24\t2\n2026-10-24\t3\n",
-        Map.of("insert_deduplication_token", "argos:mig_src:1"));
+        day + "\t1\n" + day + "\t2\n" + day + "\t3\n",
+        Map.of("insert_deduplication_token", "acc-mig:1:0-2"));
     assertThat(migrator.scalarLong("SELECT sum(c) FROM " + target)).isEqualTo(3);
 
     migrator.execute("CREATE TABLE " + staging + " AS " + target);
     migrator.execute(
         "INSERT INTO " + staging + " SELECT d, count() FROM " + source + " GROUP BY d");
-    migrator.execute("ALTER TABLE " + target + " REPLACE PARTITION '2026-10-24' FROM " + staging);
+    migrator.execute("ALTER TABLE " + target + " REPLACE PARTITION '" + day + "' FROM " + staging);
     assertThat(migrator.scalarLong("SELECT sum(c) FROM " + target)).isEqualTo(3);
 
     migrator.execute(
-        "ALTER TABLE " + source + " DELETE IN PARTITION '2026-10-24' WHERE x = 2",
+        "ALTER TABLE " + source + " DELETE IN PARTITION '" + day + "' WHERE x = 2",
         Map.of("mutations_sync", "2"));
     assertThat(migrator.scalarLong("SELECT count() FROM " + source)).isEqualTo(2);
+    // C-60: the same account reads the completion of its mutation.
+    assertThat(
+            migrator.rows(
+                "SELECT is_done, latest_fail_reason FROM system.mutations WHERE database ="
+                    + " 'argos' AND table = '"
+                    + p.tablePrefix()
+                    + "mig_src'"))
+        .containsExactly(List.of("1", ""));
     for (String t : List.of(view, staging, target, source)) {
       migrator.execute("DROP TABLE " + t + " SYNC");
     }

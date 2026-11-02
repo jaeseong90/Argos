@@ -65,4 +65,19 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   `test/agent/overhead` (P-2 overhead harness). Results: `docs/poc/agent-poc.md` and
   `docs/poc/agent-overhead.md`.
 
+### Changed
+
+- ClickHouse storage aligned with the storage decisions of ADR-0007 (the unreleased V001 is changed in
+  place): transaction rollups store `quantilesDD(0.01, 0.5, 0.95, 0.99)` percentile states, read with
+  `quantilesDDMerge` and rebuilt byte for byte; the server default compression is ZSTD(1) and the column
+  codecs end in ZSTD(1); the `xlog` bloom filter parameters are literals (fpp 0.01, granularity 4,
+  user id index granularity 1); the column names follow the protocol (`dbc_wait_ms`, `timed_out`,
+  `app_version_id`, `sum_dbc_wait_ms`); the batch writer account may insert into the five raw tables
+  only and the migration account reads `system.mutations`; `background_schedule_pool_size` keeps the
+  ClickHouse default. Schema templates accept only `{db}`, `{p}`, `{where}`, `{retention.*}` and
+  `{rollup:<table>}`, and the schema checksum is taken after the rollup expansion. The storage test
+  tools rebuild rollups through a staging table and `REPLACE PARTITION`, use deduplication tokens of the
+  form `<wal_instance_id>:<epoch>:<first>-<last>`, and pin the Testcontainers resource reaper image by
+  digest.
+
 [Unreleased]: https://github.com/argos-apm/argos/commits/main

@@ -37,17 +37,14 @@ class CiDatasetTest {
 
   @Test
   @DisplayName(
-      "Blocks carry argos:<table>:<block_id> tokens; one block per table is re-sent; one crosses midnight")
+      "Blocks carry C-61 tokens <instance>:<epoch>:<first>-<last>; one block per table is re-sent;"
+          + " one crosses midnight")
   void blocks() {
     List<Block> blocks = CiDataset.generate(SMALL).blocks(P);
     Set<String> tokens = new HashSet<>();
     int resent = 0;
     for (Block b : blocks) {
-      assertThat(b.token())
-          .matches(
-              "argos:"
-                  + b.table()
-                  + ":[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+      assertThat(b.token()).matches("fx[0-9a-f]{8}:1:[0-9a-f]+-[0-9a-f]+");
       assertThat(b.qualifiedTable()).isEqualTo("argos.t_" + b.table());
       if (!tokens.add(b.token())) {
         resent++;

@@ -16,8 +16,9 @@
 --                              = 0 (metadata only; time recorded, not judged)
 --   MV replacement, 4 steps for service_stat_1m (the DDL comes from deploy/clickhouse: the V001
 --   table statement renamed to service_stat_1m_v2 and the rollups/service_stat_1m.sql SELECT):
---     (1) create service_stat_1m_v2 and its view, (2) backfill one day with the rebuild statement
---     of 13 section 4.1 (D-14), (3) switch check: v1 and v2 agree on that day (mv_compare, 0 rows),
+--     (1) create service_stat_1m_v2 and its view, (2) backfill one day with the rebuild procedure
+--     of ADR-0007 C-59 (staging table + REPLACE PARTITION, D-14), (3) switch check: v1 and v2
+--     agree on that day (mv_compare, 0 rows),
 --     (4) drop the rehearsal objects (in a real migration the old view and table go one minor
 --     release later)
 -- Criterion of 13 section 15: each step within 10 minutes.
@@ -64,21 +65,23 @@ FROM system.parts
 WHERE database = {database:String} AND table = {table:String} AND active
 
 -- @step mv_compare
--- Step (3): the backfilled day of service_stat_1m_v2 equals service_stat_1m per service and minute.
-SELECT app_id, kind, service_id, version_id, minute, a.c AS v1, b.c AS v2
+-- Step (3): the backfilled day of service_stat_1m_v2 equals service_stat_1m per service and minute
+-- (C-65 form: UNION ALL, GROUP BY the key, sumIf, HAVING).
+SELECT app_id, kind, service_id, app_version_id, minute,
+       sumIf(c, src = 'v1') AS v1, sumIf(c, src = 'v2') AS v2,
+       sumIf(e, src = 'v1') AS e1, sumIf(e, src = 'v2') AS e2
 FROM
 (
-    SELECT app_id, kind, service_id, version_id, minute, sum(count) AS c, sum(sum_elapsed_ms) AS e
+    SELECT 'v1' AS src, app_id, kind, service_id, app_version_id, minute, sum(count) AS c, sum(sum_elapsed_ms) AS e
     FROM {db}.{p}service_stat_1m WHERE toDate(minute) = {day:Date}
-    GROUP BY app_id, kind, service_id, version_id, minute
-) AS a
-FULL OUTER JOIN
-(
-    SELECT app_id, kind, service_id, version_id, minute, sum(count) AS c, sum(sum_elapsed_ms) AS e
+    GROUP BY app_id, kind, service_id, app_version_id, minute
+    UNION ALL
+    SELECT 'v2', app_id, kind, service_id, app_version_id, minute, sum(count), sum(sum_elapsed_ms)
     FROM {db}.{p}service_stat_1m_v2 WHERE toDate(minute) = {day:Date}
-    GROUP BY app_id, kind, service_id, version_id, minute
-) AS b USING (app_id, kind, service_id, version_id, minute)
-WHERE a.c != b.c OR a.e != b.e
+    GROUP BY app_id, kind, service_id, app_version_id, minute
+)
+GROUP BY app_id, kind, service_id, app_version_id, minute
+HAVING v1 != v2 OR e1 != e2
 LIMIT 1000
 
 -- @step mv_drop_view

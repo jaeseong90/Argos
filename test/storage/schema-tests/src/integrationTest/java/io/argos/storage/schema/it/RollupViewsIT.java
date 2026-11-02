@@ -7,6 +7,7 @@ import io.argos.storage.clickhouse.ClickHouseHttp;
 import io.argos.storage.schema.SchemaParameters;
 import io.argos.storage.schema.SchemaRenderer;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
@@ -22,9 +23,10 @@ import org.junit.jupiter.api.TestMethodOrder;
  * views cascading from the 1m tables, buckets with the sumForEach fallback, metric rollups. Every
  * measure is compared with a direct aggregation of the raw rows (D-03, D-12 at small scale), late
  * rows update their minute (Q16 at small scale) and the rebuild SELECT of every rollup file into a
- * staging table reproduces its view per key for one day (1m) or month (1h), apart from the
- * merge-order dependent tDigest and anyLast columns (D-14). The rebuild procedure itself (REPLACE
- * PARTITION, 1h cascade) is RollupRebuildIT.
+ * staging table reproduces its view per key for one day (1m) or month (1h), the quantilesDD states
+ * of q_elapsed byte for byte (ADR-0007 C-53), apart from the read-order dependent anyLast column
+ * (D-14). The rebuild procedure itself (C-59: REPLACE PARTITION, 1h cascade) is RollupRebuildIT.
+ * The consistency SQL uses the C-65 form (UNION ALL, GROUP BY the key, sumIf, HAVING).
  */
 @Tag("integration")
 @Tag("req:D-03")
@@ -33,8 +35,8 @@ import org.junit.jupiter.api.TestMethodOrder;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class RollupViewsIT {
 
-  /** 30 minutes across midnight: two daily partitions, three hours. */
-  private static final Instant START = Instant.parse("2026-10-24T23:40:00Z");
+  /** 30 minutes across midnight of the anchor day: two daily partitions, two hours. */
+  private static final Instant START = Workload.at(LocalTime.of(23, 40));
 
   private static SchemaParameters p;
   private static ClickHouseHttp migrator;
@@ -64,12 +66,14 @@ class RollupViewsIT {
       String tag) {
     List<String> blocks = Workload.blocks(rows, size);
     for (int i = 0; i < blocks.size(); i++) {
+      long first = Workload.tableBase(table) + (long) i * size;
+      long last = first + Math.min(size, rows.size() - (long) i * size) - 1;
       writer.insert(
           Workload.insert(params, table, columns),
           blocks.get(i),
           Map.of(
               "insert_deduplication_token",
-              "argos:" + table + ":" + tag + "-" + i,
+              Workload.token(tag, first, last),
               "deduplicate_blocks_in_dependent_materialized_views",
               "1"));
     }
@@ -91,17 +95,17 @@ class RollupViewsIT {
   void transactionRollupsMatchRaw() {
     String measures =
         "count() AS c, countIf(error = 1) AS e, sum(elapsed_ms) AS se, max(elapsed_ms) AS mx,"
-            + " sum(sql_time_ms) AS sq, sum(dbc_time_ms) AS db, sum(ext_time_ms) AS ex,"
+            + " sum(sql_time_ms) AS sq, sum(dbc_wait_ms) AS db, sum(ext_time_ms) AS ex,"
             + " countIf(elapsed_ms <= apdex_t_ms) AS sat,"
             + " countIf(elapsed_ms > apdex_t_ms AND elapsed_ms <= 4 * apdex_t_ms) AS tol";
     String rolled =
         "sum(count) AS c, sum(error_count) AS e, sum(sum_elapsed_ms) AS se, max(max_elapsed_ms) AS mx,"
-            + " sum(sum_sql_time_ms) AS sq, sum(sum_dbc_time_ms) AS db, sum(sum_ext_time_ms) AS ex,"
+            + " sum(sum_sql_time_ms) AS sq, sum(sum_dbc_wait_ms) AS db, sum(sum_ext_time_ms) AS ex,"
             + " sum(apdex_satisfied) AS sat, sum(apdex_tolerating) AS tol";
     Map<String, String> keys =
         Map.of(
             "app_stat_1m", "app_id, env, kind",
-            "service_stat_1m", "app_id, env, kind, service_id, version_id",
+            "service_stat_1m", "app_id, env, kind, service_id, app_version_id",
             "instance_stat_1m", "app_id, env, instance_id, kind");
     keys.forEach(
         (table, key) -> {
@@ -135,7 +139,7 @@ class RollupViewsIT {
     Map<String, String> pairs =
         Map.of(
             "app_stat", "app_id, env, kind",
-            "service_stat", "app_id, env, kind, service_id, version_id");
+            "service_stat", "app_id, env, kind, service_id, app_version_id");
     pairs.forEach(
         (base, key) -> {
           String m =
@@ -168,7 +172,7 @@ class RollupViewsIT {
     List<String> quantiles =
         migrator
             .rows(
-                "SELECT arrayJoin(quantilesTDigestMerge(0.5, 0.95, 0.99)(q_elapsed)) FROM "
+                "SELECT arrayJoin(quantilesDDMerge(0.01, 0.5, 0.95, 0.99)(q_elapsed)) FROM "
                     + p.table("app_stat_1h"))
             .stream()
             .map(r -> r.get(0))
@@ -181,27 +185,47 @@ class RollupViewsIT {
             .stream()
             .map(r -> r.get(0))
             .toList();
-    Evidence.record("rollups", "p50/p95/p99 tDigest via 1m->1h states (3,600 tx)", quantiles);
+    Evidence.record("rollups", "p50/p95/p99 quantilesDD via 1m->1h states (3,600 tx)", quantiles);
     Evidence.record("rollups", "p50/p95/p99 exact (3,600 tx)", exact);
     assertThat(quantiles).hasSize(3);
     assertThat(Double.parseDouble(quantiles.get(0)))
         .isLessThanOrEqualTo(Double.parseDouble(quantiles.get(1)));
+    // C-53: merging DD states only adds bucket counts, so the 1h state (1m states cascaded) is the
+    // DD state of the raw values of the hour, byte for byte, for every app and kind.
+    for (String level : List.of("hour", "minute")) {
+      String table = level.equals("hour") ? "app_stat_1h" : "app_stat_1m";
+      String bucket = level.equals("hour") ? "toStartOfHour(ts)" : "toStartOfMinute(ts)";
+      String raw =
+          "SELECT app_id, kind, "
+              + bucket
+              + " AS t, hex(quantilesDDState(0.01, 0.5, 0.95, 0.99)(elapsed_ms)) AS s FROM "
+              + p.table("xlog")
+              + " GROUP BY app_id, kind, t";
+      String rolled =
+          "SELECT app_id, kind, "
+              + level
+              + " AS t, hex(quantilesDDMergeState(0.01, 0.5, 0.95, 0.99)(q_elapsed)) AS s FROM "
+              + p.table(table)
+              + " GROUP BY app_id, kind, t";
+      assertThat(migrator.scalarLong("SELECT count() FROM (" + raw + ")")).as(level).isPositive();
+      assertThat(differences(raw, rolled)).as(level + " DD state = raw DD state").isZero();
+    }
   }
 
   @Test
   @DisplayName("T-ST-030 error_stat_1m counts and first/last ts per group and minute")
   void errorRollup() {
     String raw =
-        "SELECT app_id, error_group_id, service_id, version_id, toStartOfMinute(ts) AS minute,"
+        "SELECT app_id, error_group_id, service_id, app_version_id, toStartOfMinute(ts) AS minute,"
             + " count() AS c, min(ts) AS f, max(ts) AS l FROM "
             + p.table("xlog")
             + " WHERE error = 1 AND error_group_id != 0 GROUP BY app_id, error_group_id, service_id,"
-            + " version_id, minute";
+            + " app_version_id, minute";
     String rollup =
-        "SELECT app_id, error_group_id, service_id, version_id, minute, sum(count) AS c,"
+        "SELECT app_id, error_group_id, service_id, app_version_id, minute, sum(count) AS c,"
             + " min(first_ts) AS f, max(last_ts) AS l FROM "
             + p.table("error_stat_1m")
-            + " GROUP BY app_id, error_group_id, service_id, version_id, minute";
+            + " GROUP BY app_id, error_group_id, service_id, app_version_id, minute";
     assertThat(differences(raw, rollup)).isZero();
     assertThat(migrator.scalarLong("SELECT sum(count) FROM " + p.table("error_stat_1m")))
         .isPositive();
@@ -322,20 +346,13 @@ class RollupViewsIT {
   @Order(Integer.MAX_VALUE)
   @DisplayName("T-ST-033 Q16: rows arriving an hour late update their minute and hour, Q12 stays 0")
   void lateRowsUpdateTheirMinute() {
-    Instant lateMinute = Instant.parse("2026-10-24T23:41:00Z");
-    long before =
-        migrator.scalarLong(
-            "SELECT sum(count) FROM "
-                + p.table("app_stat_1m")
-                + " WHERE minute = '2026-10-24 23:41:00'");
+    Instant lateMinute = Workload.at(LocalTime.of(23, 41));
+    String minute = " WHERE minute = '" + Workload.seconds(lateMinute) + "'";
+    long before = migrator.scalarLong("SELECT sum(count) FROM " + p.table("app_stat_1m") + minute);
     Workload late = Workload.generate(4242, lateMinute, 1, 200);
     insertBlocks(Fixture.writer(), p, "xlog", Workload.XLOG_COLUMNS, late.xlog, 1000, "late");
 
-    assertThat(
-            migrator.scalarLong(
-                "SELECT sum(count) FROM "
-                    + p.table("app_stat_1m")
-                    + " WHERE minute = '2026-10-24 23:41:00'"))
+    assertThat(migrator.scalarLong("SELECT sum(count) FROM " + p.table("app_stat_1m") + minute))
         .isEqualTo(before + 200);
     assertThat(q12Mismatches()).isZero();
   }
@@ -349,8 +366,9 @@ class RollupViewsIT {
     for (String table : renderer.rollupTables()) {
       // 1m: one day from the raw source; 1h: one month from the 1m source (1h partitions are
       // monthly). Every key (app_id, env, kind, dimensions, minute/hour) is compared; the
-      // SimpleAggregateFunction and sumForEach columns must match exactly. tDigest q_elapsed and
-      // anyLast last_v are left out: their merged value depends on the merge/read order (Rollups).
+      // SimpleAggregateFunction and sumForEach columns must match exactly, the quantilesDD
+      // q_elapsed states byte for byte and by value (C-53). anyLast last_v is left out: its value
+      // depends on the read order (Rollups).
       String staging = Rollups.fillStaging(migrator, renderer, p, table);
       String fromView =
           Rollups.finalized(migrator, p, table, p.table(table), Rollups.rollupPredicate(table));
@@ -364,26 +382,28 @@ class RollupViewsIT {
     }
   }
 
-  private static long q12Mismatches() {
-    String perMinute =
-        "SELECT toStartOfMinute(ts) AS m, count() AS c FROM " + p.table("xlog") + " GROUP BY m";
-    String app =
-        "SELECT minute AS m, sum(count) AS c FROM " + p.table("app_stat_1m") + " GROUP BY m";
-    String service =
-        "SELECT minute AS m, sum(count) AS c FROM " + p.table("service_stat_1m") + " GROUP BY m";
-    String instance =
-        "SELECT minute AS m, sum(count) AS c FROM " + p.table("instance_stat_1m") + " GROUP BY m";
-    return migrator.scalarLong(
-        "SELECT count() FROM ("
-            + perMinute
-            + ") x FULL JOIN ("
-            + app
-            + ") a USING m FULL JOIN ("
-            + service
-            + ") s USING m FULL JOIN ("
-            + instance
-            + ") i USING m"
-            + " WHERE x.c != a.c OR x.c != s.c OR x.c != i.c");
+  /**
+   * Q12 per minute in the C-65 form (ADR-0007): the four sources with a src label in UNION ALL,
+   * grouped by minute, compared with sumIf in HAVING; a minute missing in one source counts 0
+   * there, whatever join_use_nulls is (the query also runs with join_use_nulls = 1 to show it).
+   */
+  static long q12Mismatches() {
+    String sql =
+        "SELECT count() FROM (SELECT m, sumIf(c, src = 'xlog') AS x, sumIf(c, src = 'app') AS a,"
+            + " sumIf(c, src = 'service') AS s, sumIf(c, src = 'instance') AS i FROM ("
+            + "SELECT 'xlog' AS src, toStartOfMinute(ts) AS m, count() AS c FROM "
+            + p.table("xlog")
+            + " GROUP BY m UNION ALL SELECT 'app', minute, sum(count) FROM "
+            + p.table("app_stat_1m")
+            + " GROUP BY minute UNION ALL SELECT 'service', minute, sum(count) FROM "
+            + p.table("service_stat_1m")
+            + " GROUP BY minute UNION ALL SELECT 'instance', minute, sum(count) FROM "
+            + p.table("instance_stat_1m")
+            + " GROUP BY minute) GROUP BY m HAVING x != a OR x != s OR x != i)";
+    long mismatches = migrator.scalarLong(sql);
+    assertThat(migrator.execute(sql, Map.of("join_use_nulls", "1")).body().strip())
+        .isEqualTo(Long.toString(mismatches));
+    return mismatches;
   }
 
   /** Rows that appear in only one of the two result sets (symmetric difference size). */

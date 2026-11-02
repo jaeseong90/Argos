@@ -4,6 +4,7 @@ package io.argos.storage.queries.procedures;
 import io.argos.storage.clickhouse.Account;
 import io.argos.storage.queries.BenchContext;
 import io.argos.storage.queries.BucketQuantile;
+import io.argos.storage.queries.Criterion;
 import io.argos.storage.queries.Measurement;
 import io.argos.storage.queries.Parameters;
 import io.argos.storage.queries.ProcedureResult;
@@ -12,6 +13,9 @@ import io.argos.storage.queries.QueryFile;
 import io.argos.storage.queries.SqlTemplate;
 import io.argos.storage.queries.Stats;
 import io.argos.storage.queries.Tsv;
+import io.argos.storage.schema.RollupRebuild;
+import io.argos.storage.schema.SchemaParameters;
+import io.argos.storage.schema.SchemaRenderer;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -25,13 +29,20 @@ import java.util.Map;
 /**
  * Q14 percentile accuracy (A-11, T-ST-042): relative error of tDigest, BFloat16 and DD (relative
  * accuracy 0.01) state merges against quantileExact at 1m, 1h and 1d for p50/p95/p99, the error of
- * the 15-bucket p95 estimate, and the stored tDigest states of app_stat_1m / app_stat_1h when the
- * source is the loaded data. One {@link ProcedureResult} per function ({@code Q14/tdigest}, ...)
- * judged on the maximum error over the groups with at least {@code minCount} values, plus {@code
- * Q14} with the tables (recorded): the error per level, the 1m maximum per day (the maximum of one
- * level depends on how many groups it has: 2,880 minutes a day against 6 days at 1d), and the D-14
- * rebuild determinism (the 1m and 1h states of one day rebuilt twice, single-threaded and with 8
- * threads and small blocks, compared byte for byte and by their finalized values).
+ * the 15-bucket p95 estimate, and the stored quantilesDD states of app_stat_1m / app_stat_1h
+ * (ADR-0007 C-53) when the source is the loaded data. One {@link ProcedureResult} per function
+ * ({@code Q14/tdigest}, ...), judged on the criteria of C-53: the p95 over the 1m groups of the
+ * value error of p50 and p95 at most 2 % ({@code p50_err_1m_p95}, {@code p95_err_1m_p95}), the
+ * maximum value error of p99 at 1h and above at most 5 % ({@code p99_err_1h_max}) and the maximum
+ * rank error of the 1m p99 at most 0.5 percentage points ({@code p99_rank_err_minute}); the stored
+ * states ({@code Q14/dd_stored}, 1h and 1d only) on {@code p99_err_1h_max}. Groups with fewer than
+ * {@code minCount} values are not judged. {@code Q14} holds the tables (recorded): the error per
+ * level, the 1m maximum per day, and the D-14 rebuild determinism (the 1m and 1h states of one day
+ * rebuilt twice, single-threaded and with 8 threads and small blocks, compared byte for byte and by
+ * their finalized values). On the loaded data {@code Q14/d14_rebuild} also rebuilds the rollup
+ * tables of the last full day with the procedure of C-59 ({@link RollupRebuild}: staging table,
+ * REPLACE PARTITION, 1m day then 1h month) twice and compares the stored DD states of the
+ * transaction rollups byte for byte: view-filled against rebuild 1, rebuild 1 against rebuild 2.
  */
 public final class PercentileAccuracy {
 
@@ -42,6 +53,25 @@ public final class PercentileAccuracy {
   private static final String[] QUANTILES = {"p50", "p95", "p99"};
   private static final double[] LEVEL_Q = {0.5, 0.95, 0.99};
   private static final Instant SYNTHETIC_START = Instant.parse("2026-01-05T00:00:00Z");
+
+  /** Stored states of the loaded data (production path: app_stat_1m to 1h to 1d). */
+  public static final String STORED = "dd_stored";
+
+  /** C-53 criterion of the stored states (they exist at 1h and 1d only). */
+  private static final Criterion STORED_CRITERION = Criterion.parse("p99_err_1h_max <= 0.05");
+
+  /** Key columns of the transaction rollups whose q_elapsed DD states the C-59 check compares. */
+  private static final Map<String, String> TRANSACTION_ROLLUP_KEYS = new LinkedHashMap<>();
+
+  static {
+    TRANSACTION_ROLLUP_KEYS.put("app_stat_1m", "app_id, env, kind, minute");
+    TRANSACTION_ROLLUP_KEYS.put(
+        "service_stat_1m", "app_id, env, kind, service_id, app_version_id, minute");
+    TRANSACTION_ROLLUP_KEYS.put("instance_stat_1m", "app_id, env, instance_id, kind, minute");
+    TRANSACTION_ROLLUP_KEYS.put("app_stat_1h", "app_id, env, kind, hour");
+    TRANSACTION_ROLLUP_KEYS.put(
+        "service_stat_1h", "app_id, env, kind, service_id, app_version_id, hour");
+  }
 
   private PercentileAccuracy() {}
 
@@ -160,7 +190,7 @@ public final class PercentileAccuracy {
     }
     List<String> functions = new ArrayList<>(FUNCTIONS);
     if (o.source() == Source.DATASET) {
-      functions.add("tdigest_stored");
+      functions.add(STORED);
       String[][] stored = {{"stored_hour", "hour"}, {"stored_day", "day"}};
       int[] storedDays = {o.hourDays(), o.dayDays()};
       for (int s = 0; s < stored.length; s++) {
@@ -173,7 +203,7 @@ public final class PercentileAccuracy {
             double[] exact = array(row.get(4));
             double[] est = array(row.get(5));
             for (int q = 0; q < 3; q++) {
-              add(errors, "tdigest_stored", stored[s][1], q, Stats.relativeError(est[q], exact[q]));
+              add(errors, STORED, stored[s][1], q, Stats.relativeError(est[q], exact[q]));
             }
           }
         }
@@ -184,7 +214,9 @@ public final class PercentileAccuracy {
     List<ProcedureResult> results = new ArrayList<>();
     List<List<String>> rows = new ArrayList<>();
     for (String fn : functions) {
-      ProcedureResult r = new ProcedureResult("Q14/" + fn, "Q14 " + fn, file.criterion());
+      ProcedureResult r =
+          new ProcedureResult(
+              "Q14/" + fn, "Q14 " + fn, fn.equals(STORED) ? STORED_CRITERION : file.criterion());
       for (int q = 0; q < 3; q++) {
         double worst = Double.NaN;
         for (String level : LEVELS) {
@@ -211,6 +243,19 @@ public final class PercentileAccuracy {
           }
         }
         r.metric(QUANTILES[q] + "_err", worst);
+        List<Double> minute = errors.get(key(fn, "minute", q));
+        if (q < 2 && minute != null && !minute.isEmpty()) {
+          r.metric(QUANTILES[q] + "_err_1m_p95", Stats.percentile(minute, 0.95));
+        }
+        if (q == 2) {
+          List<Double> coarse = new ArrayList<>();
+          for (String level : List.of("hour", "day")) {
+            coarse.addAll(errors.getOrDefault(key(fn, level, q), List.of()));
+          }
+          if (!coarse.isEmpty()) {
+            r.metric("p99_err_1h_max", Stats.max(coarse));
+          }
+        }
       }
       results.add(r.judge());
     }
@@ -297,6 +342,9 @@ public final class PercentileAccuracy {
             perDay));
     summary.table(stateSizes(ctx, f, src, first));
     summary.table(determinism(ctx, f, src, last));
+    if (o.source() == Source.DATASET) {
+      results.add(rollupRebuild(ctx, last));
+    }
     if (o.source() == Source.SYNTHETIC) {
       ctx.runner().stepOk(f, "synthetic_drop", Parameters.empty(), Map.of());
     }
@@ -401,6 +449,116 @@ public final class PercentileAccuracy {
             + ": rebuild a (max_threads 1) vs rebuild b (max_threads 8, max_block_size 4096)",
         List.of("function", "level", "states", "state bytes", "finalized p50/p95/p99"),
         rows);
+  }
+
+  /**
+   * D-14 on the stored rollups (ADR-0007 C-53, C-59): the rollup tables of {@code day} are rebuilt
+   * twice with the C-59 procedure (every 1m table for the day, then every 1h table for its month,
+   * staging table + REPLACE PARTITION; rebuild 1 with max_threads 1, rebuild 2 with max_threads 8
+   * and max_block_size 4096), and the q_elapsed quantilesDD states of the transaction rollups are
+   * compared per key: the hex of the state merged per key and the finalized p50/p95/p99, as
+   * order-independent sums of hashes. Metrics: {@code rebuild_state_mismatches} (rebuild 1 vs 2)
+   * and {@code view_state_mismatches} (the states the views wrote vs rebuild 1), tables with a
+   * difference; the criterion is byte identity for both.
+   */
+  static ProcedureResult rollupRebuild(BenchContext ctx, LocalDate day) {
+    SchemaRenderer renderer = SchemaRenderer.fromRepository();
+    SchemaParameters schema = ctx.schema();
+    Map<String, List<String>> view = rollupStateHashes(ctx, schema, day, "view");
+    List<Map<String, String>> runs =
+        List.of(
+            Map.of("max_threads", "1", "max_insert_threads", "1"),
+            Map.of("max_threads", "8", "max_block_size", "4096", "max_insert_threads", "1"));
+    List<Map<String, List<String>>> rebuilt = new ArrayList<>();
+    for (int run = 0; run < runs.size(); run++) {
+      List<String> statements = RollupRebuild.dayStatements(renderer, schema, day);
+      for (int i = 0; i < statements.size(); i++) {
+        String sql = statements.get(i);
+        ctx.runner()
+            .statement(
+                Account.MIGRATOR,
+                "Q14/c59_rebuild_" + (run + 1) + "_" + i,
+                sql,
+                sql.startsWith("INSERT INTO ") ? runs.get(run) : Map.of());
+      }
+      rebuilt.add(rollupStateHashes(ctx, schema, day, "rebuild" + (run + 1)));
+    }
+    List<List<String>> rows = new ArrayList<>();
+    int rebuildMismatches = 0;
+    int viewMismatches = 0;
+    for (String table : TRANSACTION_ROLLUP_KEYS.keySet()) {
+      List<String> v = view.get(table);
+      List<String> a = rebuilt.get(0).get(table);
+      List<String> b = rebuilt.get(1).get(table);
+      boolean rebuildBytes = a.get(1).equals(b.get(1)) && a.get(0).equals(b.get(0));
+      boolean viewBytes = v.get(1).equals(a.get(1)) && v.get(0).equals(a.get(0));
+      rebuildMismatches += rebuildBytes ? 0 : 1;
+      viewMismatches += viewBytes ? 0 : 1;
+      rows.add(
+          List.of(
+              table,
+              v.get(0) + " / " + a.get(0) + " / " + b.get(0),
+              rebuildBytes ? "identical" : "MISMATCH",
+              a.get(2).equals(b.get(2)) ? "identical" : "MISMATCH",
+              viewBytes ? "identical" : "MISMATCH",
+              v.get(2).equals(a.get(2)) ? "identical" : "MISMATCH"));
+    }
+    return new ProcedureResult(
+            "Q14/d14_rebuild",
+            "Q14 D-14: stored DD states after the C-59 rebuild",
+            Criterion.parse("rebuild_state_mismatches == 0, view_state_mismatches == 0"))
+        .metric("rebuild_state_mismatches", rebuildMismatches)
+        .metric("view_state_mismatches", viewMismatches)
+        .table(
+            new Table(
+                "D-14 rollup rebuild of "
+                    + day
+                    + " (C-59: staging + REPLACE PARTITION, 1m day then 1h month "
+                    + RollupRebuild.monthPartition(day)
+                    + "): q_elapsed quantilesDD states per key",
+                List.of(
+                    "table",
+                    "keys view / rebuild 1 / rebuild 2",
+                    "state bytes rebuild 1 vs 2",
+                    "finalized rebuild 1 vs 2",
+                    "state bytes view vs rebuild 1",
+                    "finalized view vs rebuild 1"),
+                rows))
+        .judge();
+  }
+
+  /** Per transaction rollup: keys, hash of the merged state bytes, hash of the finalized values. */
+  private static Map<String, List<String>> rollupStateHashes(
+      BenchContext ctx, SchemaParameters schema, LocalDate day, String label) {
+    Map<String, List<String>> hashes = new LinkedHashMap<>();
+    for (Map.Entry<String, String> e : TRANSACTION_ROLLUP_KEYS.entrySet()) {
+      String table = e.getKey();
+      String keys = e.getValue();
+      String where =
+          RollupRebuild.hourly(table)
+              ? "toYYYYMM(hour) = " + RollupRebuild.monthPartition(day)
+              : "toDate(minute) = " + RollupRebuild.dayPartition(day);
+      String sql =
+          "SELECT count(), sum(cityHash64("
+              + keys
+              + ", s)), sum(cityHash64("
+              + keys
+              + ", v)) FROM (SELECT "
+              + keys
+              + ", hex(quantilesDDMergeState(0.01, 0.5, 0.95, 0.99)(q_elapsed)) AS s,"
+              + " toString(quantilesDDMerge(0.01, 0.5, 0.95, 0.99)(q_elapsed)) AS v FROM "
+              + schema.table(table)
+              + " WHERE "
+              + where
+              + " GROUP BY "
+              + keys
+              + ")";
+      Measurement m =
+          ctx.runner()
+              .statement(Account.MIGRATOR, "Q14/c59_hash_" + label + "_" + table, sql, Map.of());
+      hashes.put(table, Tsv.rows(m.body()).get(0));
+    }
+    return hashes;
   }
 
   private static List<LocalDate> window(LocalDate first, LocalDate last, int days) {

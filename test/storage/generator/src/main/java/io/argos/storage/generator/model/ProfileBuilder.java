@@ -68,11 +68,11 @@ public final class ProfileBuilder {
     boolean write = false;
     long writeDb = 0;
     int sqlEnd = 0;
-    if (tx.dbcTimeMs > 0 && !tx.sqlRuns.isEmpty()) {
+    if (tx.dbcWaitMs > 0 && !tx.sqlRuns.isEmpty()) {
       Topology.DbTarget db = tx.sqlRuns.get(0).sql.db;
       body.add(
           new ProfileStep(
-              tx, ProfileStep.DBC, tx.dbcOffsetMs, tx.dbcTimeMs, db.poolNameId(), db.poolId()));
+              tx, ProfileStep.DBC, tx.dbcOffsetMs, tx.dbcWaitMs, db.poolNameId(), db.poolId()));
     }
     for (SqlRun run : tx.sqlRuns) {
       ProfileStep s =

@@ -81,7 +81,7 @@ public final class Topology {
     public final long userSalt;
     public final long threadHttpId;
     public final long threadBatchId;
-    public final long[] versionIds;
+    public final long[] appVersionIds;
     public final List<Instance> instances = new ArrayList<>();
     public final List<Service> httpServices = new ArrayList<>();
     public final List<SqlStatement> sqls = new ArrayList<>();
@@ -112,7 +112,7 @@ public final class Topology {
         long salt,
         long threadHttpId,
         long threadBatchId,
-        long[] versionIds) {
+        long[] appVersionIds) {
       this.id = id;
       this.index = index;
       this.name = name;
@@ -122,7 +122,7 @@ public final class Topology {
       this.userSalt = salt;
       this.threadHttpId = threadHttpId;
       this.threadBatchId = threadBatchId;
-      this.versionIds = versionIds;
+      this.appVersionIds = appVersionIds;
     }
   }
 
@@ -175,8 +175,8 @@ public final class Topology {
     }
 
     /** Version dictionary key running at a true instant. */
-    public long versionIdAt(long trueMs) {
-      return trueMs < restartEnd ? app.versionIds[0] : app.versionIds[versionAfter];
+    public long appVersionIdAt(long trueMs) {
+      return trueMs < restartEnd ? app.appVersionIds[0] : app.appVersionIds[versionAfter];
     }
 
     /** Agent clock of a true instant. */

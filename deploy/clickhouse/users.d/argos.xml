@@ -4,7 +4,10 @@
   SEC-74, SEC-76). Install as /etc/clickhouse-server/users.d/argos.xml (Compose: mounted read-only).
 
   Accounts (least privilege):
-    argos_writer    INSERT on argos.* only. Batch writer (13 section 7.4). No DDL, no SELECT.
+    argos_writer    INSERT on the five raw tables only (argos.xlog, argos.profile_step,
+                    argos.metric, argos.sql_stat_raw, argos.ext_stat_raw; docs/adr/0007 C-60,
+                    SEC-76). Batch writer (13 section 7.4). No DDL, no SELECT, no INSERT into a
+                    rollup table: the rollups are written only by the SQL SECURITY DEFINER views.
                     The profile pins what the batch writer relies on (constraints): async_insert,
                     insert_deduplicate, deduplicate_blocks_in_dependent_materialized_views,
                     log_queries, readonly and allow_ddl cannot be changed (passing the profile value
@@ -14,8 +17,10 @@
                     readonly = 1: no INSERT, no DDL, no setting changes except the query limits
                     below, which a query may only lower (changeable_in_readonly constraints).
     argos_migrator  CREATE DATABASE, CREATE TABLE, CREATE VIEW, DROP DATABASE, DROP TABLE, DROP VIEW,
-                    ALTER, INSERT, SELECT, BACKUP on argos.*. Migration runner, rollup rebuild,
-                    privacy deletion mutations, emergency DROP PARTITION (13 section 7.3).
+                    ALTER, INSERT, SELECT, BACKUP on argos.*, and SELECT on system.mutations (the
+                    deletion job polls the completion of its own mutations, C-60). Migration runner,
+                    rollup rebuild, privacy deletion mutations, emergency DROP PARTITION (13 section
+                    7.3).
                     Materialized views are created by this account and run with its rights
                     (SQL SECURITY DEFINER). No CREATE/DROP DICTIONARY, FUNCTION or NAMED COLLECTION:
                     Argos uses no ClickHouse dictionary (DSN-13-09), and a dictionary source would
@@ -36,8 +41,11 @@
     ARGOS_CH_READER_MAX_MEMORY_USAGE    bytes per read query. 16 GiB host: 3221225472 (3 GiB),
                                         otherwise 0.4 x ARGOS_CH_MAX_SERVER_MEMORY_USAGE
 
-  Database name: the grants name the default database "argos" (argos.storage.clickhouse.database).
-  An installation that changes the database name (DSN-13-11) must change the three GRANT lines.
+  Database name and table prefix: the grants name the default database "argos" and the default
+  empty table prefix (argos.storage.clickhouse.database / table-prefix). An installation that changes
+  them (DSN-13-11) writes the same grants with its own names: argos.* -> <db>.*, and for the writer
+  <db>.<prefix>xlog, <db>.<prefix>profile_step, <db>.<prefix>metric, <db>.<prefix>sql_stat_raw and
+  <db>.<prefix>ext_stat_raw (the installer renders them, WO-40).
 -->
 <clickhouse>
   <profiles>
@@ -149,8 +157,13 @@
       <networks>
         <ip>::/0</ip>
       </networks>
+      <!-- INSERT on the raw tables only (C-60): ClickHouse grants one table per statement. -->
       <grants>
-        <query>GRANT INSERT ON argos.*</query>
+        <query>GRANT INSERT ON argos.xlog</query>
+        <query>GRANT INSERT ON argos.profile_step</query>
+        <query>GRANT INSERT ON argos.metric</query>
+        <query>GRANT INSERT ON argos.sql_stat_raw</query>
+        <query>GRANT INSERT ON argos.ext_stat_raw</query>
       </grants>
     </argos_writer>
 
@@ -181,6 +194,7 @@
       </networks>
       <grants>
         <query>GRANT CREATE DATABASE, CREATE TABLE, CREATE VIEW, DROP DATABASE, DROP TABLE, DROP VIEW, ALTER, INSERT, SELECT, BACKUP ON argos.*</query>
+        <query>GRANT SELECT ON system.mutations</query>
       </grants>
     </argos_migrator>
   </users>

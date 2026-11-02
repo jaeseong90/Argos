@@ -5,7 +5,8 @@
 //   integrationTest  Testcontainers ClickHouse with the deploy/clickhouse configuration:
 //                    schema apply (empty server, twice), rollup views, dedup token with views,
 //                    accounts and limits (SEC-74, SEC-76, T-ST-053), 13 §17 confirmation items,
-//                    previous LTS -> bundled LTS upgrade (T-ST-051)
+//                    previous LTS -> bundled LTS upgrade (T-ST-051); row times relative to an
+//                    anchor day (today - 2 days UTC, -Pschema.anchorOffsetDays=<n>), never fixed
 // Evidence values (sizes, settings, timings) go to build/reports/clickhouse-schema/.
 
 plugins { id("argos.integration-test") }
@@ -36,7 +37,20 @@ tasks.withType<Test>().configureEach {
     .withPropertyName("clickhouseDeployFiles")
 }
 
+tasks.named<Test>("test") {
+  // FixedDatesTest reads the integration test sources (no fixed row dates).
+  inputs
+    .dir(layout.projectDirectory.dir("src/integrationTest"))
+    .withPathSensitivity(PathSensitivity.RELATIVE)
+    .withPropertyName("integrationTestSources")
+}
+
 tasks.named<Test>("integrationTest") {
   // One Docker-heavy class at a time: the machine is shared with other benchmarks.
   maxParallelForks = 1
+  // -Pschema.anchorOffsetDays=<n>: rows are written around today - n days (UTC), default 2, valid
+  // 2..12 (Workload.anchorDay; 12 is the raw retention of 14 days less the guard's margin).
+  providers.gradleProperty("schema.anchorOffsetDays").orNull?.let {
+    systemProperty("argos.test.anchorOffsetDays", it)
+  }
 }

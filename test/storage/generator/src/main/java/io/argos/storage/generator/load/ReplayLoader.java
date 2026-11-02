@@ -144,7 +144,7 @@ public final class ReplayLoader implements RowConsumer, AutoCloseable {
                 new Block(
                     q.table,
                     q.sequence++,
-                    intent.blockId(),
+                    intent.token(),
                     q.rows,
                     q.buffer.toByteArray(),
                     Arrays.copyOf(q.received, q.rows),
@@ -190,7 +190,7 @@ public final class ReplayLoader implements RowConsumer, AutoCloseable {
   private void recover(BlockSender sender, Block current, boolean firstSend)
       throws InterruptedException {
     for (Intent open : wal.uncommitted()) {
-      if (open.table() != current.table() || !open.blockId().equals(current.blockId())) {
+      if (open.table() != current.table() || !open.token().equals(current.token())) {
         continue; // other writers own their intents; this simulation crashes one block
       }
       if (firstSend) {

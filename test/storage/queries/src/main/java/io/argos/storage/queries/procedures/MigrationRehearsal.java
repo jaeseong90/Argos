@@ -9,6 +9,7 @@ import io.argos.storage.queries.ProcedureResult;
 import io.argos.storage.queries.ProcedureResult.Table;
 import io.argos.storage.queries.QueryFile;
 import io.argos.storage.queries.Tsv;
+import io.argos.storage.schema.RollupRebuild;
 import io.argos.storage.schema.SchemaParameters;
 import io.argos.storage.schema.SchemaRenderer;
 import java.time.LocalDate;
@@ -78,22 +79,45 @@ public final class MigrationRehearsal {
               + v2
               + "\nSQL SECURITY DEFINER AS "
               + renderer.rollupSelect("service_stat_1m", schema, "");
-      String backfill =
-          renderer.rebuildInsert("service_stat_1m", v2, schema, "toDate(ts) = '" + day + "'");
+      // Backfill with the rebuild procedure of ADR-0007 C-59: staging table + REPLACE PARTITION of
+      // the whole day, never an INSERT into the rollup table itself.
+      String staging = v2 + RollupRebuild.STAGING_SUFFIX;
+      List<String> backfill =
+          List.of(
+              "DROP TABLE IF EXISTS " + staging + " SYNC",
+              "CREATE TABLE " + staging + " AS " + v2,
+              renderer.rebuildInsert(
+                  "service_stat_1m",
+                  staging,
+                  schema,
+                  RollupRebuild.sourcePredicate("service_stat_1m", day)),
+              "ALTER TABLE "
+                  + v2
+                  + " REPLACE PARTITION "
+                  + RollupRebuild.dayPartition(day)
+                  + " FROM "
+                  + staging,
+              "DROP TABLE " + staging + " SYNC");
       Measurement m1 =
           ctx.runner().statement(Account.MIGRATOR, "Q19/mv_1_create_table", create, Map.of());
       Measurement m2 =
           ctx.runner().statement(Account.MIGRATOR, "Q19/mv_1_create_view", view, Map.of());
       steps.add(new Step("MV step 1: create service_stat_1m_v2 + view", true, List.of(m1, m2)));
-      Measurement m3 =
-          ctx.runner()
-              .statement(
-                  Account.MIGRATOR,
-                  "Q19/mv_2_backfill",
-                  backfill,
-                  Map.of("max_execution_time", "3600"));
+      List<Measurement> m3 = new ArrayList<>();
+      for (int i = 0; i < backfill.size(); i++) {
+        m3.add(
+            ctx.runner()
+                .statement(
+                    Account.MIGRATOR,
+                    "Q19/mv_2_backfill_" + i,
+                    backfill.get(i),
+                    Map.of("max_execution_time", "3600")));
+      }
       steps.add(
-          new Step("MV step 2: backfill " + day + " (rebuild statement, D-14)", true, List.of(m3)));
+          new Step(
+              "MV step 2: backfill " + day + " (C-59: staging + REPLACE PARTITION, D-14)",
+              true,
+              m3));
       Measurement m4 = ctx.runner().stepOk(f, "mv_compare", p, Map.of());
       mismatches = Tsv.count(m4.body());
       steps.add(
@@ -115,6 +139,17 @@ public final class MigrationRehearsal {
       ctx.runner().step(f, "drop_column", p, Map.of());
       ctx.runner().step(f, "mv_drop_view", p, Map.of());
       ctx.runner().step(f, "mv_drop_table", p, Map.of());
+      ctx.runner()
+          .execute(
+              Account.MIGRATOR,
+              "DROP TABLE IF EXISTS "
+                  + schema.table("service_stat_1m_v2" + RollupRebuild.STAGING_SUFFIX)
+                  + " SYNC",
+              Map.of(),
+              Parameters.empty(),
+              "Q19/mv_drop_staging",
+              "once",
+              false);
     }
     List<List<String>> rows = new ArrayList<>();
     for (Step step : steps) {

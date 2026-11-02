@@ -10,6 +10,7 @@ import com.github.dockerjava.api.model.PortBinding;
 import com.github.dockerjava.api.model.Ports;
 import com.github.dockerjava.api.model.Ulimit;
 import com.github.dockerjava.api.model.Volume;
+import io.argos.storage.schema.SchemaParameters;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.InetAddress;
@@ -32,6 +33,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.regex.Pattern;
 import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.Container.ExecResult;
 import org.testcontainers.containers.ExecConfig;
@@ -67,6 +71,14 @@ public final class ArgosClickHouse implements AutoCloseable {
   public static final String LOOPBACK = "127.0.0.1";
 
   private static final String CONFIG_ROOT = "/etc/clickhouse-server/";
+
+  /**
+   * Test-only users.d file with the writer grants of extra table prefixes ({@link
+   * Builder#writerTablePrefixes}); merged after users.d/argos.xml.
+   */
+  public static final String WRITER_PREFIX_GRANTS = "users.d/zz-argos-test-writer-prefixes.xml";
+
+  private static final Pattern TABLE_PREFIX = Pattern.compile("[A-Za-z0-9_]+");
   private static final String DATA_DIR = "/var/lib/clickhouse";
   private static final SecureRandom RANDOM = new SecureRandom();
   private static final System.Logger LOG = System.getLogger(ArgosClickHouse.class.getName());
@@ -197,6 +209,7 @@ public final class ArgosClickHouse implements AutoCloseable {
     private Path clickhouseDir = RepositoryLayout.clickhouseDir();
     private final Map<String, String> extraConfig = new LinkedHashMap<>();
     private final Map<String, String> environmentOverrides = new LinkedHashMap<>();
+    private final Set<String> writerTablePrefixes = new TreeSet<>();
     private String dataVolume;
     private Duration startupTimeout = Duration.ofMinutes(3);
 
@@ -237,6 +250,29 @@ public final class ArgosClickHouse implements AutoCloseable {
      */
     public Builder environment(String name, String value) {
       environmentOverrides.put(name, value);
+      return this;
+    }
+
+    /**
+     * Table prefixes ({@code {p}}, DSN-13-11) whose five raw tables the writer may insert into,
+     * besides the default empty prefix of users.d/argos.xml. users.d/argos.xml grants INSERT on
+     * {@code argos.xlog}, {@code argos.profile_step}, {@code argos.metric}, {@code
+     * argos.sql_stat_raw} and {@code argos.ext_stat_raw} only (ADR-0007 C-60); an installation with
+     * another prefix writes the same five grants with its prefix (WO-40). The tests keep several
+     * schemas in one server under different prefixes, so the launcher adds those grants in a
+     * test-only users.d file ({@link #WRITER_PREFIX_GRANTS}): GRANT queries tagged with an
+     * attribute, which ClickHouse appends to the writer's grants instead of replacing them. The
+     * rollup tables of a prefix are never granted.
+     */
+    public Builder writerTablePrefixes(String... prefixes) {
+      for (String prefix : prefixes) {
+        if (!prefix.isEmpty()) {
+          if (!TABLE_PREFIX.matcher(prefix).matches()) {
+            throw new IllegalArgumentException("Invalid table prefix: " + prefix);
+          }
+          writerTablePrefixes.add(prefix);
+        }
+      }
       return this;
     }
 
@@ -371,6 +407,12 @@ public final class ArgosClickHouse implements AutoCloseable {
                               Ports.Binding.bindIp(LOOPBACK), ExposedPort.tcp(HTTP_PORT)));
                     }
                   });
+      if (!writerTablePrefixes.isEmpty()) {
+        container.withCopyToContainer(
+            Transferable.of(
+                writerPrefixGrants(writerTablePrefixes).getBytes(StandardCharsets.UTF_8)),
+            CONFIG_ROOT + WRITER_PREFIX_GRANTS);
+      }
       for (Map.Entry<String, String> e : extraConfig.entrySet()) {
         container.withCopyToContainer(
             Transferable.of(e.getValue().getBytes(StandardCharsets.UTF_8)),
@@ -405,6 +447,30 @@ public final class ArgosClickHouse implements AutoCloseable {
    * @param effective {@code NetworkSettings.Ports} host IPs (what Docker actually bound)
    */
   public record HttpPublication(List<String> configured, List<String> effective) {}
+
+  /**
+   * The test-only users.d file of {@link Builder#writerTablePrefixes}: INSERT on the five raw
+   * tables of each prefix in the database {@code argos}.
+   */
+  static String writerPrefixGrants(Set<String> prefixes) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("<!-- SPDX-License-Identifier: Apache-2.0 -->\n");
+    sb.append("<!-- Test only (ArgosClickHouse.writerTablePrefixes): the writer grants of");
+    sb.append(" users.d/argos.xml for extra table prefixes. -->\n");
+    sb.append("<clickhouse>\n  <users>\n    <argos_writer>\n      <grants>\n");
+    for (String prefix : prefixes) {
+      for (String table : SchemaParameters.RAW_TABLES) {
+        sb.append("        <query argos-test-prefix=\"")
+            .append(prefix)
+            .append("\">GRANT INSERT ON argos.")
+            .append(prefix)
+            .append(table)
+            .append("</query>\n");
+      }
+    }
+    sb.append("      </grants>\n    </argos_writer>\n  </users>\n</clickhouse>\n");
+    return sb.toString();
+  }
 
   /** 32 random bytes, base64url without padding (the installer's format, 17 §3.7). */
   static String newPassword() {

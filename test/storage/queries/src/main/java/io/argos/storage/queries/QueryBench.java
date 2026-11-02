@@ -69,7 +69,7 @@ public final class QueryBench {
         Server server =
             o.containsKey("url")
                 ? Server.external(URI.create(o.get("url")), System.getenv())
-                : Server.container(o.get("volume"), memory)) {
+                : Server.container(o.get("volume"), memory, schema.tablePrefix())) {
       if (o.containsKey("apply-schema")) {
         SchemaApplier.apply(server.client(Account.MIGRATOR), schema);
       }

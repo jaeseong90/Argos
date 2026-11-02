@@ -51,7 +51,7 @@ final class SimulationFixture implements RowConsumer {
   long rootHttpSqlIds;
   long rootHttpWithUser;
   long rootHttpWithRequest;
-  long timeoutFlags;
+  long timedOutCount;
   final Set<Long> txIds = new HashSet<>();
   final Set<Integer> remoteIps = new HashSet<>();
   final Set<Long> errorGroups = new HashSet<>();
@@ -237,7 +237,7 @@ final class SimulationFixture implements RowConsumer {
     clamped += tx.clamped ? 1 : 0;
     errors += tx.error ? 1 : 0;
     captured += tx.profileCaptured ? 1 : 0;
-    timeoutFlags += tx.timeoutFlag ? 1 : 0;
+    timedOutCount += tx.timedOut ? 1 : 0;
     sqlCount += tx.sqlCount;
     sqlTimeMs += tx.sqlTimeMs;
     extCount += tx.extCount();
@@ -247,7 +247,7 @@ final class SimulationFixture implements RowConsumer {
         violations.add("error group of another app");
       }
     }
-    versionsSeen.add(tx.versionId);
+    versionsSeen.add(tx.appVersionId);
     if (tx.kind == Transaction.BATCH) {
       batch++;
     } else if (tx.callerAppId != 0) {

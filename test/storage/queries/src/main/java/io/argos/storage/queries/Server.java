@@ -40,14 +40,18 @@ public interface Server extends AutoCloseable {
   @Override
   void close();
 
-  /** A container started by this server object; {@code volume} null means an anonymous volume. */
-  static Server container(String volume, long memoryLimitBytes) {
-    return new ContainerServer(volume, memoryLimitBytes, null);
+  /**
+   * A container started by this server object; {@code volume} null means an anonymous volume. The
+   * writer may insert into the raw tables of {@code tablePrefix} (ADR-0007 C-60: users.d grants the
+   * default prefix only; ArgosClickHouse adds the grants of another prefix).
+   */
+  static Server container(String volume, long memoryLimitBytes, String tablePrefix) {
+    return new ContainerServer(volume, memoryLimitBytes, tablePrefix, null);
   }
 
   /** Wraps a running container that the caller owns (tests); not restartable. */
   static Server wrap(ArgosClickHouse running) {
-    return new ContainerServer(null, running.memoryBudget().limitBytes(), running);
+    return new ContainerServer(null, running.memoryBudget().limitBytes(), "", running);
   }
 
   /**
@@ -62,18 +66,22 @@ public interface Server extends AutoCloseable {
   final class ContainerServer implements Server {
     private final String volume;
     private final long memoryLimitBytes;
+    private final String tablePrefix;
     private final boolean owned;
     private ArgosClickHouse clickHouse;
 
-    ContainerServer(String volume, long memoryLimitBytes, ArgosClickHouse running) {
+    ContainerServer(
+        String volume, long memoryLimitBytes, String tablePrefix, ArgosClickHouse running) {
       this.volume = volume;
       this.memoryLimitBytes = memoryLimitBytes;
+      this.tablePrefix = tablePrefix;
       this.owned = running == null;
       this.clickHouse = running == null ? start() : running;
     }
 
     private ArgosClickHouse start() {
-      ArgosClickHouse.Builder builder = ArgosClickHouse.builder().memoryLimit(memoryLimitBytes);
+      ArgosClickHouse.Builder builder =
+          ArgosClickHouse.builder().memoryLimit(memoryLimitBytes).writerTablePrefixes(tablePrefix);
       if (volume != null) {
         builder.dataVolume(volume);
       }

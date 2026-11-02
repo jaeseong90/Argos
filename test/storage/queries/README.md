@@ -27,7 +27,7 @@ read and run by hand.
 | `@variant name k=v` | a measured statement with literal parameters; `@expect rows >= 1` marks a broken lookup |
 | `@step name` | a statement run by a procedure |
 
-Placeholders: `{db}`, `{p}`, `{retention.*}`, `{bloom.*}` are rendered from the schema parameters (identifiers and
+Placeholders: `{db}`, `{p}`, `{retention.*}` are rendered from the schema parameters (identifiers and
 numbers only); `{name:Type}` are ClickHouse query parameters bound by the server from `param_<name>`, so values
 never enter the SQL text. `params.sql` resolves the shared values once per run from the loaded data (range,
 busiest application); each file's probes add its own (a transaction id, a trace id, a user id, an SQL id).
@@ -52,15 +52,15 @@ on the dedicated host), or `none` (the first run, caches warm).
 
 | Id | Class | What it measures |
 |---|---|---|
-| Q05/bloom | `BloomVariants` | xlog copies with bloom fpp 0.01/0.025 x GRANULARITY 1/4: index size, tx/trace/user/sql lookups without a range |
+| Q05/bloom | `BloomVariants` | xlog copies with bloom fpp 0.01/0.025 x GRANULARITY 1/4 (variant DDL built from the V001 literals, ADR-0007 C-55/C-56): index size, tx/trace/user/sql lookups without a range |
 | Q11/cost | `SqlIdsCost` | disk cost of `sql_ids` and its bloom index per row and GB/day at 500 TPS (A-10) |
-| Q14 | `PercentileAccuracy` | tDigest / BFloat16 / DD state merges vs quantileExact at 1m/1h/1d (value and rank error, 1m maximum per day), bucket p95 error, state size (A-11); D-14 rebuild determinism (1m and 1h states of one day rebuilt twice, state bytes and values compared) |
+| Q14 | `PercentileAccuracy` | tDigest / BFloat16 / DD state merges vs quantileExact at 1m/1h/1d (value and rank error, 1m maximum per day), judged on the C-53 criteria (1m group p95 value error of p50/p95 <= 2 %, p99 value error at 1h and above <= 5 %, 1m p99 rank error <= 0.5 pp); stored `quantilesDD` states of the loaded data (`Q14/dd_stored`); bucket p95 error, state size (A-11); D-14 rebuild determinism (1m and 1h states of one day rebuilt twice, state bytes and values compared) and, on the loaded data, `Q14/d14_rebuild`: the rollups of the last full day rebuilt twice with the C-59 procedure, the stored DD states compared byte for byte with the view-filled ones and between the rebuilds |
 | Q15 | `DedupReinsert` | same token 100x, broken view, repair, retry (D-13) |
 | Q16 | `LateArrival` | late rows update exactly their minutes and hours; Q12 again (D-03) |
 | Q17 | `ConcurrentLoad` | virtual users running Q1/Q3/Q7 (1d_live: last 2 minutes from xlog) every 5 s; live window (end_minute = server minute, renewed per iteration) during a replay, fixed otherwise; latency and rows read per query; parts, DelayedInserts, memory (N-06); the replay is the generator's |
 | Q18 | `RetentionOps` | user_id deletion: the two forms on two copies with the same content (d - 1 and d), same subject, alternating order, repeated; DROP PARTITION and disk reclaim; MATERIALIZE TTL on a day copy |
-| Q19 | `MigrationRehearsal` | ADD/DROP COLUMN, MODIFY TTL materialize 0, no-op control (same TTL, materialize 1), real retention change (+1 day, materialize 1) and restore, MV replacement in 4 steps (DDL from deploy/clickhouse) |
-| Q20 | `CompressionComparison` | ratio and bytes per row of every table; LZ4 vs ZSTD(1) default x column codecs on/off and the PoC proposal (`ProposedCodecs`), each table from its latest full 24 hours, merges settled, repeated |
+| Q19 | `MigrationRehearsal` | ADD/DROP COLUMN, MODIFY TTL materialize 0, no-op control (same TTL, materialize 1), real retention change (+1 day, materialize 1) and restore, MV replacement in 4 steps (DDL from deploy/clickhouse, backfill with the C-59 procedure) |
+| Q20 | `CompressionComparison` | ratio and bytes per row of every table; six variants: `base` (V001, ZSTD(1), C-54), `lz4` (the pre-ADR-0007 V001, `LegacyCodecs`), `lz4_nocodec`, `lz4cols_zstd`, `nocodec` and `proposed` (the WO-03 proposal, `ProposedCodecs`), each table from its latest full 24 hours, merges settled, repeated |
 
 ## CLI (`QueryBench`)
 
@@ -83,9 +83,9 @@ system.query_log record) in `build/reports/storage-queries/bench/`.
 
 | Class | Covers |
 |---|---|
-| `ConsistencyIT` | T-ST-030 (raw counts, late rows and sum(app_stat_1m) = ground truth right after the load; Q12 per minute, 1h cascade, errors, nightly form), T-ST-031 (Q13 totals, raw vs 1m vs 1h per day, raw vs 1m per minute; per day: loaded values = manifest, the daily checks report exactly the manifest's midnight days), T-ST-032 (Q15), T-ST-033 (Q16, 20,000 rows), negative controls (incl. a key found only in the third source) |
+| `ConsistencyIT` | T-ST-030 (raw counts, late rows and sum(app_stat_1m) = ground truth right after the load; Q12 per minute, 1h cascade, errors, nightly form, all in the C-65 form), T-ST-031 (Q13 totals, raw vs 1m vs 1h per day, raw vs 1m per minute exact; per day: loaded values = manifest, and the daily and nightly checks find 0 days under the C-57 rule, which the data needs: every day whose xlog and statistics differ stays within the counts of its midnight-crossing transactions), T-ST-032 (Q15), T-ST-033 (Q16, 20,000 rows), negative controls (incl. a key found only in the third source and a per-day difference beyond the C-57 bound) |
 | `ReaderLimitsIT` | T-ST-053: Q01..Q11 as argos_reader with limits, every run in system.query_log; limits enforced; every DDL/write statement of the catalog refused |
-| `BenchRunIT`, `ColdRestartIT` | the whole catalog and every procedure end to end, report written (on `-Pqueries.profile=ci`: a harness smoke run, Q01..Q11 once each, no copy procedures Q05/bloom, Q18, Q20; `-Pqueries.benchrun=full` for all); restart cold strategy |
+| `BenchRunIT`, `ColdRestartIT` | the whole catalog and every procedure end to end, report written (on `-Pqueries.profile=ci`: a harness smoke run, Q01..Q11 once each, no copy procedures Q05/bloom, Q18, Q20; `-Pqueries.benchrun=full`, passed to the test JVM as `argos.queries.benchrun`, runs all of them on any profile); Q14 on the loaded data with the C-59 rebuild check; restart cold strategy |
 
 The CI dataset is loaded by the PoC generator (test/storage/generator, 2 days at 1 TPS through the writer path);
 `-Pqueries.profile=ci` loads the generator's 1/100 profile instead (about 13 million xlog rows, 18 §9; about 3

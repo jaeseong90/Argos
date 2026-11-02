@@ -10,7 +10,7 @@ import io.argos.storage.clickhouse.ClickHouseImage;
 import io.argos.storage.schema.SchemaApplier;
 import io.argos.storage.schema.SchemaParameters;
 import io.argos.storage.schema.SchemaRenderer;
-import java.time.Instant;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -46,7 +46,7 @@ class UpgradeIT {
           + " FROM argos.sql_stat_1h GROUP BY sql_id, kind, hour) ORDER BY 1, 2, 3, 4";
 
   private static final String MERGED_QUANTILES =
-      "SELECT app_id, kind, hour, quantilesTDigestMerge(0.5, 0.95, 0.99)(q_elapsed)"
+      "SELECT app_id, kind, hour, quantilesDDMerge(0.01, 0.5, 0.95, 0.99)(q_elapsed)"
           + " FROM argos.app_stat_1h GROUP BY app_id, kind, hour ORDER BY app_id, kind, hour";
 
   @Test
@@ -60,9 +60,10 @@ class UpgradeIT {
       // 26.3 does not know the 26.8 table setting; a 26.3-era installation has tables without it.
       statements.add(s.replaceAll(",\\s*allow_dimensions_outside_sorting_key = 1", ""));
     }
-    Workload w = Workload.generate(11, Instant.parse("2026-10-24T23:40:00Z"), 30, 60);
+    Workload w = Workload.generate(11, Workload.at(LocalTime.of(23, 40)), 30, 60);
     try {
       List<List<String>> exactBefore;
+      List<List<String>> mergedBefore;
       List<List<String>> statesFinalizedBefore;
       byte[] stateBytesBefore;
       try (ArgosClickHouse old =
@@ -78,7 +79,7 @@ class UpgradeIT {
         // A plain MergeTree copy of the stored states (no aggregation on merge, fixed row order).
         migrator.execute(
             "CREATE TABLE argos.upgrade_states (rn UInt64, app_id UInt32, minute DateTime('UTC'),"
-                + " q AggregateFunction(quantilesTDigest(0.5, 0.95, 0.99), UInt32),"
+                + " q AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32),"
                 + " b AggregateFunction(sumForEach, Array(UInt64))) ENGINE = MergeTree ORDER BY rn");
         migrator.execute(
             "INSERT INTO argos.upgrade_states SELECT rowNumberInAllBlocks(), a.app_id, a.minute,"
@@ -91,8 +92,8 @@ class UpgradeIT {
         statesFinalizedBefore = finalizedStates(migrator);
         stateBytesBefore = stateBytes(migrator);
         Evidence.record(TOPIC, "written by", migrator.scalar("SELECT version()"));
-        Evidence.record(
-            TOPIC, "merged tDigest on the writer version", migrator.rows(MERGED_QUANTILES));
+        mergedBefore = migrator.rows(MERGED_QUANTILES);
+        Evidence.record(TOPIC, "merged quantilesDD on the writer version", mergedBefore);
       }
 
       try (ArgosClickHouse current = ArgosClickHouse.builder().dataVolume(volume).start()) {
@@ -107,7 +108,7 @@ class UpgradeIT {
         assertThat(migrator.rows(EXACT)).isEqualTo(exactBefore);
         Evidence.record(
             TOPIC,
-            "states compared (tDigest + sumForEach rows, RowBinary bytes)",
+            "states compared (quantilesDD + sumForEach rows, RowBinary bytes)",
             statesFinalizedBefore.size()
                 + " rows, "
                 + stateBytesBefore.length
@@ -118,8 +119,11 @@ class UpgradeIT {
         }
         Evidence.record(
             TOPIC,
-            "merged tDigest on the reader version, distinct results over 5 runs (merge order)",
+            "merged quantilesDD on the reader version, distinct results over 5 runs",
             mergedRuns.size() + ": " + mergedRuns);
+        // C-53: DD merges add bucket counts, so the merged values do not depend on the merge order
+        // or the version (tDigest gave 80.4 vs 80.22222 here before ADR-0007).
+        assertThat(mergedRuns).containsExactly(mergedBefore);
 
         // The deduplication log of the old server is still honoured after the restart.
         long rows = migrator.scalarLong("SELECT count() FROM argos.xlog");
@@ -128,7 +132,7 @@ class UpgradeIT {
         assertThat(migrator.rows(EXACT)).isEqualTo(exactBefore);
 
         // New states (26.8) merge with old states (26.3).
-        Workload more = Workload.generate(12, Instant.parse("2026-10-25T00:05:00Z"), 5, 60);
+        Workload more = Workload.generate(12, Workload.at(1, LocalTime.of(0, 5)), 5, 60);
         RollupViewsIT.insertBlocks(
             writer, params, "xlog", Workload.XLOG_COLUMNS, more.xlog, 1000, "after");
         assertThat(migrator.scalarLong("SELECT sum(count) FROM argos.app_stat_1h"))

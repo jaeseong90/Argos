@@ -13,8 +13,8 @@
 --   accuracy_minute   1m state finalized
 --   accuracy_hour     1m states -> -Merge per hour
 --   accuracy_day      1m states -> -MergeState per hour -> -Merge per day
---   stored_hour       the stored tDigest states of app_stat_1m merged per hour (dataset source)
---   stored_day        the stored tDigest states of app_stat_1h merged per day (dataset source)
+--   stored_hour       the stored quantilesDD states of app_stat_1m merged per hour (dataset source)
+--   stored_day        the stored quantilesDD states of app_stat_1h merged per day (dataset source)
 -- The histogram column counts the values per 13 section 2 bucket (value <= bound; the 15th bucket
 -- is above 30,000 ms); the runner estimates the bucket p95 from it (BucketQuantile, as Q08).
 -- rank2 holds, for each of the nine estimates (td, bf, dd x p50/p95/p99), count(value < estimate) +
@@ -26,10 +26,14 @@
 -- (lognormal sigma = 1, median 80 ms, 1 % outliers uniform in 2..30 s, 13 section 15), generated on
 -- the server with deterministic hashes so that every scale of the PoC can judge A-11 on the same
 -- per-minute group size.
--- Criterion of 13 section 15 (state functions): relative error p50, p95 <= 2 %, p99 <= 5 %. The
--- verdict uses the maximum error over the groups with at least min_count values; the bucket p95
--- error is recorded. The maximum depends on the number of groups of a level (1m: 2,880 per day,
--- 1h: 24 x apps per day, 1d: one per app and day), so the report also lists the 1m maximum per day.
+-- Criterion (ADR-0007 C-53, which redefines the 13 section 15 criterion): the p95 over the 1m groups
+-- of the relative value error of p50 and of p95 <= 2 %, the maximum value error of p99 at 1h and
+-- above <= 5 %, and the maximum rank error of the 1m p99 <= 0.5 percentage points (the 1m p99 value
+-- error is ill-conditioned at the outlier gap and is recorded only). Groups with fewer than
+-- min_count values are not judged; the bucket p95 error is recorded (C-14). The maximum depends on
+-- the number of groups of a level (1m: 2,880 per day, 1h: 24 x apps per day, 1d: one per app and
+-- day), so the report also lists the 1m maximum per day. The transaction rollups store quantilesDD
+-- states (C-53); tDigest and BFloat16 stay in the comparison.
 -- D-14 determinism (steps determinism_*): the 1m states of one day are rebuilt twice from the raw
 -- values, single-threaded (a) and with 8 threads and small blocks (b, partial states merge in
 -- another order), the 1h states are merged from each, and the two rebuilds are compared per
@@ -37,11 +41,11 @@
 -- values.
 --
 -- @id        Q14
--- @title     Percentile accuracy: tDigest / BFloat16 / DD state merges vs quantileExact, 1m/1h/1d
--- @source    docs/13 §15 Q14, §17 #2; A-11; C-14; T-ST-042
+-- @title     Percentile accuracy: tDigest / BFloat16 / DD (stored, C-53) state merges vs quantileExact, 1m/1h/1d
+-- @source    docs/13 §15 Q14, §17 #2; A-11; ADR-0007 C-53, C-59; C-14; T-ST-042; D-14
 -- @kind      procedure
 -- @account   migrator
--- @criterion p50_err <= 0.02, p95_err <= 0.02, p99_err <= 0.05
+-- @criterion p50_err_1m_p95 <= 0.02, p95_err_1m_p95 <= 0.02, p99_err_1h_max <= 0.05, p99_rank_err_minute <= 0.005
 -- @settings  max_execution_time=1800
 
 -- @step synthetic_create
@@ -234,10 +238,10 @@ GROUP BY g.g_app, g.g_kind, g.g_t, g.n, g.exact, g.td, g.bf, g.dd, g.hist
 ORDER BY g.g_app, g.g_kind, g.g_t
 
 -- @step stored_hour
-SELECT st.app_id, st.kind, st.t, ex.n, ex.exact, st.td
+SELECT st.app_id, st.kind, st.t, ex.n, ex.exact, st.dd
 FROM
 (
-    SELECT app_id, kind, toStartOfHour(minute) AS t, quantilesTDigestMerge(0.5, 0.95, 0.99)(q_elapsed) AS td
+    SELECT app_id, kind, toStartOfHour(minute) AS t, quantilesDDMerge(0.01, 0.5, 0.95, 0.99)(q_elapsed) AS dd
     FROM {db}.{p}app_stat_1m
     WHERE minute >= {from:DateTime64(3)} AND minute < {to:DateTime64(3)}
     GROUP BY app_id, kind, t
@@ -252,10 +256,10 @@ INNER JOIN
 ORDER BY st.app_id, st.kind, st.t
 
 -- @step stored_day
-SELECT st.app_id, st.kind, st.t, ex.n, ex.exact, st.td
+SELECT st.app_id, st.kind, st.t, ex.n, ex.exact, st.dd
 FROM
 (
-    SELECT app_id, kind, toStartOfDay(hour) AS t, quantilesTDigestMerge(0.5, 0.95, 0.99)(q_elapsed) AS td
+    SELECT app_id, kind, toStartOfDay(hour) AS t, quantilesDDMerge(0.01, 0.5, 0.95, 0.99)(q_elapsed) AS dd
     FROM {db}.{p}app_stat_1h
     WHERE hour >= {from:DateTime64(3)} AND hour < {to:DateTime64(3)}
     GROUP BY app_id, kind, t

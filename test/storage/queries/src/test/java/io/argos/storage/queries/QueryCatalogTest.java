@@ -64,7 +64,9 @@ class QueryCatalogTest {
     assertThat(CATALOG.query("Q12").criterion().toString()).isEqualTo("rows == 0");
     assertThat(CATALOG.query("Q13").criterion().toString()).isEqualTo("rows == 0");
     assertThat(CATALOG.query("Q14").criterion().toString())
-        .isEqualTo("p50_err <= 0.02, p95_err <= 0.02, p99_err <= 0.05");
+        .isEqualTo(
+            "p50_err_1m_p95 <= 0.02, p95_err_1m_p95 <= 0.02, p99_err_1h_max <= 0.05,"
+                + " p99_rank_err_minute <= 0.005");
     assertThat(CATALOG.query("Q17").uses()).containsExactly("Q01/1h", "Q03/10m", "Q07/1d_live");
   }
 

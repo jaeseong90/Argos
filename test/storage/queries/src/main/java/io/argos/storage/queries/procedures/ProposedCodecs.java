@@ -7,7 +7,10 @@ import java.util.regex.Pattern;
 
 /**
  * The codec proposal of the storage PoC (docs/poc/clickhouse-benchmark.md 5.3 "제안" column and 12.5)
- * applied to a V001 CREATE TABLE statement of a raw table, for the Q20 variant {@code proposed}:
+ * applied to a pre-ADR-0007 V001 CREATE TABLE statement of a raw table ({@link LegacyCodecs}), for
+ * the Q20 variant {@code proposed}. ADR-0007 C-54 adopted the proposal for V001 with one
+ * difference: C-54 names {@code CODEC(Delta, ZSTD(1))} for xlog.tx_id only, the proposal also gives
+ * it to profile_step.tx_id. The proposal:
  *
  * <ul>
  *   <li>the LZ4 stage of every column codec becomes ZSTD(1): {@code DoubleDelta, ZSTD(1)}, {@code

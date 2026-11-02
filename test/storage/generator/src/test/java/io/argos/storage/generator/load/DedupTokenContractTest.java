@@ -54,7 +54,8 @@ class DedupTokenContractTest {
   }
 
   @Test
-  @DisplayName("Bulk tokens: argos:<table>:<block_id>, unique, re-sends repeat the previous token")
+  @DisplayName(
+      "C-61 bulk tokens: bulk-<run>:1:<first>-<last>, unique, re-sends repeat the previous token")
   void bulkTokens() throws Exception {
     CountingInserter sent = bulk(small());
     int resends = 0;
@@ -64,7 +65,9 @@ class DedupTokenContractTest {
       Set<String> distinct = new LinkedHashSet<>();
       String previous = null;
       for (String token : tokens) {
-        assertThat(token).matches(DedupToken.FORMAT).startsWith("argos:" + table.name() + ":");
+        assertThat(token)
+            .matches(DedupToken.FORMAT)
+            .matches("bulk-[0-9a-f]{12}:1:[0-9a-f]+-[0-9a-f]+");
         if (!distinct.add(token)) {
           assertThat(token).as("a re-send directly follows its block").isEqualTo(previous);
           resends++;
@@ -75,6 +78,15 @@ class DedupTokenContractTest {
       assertThat(tokens.get(1)).isEqualTo(tokens.get(0));
     }
     assertThat(resends).isGreaterThan(Table.ALL.size());
+    // The positions are the row numbers of the run over all tables: no two blocks of the run
+    // (of any table) share a token.
+    Set<String> all = new HashSet<>();
+    for (Table table : Table.ALL) {
+      all.addAll(new LinkedHashSet<>(sent.tokens(table)));
+    }
+    long distinctPerTable =
+        Table.ALL.stream().mapToLong(t -> new LinkedHashSet<>(sent.tokens(t)).size()).sum();
+    assertThat((long) all.size()).isEqualTo(distinctPerTable);
   }
 
   @Test
@@ -95,7 +107,9 @@ class DedupTokenContractTest {
   }
 
   @Test
-  @DisplayName("WAL block ids: <walId>-<segment>-<offset>, increasing, unique per WAL lifetime")
+  @DisplayName(
+      "C-61 WAL tokens: <wal_instance_id>:<epoch>:<first>-<last> recorded in the intent, unique per"
+          + " WAL instance and epoch")
   void walBlockIds() {
     WalSimulator wal = new WalSimulator("w1");
     long first = wal.append(100);
@@ -103,8 +117,28 @@ class DedupTokenContractTest {
     WalSimulator.Intent i1 = wal.intent(Table.XLOG, first, last, 2);
     WalSimulator.Intent i2 = wal.intent(Table.XLOG, last, last, 1);
     assertThat(i1.blockId()).matches("w1-00000001-[0-9a-f]{8}");
-    assertThat(i1.token()).isEqualTo("argos:xlog:" + i1.blockId()).matches(DedupToken.FORMAT);
+    assertThat(i1.token())
+        .isEqualTo("w1:1:" + Long.toHexString(first) + "-" + Long.toHexString(last))
+        .matches(DedupToken.FORMAT);
+    assertThat(i2.token())
+        .isEqualTo("w1:1:" + Long.toHexString(last) + "-" + Long.toHexString(last));
     assertThat(i2.blockId()).isGreaterThan(i1.blockId());
+    // Deterministic: the same records give the same token, whatever the intent position.
+    WalSimulator same = new WalSimulator("w1");
+    same.append(100);
+    same.append(100);
+    same.append(100);
+    assertThat(same.intent(Table.XLOG, first, last, 2).token()).isEqualTo(i1.token());
+    // A re-initialized WAL (next epoch) starts at the same positions with other tokens.
+    WalSimulator reinitialized = new WalSimulator("w1", 2);
+    WalSimulator.Intent k1 =
+        reinitialized.intent(Table.XLOG, reinitialized.append(100), reinitialized.append(100), 2);
+    assertThat(k1.firstPosition()).isEqualTo(first);
+    assertThat(k1.token()).startsWith("w1:2:").isNotEqualTo(i1.token());
+    assertThatThrownBy(() -> new WalSimulator("w1", 0))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> DedupToken.of("w1", 1, 5, 4))
+        .isInstanceOf(IllegalArgumentException.class);
     assertThat(wal.uncommitted()).containsExactly(i1, i2);
     wal.commit(i1);
     assertThat(wal.uncommitted()).containsExactly(i2);
@@ -143,7 +177,7 @@ class DedupTokenContractTest {
         };
     LoaderStats stats = new LoaderStats();
     BlockSender sender = new BlockSender(flaky, stats, 3, 1, 1, 0, false, () -> 0L);
-    Block block = new Block(Table.XLOG, 5, "x1", 1, new byte[] {1}, new long[0], 0);
+    Block block = new Block(Table.XLOG, 5, "x1:1:5-5", 1, new byte[] {1}, new long[0], 0);
     sender.send(block);
     assertThat(attempts).containsExactly(block.token(), block.token(), block.token());
     failuresLeft.set(100);

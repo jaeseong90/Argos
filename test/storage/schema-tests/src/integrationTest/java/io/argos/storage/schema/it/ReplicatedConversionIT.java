@@ -8,7 +8,7 @@ import io.argos.storage.clickhouse.ArgosClickHouse;
 import io.argos.storage.clickhouse.ClickHouseHttp;
 import io.argos.storage.schema.SchemaApplier;
 import io.argos.storage.schema.SchemaParameters;
-import java.time.Instant;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -55,7 +55,7 @@ class ReplicatedConversionIT {
   void convertsOnRestart() {
     String volume = "argos-wo03-replicated-" + UUID.randomUUID();
     SchemaParameters p = SchemaParameters.defaults().withTablePrefix("rep_");
-    Workload w = Workload.generate(21, Instant.parse("2026-10-24T10:00:00Z"), 10, 100);
+    Workload w = Workload.generate(21, Workload.at(LocalTime.of(10, 0)), 10, 100);
     try {
       String dataPath;
       try (ArgosClickHouse first = start(volume)) {
@@ -84,7 +84,7 @@ class ReplicatedConversionIT {
             .startsWith("ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')");
         assertThat(migrator.scalarLong("SELECT count() FROM argos.rep_xlog")).isEqualTo(1000);
 
-        Workload more = Workload.generate(22, Instant.parse("2026-10-24T11:00:00Z"), 1, 100);
+        Workload more = Workload.generate(22, Workload.at(LocalTime.of(11, 0)), 1, 100);
         RollupViewsIT.insertBlocks(
             second.client(Account.WRITER),
             p,
@@ -110,6 +110,7 @@ class ReplicatedConversionIT {
   private static ArgosClickHouse start(String volume) {
     return ArgosClickHouse.builder()
         .dataVolume(volume)
+        .writerTablePrefixes("rep_")
         .extraConfig("config.d/keeper.xml", KEEPER)
         .start();
   }

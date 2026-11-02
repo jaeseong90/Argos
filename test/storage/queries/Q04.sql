@@ -34,7 +34,7 @@ SELECT
 -- @variant range ymin=500 ymax=5000
 -- @expect rows >= 1
 SELECT ts, tx_id, service_id, elapsed_ms, http_status, error_class_id, instance_id,
-       sql_count, sql_time_ms, ext_count, ext_time_ms, user_id, user_id_mode, profile_captured, kind, version_id
+       sql_count, sql_time_ms, ext_count, ext_time_ms, user_id, user_id_mode, profile_captured, kind, app_version_id
 FROM {db}.{p}xlog
 PREWHERE app_id = {app:UInt32} AND ts >= {end_minute:DateTime} - INTERVAL 1 HOUR AND ts < {end_minute:DateTime}
      AND elapsed_ms BETWEEN {ymin:UInt32} AND {ymax:UInt32}
@@ -45,7 +45,7 @@ LIMIT 1000
 -- @variant range_services ymin=100 ymax=5000
 -- @expect rows >= 1
 SELECT ts, tx_id, service_id, elapsed_ms, http_status, error_class_id, instance_id,
-       sql_count, sql_time_ms, ext_count, ext_time_ms, user_id, user_id_mode, profile_captured, kind, version_id
+       sql_count, sql_time_ms, ext_count, ext_time_ms, user_id, user_id_mode, profile_captured, kind, app_version_id
 FROM {db}.{p}xlog
 PREWHERE app_id = {app:UInt32} AND ts >= {end_minute:DateTime} - INTERVAL 1 HOUR AND ts < {end_minute:DateTime}
      AND elapsed_ms BETWEEN {ymin:UInt32} AND {ymax:UInt32}
@@ -56,7 +56,7 @@ LIMIT 1000
 -- @variant range_errors ymin=0 ymax=60000
 -- @expect rows >= 1
 SELECT ts, tx_id, service_id, elapsed_ms, http_status, error_class_id, instance_id,
-       sql_count, sql_time_ms, ext_count, ext_time_ms, user_id, user_id_mode, profile_captured, kind, version_id
+       sql_count, sql_time_ms, ext_count, ext_time_ms, user_id, user_id_mode, profile_captured, kind, app_version_id
 FROM {db}.{p}xlog
 PREWHERE app_id = {app:UInt32} AND ts >= {end_minute:DateTime} - INTERVAL 1 HOUR AND ts < {end_minute:DateTime}
      AND elapsed_ms BETWEEN {ymin:UInt32} AND {ymax:UInt32}

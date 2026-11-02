@@ -85,7 +85,9 @@ public final class GeneratorMain {
 
   private static int docker(GeneratorConfig config, Path out) throws Exception {
     ArgosClickHouse.Builder builder =
-        ArgosClickHouse.builder().memoryLimit(parseBytes(config.dockerMemory));
+        ArgosClickHouse.builder()
+            .memoryLimit(parseBytes(config.dockerMemory))
+            .writerTablePrefixes(config.tablePrefix);
     if (!config.dockerVolume.isEmpty()) {
       builder.dataVolume(config.dockerVolume);
     }

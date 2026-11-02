@@ -2,14 +2,16 @@
 
 | 항목 | 내용 |
 |---|---|
-| 상태 | 로컬 참고 측정 완료. Gate 0 판정은 목표 하드웨어(`argos-storage`)에서 사람이 T-ST-001~020을 수행한 뒤 확정한다(13장) |
-| 날짜 | 2026-10-24(리뷰 r1 수정과 통합 재검증 포함, 16장) |
+| 상태 | 로컬 참고 측정 완료. Gate 0 판정은 목표 하드웨어(`argos-storage`)에서 사람이 T-ST-001~020을 수행한 뒤 확정한다(13장). ADR-0007(C-50~C-71) 반영은 17장(WO-03F) |
+| 날짜 | 2026-10-24(리뷰 r1 수정과 통합 재검증 포함, 16장), 2026-11-02(WO-03F, 17장) |
 | 작업 지시 | `docs/04-work-orders.md` WO-03 |
 | 입력 설계 | 13 §3·§4·§5·§6.3·§7·§15·§17, 18 §9, 02 §11 P-4·§12 A-6·A-9·A-10·A-11, C-1·C-2·C-6·C-16·C-17, 01 N-07·N-18·N-19 |
 | 번들 ClickHouse | **26.8.34.13** LTS(`v26.8.34.13-lts`, 2026-10-22), `clickhouse/clickhouse-server:26.8.34.13@sha256:8b28eb09479c36c4533eec7a6268917d04ba3a6fd90e3f4205f70e761b6d7779` |
-| 결정 초안 | [ADR-0006](../adr/0006-storage-poc-decisions.md)(Proposed) |
+| 결정 | [ADR-0006](../adr/0006-storage-poc-decisions.md)(결정 제안, Accepted with amendment) → [ADR-0007](../adr/0007-storage-alignment-decisions.md)(C-50~C-71, Accepted provisional) |
 
 ## 0. 요약
+
+> **WO-03F(2026-11-02)**: ADR-0007의 결정(C-53 `quantilesDD`, C-54 ZSTD(1) 코덱, C-55·C-56 bloom 리터럴과 템플릿 지시자, C-59 재구축 절차, C-60 계정 권한, C-61 토큰, C-65·C-57 정합 SQL, C-67 열 이름, C-71)을 V001·`deploy/clickhouse`·저장소 도구에 반영했다. 아래 1~16장의 수치는 **반영 전 스키마**(LZ4·tDigest·옛 열 이름)로 잰 값이다. 반영 내용, 다시 잰 값, 새로 찾은 충돌은 17장에 있다.
 
 - **환경 한계**: 목표 환경(사내 8코어/16GB/NVMe, 13억 행)이 없어 공유 노트북(Ryzen 5 5600H, 15.3GiB, Docker Desktop/WSL2)에서 **1/100(CI 자동 기준)**과 **1/20(로컬 최대 규모)**로 측정했다. 같은 머신에서 WO-02가 JVM 벤치·빌드를 동시에 돌렸고, 측정마다 머신 CPU 부하를 함께 적었다(대부분 20~100%). 이 문서의 모든 수치는 **참고값**이다.
 - **자동 기준(CI 1/100)**: 생성·적재(적재 직후 원본 5개 테이블·늦은 행·Σ app_stat_1m이 manifest와 정확히 일치), T-ST-030(Q12 0), T-ST-031(Q13: 범위 합계·raw ↔ 1m ↔ 1h·raw ↔ 1m 분 단위 충족, **일 단위(야간) D-12는 manifest 기대값과 일치(자정 귀속 차이만), PM 결정 대기**), T-ST-032(Q15), T-ST-033(Q16 늦은 도착 2만 행), T-ST-053(`argos_reader` 상한·`system.query_log`) 모두 녹색(7.1절). `pr.yml` integration 잡이 1/100 프로파일(`-Pqueries.profile=ci`)로 돈다.
@@ -302,11 +304,11 @@ Q1~Q11 전 변형 충족. 웜 중앙값: Q1 1h 52ms, Q2 7일 63ms, Q3 10분 71ms
 | T-ST-033 Q16 | **늦은 도착 2만 행**(13 §15, 5,000행 블록 4개) → 해당 분·시 롤업 갱신, Q12 재실행 | 분별 증가 = 삽입 행, Q12 0 |
 | 음성 대조 | 행 1개를 롤업 없이 추가(app_stat_1m, sql_stat_raw), ext_stat_1m에 원본 없는 행 1개, **세 번째 소스(service_stat_1m)에만 있는 키(app 999, BATCH)** | Q12·Q13 `total_30d`·`minute_raw_1m`이 1행씩 검출. 세 번째 소스에만 있는 키도 kind `BATCH`로 정확히 표시되고, `join_use_nulls=1`을 강제해도 같은 2행(UNION ALL 형태) |
 | 변이 검출(로컬 1회) | `rollups/ext_stat_1m.sql`의 `toStartOfMinute`를 `toStartOfFiveMinutes`로 바꾼 사본으로 Q12·Q13(저장소 파일은 바꾸지 않음) | `minute_raw_1m`만 실패(1,000행 = LIMIT), `rollups_14d`·`daily_30d`·`total_30d`는 통과. 분 단위 변형이 없으면 잡지 못하는 결함이다 |
-| T-ST-053 | `argos_reader` 상한(행·메모리·시간 초과 거부), 상한 올리기·다른 설정 거부, query_log 기록, 카탈로그 DDL·쓰기 35건 거부 | 통과 |
+| T-ST-053 | `argos_reader` 상한(행·메모리·시간 초과 거부), 상한 올리기·다른 설정 거부, query_log 기록, 카탈로그 DDL·쓰기 44건 거부(이전 판의 "35건"은 리뷰 r1에서 Q05·Q07·Q19 변형이 늘기 전 값이다. 2026-10-24 PMO 재실행과 WO-03F 실행 모두 44건, 17.6절) | 통과 |
 
 데이터: 생성기 1/100(xlog 12,961,791행, 늦은 행 63,080, 재전송 블록 5, 시계 +60초 인스턴스 2), 적재 78~80초, `ConsistencyIT` 6/6·`ReaderLimitsIT` 3/3·`BenchRunIT` 3/3·`ColdRestartIT` 1/1(8분 48초, 머신 CPU 21% 평균).
 
-**r1 수정 뒤 재실행(2026-10-24 17:02~17:08 UTC)**: `./gradlew :test:storage:schema-tests:integrationTest :test:storage:generator:integrationTest :test:storage:queries:integrationTest -Pqueries.profile=ci --rerun-tasks` → BUILD SUCCESSFUL, 벽시계 **5분 48초**(컴파일 포함, 세 모듈 병렬, 머신 CPU 평균 47%·최대 96%). 적재 112초(생성기 1/100 같은 데이터: xlog 12,961,791 = manifest, 늦은 행 63,080 = manifest, Σ app_stat_1m = xlog). 클래스별: `BenchRunIT` 186초(적재 포함), `ConsistencyIT` 32초(6/6), `ReaderLimitsIT` 30초(3/3), `ColdRestartIT` 28초, 스키마 IT 51건 133초, 생성기 IT 98초. 1/100에서 `BenchRunIT`는 하네스 스모크로 줄였다(Q01~Q11 각 1회, 사본 프로시저 Q05/bloom·Q18·Q20 제외, Q16 1,000행; 전체는 `-Pqueries.benchrun=full`). 이전 리뷰 측정은 저장소 IT 849초, 그중 `BenchRunIT` 635초였다. 4 vCPU 러너(이 머신 12스레드)에서는 저장소 IT만 약 12~15분으로 보고, `./gradlew integrationTest`가 같은 잡에서 에이전트·서버·샘플 앱 IT도 돌리므로 `pr.yml` integration 잡의 `timeout-minutes`를 30 → **45**로 올렸다(통합 리드 확인 필요, 첫 GitHub 실행 시간은 14.3 미결). 원자료: [`r1-queries/it/consistency.md`](../bench/wo03-storage-2026-10-24/r1-queries/it/consistency.md)·`dataset.md`·`reader-limits.md`·`bench-ci.md`·`benchrun-smoke-report.md`(테스트 실행마다 덧붙는 파일이고 마지막 절이 이 실행).
+**r1 수정 뒤 재실행(2026-10-24 17:02~17:08 UTC)**: `./gradlew :test:storage:schema-tests:integrationTest :test:storage:generator:integrationTest :test:storage:queries:integrationTest -Pqueries.profile=ci --rerun-tasks` → BUILD SUCCESSFUL, 벽시계 **5분 48초**(컴파일 포함, 세 모듈 병렬, 머신 CPU 평균 47%·최대 96%). 적재 112초(생성기 1/100 같은 데이터: xlog 12,961,791 = manifest, 늦은 행 63,080 = manifest, Σ app_stat_1m = xlog). 클래스별: `BenchRunIT` 186초(적재 포함), `ConsistencyIT` 32초(6/6), `ReaderLimitsIT` 30초(3/3), `ColdRestartIT` 28초, 스키마 IT 51건 133초, 생성기 IT 98초. 1/100에서 `BenchRunIT`는 하네스 스모크로 줄였다(Q01~Q11 각 1회, 사본 프로시저 Q05/bloom·Q18·Q20 제외, Q16 1,000행; 전체는 `-Pqueries.benchrun=full`. **이 옵션은 WO-03 당시 테스트 JVM에 전달되지 않아 효과가 없었다**(리뷰 지적 A-2). WO-03F에서 `test/storage/queries/build.gradle.kts`가 `argos.queries.benchrun`으로 넘기게 고쳤고, 실제 실행 결과는 17.6절). 이전 리뷰 측정은 저장소 IT 849초, 그중 `BenchRunIT` 635초였다. 4 vCPU 러너(이 머신 12스레드)에서는 저장소 IT만 약 12~15분으로 보고, `./gradlew integrationTest`가 같은 잡에서 에이전트·서버·샘플 앱 IT도 돌리므로 `pr.yml` integration 잡의 `timeout-minutes`를 30 → **45**로 올렸다(통합 리드 확인 필요, 첫 GitHub 실행 시간은 14.3 미결). 원자료: [`r1-queries/it/consistency.md`](../bench/wo03-storage-2026-10-24/r1-queries/it/consistency.md)·`dataset.md`·`reader-limits.md`·`bench-ci.md`·`benchrun-smoke-report.md`(테스트 실행마다 덧붙는 파일이고 마지막 절이 이 실행).
 
 **통합 재검증(2026-10-24 18:02~18:08 UTC, 16장)**: CI 잡과 같은 루트 명령 `./gradlew integrationTest -Pqueries.profile=ci --rerun`(에이전트·샘플 앱 IT 포함, 모듈 병렬) → BUILD SUCCESSFUL, **5분 47초**(머신 CPU 평균 64%·최대 100%). 저장소: 스키마 51/51, 생성기 3/3, 쿼리 13/13(`ConsistencyIT` 6, `ReaderLimitsIT` 3, `BenchRunIT` 3, `ColdRestartIT` 1). 이 명령은 처음 두 번 스키마 테스트 19건이 전부 실패했다(Docker 환경 없음, 16.2절). 원인을 고친 뒤 통과했다. Q05 수정 뒤 기본 데이터의 `:test:storage:queries:integrationTest --rerun`(전체 카탈로그, Q05/bloom 포함)도 13/13이다(3분 53초).
 
@@ -336,6 +338,7 @@ Q1~Q11 전 변형 충족. 웜 중앙값: Q1 1h 52ms, Q2 7일 63ms, Q3 10분 71ms
 - 원인: 에이전트 통계는 SQL·호출이 **끝난 시점**의 10초 창에 귀속된다(10 §9.2·§9.3, 생성기 기본 `stat-window=end`). 자정을 넘는 트랜잭션의 SQL은 xlog는 시작일, 통계는 다음 날에 잡힌다. 1/100에서 자정 1회당 SQL 실행 710건(4,050만 중), 외부 호출 69건이 넘어갔다.
 - 범위 합계(Q13 total)와 분 단위 xlog = 롤업(Q12)은 항상 0이다. 생성기를 `--stat-window=start`(트랜잭션 시작 창 귀속)로 돌리거나 러너의 결정적 픽스처를 쓰면 일 단위도 0이다(쿼리 레인 실측).
 - 선택지: (a) 야간 정합 검사를 자정 ± 최대 트랜잭션 시간 허용으로 바꾸기, (b) 에이전트가 트랜잭션 시작 창으로 귀속(10 문서 변경), (c) 일 단위 검사를 범위 합계로 대체. 이 PoC는 설계를 바꾸지 않고 일 단위 변형을 기록 전용으로 두었다.
+- **결정(ADR-0007 C-57)**: (a)의 정확한 형태로 정했다. 일 단위는 \|Δ일\|이 그날 양쪽 자정을 가로지른 트랜잭션의 `sql_count`·`ext_count` 합 이하이면 통과다. WO-03F에서 Q13 `daily_30d`·`nightly`에 적용했고, 시계 보정(D-15) 인스턴스 때문에 이 상한을 넘는 날이 남는다는 새 충돌을 찾았다(17.3절).
 
 ## 8. Q14 백분위 정확도(T-ST-014, T-ST-042 → A-11)
 
@@ -385,6 +388,8 @@ Q1~Q11 전 변형 충족. 웜 중앙값: Q1 1h 52ms, Q2 7일 63ms, Q3 10분 71ms
 **BFloat16**(`quantilesBFloat16(0.5, 0.95, 0.99)`)을 트랜잭션 롤업의 백분위 함수로 제안한다. 근거는 단일 날짜의 최대값이 아니라 3일 전체의 그룹 분포와 단계별 값이다: 1h·1d p99 최대 2.1%·0.5%(144·6그룹, 세 함수 중 가장 작음), 1m p50·p95 그룹 p95 오차 1.2%·1.3%(8,640그룹, 기준 2% 안), 재구축 확정값 동일(1m·1h). 1m p95 최대(3.5~3.9%, 날짜별)는 기준 2%를 넘으므로 기준 재정의(아래)가 전제다. 대가: 1m 상태 1.6배(app·service·instance 1m 롤업 일 용량 약 +0.15GB, 전체의 3%), **1m 상태 바이트는 재구축마다 같지 않을 수 있다**(8.2 결정성 표). D-14를 "확정값 동일"로 해석할 수 있으면 BFloat16, "바이트 동일"을 지켜야 하면 DD다(1m·1h 바이트 동일, 상태 최소 2.1KB, 대신 1m p50 최대 2.05%·p95 그룹 p95 1.47%로 세 함수 중 오차가 가장 크다). tDigest 유지는 값까지 재구축·실행마다 달라지므로 권하지 않는다.
 
 이 결정은 13 §4 DDL(`q_elapsed` 타입)·14 API 조회 함수·A-11 기준 문구를 바꾸므로 PM 결정이 필요하다. 기준은 "1m 값 오차 그룹 p95 ≤ 2%(p50·p95), 1h 이상 최대 ≤ 5%(p99), 1m p99는 순위 오차 ≤ 0.5pp"로 재정의할 것을 함께 제안한다. V001은 바꾸지 않았다(tDigest 유지).
+
+> **결정(ADR-0007 C-53)**: D-14 "바이트 동일"을 그대로 지키기 위해 BFloat16이 아니라 **DD**(`quantilesDD(0.01, 0.5, 0.95, 0.99)`)로 정했다. 기준 재정의는 위 제안대로 채택됐다. WO-03F에서 V001에 반영했다(17.1절).
 
 ## 9. Q17 동시 부하(T-ST-017, 축소)
 
@@ -631,7 +636,7 @@ N-06·Q17의 50,000 step/s·10,000 stat 행/s 부하는 이 로컬 측정에 들
 6. **Q17**(T-ST-017): 판정: 쿼리 p95 2초, 적재 지연 p99 5초, parts < 300, DelayedInserts 0, 메모리 < 7.5GiB. 두 번 돌린다(명령은 bench README 3a·3b).
    - Q17은 **live 창**으로 돈다(`--q17-ingestion`을 주면 기본, 명시하려면 `--q17-window live`): 가상 사용자가 반복마다 쿼리 창의 끝을 서버의 현재 분(`toStartOfMinute(now())`, 1초마다 갱신)으로 잡아 리플레이가 쓰는 최신 parts를 읽고, Q7은 마지막 2분을 원본에서 더하는 `1d_live` 형태다(13 §6.1). 보고서의 "window" 메모(서로 다른 end_minute 수)와 쿼리별 읽은 행으로 창이 움직였는지 확인한다.
    - 3a(13 §15 분포): `storageGenerate -Pstorage.mode=replay -Pstorage.target=url:$URL -Pstorage.tps-steps=500,2000,5000 -Pstorage.step-duration=PT1H -Pstorage.tick-ms=100`, 5,000 TPS 구간(시작 7,500초 뒤)에 10명 × (Q1·Q3·Q7) 5초 간격 30분. 기대 적재 행/s(5,000 TPS): xlog 5,000 · profile_step 약 8,500 · 통계 약 260 · metric 1,000(N-06의 약 21%, 축소 부하).
-   - 3b(**N-06 부하**): `storageGenerate -Pstorage.mode=replay -Pstorage.target=url:$URL -Pstorage.tps-steps=5000 -Pstorage.step-duration=PT1H -Pstorage.instances-per-app=30 -Pstorage.active-sqls=200 -Pstorage.profile-step-rate=50000 -Pstorage.tick-ms=100 -PstorageXmx=3g`, 시작 15분 뒤부터 Q17 30분. 기대 적재 행/s: xlog 5,000 · profile_step 50,000 · sql_stat 약 5,300 + ext_stat 약 125 · metric 6,000(합계 약 66k, 4.2절 생성기 단독 실측). 생성기 보고서의 `Rows/simulated s`가 기대값과 맞는지 먼저 본다. 통계 10,000행/s는 이 파라미터로 닿지 않는다(14.2 9항).
+   - 3b(**N-06 부하**, ADR-0007 C-62로 바뀜): `storageGenerate -Pstorage.mode=replay -Pstorage.target=url:$URL -Pstorage.tps-steps=5000 -Pstorage.step-duration=PT1H -Pstorage.instances-per-app=50 -Pstorage.sqls=6000 -Pstorage.active-sqls=600 -Pstorage.profile-step-rate=50000 -Pstorage.tick-ms=100 -PstorageXmx=4g`, 시작 15분 뒤부터 Q17 30분. 기대 적재 행/s: xlog 5,000 · profile_step 50,000 · sql_stat 약 11,250 + ext_stat 약 200(통계 약 11,450, N-06 기준 10,000 이상) · metric 10,000(합계 약 76k, 17.4절 생성기 단독 실측). 생성기가 끝에 출력하는 `statistics rows/simulated s … N-06 bar 10,000: reached`와 보고서 `Rows/simulated s`를 먼저 보고 기록한다. NOT reached면 N-06 판정을 하지 않고 Gate 0 미결로 남긴다(C-62). (WO-03 판의 300 인스턴스 × 활성 SQL 200은 통계 약 5,400행/s로 닿지 않았다, 14.2 9항.)
 7. **Q18**(T-ST-018, T-ST-054): 5,000 TPS 하루 파티션의 DROP·디스크 회수 시간, 삭제 두 형식 비교(같은 내용 사본 2개, 같은 대상, 순서 교대, `--q18-repeats 4`(1/100 두 실행에서 형식 간 순서가 반대였으므로 반복을 늘린다, 10.1절); 사본 2개가 디스크 예산을 넘으면 `--q18-copy-hours`로 자정 주변만), TTL 반영 시간.
 8. **Q19**(T-ST-019, T-ST-052): 전체 데이터에서 각 단계 10분 이내. 보존 기간 값을 실제로 바꾼 `ttl_change_1`(materialize 1)이 판정 대상이고 `ttl_noop_1`은 no-op 대조다. 1/100 처리량으로는 2~26분 추정이라 기준 충족이 불확실하다(10.2절).
 9. **Q20**(T-ST-020): V001·ZSTD·제안 코덱의 압축률과 insert CPU(전용 머신에서 3회 반복): `./gradlew :test:storage:queries:storageQueries -Pqueries.args="--url $URL --queries none --procedures Q20 --q20-repeats 3"`. 변형 `proposed`가 12.5 제안 정의다(`ProposedCodecs`). 보고서의 "Ratio per repetition" 표로 반복 간 차이를 보고, 그보다 작은 순위 차이는 잡음으로 본다.
@@ -683,8 +688,8 @@ N-06·Q17의 50,000 step/s·10,000 stat 행/s 부하는 이 로컬 측정에 들
 - **PR integration 잡 시간**: GitHub 러너(ubuntu-latest, 4 vCPU)에서의 실측이 없다. 이 머신의 저장소 IT 3종은 5분 48초, 잡과 같은 루트 `./gradlew integrationTest -Pqueries.profile=ci`(전 모듈)는 5분 47초였다(7.1절, 12스레드·공유 부하). 통합 리드는 잡 `timeout-minutes` 45를 유지한다(4 vCPU에서 2~3배 느려도 여유). 첫 GitHub 실행의 잡 시간과 `:test:storage:queries:integrationTest` 시간을 기록해 45분이 적절한지(또는 1/100 저장소 IT를 별도 잡으로 나눌지) 정한다.
 - `DockerStartup`(16.2절)은 첫 Docker 접근을 저장소 `build/tmp/` 잠금 파일로 순서화한다. 저장소 IT 모듈이 셋이라 JVM당 초기화 약 2초씩 최대 몇 초 늦게 시작한다. Linux CI(Unix 소켓)에는 pipe 경쟁이 없어 순서만 정한다. Testcontainers가 named pipe 검사를 고치면 없앨 수 있다.
 - Docker Desktop(WSL2) 개발 머신에서 대량 벤치를 돌리면 `docker_data.vhdx`가 지운 데이터만큼 줄지 않는다(이번 실행 30.1 → 70.7GB, 리뷰 r1 통합 재검증 시점 75.9GB·호스트 C: 여유 1.2GB로 1/20 재실행 불가, 3장). 되돌리려면 Docker Desktop을 끄고 `wsl --shutdown` 뒤 VHDX를 compact해야 한다. 같은 머신의 다른 작업(WO-02)을 멈추게 하므로 이 작업에서는 하지 않았다.
-- `testcontainers/ryuk:0.14.0` 이미지는 다이제스트로 고정하지 않았다(테스트 인프라).
-- Testcontainers의 Ryuk 컨테이너는 자기 포트를 호스트 전체 인터페이스(0.0.0.0)에 게시한다(Testcontainers 공통 동작, 이번에 고치지 않음). ClickHouse 테스트 컨테이너의 HTTP 포트는 로컬 Docker일 때 127.0.0.1에만 게시한다(`ArgosClickHouse`, `AccountsIT`).
+- ~~`testcontainers/ryuk:0.14.0` 이미지는 다이제스트로 고정하지 않았다(테스트 인프라).~~ WO-03F에서 고정했다(17.5절).
+- Testcontainers의 Ryuk 컨테이너는 자기 포트를 호스트 전체 인터페이스(0.0.0.0)에 게시한다(Testcontainers 공통 동작). Testcontainers 2.0.5에 Ryuk 게시 주소를 바꾸는 설정이 없어 알려진 한계로 남긴다(17.5절). ClickHouse 테스트 컨테이너의 HTTP 포트는 로컬 Docker일 때 127.0.0.1에만 게시한다(`ArgosClickHouse`, `AccountsIT`).
 - **백업 권한(16 §10.8)**: 26.8에서는 `BACKUP` 권한만으로 백업이 되지 않는다. `BACKUP … TO Disk`·`File`·`S3`가 각각 `WRITE ON DISK`·`WRITE ON FILE`·`WRITE ON S3`가 없어 `ACCESS_DENIED`이고(수동 실측), `backups.allowed_disk`도 없다. 백업 WO(17)에서 필요 권한(대상 디스크로 한정한 `WRITE ON DISK`)과 `allowed_disk`를 IT와 함께 확정한다. V001 계정에는 16 §10.8의 권한명 `BACKUP`만 반영했고 동작은 검증하지 않았다.
 - ClickHouse는 `sha256('')`(빈 비밀번호의 해시)를 받아들인다(`password_sha256_hex`는 형식만 검사. 수동 실측: reader 해시를 `e3b0c442…b855`로 두면 빈 비밀번호로 로그인된다). → 설치 스크립트가 해시하기 전에 길이·금지 목록을 검사해야 한다(WO-40, 17 설치 6단계, 16 §10.6 `CredentialPolicyCheck`와 같은 규칙). `ConfigFailFastIT`는 변수 미설정·형식 오류만 막는다.
 - 기존 설치를 이 설정으로 올리면 TTL이 없던 시스템 로그 테이블은 ClickHouse가 `<이름>_0`으로 이름을 바꾸고 새로 만든다. 옛 테이블은 TTL 없이 남으므로 업그레이드 런북(17)에서 지우는 단계가 필요하다(1.0 신규 설치는 해당 없음, 실측하지 않음).
@@ -695,10 +700,10 @@ N-06·Q17의 50,000 step/s·10,000 stat 행/s 부하는 이 로컬 측정에 들
 
 | 목적 | 명령 |
 |---|---|
-| 스키마·계정·확인 항목(51건) | `./gradlew :test:storage:schema-tests:integrationTest` |
-| 생성기(단위 40·IT 3) | `./gradlew :test:storage:generator:test :test:storage:generator:integrationTest` |
+| 스키마·계정·확인 항목(WO-03 51건, WO-03F 53건) | `./gradlew :test:storage:schema-tests:integrationTest` |
+| 생성기(단위 WO-03 40·WO-03F 42, IT 3) | `./gradlew :test:storage:generator:test :test:storage:generator:integrationTest` |
 | 생성기 부하 구성(N-06 옵션, 행/s) | `./gradlew :test:storage:generator:storageGenerate -Pstorage.mode=replay -Pstorage.target=none -Pstorage.tps-steps=5000 -Pstorage.step-duration=PT5M -Pstorage.instances-per-app=30 -Pstorage.active-sqls=200 -Pstorage.profile-step-rate=50000 -Pstorage.tick-ms=100` |
-| CI 1/100 정합(T-ST-030~033·053) + 카탈로그 스모크 | `./gradlew :test:storage:queries:integrationTest -Pqueries.profile=ci`(전체 카탈로그는 `-Pqueries.benchrun=full`) |
+| CI 1/100 정합(T-ST-030~033·053) + 카탈로그 스모크 | `./gradlew :test:storage:queries:integrationTest -Pqueries.profile=ci`(전체 카탈로그·모든 프로시저는 `-Pqueries.benchrun=full`, WO-03F부터 테스트 JVM에 전달됨) |
 | CI 잡과 같은 전체 통합 테스트 | `./gradlew integrationTest -Pqueries.profile=ci` |
 | 1/100 처음부터 끝까지(16장) | `bench-server.sh start` → `storageBench -Pstorage.profile=ci -Pstorage.target=url:… -Pstorage.apply-schema=true` → `storageQueries --queries all --procedures Q05/bloom,Q11/cost,Q14,Q15,Q16,Q18,Q19,Q20` → `storageGenerate -Pstorage.mode=replay -Pstorage.tps-steps=500,2000,5000 -Pstorage.step-duration=PT8M -Pstorage.tick-ms=100`과 동시에 `--procedures Q17 --q17-window live` → `--queries Q12,Q13`. 정확한 인자는 [`r1-integration/README.md`](../bench/wo03-storage-2026-10-24/r1-integration/README.md) |
 | 1/20 벌크 | `./gradlew :test:storage:generator:storageBench -Pbench.machine-profile=<id> -Pstorage.profile=local -Pstorage.target=url:http://127.0.0.1:18123/ -Pstorage.apply-schema=true` |
@@ -763,3 +768,178 @@ N-06·Q17의 50,000 step/s·10,000 stat 행/s 부하는 이 로컬 측정에 들
 원자료: [`r1-integration/`](../bench/wo03-storage-2026-10-24/r1-integration/README.md)(`bulk/`, `querybench-p/`, `replay/`, `q17-2000/`, `q17-5000/`, `after-replay/`, `q05-bloom/`, `sizes-final.tsv`, `host-disk.tsv`).
 
 이 실행도 축소 부하(13 §15 분포, 5,000 TPS에서 약 13.8k 행/s)이며 Q17·Q18·Q19의 목표 판정은 13장 목표 하드웨어 절차로 한다.
+
+## 17. ADR-0007 반영(WO-03F, 2026-11-02~03)
+
+[ADR-0007](../adr/0007-storage-alignment-decisions.md)(C-50~C-71, Accepted provisional)을 WO-03 산출물에 반영하고 WO-03 완료 보고의 열린 항목(A-1·A-2·A-3·C-1)을 닫았다. ADR-0007이 설계 문서(13 등)와 다르면 ADR이 우선한다. 설계 문서 자체는 메인테이너가 나중에 고친다(이 작업에서 고치지 않음). V001은 아직 릴리스 전이라 마이그레이션 없이 그 자리에서 고쳤다(C-54·C-67).
+
+**수치의 기준 스키마**: 1~16장의 모든 측정(적재·압축·Q1~Q20·Q17·bloom·결정성 등)은 **반영 전 V001**(서버 기본 LZ4, LZ4 열 코덱, `trace_id`·`parent_span_id` `CODEC(NONE)`, `q_elapsed` tDigest, bloom `{bloom.*}` 0.01/4 전부, 열 이름 `dbc_time_ms`·`timeout_flag`·`version_id`)으로 잰 값이다. 이 장의 17.6·17.7만 반영 뒤 스키마로 다시 잰 값이다. 목표 하드웨어 측정(13장)은 반영 뒤 스키마로 한다.
+
+### 17.1 C-번호별 반영
+
+| C | 바뀐 것 | 파일 |
+|---|---|---|
+| C-53 | 트랜잭션 롤업(app·service·instance, 1m·1h)의 `q_elapsed`를 `AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32)`로. 1m은 `quantilesDDState(…)(elapsed_ms)`, 1h는 `quantilesDDMergeState(…)(q_elapsed)`, 조회는 `quantilesDDMerge(…)`. Q01(원본 10초 버킷)·Q02·Q07(롤업·live 보정)도 DD로. SQL·외부 호출 버킷 p95(C-14)는 그대로. Q14 판정 기준을 C-53으로 바꿨다: 1m 그룹 p95 값 오차 ≤ 2%(p50·p95, `p50_err_1m_p95`·`p95_err_1m_p95`), 1h 이상 최대 값 오차 ≤ 5%(p99, `p99_err_1h_max`), 1m p99 순위 오차 ≤ 0.5pp(`p99_rank_err_minute`). 저장 상태 비교는 `Q14/dd_stored`(1h·1d뿐이라 `p99_err_1h_max`로 판정). tDigest·BFloat16·DD 비교는 유지 | `schema/V001__init.sql`, `rollups/{app,service}_stat_1m/1h.sql`·`instance_stat_1m.sql`, `queries/Q01·Q02·Q07·Q14.sql`, `PercentileAccuracy` |
+| C-54 | `config.d`에 서버 기본 압축 `<compression><case><method>zstd</method><level>1</level></case></compression>`. V001 열 코덱의 `LZ4`를 모두 `ZSTD(1)`로, xlog `trace_id`·`parent_span_id`의 `CODEC(NONE)` 제거, `tx_id` `CODEC(Delta, ZSTD(1))`, `span_id` `CODEC(NONE)` 유지, `user_id`·`request_id`·`detail` `ZSTD(3)` 유지. Q11 비용 측정용 사본 DDL도 같은 코덱. Q20은 비교 변형을 유지한다: `base`(새 V001), `lz4`(반영 전 V001을 `LegacyCodecs`로 재구성, WO-03의 `base`), `lz4_nocodec`·`lz4cols_zstd`·`nocodec`(WO-03의 `nocodec`·`zstd`·`zstd_nocodec`), `proposed`(WO-03 제안 정의 = 새 V001 + `profile_step.tx_id` Delta) | `config.d/argos.xml`, V001, `Q11.sql`, `Q20.sql`, `CompressionComparison`, `LegacyCodecs`(신규), `ProposedCodecs` |
+| C-55·C-56 | xlog bloom을 리터럴로: 전부 `bloom_filter(0.01) GRANULARITY 4`, `idx_user`만 `GRANULARITY 1`. `{bloom.*}`를 V001·`SchemaParameters`·`SchemaRenderer`·`SqlTemplate`·README에서 없앴다. 허용 지시자는 `{db}`·`{p}`·`{where}`·`{retention.*}`·`{rollup:<table>}`뿐이고 그 밖의 플레이스홀더(예: `{bloom.tx.fpp}`, 없는 `{retention.other}`)는 렌더 오류다. 스키마 체크섬을 구현했다: `SchemaRenderer.expand`(= `{rollup:}`만 펼치고 `{db}`·`{p}`·`{retention.*}`는 그대로, 줄바꿈 LF 정규화)의 UTF-8 SHA-256. 단위 테스트: DB 이름·접두사·보존 기간을 바꿔도 체크섬 동일, CRLF여도 동일, 롤업 파일을 바꾸면 변경, V001을 바꾸면 변경, `render` = `expand` 뒤 환경 치환. Q05/bloom 비교는 쿼리 도구 안에서 V001 리터럴을 바꾼 변형 DDL을 만든다(`BloomVariants.variantStatement`, 인덱스 5개가 정확히 바뀌지 않으면 실패) | V001, `SchemaParameters`, `SchemaRenderer`, `SchemaRendererTest`, `BloomVariants`, `SqlTemplate` |
+| C-57 | Q13 `daily_30d`·`nightly`(13 §6.3 (14))에 일 단위 규칙을 그대로 넣었다: \|xlog − 통계\| ≤ 그날 양쪽 자정을 가로지른(`ts < 자정 ≤ ts + elapsed`) 트랜잭션의 `sql_count`·`ext_count` 합(xlog에서 계산, 여러 날에 걸친 트랜잭션은 걸친 모든 날에 센다). 분 단위(Q12, Q13 `minute_raw_1m`)와 기간 합계(Q13 `total_30d`)는 계속 정확히 0. 이 규칙으로 1/100 데이터를 판정하면 **시계가 60초 앞선 인스턴스(D-15 보정 대상) 때문에 상한을 넘는 날이 남는다**(17.3절) | `Q13.sql`, `ConsistencyIT` |
+| C-58 | WO-03 구현을 유지했다(롤업 `allow_dimensions_outside_sorting_key`, `sumForEach`, metric `sample_count` UInt64, 1h dedup window 1000, reader 상한 6종 `changeable_in_readonly`, MV `SQL SECURITY DEFINER`, merge_tree 임계값, default 사용자 제거, 시스템 로그 TTL·제거, 리스너 8123·9000, writer 제약, migrator 하위 권한, 빈 `remote_url_allow_hosts`). 회귀 없음은 `DeployConfigTest`·`AccountsIT`·`SystemLogsIT`·`ConfirmationItemsIT`·`DeduplicationTokenIT`가 그대로 녹색인 것으로 확인 | - |
+| C-59 | 재구축 절차를 `RollupRebuild`(clickhouse-support, 신규)에 구현했다: `CREATE TABLE <t>_rebuild AS <t>` → `INSERT INTO <t>_rebuild <롤업 SELECT>` → `ALTER TABLE <t> REPLACE PARTITION … FROM <t>_rebuild` → staging 삭제. 파티션 전체(앱 단위 없음), 1m 하루 뒤 같은 달 1h를 1m에서. `RollupRebuildIT`·`RollupViewsIT`(`Rollups`가 위임), Q14(`Q14/d14_rebuild`), Q19 MV 교체 2단계 백필이 모두 이 절차를 쓴다. 롤업에 직접 INSERT하는 것은 `RollupRebuildIT`의 손상 재현·음성 대조(1h 이중 집계)뿐이다 | `RollupRebuild`, `Rollups`, `RollupRebuildIT`, `PercentileAccuracy`, `MigrationRehearsal`, `Q19.sql` |
+| C-60 | writer 권한을 원본 5개 테이블 INSERT로 좁혔다(`GRANT INSERT ON argos.xlog` 등 5줄). migrator에 `GRANT SELECT ON system.mutations`. `AccountsIT`가 단언한다: writer `SHOW GRANTS` = 원본 5개 × 접두사, 롤업 8종(기본·테스트 접두사)과 원본 아닌 테이블에 INSERT `ACCESS_DENIED`, 원본 INSERT는 DEFINER 뷰를 거쳐 1h까지 채워짐, migrator가 `system.mutations`를 읽고 자기 DELETE 뮤테이션 완료(`is_done = 1`)를 본다(`system.parts`·`system.query_log`는 여전히 거부). 삭제 완료 폴링 테스트(`ConfirmationItemsIT`)도 migrator로 폴링한다. 테스트는 클래스마다 접두사를 쓰므로 런처에 `writerTablePrefixes(...)`를 넣었다: 설치가 접두사를 바꿀 때 렌더할 것과 같은 5개 GRANT를, 속성이 붙은 `<query>`로 시험 전용 users.d 파일에 덧붙인다(ClickHouse는 속성이 다른 같은 이름 요소를 덧붙인다, 실측). 저장소의 `users.d/argos.xml` 자체는 기본 접두사 5개만 준다(`DeployConfigTest`) | `users.d/argos.xml`, `ArgosClickHouse`, `AccountsIT`, `DeployConfigTest`, `ConfirmationItemsIT`, 각 IT `Fixture` |
+| C-61 | 생성기 토큰을 `<wal_instance_id>:<epoch>:<first>-<last>`(데이터 레코드 위치, 16진)로 바꿨다. 리플레이는 `WalSimulator`가 INTENT에 기록하는 결정적 값(WAL id, epoch, 블록의 첫·끝 레코드 위치)이고 재시작 복구는 INTENT에 기록된 토큰으로 재삽입한다. 벌크는 `bulk-<run id>:1:<첫 행>-<끝 행>`(실행 전체 행 번호). epoch를 올린 WAL은 같은 위치라도 다른 토큰이다(단위 테스트). `CiDataset`·스키마 IT·쿼리 IT의 토큰도 같은 모양으로 바꿨다. `written_rows`로 중복을 판정하는 코드는 없다(확인, 기록용 카운터만 있음) | `DedupToken`, `Block`, `BulkLoader`, `WalSimulator`, `ReplayLoader`, `DedupTokenContractTest`, `CiDataset`, `Workload`, `DeduplicationTokenIT` |
+| C-62 | 생성기에 필요한 옵션(`--instances-per-app`, `--active-sqls`, `--sqls`)은 있었다. `--active-sqls`가 앱당 SQL 수(`sqls / apps`)를 넘으면 조용히 잘리던 것을 오류로 바꿨고(단위 테스트), 실행 끝에 달성한 통계 행/s와 N-06 기준(10,000) 도달 여부를 콘솔과 보고서에 출력한다(`statistics rows/simulated s: … N-06 bar 10,000: reached/NOT reached`). Q17 3b 절차를 통계 ≥ 10,000행/s 조건으로 바꿨다(17.4절). 부하 자체는 돌리지 않았다 | `GeneratorConfig`, `Generator`, `ReportWriter`, `LoadOptionsTest`, `test/storage/bench/README.md` |
+| C-65 | 정합 SQL을 소스별 `UNION ALL` + 키 `GROUP BY` + `sumIf` + `HAVING`으로: Q12 `errors_30d`·`nightly`, Q13 `nightly`, Q19 `mv_compare`, `RollupViewsIT.q12Mismatches()`, `GeneratorClickHouseIT` 분 단위 검사(A-1). 두 테스트는 `join_use_nulls = 1`로도 같은 결과임을 단언하고, 생성기 IT는 한쪽에만 있는 분 1개를 잡는 음성 대조를 더했다. 이제 저장소 도구에 `FULL JOIN` 정합 SQL은 없다 | `Q12.sql`, `Q13.sql`, `Q19.sql`, `RollupViewsIT`, `GeneratorClickHouseIT` |
+| C-67 | xlog `dbc_time_ms` → `dbc_wait_ms`, `timeout_flag` → `timed_out`, `version_id` → `app_version_id`, 롤업 `sum_dbc_time_ms` → `sum_dbc_wait_ms`, 롤업 차원 `version_id` → `app_version_id`(service_stat_1m/1h, error_stat_1m, 정렬 키 포함). V001 머리의 C-17 매핑 주석을 지웠다. 생성기·`CiDataset`·Q04·Q07·Q09·Q19·테스트도 새 이름(Java 필드명 포함) | V001, rollups, generator, queries, schema-tests |
+| C-69·C-70 | `xlog.flags` 주석을 확정 문구로(1 virtual thread, 2 leaked, 4 summarized, 나머지 예약). `profile_step.batch_size`·`detail_enc`가 V001에 있음을 단위 테스트로 단언 | V001, `SchemaRendererTest` |
+| C-71(B-6) | `config.d`에서 `background_schedule_pool_size` 8을 지우고 LTS 기본값을 쓴다(실측 512). 주석에 C-71을 적었다 | `config.d/argos.xml`, `DeployConfigTest` |
+
+**변경하지 않은 결정(확인만)**: C-50(A-6 2일 폴백 뒤 범위 없는 조회 금지)은 서버 조회 WO 범위이고 Q05의 `bloom_only` 변형은 비용 기록용 측정으로 남겼다(API 경로 아님). C-51(1.0 MergeTree)은 V001과 같다. C-52(`sql_ids` 최대 64)는 V001 주석과 같다. C-64(`LIMIT` + SQL `SETTINGS`)는 서버 조회 WO 범위이고 저장소 도구의 상한 시험은 C-64와 모순되지 않는다(`AccountsIT`가 `break` 초과를 기록). C-66(`DELETE IN PARTITION`)은 `ConfirmationItemsIT`·Q18이 이미 그 형식을 쓴다. C-68(`dbc_wait_sum` 없음)은 V001에 없고, PM이 proto·agent·server에 없음을 확인했다. C-63(생성기 분포는 13 §15 원본)은 기존 기본값과 같다.
+
+### 17.2 결정성(D-14)과 DD 상태
+
+- **`RollupViewsIT`**: 1m·1h DD 상태가 원본 값으로 직접 만든 DD 상태와 키(앱·kind·분/시)마다 **바이트 동일**하다(DD 병합은 버킷 카운트 덧셈이라 순서·분할과 무관). 12개 롤업 파일의 재구축 SELECT를 staging에 넣은 결과도 MV가 채운 테이블과 `q_elapsed` 상태 바이트까지 같다(이전에는 tDigest라 비교에서 뺐다).
+- **`RollupRebuildIT`**: 손상(직접 INSERT로 이중 집계) → C-59 절차로 1m 하루·1h 한 달 복구 → 상태 바이트 포함 원본 일치, 다른 날은 그대로.
+- **`UpgradeIT`(26.3 → 26.8)**: 저장 DD 상태 바이트·확정값 동일, 그리고 26.8에서 5회 병합한 값이 모두 26.3에서 병합한 값과 같다(tDigest 때는 80.4 대 80.22222로 달랐다).
+- **CI 1/100 데이터 `Q14/d14_rebuild`**(`BenchRunIT`, 마지막 온전한 날): C-59 절차로 두 번 재구축(1회 `max_threads=1`, 2회 `max_threads=8, max_block_size=4096`)한 뒤 트랜잭션 롤업 5개의 DD 상태(키별 `-MergeState`의 hex)와 확정값이 **재구축 1 = 재구축 2 = MV가 쓴 상태**로 모두 일치했다(`rebuild_state_mismatches` 0, `view_state_mismatches` 0).
+  1/100 실행 두 번(스모크 루트 실행과 `-Pqueries.benchrun=full` 실행) 모두 같은 결과였다(마지막 실행: 2026-11-02 하루, 1h는 202611, 키 수 app_stat_1m 4,330 · service_stat_1m 46,570 · instance_stat_1m 13,899 · app_stat_1h 160 · service_stat_1h 2,051, 다섯 테이블 모두 상태 바이트·확정값 identical). 판정 `Q14/d14_rebuild` PASS(기준 `rebuild_state_mismatches == 0, view_state_mismatches == 0`).
+- **Q14 합성 표본(목표 밀도 분당 3,000값 × 앱 2 × 3일, 8.1절과 같은 결정적 표본)**: `storageQueries --volume … --queries none --procedures Q14 --q14-source synthetic --q14-days 3`(Testcontainers 4GiB, 15:53:51~15:54:36 UTC, 44초)을 C-53 기준으로 판정했다. **DD PASS**: 1m 그룹 p95 값 오차 p50 0.87%·p95 1.47%(≤ 2%), 1h 이상 p99 최대 2.51%(≤ 5%), 1m p99 순위 오차 최대 0.13pp(≤ 0.5pp). 같은 기준으로 tDigest(0.70%·0.75%·4.42%·0.05pp)와 BFloat16(1.20%·1.30%·2.11%·0.13pp)도 PASS다. 8.2절 표의 값과 같다(표본·함수가 같다). 재구축 결정성 표(1m·1h × a/b)도 8.2절과 같다: DD만 1m·1h 바이트·확정값 identical, BFloat16은 1m 바이트 MISMATCH, tDigest는 바이트·값 MISMATCH.
+- CI 스모크의 Q14(합성 분당 600값 × 1일)는 그룹이 작아 C-53 판정이 목표 밀도를 대표하지 않는다(DD `p50_err_1m_p95` 2.02%). 자동 테스트는 이 값을 단언하지 않고 기록만 한다(WO-03과 같음).
+
+### 17.3 C-57 규칙과 D-15 시계 보정(새 충돌)
+
+CI 1/100 데이터(시계 +60초 인스턴스 2개, id 19·37)에 C-57 일 단위 규칙을 그대로 적용하면 `daily_30d`가 4개 그룹(앱 4·8 × 자정 앞뒤 두 날, 예: 앱 4 HTTP 11-01 \|Δsql\| 422 > 상한 61)을, `nightly`가 1행(\|Δ\| 710 > 상한 543)을 보고한다. `ConsistencyIT`가 독립 계산(원본 통계 테이블, 인스턴스 필터)으로 정확히 확인한 내용은 다음과 같다.
+
+- 시계가 앞서지 않은 인스턴스만 보면 상한을 넘는 날은 **0**이고, xlog ≠ 통계인 그룹은 20개다(상한이 실제로 필요함).
+- 전체 데이터에서 `daily_30d`가 보고한 그룹 = 독립 계산이 상한 초과로 예측한 그룹(4개), 그 앱은 모두 시계 +60초 인스턴스의 앱이다. `nightly`는 합계 \|Δ\|가 합계 상한을 넘을 때만 1행이다.
+- 원인: D-15는 `ts > now + 5s`를 `now`로 보정한다. 시계가 앞선 인스턴스의 트랜잭션 ts는 수신 시각(≈ 트랜잭션 종료)으로, 통계 행의 10초 창은 **flush 수신 시각의 창**(SQL 종료 뒤 최대 약 11초)으로 보정된다. 그래서 자정 직전 약 11초 안에 끝난 SQL은 트랜잭션이 자정을 넘지 않아도 통계만 다음 날로 간다. C-57 상한(자정을 가로지른 트랜잭션)은 이 경우를 세지 않는다. 재구축으로도 고쳐지지 않는다(원본 xlog와 원본 통계가 다르다).
+- 판정: 이 PoC는 C-57을 바꾸지 않았다. Q13 `daily_30d`·`nightly`는 생성기 데이터에서 C-57 규칙대로 FAIL을 보고한다(CI 자동 기준인 Q13 범위 합계·분 단위는 0). **PM 결정 필요**: (a) 상한에 "보정된(시계 앞선) 인스턴스의 자정 직전 flush 창 통계"를 더하거나 보정 행을 표시하는 열을 둘지, (b) 통계 창 보정을 xlog와 같은 규칙(트랜잭션 수신 시각 기준)으로 맞출지, (c) 보정 인스턴스를 일 단위 검사에서 빼고 D-15 경고로만 다룰지. 관련: 01 D-15, 13 §6.3 (14), ADR-0007 C-57, 12(서버 수신 가드).
+
+### 17.4 C-62 Q17 3b 부하
+
+ADR-0007 C-62는 N-06의 통계 10,000행/s를 그대로 두고 부하를 올리라고 정했다. 생성기만으로(`--target=none`, 벌크, 5,000 TPS, 시뮬레이션 10분, `-Pstorage.profile-step-rate=50000`, 2026-11-02 15:50~15:52 UTC) 인스턴스 수 × 활성 SQL을 바꿔 통계 행/s(sql_stat_raw + ext_stat_raw)를 쟀다. ClickHouse에 적재하지 않았다(부하 실측은 목표 하드웨어 3b).
+
+| 인스턴스 × 활성 SQL(`--instances-per-app` × `--active-sqls`, `--sqls`) | 통계 행/s | N-06 10,000 |
+|---|---:|---|
+| 300 × 200(WO-03 3b, 13 §14 전제) | 5,398 | 미달 |
+| 300 × 350 | 7,606 | 미달 |
+| 500 × 200 | 7,381 | 미달 |
+| 500 × 400(`--sqls=4000`) | 10,086 | 도달(여유 1%) |
+| **500 × 600(`--sqls=6000`, 3b 권장)** | **11,458**(sql 11,256 + ext 203) | 도달 |
+| 500 × 1,000(`--sqls=10000`) | 12,846 | 도달 |
+
+- ADR 예시("인스턴스 500 또는 활성 SQL 350 이상")는 하나씩만으로는 닿지 않는다(7,381·7,606). 통계 행은 인스턴스마다 10초 창에 실행된 서로 다른 SQL 수라, 인스턴스와 활성 SQL을 함께 올려야 한다. 500 × 600에서 전체 부하는 xlog 5,005 · profile_step 약 50,000 · 통계 약 11,450 · metric 10,000(인스턴스 500 × 시리즈 100 / 5초) = 약 76k 행/s이고, D-12 합계(Σ xlog.sql_count = Σ 통계)는 그대로 같다.
+- 생성기는 실행 끝에 `statistics rows/simulated s: <n> (sql_stat_raw <a> + ext_stat_raw <b>); N-06 bar 10,000: reached|NOT reached`를 출력하고 보고서 Simulation 줄과 `manifest.json`(`simulation.n06StatisticsReached`)에 같은 값을 남긴다. `--active-sqls`가 `sqls / apps`를 넘으면 이제 오류다(이전에는 조용히 잘렸다). 명령줄 인자는 한꺼번에 검증해 순서와 무관하다.
+- `test/storage/bench/README.md` 3b와 13장 6의 3b 명령을 500 × 600으로 바꿨다. 목표 하드웨어에서 생성기가 NOT reached를 출력하면 N-06 판정을 하지 않고 Gate 0 미결로 남긴다(C-62).
+- 원자료: `test/storage/generator/build/reports/storage-generator/20261102-155035-bulk-c468def0140a/`(500 × 1,000) 등 6개 실행의 `report.md`(빌드 산출물, 저장소에 넣지 않음).
+
+### 17.5 Testcontainers Ryuk 고정(C-1)
+
+- `test/storage/clickhouse-support/src/main/resources/testcontainers.properties`에 `ryuk.container.image=testcontainers/ryuk:0.14.0@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0`(다중 아키텍처 매니페스트 리스트 다이제스트, `docker buildx imagetools inspect`로 확인)를 넣었다. 저장소에서 Testcontainers를 쓰는 것은 `test/storage`뿐이고(Java `org.testcontainers` import는 clickhouse-support·schema-tests·queries에만 있음, 샘플 앱·에이전트 IT는 쓰지 않음) 모두 이 라이브러리를 클래스패스에 둔다(IT와 `storageGenerate`·`storageBench`·`storageQueries` 작업). Testcontainers는 내장 이름 `testcontainers/ryuk:0.14.0`을 이 값으로 치환한다(`ClickHouseSupportTest`가 `ImageNameSubstitutor`로 단언).
+- IT 실행 중 증거(2026-11-02 15:2x UTC, `docker inspect`): Ryuk 컨테이너 2개 모두 `Config.Image=testcontainers/ryuk:0.14.0@sha256:7c1a8a9a…28f0`, `Image=sha256:7c1a8a9a…28f0`. 같은 시각 ClickHouse 컨테이너는 `clickhouse/clickhouse-server:26.8.34.13@sha256:8b28eb09…7779`, HTTP는 `127.0.0.1:<임의>`.
+- **알려진 한계**: Ryuk은 제어 포트 8080을 모든 인터페이스에 게시한다(`HostConfig.PortBindings` `HostIp ""`, `docker ps` `0.0.0.0:<포트>`). Testcontainers 2.0.5에는 Ryuk 게시 주소를 정하는 설정이 없고(`ryuk.container.privileged`·`timeout` 등만 있음), Ryuk을 끄면(`TESTCONTAINERS_RYUK_DISABLED`) JVM이 비정상 종료할 때 컨테이너가 남는다. 같은 네트워크의 다른 호스트가 이 포트로 라벨 필터를 등록하면 개발자 머신의 테스트 컨테이너를 지울 수 있지만 다른 정보는 얻지 못한다. 개발 머신 방화벽에 맡기고 남긴다.
+- 추가 이미지 확인: 이 실행에서 Testcontainers가 받은 이미지는 ClickHouse 2종(고정)과 Ryuk뿐이었다(`alpine` 등 보조 이미지를 쓰지 않음, 실행 뒤 `docker images`).
+
+### 17.6 실행과 결과(WO-03F)
+
+모두 이 머신(Ryzen 5 5600H, 15.3GiB, Docker Desktop, 다른 작업 없음)에서 2026-11-02(UTC) 실행했다.
+
+| 명령 | 결과 |
+|---|---|
+| `./gradlew spotlessApply :test:storage:{clickhouse-support,generator,queries,schema-tests}:test -Pargos.ui.skip=true` | 녹색. 단위 110건(clickhouse-support 32, generator 42, queries 27, schema-tests 9). WO-03은 97건 |
+| `./gradlew :test:storage:schema-tests:integrationTest` | 첫 실행 6건 실패(테스트 수정 필요: 보존 기간 밖 기본 ts로 넣은 행이 TTL로 바로 지워짐, `Rollups`의 별칭 그림자, 빈 코덱 문자열 비교, MV 열 포함) → 고친 뒤 **53/53**(약 1분) |
+| `./gradlew :test:storage:generator:integrationTest :test:storage:queries:integrationTest -Pqueries.profile=ci` | 생성기 3/3, 쿼리 12/13: `ConsistencyIT` Q13 일 단위가 C-57 상한을 넘는 4개 그룹을 보고(17.3) → 독립 계산으로 정확히 단언하도록 고친 뒤 `ConsistencyIT` 6/6 |
+| **`./gradlew integrationTest -Pqueries.profile=ci --rerun --continue`**(CI 잡과 같은 루트 명령, 15:30:10~15:35:36) | **BUILD SUCCESSFUL in 5m 24s**. 저장소 69(스키마 53, 생성기 3, 쿼리 13: `ConsistencyIT` 6, `ReaderLimitsIT` 3, `BenchRunIT` 3, `ColdRestartIT` 1), agent-testing 21, 샘플 앱 37(common 6, ext-stub 11, load 12, shop-batch 1, shop-boot2 2, shop-heavy 5). 실패·skip 0 |
+| **`./gradlew integrationTest -Pqueries.profile=ci -Pqueries.benchrun=full --continue`**(A-2, 15:36:00~15:48:49) | **BUILD SUCCESSFUL in 12m 48s**. 다른 모듈은 입력이 같아 up-to-date이고 `:test:storage:queries:integrationTest`만 다시 돌았다(시스템 속성 `argos.queries.benchrun=full`이 테스트 입력). `BenchRunIT` 3/3·672.7초: 전체 카탈로그 623.4초(Q01~Q13 웜 3회, 프로시저 Q05/bloom·Q11/cost·Q14~Q20 전부, Q05/bloom 4변형·Q18·Q20 포함), 적재 데이터 Q14 45.6초. `ConsistencyIT` 6/6(33.4초), `ReaderLimitsIT` 3/3(29.6초), `ColdRestartIT` 1/1(26.5초). WO-03 판의 "`-Pqueries.benchrun=full`이면 전체 카탈로그"는 이제 실제 동작이다 |
+| A-3 | `reader-limits.md`: "DDL and write statements refused as argos_reader: 44". 7.1절 표를 35 → 44로 고쳤다 |
+| `bash test/lint/check-spdx.sh` | `check-spdx: OK (984 files, git ls-files, 2 excluded)`(새 파일 3개: `RollupRebuild.java`, `LegacyCodecs.java`, `testcontainers.properties`) |
+| `./gradlew checkLicenses checkDevOnlyLicenses` | BUILD SUCCESSFUL(4초, 새 의존성 없음) |
+| Ryuk 확인(IT 실행 중 `docker inspect`) | 17.5절 |
+
+- 적재 데이터의 압축(1/100, 새 V001, `BenchRunIT` 전체 실행의 Q20 "Loaded data"): xlog **3.80 · 55.70B/행**(스킵 인덱스 41.2MB = 3.18B/행), profile_step 11.39 · 9.10B, metric 13.80 · 2.25B, sql_stat_raw 10.81 · 12.77B, ext_stat_raw 10.96 · 10.05B, app_stat_1m 7.66 · 175.5B(DD 상태), instance_stat_1m 7.54 · 178.4B, service_stat_1m 7.16 · 95.3B. WO-03의 xlog 2.56·82.7B(5.1절) 대비 T-ST-041 기준 ≥ 3을 넘는다(참고값, 목표 하드웨어 판정 전).
+- 기간 정합(Q12 4변형, Q13 `total_30d`·`rollups_14d`·`minute_raw_1m`), Q15, Q16은 모든 실행에서 0이었다. Q13 `daily_30d`·`nightly`는 17.3.
+
+### 17.7 Q20 코덱 비교(1/100, 반영 뒤 스키마, 반복 1회, 참고값)
+
+`BenchRunIT` 전체 실행(위 표, CI 1/100 데이터를 Testcontainers ClickHouse 3GiB에 적재, `CompressionOptions(반복 1, 머지 대기 상한 20초)`, 모든 변형 "settled after 5 s")의 Q20이다. 각 테이블은 자기 전체 범위(1/100은 24시간 미만)를 복사했다. 압축률 / 데이터 B/행:
+
+| 테이블 | **base(새 V001)** | **lz4(옛 V001)** | lz4_nocodec | lz4cols_zstd | nocodec | proposed |
+|---|---|---|---|---|---|---|
+| xlog(12,963,791행) | **3.79 / 55.68** | **2.55 / 82.68** | 2.20 / 95.82 | 3.17 / 66.50 | 3.67 / 57.44 | 3.79 / 55.68 |
+| profile_step(5,149,786) | **11.39 / 9.11** | 7.15 / 14.49 | 5.22 / 19.85 | 10.32 / 10.05 | 10.79 / 9.61 | 11.29 / 9.19 |
+| metric(12,096,420) | **13.98 / 2.22** | 11.95 / 2.59 | 7.39 / 4.20 | 12.14 / 2.55 | 11.52 / 2.69 | 13.98 / 2.22 |
+| sql_stat_raw(3,178,133) | **10.88 / 12.69** | 5.07 / 27.25 | 4.91 / 28.12 | 10.83 / 12.75 | 10.65 / 12.96 | 10.87 / 12.70 |
+| ext_stat_raw(544,108) | **11.03 / 9.99** | 5.15 / 21.42 | 5.02 / 21.96 | 11.01 / 10.01 | 10.76 / 10.25 | 11.03 / 9.99 |
+| xlog insert CPU(ms) | 32,910 | 29,250 | 25,755 | 31,616 | 30,722 | 32,912 |
+
+- 옛 정의 재구성이 맞다: `lz4`(xlog 2.55 / 82.68B)는 WO-03 run P의 `base`(2.54 / 82.7B), `lz4cols_zstd`·`nocodec`·`proposed`는 WO-03의 `zstd`(3.17 / 66.5)·`zstd_nocodec`(3.67 / 57.4)·`proposed`(3.79 / 55.7)와 같다(5.3절).
+- 새 V001(`base`)은 WO-03 제안값을 그대로 낸다: xlog 3.79(옛 V001 대비 B/행 −33%), profile 11.39, metric 13.98, 통계 10.9~11.0.
+- `proposed`와 `base`의 차이는 `profile_step.tx_id`의 `Delta`뿐이고, profile_step은 오히려 `base`가 낫다(11.39 대 11.29). 그래서 C-54 문구대로 `tx_id` Delta를 xlog에만 둔 V001을 유지한다(17.8).
+- insert CPU는 xlog `base`가 `lz4`보다 12.5% 많다(공유 부하 없는 1회, 참고값). 목표 하드웨어에서 3회 반복으로 다시 잰다(13장 9).
+- 원자료: `test/storage/queries/build/reports/storage-queries/ci/report.md`(Q20 절)·`runs.tsv`(빌드 산출물).
+
+### 17.8 남은 것
+
+- 17.3 C-57 대 D-15(PM 결정).
+- C-54의 `tx_id` Delta는 xlog만 적었다. WO-03 제안 정의(`proposed`)는 `profile_step.tx_id`에도 Delta를 줬다. V001은 ADR 문구대로 xlog만 바꿨고 차이는 Q20 `proposed` 대 `base`로 잰다(17.7). 필요하면 PM이 정한다.
+- 목표 하드웨어 측정(13장)은 반영 뒤 스키마로 해야 한다. 13장의 판정 기준 중 Q14는 C-53 기준(17.1), Q17 3b는 17.4 부하, Q20은 `base`(새 V001)와 `lz4`(옛 V001)를 비교한다.
+- 설계 문서(02 §12·§13, 10·11·12·13·14·16·17·18) 갱신은 메인테이너 확인 뒤(ADR-0007 결과 절).
+
+### 17.9 통합 검증(WO-03F 통합 리드, 2026-11-02 16:01~16:15 UTC)
+
+저장소 프로젝트 4개를 `clean`하고 남은 컨테이너·볼륨이 없음을 확인한 뒤, 같은 머신에서 다른 작업 없이 실행했다.
+
+| 명령 | 결과 |
+|---|---|
+| `./gradlew build`(UI 포함) | BUILD SUCCESSFUL 8초(대부분 up-to-date·캐시). 증거로 쓰려고 `--rerun-tasks`로 다시 돌렸다 |
+| `./gradlew build --rerun-tasks`(UI 포함, 16:02:00~16:05:35) | **BUILD SUCCESSFUL in 3m 34s, 415개 작업 전부 실행**. Java 단위 557건(저장소 110: clickhouse-support 32, generator 42, queries 27, schema-tests 9), UI Vitest 456건(31파일), 실패 0 |
+| `./gradlew integrationTest -Pqueries.profile=ci --rerun`(CI integration 잡과 같은 명령, 16:06:55~16:12:13) | **BUILD SUCCESSFUL in 5m 18s**. 저장소 69(스키마 53, 생성기 3, 쿼리 13), agent-testing 21, 샘플 앱 37(common 6, ext-stub 11, load 12, shop-batch 1, shop-boot2 2, shop-heavy 5). 실패·skip 0. 클래스별: `BenchRunIT` 215초(적재 포함), `GeneratorClickHouseIT` 101초, `ReaderLimitsIT` 35초, `DeduplicationTokenIT` 35초, `ConsistencyIT` 34초. Q13 일 단위는 17.3과 같다(상한 초과 그룹 = 앱 4·8 × 11-01·11-02의 4개, 시계 정상 인스턴스만 보면 0, 차이 있는 그룹 20, nightly 1행 \|Δ\| 710 > 543). reader 거부 44건 |
+| Ryuk 고정 확인 | 실행 전에 로컬 `testcontainers/ryuk:0.14.0` 이미지를 지웠다. 실행 중 `docker inspect`로 컨테이너 15개를 기록했다: Ryuk 3개 모두 `Config.Image=testcontainers/ryuk:0.14.0@sha256:7c1a8a9a…28f0`, ClickHouse 26.8 11개·26.3 1개(`UpgradeIT`)는 `image.properties`의 다이제스트, 메모리 상한 2GiB(11개)·3GiB(1개), HTTP 게시는 `127.0.0.1`. 실행 뒤 `docker images --digests`의 Ryuk 이미지는 태그 없이 다이제스트 `sha256:7c1a8a9a…28f0`로만 있다(다이제스트로 받음). Ryuk 8080 게시가 모든 인터페이스(`HostIp ""`)인 것은 17.5의 알려진 한계 그대로다 |
+| `bash test/lint/check-spdx.sh` | `check-spdx: OK (984 files, git ls-files, 2 excluded)` |
+| `./gradlew checkLicenses checkDevOnlyLicenses --rerun-tasks -Pargos.ui.skip=true` | BUILD SUCCESSFUL in 19s(126개 작업 실행). 저장소 프로젝트는 "0 shipped third-party module(s)". 잠금 파일·`gradle/`(검증 메타데이터 포함)은 WO-03F 전 스냅숏과 같다(의존성 변경 없음, 재생성 안 함) |
+| `bash .github/scripts/run-gitleaks.sh dir` | `no leaks found`(71.37MB, 2분 27초) |
+| `bash .github/scripts/check-workflows.sh` | `check-workflows: 4 file(s) clean` |
+
+- 통합 중 고친 것: `SqlTemplate` Javadoc에 남은 `{bloom.<index>.<param>}` 언급을 지웠다(C-56, 주석만). `:test:storage:queries:check`(Spotless·Error Prone·단위 테스트) 녹색, 바이트코드가 같아 단위 테스트는 up-to-date였다.
+- 실행 뒤 컨테이너 0개, 볼륨 0개다. 이미지는 ClickHouse 2종·Ryuk·gitleaks(실행 전과 같은 구성)만 남겼다.
+
+### 17.10 스키마 IT의 고정 날짜 제거(PMO pmo-1, 2026-11-02 UTC)
+
+**문제**: `test/storage/schema-tests` 통합 테스트는 V001을 운영 보존 기간(`SchemaParameters.defaults()`: xlog 30일, 원본 통계·metric 14일, profile 7일)으로 렌더하면서 행은 2026-10-22~25의 고정 시각으로 넣었다. ClickHouse 26.8은 TTL이 지난 행을 insert 시점에 버리고(`ttl_only_drop_parts = 1`) MV에는 그대로 넘기므로(PMO 실측: 20일 전 100행 → part 0행, MV 대상 100행), 날짜가 보존 기간 밖으로 나가면 원본 대 롤업 비교와 원본 행 수 단언이 스스로 깨진다. 첫 실패 예정은 2026-11-07 00:00 UTC(`ConfirmationItemsIT.gorillaFloat64`, metric 14일)였고 11-23 무렵에는 xlog 기반 단언 대부분이 깨질 상태였다.
+
+**수정**(운영 보존 기간·접두사·단언 값은 그대로, 바뀐 것은 날짜 리터럴뿐):
+
+- 기준일 하나: `Workload.anchorDay()` = 오늘(UTC) − 2일, JVM마다 한 번 계산한다(실행이 자정을 넘어도 모든 클래스가 같은 날). 행 시각·파티션·날짜 문자열은 모두 `Workload.at(LocalTime)`·`at(일, LocalTime)`·`day(일)`·`seconds`·`millis`로 기준일에서 만든다. 기존 모양은 그대로다: 23:40부터 30분(자정 교차, 두 일 파티션·두 시간), 09:58부터 4분, 23:58부터 4분(자정 블록), 늦은 분 23:41, 다음 날 00:05부터 5분(`UpgradeIT`), 기준일 −2일 10:00부터 10초 간격 20,000행(삭제 폴링, 3일). `Rollups.DAY`는 기준일, `Rollups.MONTH`는 그 달(`RollupRebuild.monthPartition`)이다.
+- 바꾼 곳: `AccountsIT`(@BeforeAll 적재, writer 원본 INSERT, 거부되는 `DROP PARTITION` 2곳, TTL 없는 migrator 시험 테이블), `ConfirmationItemsIT`(bloom 입력, gorilla metric 3행, 삭제 폴링의 시작 시각·파티션 `IN` 목록·`DELETE IN PARTITION`·첫날 비교, 그리고 TTL 없는 시험 테이블인 quantileStates 분 기준·`drop_limit` 파티션), `DeduplicationTokenIT` 4곳 + `tokenIsTheIdentity` 행, `ReplicatedConversionIT` 2곳, `RollupRebuildIT`(START·OTHER_DAY·23시/00시 리터럴), `RollupViewsIT`(START·늦은 분), `Rollups`, `SchemaApplyIT`, `UpgradeIT` 2곳. TTL 없는 시험 테이블과 거부 문장은 고정 날짜여도 깨지지 않지만 아래 소스 검사를 예외 없이 두려고 같이 바꿨다.
+- 재발 방지 가드: (1) `Workload.generate`와 `Workload.requireRetained`(원본 테이블 직접 INSERT 4곳 앞: bloom xlog, gorilla metric, 삭제 폴링 xlog, `tokenIsTheIdentity` xlog)가 행 시각이 미래이거나 그 테이블의 보존 기간(defaults) − 1일보다 오래되면 `IllegalArgumentException`을 던진다(테이블·범위·보존 키가 메시지에 나온다). (2) 단위 테스트 `FixedDatesTest`(Docker 없음)가 `src/integrationTest`의 `yyyy-MM-dd` 리터럴을 찾아 실패시킨다. 줄에 `fixed-date-ok: <이유>`가 있으면 허용하고, 지금은 `Workload`의 tx_id epoch 주석 1줄뿐이다(그 수도 단언). `:test:storage:schema-tests:test`가 통합 테스트 소스를 입력으로 갖도록 했다. (3) `-Pschema.anchorOffsetDays=<n>`(시스템 속성 `argos.test.anchorOffsetDays`)로 기준일을 옮긴다. 유효 범위 2~12: 2 미만이면 다음 날 00:10이 미래가 될 수 있고, 12를 넘으면 기준일 00:00의 원본 행이 14일 − 여유 1일 밖이 된다.
+- `test/storage`의 다른 IT: 남은 날짜 리터럴은 `GeneratorClickHouseIT` 150행(음성 대조의 SELECT 상수)과 `ReaderLimitsIT` 334~338행(실행 전에 거부되는 문장의 더미 파라미터)뿐이고 테이블에 넣지 않는다. 생성기·쿼리 IT 데이터는 now 기준이다. Q14 합성 표본(`PercentileAccuracy`, 2026-01-05)은 TTL 없는 `q14_sample` 테이블이다.
+
+| 명령 | 결과 |
+|---|---|
+| `./gradlew spotlessApply :test:storage:schema-tests:test :test:storage:schema-tests:compileIntegrationTestJava -Pargos.ui.skip=true` | 녹색. schema-tests 단위 10건(`DeployConfigTest` 9, `FixedDatesTest` 1) |
+| `FixedDatesTest` 음성 확인 | `Rollups.java`에 `Instant.parse("2026-10-24T23:40:00Z")` 주석 줄을 덧붙이면 실패(`Rollups.java:172` 보고), 되돌린 뒤 녹색 |
+| `./gradlew :test:storage:schema-tests:integrationTest -Pargos.ui.skip=true --rerun`(16:41:54~16:42:55) | **53/53**, 1분. 기준일 2026-10-31(오늘 11-02 UTC, `build/reports/clickhouse-schema/workload.md`). 기준일이 달의 마지막 날이라 자정 교차 창이 월 1h 파티션 경계(202610 → 202611)도 넘는 경우가 이번에 실행됐다. 1h 재구축은 기준일의 달이고 단언은 그대로 녹색 |
+| 같은 명령 `-Pschema.anchorOffsetDays=6`(16:43:12~) | **53/53**, 기준일 10-27 |
+| 같은 명령 `-Pschema.anchorOffsetDays=12`(16:44:13~) | **53/53**, 기준일 10-21(원본 행은 10-21 00:00부터 = 14일 보존의 경계 하루 안, 삭제 폴링 xlog는 10-19~21) |
+| 같은 명령 `-Pschema.anchorOffsetDays=13`(가드 확인, 16:45:22~) | 기대대로 실패: 40건 실행 중 7건, 모두 가드의 `IllegalArgumentException`(예: `metric rows 2026-10-20T00:00:00Z .. 2026-10-20T00:00:10Z are outside [2026-10-20T16:45:34Z, 2026-11-02T16:45:34Z] (raw-days = 14, one day of margin)`). 단언 실패는 0. 23:40 창(`RollupViewsIT`·`RollupRebuildIT`·`UpgradeIT`)은 16:45 UTC에는 아직 경계 안이라 통과했다. 그래서 하루 중 시각과 무관한 최대값이 12다 |
+| **`./gradlew integrationTest -Pqueries.profile=ci --rerun`**(CI integration 잡과 같은 명령, 16:46:05~16:51:16) | **BUILD SUCCESSFUL in 5m 10s**. 저장소 69(스키마 53, 생성기 3, 쿼리 13), agent-testing 21, 샘플 앱 37(common 6, ext-stub 11, load 12, shop-batch 1, shop-boot2 2, shop-heavy 5). 실패·skip 0. 스키마 기준일 2026-10-31 |
+| `bash test/lint/check-spdx.sh` | `check-spdx: OK (985 files, git ls-files, 2 excluded)`(새 파일 `FixedDatesTest.java`) |
+
+- `deploy/clickhouse`는 바꾸지 않았다. 의존성 변경 없음.
+
+### 17.11 통합 재검증(PMO 수정 뒤, WO-03F 통합 리드, 2026-11-02 16:54~17:09 UTC)
+
+17.10 수정 뒤 저장소 프로젝트 4개를 `clean`하고(16:54) 남은 컨테이너·볼륨이 없음을 확인한 다음, 같은 머신에서 다른 작업 없이 실행했다. 스키마 IT 기준일은 2026-10-31(오늘 11-02 UTC − 2일, `build/reports/clickhouse-schema/workload.md`)이다.
+
+| 명령 | 결과 |
+|---|---|
+| `./gradlew build --rerun-tasks`(UI 포함, 16:54:32~16:58:27) | **BUILD SUCCESSFUL in 3m 53s, 415개 작업 전부 실행**. Java 단위 558건(저장소 111: clickhouse-support 32, generator 42, queries 27, schema-tests 10. 17.9 대비 `FixedDatesTest` 1건 추가), UI Vitest 456건(31파일), 실패 0 |
+| `./gradlew integrationTest -Pqueries.profile=ci --rerun`(CI integration 잡과 같은 명령, 16:59:05~17:04:32) | **BUILD SUCCESSFUL in 5m 26s**. 저장소 69(스키마 53, 생성기 3, 쿼리 13), agent-testing 21, 샘플 앱 37(common 6, ext-stub 11, load 12, shop-batch 1, shop-boot2 2, shop-heavy 5), shop-boot3 스모크 3변형. 실패·skip 0. 클래스별: `BenchRunIT` 223초(적재 포함), `GeneratorClickHouseIT` 97초, `DeduplicationTokenIT` 36초, `ReaderLimitsIT` 35초, `ConsistencyIT` 34초 |
+| Ryuk 고정 확인 | 실행 전에 로컬 Ryuk 이미지(`sha256:7c1a8a9a…28f0`)를 지웠다. 실행 중 `docker inspect`로 컨테이너 15개를 기록했다: Ryuk 3개 모두 `Config.Image=testcontainers/ryuk:0.14.0@sha256:7c1a8a9a…28f0`, ClickHouse 26.8 11개·26.3 1개(`UpgradeIT`)는 `image.properties`의 다이제스트, 메모리 상한 2GiB(11개)·3GiB(1개), HTTP 게시는 `127.0.0.1`. 실행 뒤 `docker images --digests`의 Ryuk 이미지는 태그 없이 다이제스트로만 있다(다이제스트로 다시 받음). Ryuk 8080 게시가 모든 인터페이스(`HostIp ""`)인 것은 17.5의 알려진 한계 그대로다 |
+| `bash test/lint/check-spdx.sh` | `check-spdx: OK (985 files, git ls-files, 2 excluded)` |
+| `./gradlew checkLicenses checkDevOnlyLicenses --rerun-tasks -Pargos.ui.skip=true`(17:05:12~17:05:35) | BUILD SUCCESSFUL in 22s(126개 작업 실행). 잠금 파일 42개와 `gradle/`(검증 메타데이터·버전 카탈로그·래퍼 포함)은 WO-03F 전 스냅숏과 같다(의존성 변경 없음, 재생성 안 함). 바뀐 빌드 스크립트는 `test/storage/queries`·`schema-tests`의 시스템 속성·입력 선언뿐이다 |
+| `bash .github/scripts/run-gitleaks.sh dir`(17:06:02~17:08:32) | `no leaks found`(80.28MB, 2분 30초) |
+| `bash .github/scripts/check-workflows.sh` | `check-workflows: 4 file(s) clean` |
+
+- 통합 중 고친 것: 없음.
+- 빌드 명령은 바뀌지 않았다. `-Pschema.anchorOffsetDays`는 기준일을 옮기는 진단용 선택 속성이라 `test/storage/schema-tests/README.md`와 17.10에만 둔다.
+- 실행 뒤 컨테이너 0개, 볼륨 0개다. 이미지는 ClickHouse 2종·Ryuk·gitleaks(실행 전과 같은 구성)만 남겼다.

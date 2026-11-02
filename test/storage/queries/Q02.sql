@@ -20,7 +20,7 @@ SELECT toStartOfInterval(minute, toIntervalMinute({step:UInt32})) AS b,
        sum(count) AS cnt,
        sum(error_count) AS err,
        sum(sum_elapsed_ms) / sum(count) AS avg_ms,
-       quantilesTDigestMerge(0.5, 0.95, 0.99)(q_elapsed) AS q,
+       quantilesDDMerge(0.01, 0.5, 0.95, 0.99)(q_elapsed) AS q,
        (sum(apdex_satisfied) + sum(apdex_tolerating) / 2) / sum(count) AS apdex
 FROM {db}.{p}app_stat_1m
 WHERE app_id = {app:UInt32} AND kind = 'HTTP'
@@ -34,7 +34,7 @@ SELECT toStartOfInterval(hour, toIntervalHour({step:UInt32})) AS b,
        sum(count) AS cnt,
        sum(error_count) AS err,
        sum(sum_elapsed_ms) / sum(count) AS avg_ms,
-       quantilesTDigestMerge(0.5, 0.95, 0.99)(q_elapsed) AS q,
+       quantilesDDMerge(0.01, 0.5, 0.95, 0.99)(q_elapsed) AS q,
        (sum(apdex_satisfied) + sum(apdex_tolerating) / 2) / sum(count) AS apdex
 FROM {db}.{p}app_stat_1h
 WHERE app_id = {app:UInt32} AND kind = 'HTTP'

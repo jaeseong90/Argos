@@ -9,13 +9,13 @@
 --   hourly_30d   the 1h cascade: sum of app_stat_1m / service_stat_1m per hour against app_stat_1h
 --                and service_stat_1h (D-03 for the > 7 day dashboards of 6.1)
 --   errors_30d   failed transactions with an error group against error_stat_1m (the fourth view)
---   nightly      13 section 6.3 (13) as the nightly job runs it (one day, HTTP)
--- Form: the sources are combined with UNION ALL (one src label per source) and grouped by the key;
--- sumIf(c, src = ...) is 0 for a key missing on one side, and every key column comes from its own
--- source row, so the result does not depend on join_use_nulls (a FULL JOIN USING chain of three or
--- more tables labels a key found only in the third table with default key values). The nightly
--- variant keeps the FULL JOIN form of 13 section 6.3 (13) and runs with join_use_nulls = 0 (file
--- setting): a minute missing on one side compares against 0.
+--   nightly      13 section 6.3 (13) as the nightly job runs it (one day, HTTP), in the C-65 form
+-- Form (ADR-0007 C-65, every variant): the sources are combined with UNION ALL (one src label per
+-- source) and grouped by the key; sumIf(c, src = ...) is 0 for a key missing on one side, and every
+-- key column comes from its own source row, so the result does not depend on join_use_nulls (a FULL
+-- JOIN USING chain of three or more tables labels a key found only in the third table with default
+-- key values). join_use_nulls = 0 is still fixed in the file settings; ConsistencyIT runs
+-- minute_30d with join_use_nulls = 1 as well.
 -- Run as argos_migrator (the nightly job of 13 section 18 has no 10 s limit; 30 days at full scale
 -- read about 1.3 billion xlog rows).
 --
@@ -99,34 +99,46 @@ LIMIT 1000
 
 -- @variant errors_30d
 -- The fourth view on xlog: failed transactions with an error group against error_stat_1m.
-SELECT app_id, kind, m, x.c AS xlog_errors, e.c AS error_1m
+SELECT app_id, kind, m,
+       sumIf(c, src = 'xlog')     AS xlog_errors,
+       sumIf(c, src = 'error_1m') AS error_1m
 FROM
 (
-    SELECT app_id, kind, toStartOfMinute(ts) AS m, count() AS c
+    SELECT 'xlog' AS src, app_id, kind, toStartOfMinute(ts) AS m, count() AS c
     FROM {db}.{p}xlog
     WHERE ts >= {check_from:DateTime} AND ts < {check_to:DateTime} AND error = 1 AND error_group_id != 0
     GROUP BY app_id, kind, m
-) AS x
-FULL OUTER JOIN
-(
-    SELECT app_id, kind, minute AS m, sum(count) AS c
+    UNION ALL
+    SELECT 'error_1m', app_id, kind, minute AS m, sum(count)
     FROM {db}.{p}error_stat_1m
     WHERE minute >= {check_from:DateTime} AND minute < {check_to:DateTime}
     GROUP BY app_id, kind, m
-) AS e USING (app_id, kind, m)
-WHERE x.c != e.c
+)
+GROUP BY app_id, kind, m
+HAVING xlog_errors != error_1m
 ORDER BY m, app_id, kind
 LIMIT 1000
 
 -- @variant nightly
-SELECT m, a, s
-FROM (SELECT toStartOfMinute(ts) AS m, count() AS c FROM {db}.{p}xlog
-      WHERE toDate(ts) = {full_day:Date} AND kind = 'HTTP' GROUP BY m) AS x
-FULL JOIN (SELECT minute AS m, sum(count) AS a FROM {db}.{p}app_stat_1m
-           WHERE toDate(minute) = {full_day:Date} AND kind = 'HTTP' GROUP BY m) AS y USING m
-FULL JOIN (SELECT minute AS m, sum(count) AS s FROM {db}.{p}service_stat_1m
-           WHERE toDate(minute) = {full_day:Date} AND kind = 'HTTP' GROUP BY m) AS z USING m
-WHERE x.c != y.a OR x.c != z.s
+-- 13 section 6.3 (13) (one day, HTTP minutes of all applications) in the C-65 form.
+SELECT m,
+       sumIf(c, src = 'xlog')    AS x,
+       sumIf(c, src = 'app')     AS a,
+       sumIf(c, src = 'service') AS s
+FROM
+(
+    SELECT 'xlog' AS src, toStartOfMinute(ts) AS m, count() AS c FROM {db}.{p}xlog
+    WHERE toDate(ts) = {full_day:Date} AND kind = 'HTTP' GROUP BY m
+    UNION ALL
+    SELECT 'app', minute AS m, sum(count) FROM {db}.{p}app_stat_1m
+    WHERE toDate(minute) = {full_day:Date} AND kind = 'HTTP' GROUP BY m
+    UNION ALL
+    SELECT 'service', minute AS m, sum(count) FROM {db}.{p}service_stat_1m
+    WHERE toDate(minute) = {full_day:Date} AND kind = 'HTTP' GROUP BY m
+)
+GROUP BY m
+HAVING x != a OR x != s
+ORDER BY m
 
 -- @step window_minute
 -- The minute_30d check restricted to a time window (Q15, Q16 procedures).

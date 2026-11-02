@@ -26,9 +26,14 @@ import java.util.Map;
 
 /**
  * Q20 compression (13 §14, N-19, T-ST-041, T-ST-050): compression ratio and bytes per row of every
- * table of the loaded data, and a sample of the five raw tables in five variants of their V001
- * definition (column codecs on/off x default codec LZ4/ZSTD(1), and the PoC proposal {@link
- * ProposedCodecs}) with the insert CPU of the copy.
+ * table of the loaded data, and a sample of the five raw tables in six variants of their V001
+ * definition with the insert CPU of the copy: {@code base} is V001 as deployed (ADR-0007 C-54:
+ * server default ZSTD(1), adjusted column codecs); {@code lz4} is the pre-ADR-0007 V001 ({@link
+ * LegacyCodecs}, default LZ4, the WO-03 {@code base}); {@code lz4_nocodec}, {@code lz4cols_zstd}
+ * and {@code nocodec} are the WO-03 variants {@code nocodec}, {@code zstd} and {@code zstd_nocodec}
+ * (column codecs on/off x default codec LZ4/ZSTD(1)); {@code proposed} is the WO-03 PoC proposal
+ * ({@link ProposedCodecs} applied to the pre-ADR-0007 definition), which differs from {@code base}
+ * only by {@code CODEC(Delta, ZSTD(1))} on profile_step.tx_id.
  *
  * <p>Controls: each table is copied from its own latest full 24 hours (or its whole range when it
  * holds less: profile_step keeps fewer days than xlog); after the copy of a variant the merges are
@@ -49,14 +54,22 @@ public final class CompressionComparison {
   private static final Map<String, String> VARIANTS = new LinkedHashMap<>();
 
   static {
-    VARIANTS.put("base", "V001: column codecs, default LZ4");
-    VARIANTS.put("nocodec", "no column codecs, default LZ4");
-    VARIANTS.put("zstd", "column codecs, default ZSTD(1)");
-    VARIANTS.put("zstd_nocodec", "no column codecs, default ZSTD(1)");
+    VARIANTS.put(
+        "base",
+        "V001 (ADR-0007 C-54): server default ZSTD(1), column codecs with ZSTD(1) stages, xlog"
+            + " trace_id and parent_span_id without CODEC(NONE), xlog tx_id Delta + ZSTD(1)");
+    VARIANTS.put(
+        "lz4",
+        "V001 before ADR-0007 (WO-03 base): column codecs with LZ4 stages, xlog trace_id and"
+            + " parent_span_id CODEC(NONE), default LZ4");
+    VARIANTS.put("lz4_nocodec", "no column codecs, default LZ4 (WO-03 nocodec)");
+    VARIANTS.put("lz4cols_zstd", "pre-ADR-0007 column codecs, default ZSTD(1) (WO-03 zstd)");
+    VARIANTS.put("nocodec", "no column codecs, default ZSTD(1) (WO-03 zstd_nocodec)");
     VARIANTS.put(
         "proposed",
-        "PoC proposal (12.5): default ZSTD(1), column codecs LZ4 -> ZSTD(1), xlog parent_span_id and"
-            + " trace_id without CODEC(NONE), tx_id Delta + ZSTD(1)");
+        "WO-03 PoC proposal (12.5) on the pre-ADR-0007 V001: default ZSTD(1), LZ4 stages ->"
+            + " ZSTD(1), xlog parent_span_id and trace_id without CODEC(NONE), tx_id Delta +"
+            + " ZSTD(1) in xlog and profile_step (= base + profile_step.tx_id Delta)");
   }
 
   private CompressionComparison() {}
@@ -309,16 +322,21 @@ public final class CompressionComparison {
   static String variantStatement(
       SchemaRenderer renderer, SchemaParameters vs, String table, String variant) {
     String create = createStatement(renderer, vs, table);
-    if (variant.equals("proposed")) {
-      return ProposedCodecs.apply(create, table);
-    }
-    if (variant.contains("nocodec")) {
-      create = SchemaRenderer.withoutColumnCodecs(create);
-    }
-    if (variant.startsWith("zstd")) {
-      create = withSetting(create, "default_compression_codec = 'ZSTD(1)'");
-    }
-    return create;
+    return switch (variant) {
+      case "base" -> create; // the server default of config.d applies (ZSTD(1), C-54)
+      case "lz4" ->
+          withSetting(LegacyCodecs.apply(create, table), "default_compression_codec = 'LZ4'");
+      case "lz4_nocodec" ->
+          withSetting(
+              SchemaRenderer.withoutColumnCodecs(create), "default_compression_codec = 'LZ4'");
+      case "lz4cols_zstd" ->
+          withSetting(LegacyCodecs.apply(create, table), "default_compression_codec = 'ZSTD(1)'");
+      case "nocodec" ->
+          withSetting(
+              SchemaRenderer.withoutColumnCodecs(create), "default_compression_codec = 'ZSTD(1)'");
+      case "proposed" -> ProposedCodecs.apply(LegacyCodecs.apply(create, table), table);
+      default -> throw new IllegalArgumentException("Unknown Q20 variant: " + variant);
+    };
   }
 
   /** Waits until the variant has no merge and the same part count twice; what it saw. */

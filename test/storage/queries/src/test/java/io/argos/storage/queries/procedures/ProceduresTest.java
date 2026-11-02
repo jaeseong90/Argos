@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.argos.storage.queries.Parameters;
 import io.argos.storage.schema.SchemaParameters;
 import io.argos.storage.schema.SchemaRenderer;
+import io.argos.storage.schema.SqlScript;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -85,38 +86,91 @@ class ProceduresTest {
 
   @Test
   @DisplayName(
-      "Q20 proposed variant: LZ4 stages -> ZSTD(1), xlog parent_span_id and trace_id without"
-          + " CODEC(NONE), span_id kept, tx_id Delta + ZSTD(1), default ZSTD(1)")
-  void proposedCodecs() {
+      "Q20 variants: base = V001 (C-54), lz4 = the pre-ADR-0007 V001 (LZ4 stages, CODEC(NONE),"
+          + " default LZ4), proposed = base + profile_step.tx_id Delta")
+  void q20Variants() {
     SchemaRenderer renderer = SchemaRenderer.fromRepository();
-    SchemaParameters schema = SchemaParameters.defaults().withTablePrefix("q20_proposed_");
-    String xlog = CompressionComparison.variantStatement(renderer, schema, "xlog", "proposed");
-    assertThat(xlog)
-        .startsWith("CREATE TABLE IF NOT EXISTS argos.q20_proposed_xlog")
+    SchemaParameters schema = SchemaParameters.defaults().withTablePrefix("q20_v_");
+    String base = CompressionComparison.variantStatement(renderer, schema, "xlog", "base");
+    assertThat(base)
+        .startsWith("CREATE TABLE IF NOT EXISTS argos.q20_v_xlog")
         .doesNotContain("LZ4")
+        .doesNotContain("default_compression_codec")
+        .contains("CODEC(DoubleDelta, ZSTD(1))")
+        .contains("tx_id            UInt64 CODEC(Delta, ZSTD(1)),");
+
+    String lz4 = CompressionComparison.variantStatement(renderer, schema, "xlog", "lz4");
+    assertThat(lz4)
+        .doesNotContain("ZSTD(1)")
         .doesNotContain("--")
-        .containsPattern(
-            "\\n\\s*ts\\s+DateTime64\\(3, 'UTC'\\) CODEC\\(DoubleDelta, ZSTD\\(1\\)\\),")
+        .containsPattern("\\n\\s*ts\\s+DateTime64\\(3, 'UTC'\\) CODEC\\(DoubleDelta, LZ4\\),")
+        .containsPattern("\\n\\s*tx_id\\s+UInt64,")
+        .containsPattern("\\n\\s*trace_id\\s+FixedString\\(16\\) CODEC\\(NONE\\),")
+        .containsPattern("\\n\\s*span_id\\s+UInt64 CODEC\\(NONE\\),")
+        .containsPattern("\\n\\s*parent_span_id\\s+UInt64 CODEC\\(NONE\\),")
+        .containsPattern("\\n\\s*elapsed_ms\\s+UInt32 CODEC\\(T64, LZ4\\),")
+        .containsPattern("\\n\\s*user_id\\s+String CODEC\\(ZSTD\\(3\\)\\),")
+        .contains("TYPE bloom_filter(0.01) GRANULARITY 4,\n    INDEX idx_request")
+        .doesNotContain("GRANULARITY 1")
+        .endsWith("default_compression_codec = 'LZ4'");
+    assertThat(CompressionComparison.variantStatement(renderer, schema, "metric", "lz4"))
+        .containsPattern("value\\s+Float64 CODEC\\(Gorilla, LZ4\\)")
+        .endsWith("default_compression_codec = 'LZ4'");
+    assertThat(CompressionComparison.variantStatement(renderer, schema, "profile_step", "lz4"))
+        .contains("CODEC(ZSTD(3))")
+        .doesNotContain("ZSTD(1)");
+    assertThat(CompressionComparison.variantStatement(renderer, schema, "xlog", "lz4cols_zstd"))
+        .contains("CODEC(T64, LZ4)")
+        .endsWith("default_compression_codec = 'ZSTD(1)'");
+    assertThat(CompressionComparison.variantStatement(renderer, schema, "xlog", "lz4_nocodec"))
+        .doesNotContain("CODEC")
+        .endsWith("default_compression_codec = 'LZ4'");
+    assertThat(CompressionComparison.variantStatement(renderer, schema, "xlog", "nocodec"))
+        .doesNotContain("CODEC")
+        .endsWith("default_compression_codec = 'ZSTD(1)'");
+
+    // The WO-03 proposal on the old definition: xlog columns as V001, profile_step.tx_id Delta.
+    String proposed = CompressionComparison.variantStatement(renderer, schema, "xlog", "proposed");
+    assertThat(proposed)
+        .doesNotContain("LZ4")
         .containsPattern("\\n\\s*tx_id\\s+UInt64 CODEC\\(Delta, ZSTD\\(1\\)\\),")
         .containsPattern("\\n\\s*trace_id\\s+FixedString\\(16\\),")
         .containsPattern("\\n\\s*span_id\\s+UInt64 CODEC\\(NONE\\),")
         .containsPattern("\\n\\s*parent_span_id\\s+UInt64,")
-        .containsPattern("\\n\\s*elapsed_ms\\s+UInt32 CODEC\\(T64, ZSTD\\(1\\)\\),")
-        .containsPattern("\\n\\s*user_id\\s+String CODEC\\(ZSTD\\(3\\)\\),")
-        .containsPattern("\\n\\s*alloc_bytes\\s+Int64\\s+CODEC\\(T64, ZSTD\\(1\\)\\),")
-        .contains("non_replicated_deduplication_window = 1000")
         .endsWith("default_compression_codec = 'ZSTD(1)'");
-    String metric = CompressionComparison.variantStatement(renderer, schema, "metric", "proposed");
-    assertThat(metric)
-        .doesNotContain("LZ4")
-        .containsPattern("value\\s+Float64 CODEC\\(Gorilla, ZSTD\\(1\\)\\)")
-        .endsWith("default_compression_codec = 'ZSTD(1)'");
-    String profile =
-        CompressionComparison.variantStatement(renderer, schema, "profile_step", "proposed");
-    assertThat(profile).containsPattern("\\n\\s*tx_id\\s+UInt64 CODEC\\(Delta, ZSTD\\(1\\)\\),");
-    // The other variants are unchanged by the proposal.
-    assertThat(CompressionComparison.variantStatement(renderer, schema, "xlog", "base"))
-        .contains("CODEC(DoubleDelta, LZ4)")
-        .contains("parent_span_id   UInt64 CODEC(NONE)");
+    assertThat(stripSettingAndSpace(proposed))
+        .isEqualTo(
+            stripSettingAndSpace(SqlScript.withoutComments(base))
+                .replace("GRANULARITY 1", "GRANULARITY 4"));
+    assertThat(CompressionComparison.variantStatement(renderer, schema, "profile_step", "proposed"))
+        .containsPattern("\\n\\s*tx_id\\s+UInt64 CODEC\\(Delta, ZSTD\\(1\\)\\),");
+    assertThat(CompressionComparison.variantStatement(renderer, schema, "profile_step", "base"))
+        .containsPattern("\\n\\s*tx_id\\s+UInt64,");
+  }
+
+  @Test
+  @DisplayName(
+      "Q05/bloom builds its own variant DDL from the V001 literals (C-55, C-56): all five indexes")
+  void bloomVariantStatement() {
+    SchemaRenderer renderer = SchemaRenderer.fromRepository();
+    SchemaParameters schema = SchemaParameters.defaults().withTablePrefix("bv_f0250_g1_");
+    String sql = BloomVariants.variantStatement(renderer, schema, 0.025, 1);
+    assertThat(sql)
+        .startsWith("CREATE TABLE IF NOT EXISTS argos.bv_f0250_g1_xlog")
+        .contains("INDEX idx_tx      tx_id      TYPE bloom_filter(0.025) GRANULARITY 1,")
+        .contains("INDEX idx_user    user_id    TYPE bloom_filter(0.025) GRANULARITY 1,")
+        .contains("INDEX idx_sql     sql_ids    TYPE bloom_filter(0.025) GRANULARITY 1\n")
+        .doesNotContain("bloom_filter(0.01)")
+        .doesNotContain("{");
+    assertThat(BloomVariants.variantStatement(renderer, schema, 0.01, 4))
+        .contains("INDEX idx_user    user_id    TYPE bloom_filter(0.01) GRANULARITY 4,")
+        .doesNotContain("GRANULARITY 1");
+    assertThatThrownBy(() -> BloomVariants.variantStatement(renderer, schema, 1.5, 1))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  private static String stripSettingAndSpace(String create) {
+    int settings = create.indexOf("SETTINGS");
+    return create.substring(0, settings).replaceAll("\\s+", " ").strip();
   }
 }

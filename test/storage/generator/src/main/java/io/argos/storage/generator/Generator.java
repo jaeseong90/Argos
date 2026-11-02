@@ -49,6 +49,12 @@ public final class Generator {
   public static final int MANIFEST_VERSION = 1;
 
   /**
+   * N-06 statistics rows per second (sql_stat_raw + ext_stat_raw) that the Gate 0 load of Q17 3b
+   * must reach (ADR-0007 C-62); the report and the console state whether a run reached it.
+   */
+  public static final int N06_STATISTICS_ROWS_PER_SECOND = 10_000;
+
+  /**
    * Result of a run.
    *
    * @param runId token namespace of the run
@@ -149,7 +155,11 @@ public final class Generator {
       long elapsed = System.currentTimeMillis() - started;
       Map<String, Object> simulation =
           holder[0] == null ? new LinkedHashMap<>() : holder[0].summary();
-      simulation.put("rowsPerSimulatedSecond", ratesPerSimulatedSecond(range, manifest));
+      Map<String, Object> rates = ratesPerSimulatedSecond(range, manifest);
+      simulation.put("rowsPerSimulatedSecond", rates);
+      double statistics = (double) rates.get("statistics");
+      simulation.put("n06StatisticsRowsPerSecond", N06_STATISTICS_ROWS_PER_SECOND);
+      simulation.put("n06StatisticsReached", statistics >= N06_STATISTICS_ROWS_PER_SECOND);
       Map<String, Object> document =
           document(range, runId, topology, manifest, stats, elapsed, host.summary(), replayInfo);
       document.put("simulation", simulation);
@@ -172,6 +182,7 @@ public final class Generator {
         document.put("clickhouse", clickhouse);
       }
       Path dir = out == null ? null : write(out, runId, document, topology, manifest);
+      log.printf(Locale.ROOT, "%s%n", statisticsLine(rates));
       log.printf(
           Locale.ROOT,
           "argos storage generator: done in %.1f s%s%n",
@@ -231,6 +242,24 @@ public final class Generator {
     info.put("writerRestartsAfterInsert", crashes[1]);
     info.put("tpsSteps", config.tpsSteps);
     info.put("stepDurationSeconds", stepMs / 1000);
+  }
+
+  /**
+   * The console line with the achieved statistics rate against the N-06 bar (C-62), for example
+   * {@code statistics rows/simulated s: 10,412 (sql_stat_raw 10,286 + ext_stat_raw 126); N-06 bar
+   * 10,000: reached}.
+   */
+  static String statisticsLine(Map<String, Object> rates) {
+    double statistics = (double) rates.get("statistics");
+    return String.format(
+        Locale.ROOT,
+        "argos storage generator: statistics rows/simulated s: %,.0f (sql_stat_raw %,.0f +"
+            + " ext_stat_raw %,.0f); N-06 bar %,d: %s",
+        statistics,
+        (double) rates.get("sql_stat_raw"),
+        (double) rates.get("ext_stat_raw"),
+        N06_STATISTICS_ROWS_PER_SECOND,
+        statistics >= N06_STATISTICS_ROWS_PER_SECOND ? "reached" : "NOT reached");
   }
 
   /**

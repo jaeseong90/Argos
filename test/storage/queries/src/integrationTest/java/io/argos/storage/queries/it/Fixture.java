@@ -35,7 +35,13 @@ final class Fixture {
 
   static synchronized Server server() {
     if (server == null) {
-      clickHouse = ArgosClickHouse.builder().memoryLimit(3 * MemoryBudget.GIB).start();
+      // The writer inserts into the raw tables of the dataset prefix and of the negative control
+      // (C-60: users.d grants the default prefix; the launcher adds these two).
+      clickHouse =
+          ArgosClickHouse.builder()
+              .memoryLimit(3 * MemoryBudget.GIB)
+              .writerTablePrefixes(PREFIX, "neg_")
+              .start();
       server = Server.wrap(clickHouse);
       load = MachineLoad.start();
       ArgosClickHouse started = clickHouse;

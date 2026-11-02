@@ -11,7 +11,7 @@ import io.argos.storage.clickhouse.ClickHouseHttp;
 import io.argos.storage.schema.SchemaApplier;
 import io.argos.storage.schema.SchemaParameters;
 import io.argos.storage.schema.SchemaRenderer;
-import java.time.Instant;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
@@ -90,14 +90,14 @@ class SchemaApplyIT {
               List.of(
                   "AggregatingMergeTree",
                   "toDate(minute)",
-                  "app_id, kind, service_id, version_id, minute",
+                  "app_id, kind, service_id, app_version_id, minute",
                   "TTL minute + toIntervalDay(90)")),
           Map.entry(
               "service_stat_1h",
               List.of(
                   "AggregatingMergeTree",
                   "toYYYYMM(hour)",
-                  "app_id, kind, service_id, version_id, hour",
+                  "app_id, kind, service_id, app_version_id, hour",
                   "TTL hour + toIntervalDay(365)")),
           Map.entry(
               "instance_stat_1m",
@@ -111,7 +111,7 @@ class SchemaApplyIT {
               List.of(
                   "AggregatingMergeTree",
                   "toDate(minute)",
-                  "app_id, error_group_id, service_id, version_id, minute",
+                  "app_id, error_group_id, service_id, app_version_id, minute",
                   "TTL minute + toIntervalDay(90)")),
           Map.entry(
               "sql_stat_1m",
@@ -220,31 +220,45 @@ class SchemaApplyIT {
 
   @Test
   @Order(2)
-  @DisplayName("T-ST-052 codecs, skip indexes and enums are created as specified (13 §3, C-1)")
+  @DisplayName(
+      "T-ST-052 codecs (C-54), bloom indexes (C-55), percentile states (C-53) and enums are created"
+          + " as specified (13 §3, C-1)")
   void columnDetails() {
-    Map<String, String> codecs =
-        Map.of(
-            "xlog.ts", "CODEC(DoubleDelta, LZ4)",
-            "xlog.trace_id", "CODEC(NONE)",
-            "xlog.elapsed_ms", "CODEC(T64, LZ4)",
-            "xlog.user_id", "CODEC(ZSTD(3))",
-            "xlog.alloc_bytes", "CODEC(T64, LZ4)",
-            "metric.value", "CODEC(Gorilla(8), LZ4)",
-            "metric.ts", "CODEC(DoubleDelta, LZ4)",
-            "profile_step.detail", "CODEC(ZSTD(3))");
+    Map<String, String> codecs = new java.util.LinkedHashMap<>();
+    codecs.put("xlog.ts", "CODEC(DoubleDelta, ZSTD(1))");
+    codecs.put("xlog.tx_id", "CODEC(Delta(8), ZSTD(1))");
+    codecs.put("xlog.trace_id", "");
+    codecs.put("xlog.span_id", "CODEC(NONE)");
+    codecs.put("xlog.parent_span_id", "");
+    codecs.put("xlog.elapsed_ms", "CODEC(T64, ZSTD(1))");
+    codecs.put("xlog.dbc_wait_ms", "CODEC(T64, ZSTD(1))");
+    codecs.put("xlog.user_id", "CODEC(ZSTD(3))");
+    codecs.put("xlog.request_id", "CODEC(ZSTD(3))");
+    codecs.put("xlog.alloc_bytes", "CODEC(T64, ZSTD(1))");
+    codecs.put("metric.value", "CODEC(Gorilla(8), ZSTD(1))");
+    codecs.put("metric.ts", "CODEC(DoubleDelta, ZSTD(1))");
+    codecs.put("profile_step.detail", "CODEC(ZSTD(3))");
+    codecs.put("profile_step.detail_enc", "");
+    assertThat(
+            migrator.scalarLong(
+                "SELECT count() FROM system.columns WHERE database = 'argos'"
+                    + " AND compression_codec LIKE '%LZ4%'"))
+        .as("columns with an LZ4 codec")
+        .isZero();
     codecs.forEach(
         (column, codec) -> {
           String[] parts = column.split("\\.", -1);
           assertThat(
                   migrator.scalar(
-                      "SELECT compression_codec FROM system.columns WHERE database = 'argos'"
+                      "SELECT concat('[', compression_codec, ']') FROM system.columns"
+                          + " WHERE database = 'argos'"
                           + " AND table = '"
                           + parts[0]
                           + "' AND name = '"
                           + parts[1]
                           + "'"))
               .as(column)
-              .isEqualTo(codec);
+              .isEqualTo("[" + codec + "]");
         });
 
     String xlog =
@@ -254,7 +268,7 @@ class SchemaApplyIT {
         List.of(
             "INDEX idx_tx tx_id TYPE bloom_filter(0.01) GRANULARITY 4",
             "INDEX idx_trace trace_id TYPE bloom_filter(0.01) GRANULARITY 4",
-            "INDEX idx_user user_id TYPE bloom_filter(0.01) GRANULARITY 4",
+            "INDEX idx_user user_id TYPE bloom_filter(0.01) GRANULARITY 1",
             "INDEX idx_request request_id TYPE bloom_filter(0.01) GRANULARITY 4",
             "INDEX idx_sql sql_ids TYPE bloom_filter(0.01) GRANULARITY 4")) {
       assertThat(xlog).contains(index);
@@ -272,6 +286,67 @@ class SchemaApplyIT {
                 "SELECT type FROM system.columns WHERE database = 'argos' AND table = 'sql_stat_1m'"
                     + " AND name = 'buckets'"))
         .isEqualTo("AggregateFunction(sumForEach, Array(UInt64))");
+    assertThat(
+            migrator.rows(
+                "SELECT table, type FROM system.columns WHERE database = 'argos'"
+                    + " AND name = 'q_elapsed' AND NOT endsWith(table, '_mv') ORDER BY table"))
+        .containsExactly(
+            List.of("app_stat_1h", "AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32)"),
+            List.of("app_stat_1m", "AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32)"),
+            List.of(
+                "instance_stat_1m",
+                "AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32)"),
+            List.of(
+                "service_stat_1h", "AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32)"),
+            List.of(
+                "service_stat_1m",
+                "AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32)"));
+    assertThat(
+            migrator.scalarLong(
+                "SELECT count() FROM system.columns WHERE database = 'argos' AND name IN"
+                    + " ('dbc_time_ms', 'timeout_flag', 'version_id', 'sum_dbc_time_ms')"))
+        .as("pre-C-67 column names")
+        .isZero();
+  }
+
+  @Test
+  @Order(2)
+  @Tag("req:N-19")
+  @DisplayName(
+      "C-54 the server default compression is ZSTD(1): a column without CODEC compresses like"
+          + " ZSTD(1), not like LZ4")
+  void serverDefaultCompressionIsZstd1() {
+    Map<String, String> tables = new java.util.LinkedHashMap<>();
+    tables.put("codec_default", "");
+    tables.put("codec_zstd1", " SETTINGS default_compression_codec = 'ZSTD(1)'");
+    tables.put("codec_lz4", " SETTINGS default_compression_codec = 'LZ4'");
+    for (Map.Entry<String, String> t : tables.entrySet()) {
+      migrator.execute(
+          "CREATE TABLE IF NOT EXISTS argos."
+              + t.getKey()
+              + " (x UInt64, s String) ENGINE = MergeTree ORDER BY x"
+              + t.getValue());
+      migrator.execute(
+          "INSERT INTO argos."
+              + t.getKey()
+              + " SELECT number, concat(toString(number % 1000), 'abcdefghij') FROM numbers(300000)");
+    }
+    Map<String, Long> compressed = new java.util.LinkedHashMap<>();
+    for (String table : tables.keySet()) {
+      compressed.put(
+          table,
+          server
+              .client(Account.READER)
+              .scalarLong(
+                  "SELECT sum(data_compressed_bytes) FROM system.parts WHERE database = 'argos'"
+                      + " AND table = '"
+                      + table
+                      + "' AND active"));
+      migrator.execute("DROP TABLE argos." + table + " SYNC");
+    }
+    Evidence.record("schema", "C-54 compressed bytes: default / ZSTD(1) / LZ4", compressed);
+    assertThat(compressed.get("codec_default")).isEqualTo(compressed.get("codec_zstd1"));
+    assertThat(compressed.get("codec_lz4")).isGreaterThan(compressed.get("codec_zstd1"));
   }
 
   @Test
@@ -287,9 +362,9 @@ class SchemaApplyIT {
         .insert(
             Workload.insert(SchemaParameters.defaults(), "xlog", Workload.XLOG_COLUMNS),
             Workload.blocks(
-                    Workload.generate(7, Instant.parse("2026-10-24T10:00:00Z"), 2, 50).xlog, 1000)
+                    Workload.generate(7, Workload.at(LocalTime.of(10, 0)), 2, 50).xlog, 1000)
                 .get(0),
-            Map.of("insert_deduplication_token", "argos:xlog:apply-twice"));
+            Map.of("insert_deduplication_token", Workload.token("apply-twice", 0, 99)));
     long rows = migrator.scalarLong("SELECT count() FROM argos.xlog");
     long rollup = migrator.scalarLong("SELECT sum(count) FROM argos.app_stat_1h");
 

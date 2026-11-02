@@ -9,6 +9,7 @@ import io.argos.storage.schema.SchemaApplier;
 import io.argos.storage.schema.SchemaParameters;
 import io.argos.storage.schema.SchemaRenderer;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -50,7 +51,7 @@ class DeduplicationTokenIT {
       "T-ST-032 Q15: the same block_id 100 times leaves raw and every 1m/1h rollup unchanged")
   void sameTokenHundredTimes() {
     SchemaParameters p = Fixture.schema("dd100_");
-    Workload w = Workload.generate(1, Instant.parse("2026-10-24T09:58:00Z"), 4, 100);
+    Workload w = Workload.generate(1, Workload.at(LocalTime.of(9, 58)), 4, 100);
     Map<String, String> blocks = firstBlocks(w);
     blocks.forEach((table, body) -> insert(p, table, body, "b1"));
     Map<String, List<List<String>>> once = snapshot(p);
@@ -73,7 +74,7 @@ class DeduplicationTokenIT {
   void failedViewIsFilledByRetry() {
     SchemaParameters reference = Fixture.schema("ddref_");
     SchemaParameters broken = Fixture.schema("ddbrk_");
-    Workload w = Workload.generate(2, Instant.parse("2026-10-24T09:58:00Z"), 4, 100);
+    Workload w = Workload.generate(2, Workload.at(LocalTime.of(9, 58)), 4, 100);
     List<String> xlogBlocks = Workload.blocks(w.xlog, 200);
     for (int i = 0; i < 2; i++) {
       insert(reference, "xlog", xlogBlocks.get(i), "b" + i);
@@ -115,7 +116,7 @@ class DeduplicationTokenIT {
           hourlyTable ? s.replace("non_replicated_deduplication_window = 1000,", "") : s);
     }
     SchemaApplier.apply(migrator, statements);
-    Workload w = Workload.generate(3, Instant.parse("2026-10-24T09:58:00Z"), 4, 100);
+    Workload w = Workload.generate(3, Workload.at(LocalTime.of(9, 58)), 4, 100);
     String block = Workload.blocks(w.xlog, 1000).get(0);
     insert(p, "xlog", block, "b0");
     long minute = migrator.scalarLong("SELECT sum(count) FROM " + p.table("app_stat_1m"));
@@ -138,7 +139,7 @@ class DeduplicationTokenIT {
   @DisplayName("T-ST-032 a block across midnight (two partitions) is deduplicated as a whole")
   void midnightBlock() {
     SchemaParameters p = Fixture.schema("ddmid_");
-    Workload w = Workload.generate(4, Instant.parse("2026-10-24T23:58:00Z"), 4, 100);
+    Workload w = Workload.generate(4, Workload.at(LocalTime.of(23, 58)), 4, 100);
     String block = Workload.blocks(w.xlog, 1000).get(0);
     insert(p, "xlog", block, "mid");
     Map<String, List<List<String>>> once = snapshot(p);
@@ -160,20 +161,21 @@ class DeduplicationTokenIT {
   @DisplayName("T-ST-032 the token is the identity: new token = new block; no false dedup in views")
   void tokenIsTheIdentity() {
     SchemaParameters p = Fixture.schema("ddid_");
+    Instant ts = Workload.at(LocalTime.of(11, 0));
+    Workload.requireRetained("xlog", ts, ts);
     String row =
-        "9\tprod\t91\t2026-10-24 11:00:00.000\t%d\tHTTP\t5\t901\tGET\t200\t100\t0\t0\t0\t500"
+        "9\tprod\t91\t"
+            + Workload.millis(ts)
+            + "\t%d\tHTTP\t5\t901\tGET\t200\t100\t0\t0\t0\t500"
             + "\t::\toff\t\toff\t\t0\t0\t0\t0\t0\t-1\t-1\t0\t[]\n";
     String xlog = Workload.insert(p, "xlog", Workload.XLOG_COLUMNS);
     // Same data, different tokens: two blocks.
-    writer.insert(
-        xlog, String.format(row, 1), Map.of("insert_deduplication_token", "argos:xlog:t1"));
-    writer.insert(
-        xlog, String.format(row, 1), Map.of("insert_deduplication_token", "argos:xlog:t2"));
+    writer.insert(xlog, String.format(row, 1), Map.of("insert_deduplication_token", "ddid:1:1-1"));
+    writer.insert(xlog, String.format(row, 1), Map.of("insert_deduplication_token", "ddid:1:2-2"));
     assertThat(migrator.scalarLong("SELECT count() FROM " + p.table("xlog"))).isEqualTo(2);
     // Different transactions whose rollup rows are identical, with and without tokens: no view
     // block may be mistaken for a duplicate.
-    writer.insert(
-        xlog, String.format(row, 2), Map.of("insert_deduplication_token", "argos:xlog:t3"));
+    writer.insert(xlog, String.format(row, 2), Map.of("insert_deduplication_token", "ddid:1:3-3"));
     writer.insert(xlog, String.format(row, 3), Map.of());
     writer.insert(xlog, String.format(row, 4), Map.of());
     assertThat(migrator.scalarLong("SELECT count() FROM " + p.table("xlog"))).isEqualTo(5);
@@ -191,28 +193,24 @@ class DeduplicationTokenIT {
   @Test
   @DisplayName("T-ST-032 the window remembers the last N blocks only (recovery window of 13 §5.1)")
   void windowForgetsOldTokens() {
-    Fixture.schema("ddwin_");
-    String table = "argos.ddwin_window";
+    SchemaParameters p = Fixture.schema("ddwin_");
+    // The writer inserts into the raw tables only (C-60): the window is shrunk on this prefix's
+    // metric table, which no view of the test reads back.
+    String table = p.table("metric");
     migrator.execute(
-        "CREATE TABLE IF NOT EXISTS "
-            + table
-            + " (x UInt32) ENGINE = MergeTree ORDER BY x"
-            + " SETTINGS non_replicated_deduplication_window = 3");
+        "ALTER TABLE " + table + " MODIFY SETTING non_replicated_deduplication_window = 3");
+    // A current sample time: rows older than the raw retention would be dropped at insert time.
+    String ts = "\t" + Workload.seconds(Instant.now()) + "\n";
+    String insert = "INSERT INTO " + table + " (app_id, ts) FORMAT TabSeparated";
     for (int i = 1; i <= 4; i++) {
       writer.insert(
-          "INSERT INTO " + table + " FORMAT TabSeparated",
-          i + "\n",
-          Map.of("insert_deduplication_token", "argos:window:" + i));
+          insert, i + ts, Map.of("insert_deduplication_token", Workload.token("ddwin", i, i)));
     }
     writer.insert(
-        "INSERT INTO " + table + " FORMAT TabSeparated",
-        "4\n",
-        Map.of("insert_deduplication_token", "argos:window:4"));
+        insert, 4 + ts, Map.of("insert_deduplication_token", Workload.token("ddwin", 4, 4)));
     assertThat(migrator.scalarLong("SELECT count() FROM " + table)).isEqualTo(4);
     writer.insert(
-        "INSERT INTO " + table + " FORMAT TabSeparated",
-        "1\n",
-        Map.of("insert_deduplication_token", "argos:window:1"));
+        insert, 1 + ts, Map.of("insert_deduplication_token", Workload.token("ddwin", 1, 1)));
     assertThat(migrator.scalarLong("SELECT count() FROM " + table)).isEqualTo(5);
   }
 
@@ -234,12 +232,15 @@ class DeduplicationTokenIT {
           case "metric" -> Workload.METRIC_COLUMNS;
           default -> throw new IllegalArgumentException(table);
         };
+    // C-61 token shape: <wal_instance_id>:<epoch>:<first>-<last>; the block id names the block, the
+    // table base keeps the positions of different tables apart.
+    long first = Workload.tableBase(table) + (blockId.hashCode() & 0xFFFFFL) * 1_000_000L;
     writer.insert(
         Workload.insert(p, table, columns),
         body,
         Map.of(
             "insert_deduplication_token",
-            "argos:" + table + ":" + blockId,
+            Workload.token("dd-" + blockId, first, first + body.lines().count() - 1),
             "deduplicate_blocks_in_dependent_materialized_views",
             "1"));
   }

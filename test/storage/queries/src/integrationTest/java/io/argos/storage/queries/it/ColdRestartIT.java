@@ -39,7 +39,7 @@ class ColdRestartIT {
   void coldRunAfterRestart() throws InterruptedException {
     String volume = "argos-wo03-queries-cold-" + UUID.randomUUID().toString().substring(0, 8);
     SchemaParameters schema = SchemaParameters.defaults().withTablePrefix("cold_");
-    try (Server server = Server.container(volume, 2 * MemoryBudget.GIB)) {
+    try (Server server = Server.container(volume, 2 * MemoryBudget.GIB, schema.tablePrefix())) {
       SchemaApplier.apply(server.client(Account.MIGRATOR), schema);
       Instant end = Instant.now().truncatedTo(ChronoUnit.HOURS);
       CiDataset.generate(

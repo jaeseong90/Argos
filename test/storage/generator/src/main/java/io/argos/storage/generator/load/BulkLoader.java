@@ -21,13 +21,19 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class BulkLoader implements RowConsumer, AutoCloseable {
 
   private static final Block POISON =
-      new Block(Table.XLOG, -1, "poison", 0, new byte[0], new long[0], 0);
+      new Block(Table.XLOG, -1, "poison:1:0-0", 0, new byte[0], new long[0], 0);
 
   private final GeneratorConfig config;
   private final String runId;
   private final RowBinaryWriter[] buffers = new RowBinaryWriter[Table.ALL.size()];
   private final int[] bufferedRows = new int[Table.ALL.size()];
   private final long[] sequence = new long[Table.ALL.size()];
+  private final long[] firstPosition = new long[Table.ALL.size()];
+  private final long[] lastPosition = new long[Table.ALL.size()];
+
+  /** Position of the next row of the run over all tables (the bulk stand-in for WAL positions). */
+  private long nextPosition;
+
   private final List<BlockingQueue<Block>> queues = new ArrayList<>();
   private final List<Thread> workers = new ArrayList<>();
   private final AtomicReference<Throwable> failure = new AtomicReference<>();
@@ -99,6 +105,11 @@ public final class BulkLoader implements RowConsumer, AutoCloseable {
       buffers[t] = buffer;
     }
     row.write(buffer);
+    long position = nextPosition++;
+    if (bufferedRows[t] == 0) {
+      firstPosition[t] = position;
+    }
+    lastPosition[t] = position;
     if (++bufferedRows[t] >= config.blockRows) {
       seal(table);
     }
@@ -115,7 +126,7 @@ public final class BulkLoader implements RowConsumer, AutoCloseable {
         new Block(
             table,
             seq,
-            DedupToken.bulkBlockId(runId, seq),
+            DedupToken.of(DedupToken.bulkInstance(runId), 1, firstPosition[t], lastPosition[t]),
             bufferedRows[t],
             buffers[t].toByteArray(),
             new long[0],

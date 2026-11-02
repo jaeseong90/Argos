@@ -30,7 +30,7 @@ SELECT error_group_id,
        min(first_ts) AS first_seen,
        max(last_ts) AS last_seen,
        uniqExact(service_id) AS services,
-       groupUniqArray(10)(version_id) AS versions
+       groupUniqArray(10)(app_version_id) AS versions
 FROM {db}.{p}error_stat_1m
 WHERE app_id = {app:UInt32}
   AND minute >= {end_minute:DateTime} - toIntervalDay({days:UInt32}) AND minute < {end_minute:DateTime}
@@ -40,7 +40,7 @@ LIMIT 500
 
 -- @variant related_30d days=30
 -- @expect rows >= 1
-SELECT ts, tx_id, service_id, instance_id, version_id, elapsed_ms
+SELECT ts, tx_id, service_id, instance_id, app_version_id, elapsed_ms
 FROM {db}.{p}xlog
 WHERE app_id = {app:UInt32}
   AND ts >= {end_minute:DateTime} - toIntervalDay({days:UInt32}) AND ts < {end_minute:DateTime}

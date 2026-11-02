@@ -5,9 +5,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.testcontainers.utility.DockerImageName;
+import org.testcontainers.utility.ImageNameSubstitutor;
+import org.testcontainers.utility.TestcontainersConfiguration;
 
 class ClickHouseSupportTest {
 
@@ -42,6 +47,50 @@ class ClickHouseSupportTest {
                 + "8b28eb09479c36c4533eec7a6268917d04ba3a6fd90e3f4205f70e761b6d7779");
     assertThat(ClickHouseImage.previousLts().version()).startsWith("26.3.");
     assertThatThrownBy(() -> new ClickHouseImage("26.8", "clickhouse/clickhouse-server:26.8"))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "Testcontainers substitutes its Ryuk image with the digest-pinned reference of the classpath"
+          + " testcontainers.properties")
+  void ryukPinnedByDigest() {
+    String pinned =
+        "testcontainers/ryuk:0.14.0@sha256:"
+            + "7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0";
+    assertThat(
+            TestcontainersConfiguration.getInstance()
+                .getEnvVarOrProperty("ryuk.container.image", "unset"))
+        .isEqualTo(pinned);
+    // RyukContainer is created with this built-in name; the substitutor maps it to the pin.
+    assertThat(
+            ImageNameSubstitutor.instance()
+                .apply(DockerImageName.parse("testcontainers/ryuk:0.14.0"))
+                .asCanonicalNameString())
+        .isEqualTo(pinned);
+  }
+
+  @Test
+  @Tag("req:SEC-76")
+  @DisplayName(
+      "C-60 test-only writer grants: the five raw tables of each extra prefix, nothing else")
+  void writerPrefixGrants() {
+    String xml = ArgosClickHouse.writerPrefixGrants(new TreeSet<>(Set.of("mv_", "ci_")));
+    List<String> grants = xml.lines().filter(l -> l.contains("GRANT")).map(String::strip).toList();
+    assertThat(grants)
+        .containsExactly(
+            "<query argos-test-prefix=\"ci_\">GRANT INSERT ON argos.ci_xlog</query>",
+            "<query argos-test-prefix=\"ci_\">GRANT INSERT ON argos.ci_profile_step</query>",
+            "<query argos-test-prefix=\"ci_\">GRANT INSERT ON argos.ci_metric</query>",
+            "<query argos-test-prefix=\"ci_\">GRANT INSERT ON argos.ci_sql_stat_raw</query>",
+            "<query argos-test-prefix=\"ci_\">GRANT INSERT ON argos.ci_ext_stat_raw</query>",
+            "<query argos-test-prefix=\"mv_\">GRANT INSERT ON argos.mv_xlog</query>",
+            "<query argos-test-prefix=\"mv_\">GRANT INSERT ON argos.mv_profile_step</query>",
+            "<query argos-test-prefix=\"mv_\">GRANT INSERT ON argos.mv_metric</query>",
+            "<query argos-test-prefix=\"mv_\">GRANT INSERT ON argos.mv_sql_stat_raw</query>",
+            "<query argos-test-prefix=\"mv_\">GRANT INSERT ON argos.mv_ext_stat_raw</query>");
+    assertThat(xml).startsWith("<!-- SPDX-License-Identifier: Apache-2.0 -->\n");
+    assertThatThrownBy(() -> ArgosClickHouse.builder().writerTablePrefixes("x.y_"))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

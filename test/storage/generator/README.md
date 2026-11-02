@@ -59,23 +59,38 @@ separate synthetic stream (statistics stay derived from the transactions, so D-1
 
 | Option | N-06 value | Effect |
 |---|---|---|
-| `--instances-per-app=30` | 300 instances (13 §14) | more (instance, statement) pairs per 10 s window |
-| `--active-sqls=200` | 13 §14 "active SQL 200" | each instance draws its statements uniformly from its active set (200 = every statement of its app) instead of the services' usual ones |
+| `--instances-per-app=50` | 500 instances (13 §14: 300) | more (instance, statement) pairs per 10 s window |
+| `--active-sqls=600` with `--sqls=6000` | 13 §14 "active SQL 200" is not enough (C-62) | each instance draws its statements uniformly from its active set instead of the services' usual ones; the set comes from the statements of its app, so `active-sqls` may not exceed `sqls / apps` (refused otherwise) |
 | `--profile-step-rate=50000` | 50,000 step rows/s | the capture rate of normal transactions is adapted every tick so that profile_step rows follow the target at the highest TPS step (lower steps proportional) |
 | `--tick-ms=100` | - | finer release of received rows (ingest lag) |
 
-Measured with `--target=none` at 5,000 TPS (replay, 5 min): xlog 5,011, profile_step 50,018,
-sql_stat_raw 5,300, ext_stat_raw 126, metric 6,000 rows/s (66,455 in total; normal capture rate about
-0.73). The SQL statistics rows per second are bounded by instances x active statements / 10 s (13 §14):
-300 x 200 / 10 = 6,000 rows/s, so 10,000 statistics rows/s is not reachable with the 13 §14
-parameters (docs/poc/clickhouse-benchmark.md, section 14.2). The report gives the generated rows per
-simulated second per table (`simulation.rowsPerSimulatedSecond` in `manifest.json`).
+The SQL statistics rows per second are bounded by instances x distinct statements per 10 s window. ADR-0007
+C-62 keeps the N-06 bar of 10,000 statistics rows/s and raises the load instead. Measured with
+`--target=none`, bulk, 10 simulated minutes at 5,000 TPS (2026-11-02), statistics rows/s (sql_stat_raw +
+ext_stat_raw):
 
-Every insert carries `insert_deduplication_token = argos:<table>:<block_id>` and
-`deduplicate_blocks_in_dependent_materialized_views = 1`. Bulk block ids contain a run id derived from
-the parameters and the start (an identical re-run is deduplicated); replay block ids are WAL positions
-prefixed by a WAL id. `duplicate-rate` (and `force-duplicate`: the first block of every table) re-sends
-blocks with the same token.
+| instances x active SQL | 300 x 200 | 300 x 350 | 500 x 200 | 500 x 400 | 500 x 600 | 500 x 1,000 |
+|---|---:|---:|---:|---:|---:|---:|
+| statistics rows/s | 5,398 | 7,606 | 7,381 | 10,086 | 11,458 | 12,846 |
+
+With 500 x 600 the load is xlog 5,005, profile_step about 50,000, sql_stat_raw about 11,256, ext_stat_raw 203,
+metric 10,000 rows/s; D-12 totals stay equal. Every run ends with the line
+`statistics rows/simulated s: <n> (sql_stat_raw <a> + ext_stat_raw <b>); N-06 bar 10,000: reached|NOT reached`
+and the report's "Simulation" line repeats it (`simulation.n06StatisticsReached` in `manifest.json`).
+(WO-03, 300 x 200 replay for 5 minutes: xlog 5,011, profile_step 50,018, sql_stat_raw 5,300, ext_stat_raw
+126, metric 6,000 rows/s.) The command line is validated as a whole, so the order of the options does not
+matter.
+
+Every insert carries `insert_deduplication_token = <wal_instance_id>:<epoch>:<first>-<last>` (ADR-0007
+C-61, which corrects the "COMMIT position" wording of C-2) and
+`deduplicate_blocks_in_dependent_materialized_views = 1`. In replay mode the token is the deterministic
+value the simulated WAL records in the BLOCK_INTENT before the insert: the WAL id, the WAL epoch and the
+positions of the first and last data record of the block (lower-case hex); a writer restart re-inserts
+an open intent with the token it recorded. In bulk mode the instance id is `bulk-<run id>` (derived from
+the parameters and the start: an identical re-run is deduplicated), the epoch is 1 and the positions
+are the row numbers of the run over all tables. `duplicate-rate` (and `force-duplicate`: the first
+block of every table) re-sends blocks with the same token. The loader never judges a duplicate by
+`X-ClickHouse-Summary.written_rows`, which ClickHouse also reports for a deduplicated re-send.
 
 ## Targets and output
 

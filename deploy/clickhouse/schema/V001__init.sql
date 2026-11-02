@@ -1,22 +1,21 @@
 -- SPDX-License-Identifier: Apache-2.0
 --
 -- Argos ClickHouse schema V001: raw tables, rollup tables and rollup materialized views
--- (docs/13-storage-design.md sections 3 and 4, alignment decisions C-1 and C-17 of docs/02 section 13).
+-- (docs/13-storage-design.md sections 3 and 4, alignment decisions C-1 and C-17 of docs/02 section 13,
+-- storage decisions C-53 to C-71 of docs/adr/0007, which take precedence over docs/13 where they differ).
 --
--- This file is a template. The ClickHouse migration runner (13 section 13.2) renders it before execution:
+-- This file is a template. The ClickHouse migration runner (13 section 13.2, ADR-0007 C-56) renders it
+-- before execution. Allowed directives: {db}, {p}, {where}, {retention.*} and {rollup:<table>} only.
 --   {db}, {p}                  database name and table prefix (argos.storage.clickhouse.database /
 --                              table-prefix, defaults "argos" and ""; DSN-13-11)
 --   {retention.<key>}          retention in days (argos.storage.retention.<key>, 13 section 8):
 --                              xlog-days 30, profile-days 7, raw-days 14, rollup-1m-days 90,
 --                              rollup-1h-days 365
---   {bloom.<index>.fpp}        false-positive rate and GRANULARITY of the xlog bloom filter skip
---   {bloom.<index>.granularity} indexes. PoC variables (P-4 Q5, Q6, Q11): defaults fpp 0.01 and
---                              granularity 4 for tx, trace, user, request and sql; they become
---                              literals once Gate 0 decides them
 --   {rollup:<table>}           replaced by the SELECT body in deploy/clickhouse/rollups/<table>.sql
 --                              with {where} = '' (the same file is used by the rollup rebuild, D-14)
--- The checksum recorded in ch_schema_history is computed over the unrendered template and the
--- rollup files it includes.
+-- Checksum (ch_schema_history, C-56): SHA-256 of this file after the {rollup:<table>} expansion and
+-- before the environment placeholders ({db}, {p}, {retention.*}) are substituted, so a different
+-- database name, prefix or retention keeps the checksum and a changed rollup SELECT changes it.
 --
 -- Rules (13 section 13.2): every statement is idempotent (CREATE ... IF NOT EXISTS), so applying
 -- this file twice is a no-op. Statements are separated by semicolons; the runner splits them and
@@ -24,8 +23,9 @@
 -- views (on the 1m tables), then 1m materialized views (on the raw tables), so that no row can reach
 -- a 1m table before the 1h view that cascades from it exists.
 --
--- Column name mapping to the protocol (C-17): TransactionRecord.dbc_wait_ms -> dbc_time_ms,
--- timed_out -> timeout_flag, app_version_id -> version_id (13 kept its names; the writer maps them).
+-- Compression (C-54): the server default is ZSTD(1) (config.d/argos.xml); column codecs use ZSTD(1)
+-- as their last stage, except ZSTD(3) for user_id, request_id and detail and CODEC(NONE) for span_id.
+-- Column names follow C-17 everywhere (agent, protocol, server and storage, C-67).
 
 CREATE DATABASE IF NOT EXISTS {db} ENGINE = Atomic;
 
@@ -37,19 +37,19 @@ CREATE TABLE IF NOT EXISTS {db}.{p}xlog
     app_id           UInt32,
     env              LowCardinality(String),
     instance_id      UInt32,
-    ts               DateTime64(3, 'UTC') CODEC(DoubleDelta, LZ4),
-    tx_id            UInt64,                                  -- Snowflake-like, time prefix (D-11)
+    ts               DateTime64(3, 'UTC') CODEC(DoubleDelta, ZSTD(1)),
+    tx_id            UInt64 CODEC(Delta, ZSTD(1)),            -- Snowflake-like, time prefix (D-11)
     kind             Enum8('HTTP' = 1, 'BATCH' = 2, 'MESSAGE' = 3),
-    trace_id         FixedString(16) CODEC(NONE),             -- random bytes: compression only costs CPU
-    span_id          UInt64 CODEC(NONE),
-    parent_span_id   UInt64 CODEC(NONE),                      -- 0 = root
+    trace_id         FixedString(16),                         -- Argos traces start with Unix seconds
+    span_id          UInt64 CODEC(NONE),                      -- random bytes: compression only costs CPU
+    parent_span_id   UInt64,                                  -- 0 = root (about 90 % of the rows)
     incoming_trace   UInt8,                                   -- C-17: joined an incoming traceparent
     caller_app_id    UInt32,                                  -- caller app of a distributed call
     service_id       UInt64,                                  -- dictionary key (xxh3_64)
-    version_id       UInt64,                                  -- C-17 app_version_id, dictionary key, 0 = none
+    app_version_id   UInt64,                                  -- C-17, dictionary key, 0 = none
     http_method      LowCardinality(String),                  -- '' for BATCH
     http_status      UInt16,                                  -- BATCH: 0 success / 1 failure
-    elapsed_ms       UInt32 CODEC(T64, LZ4),
+    elapsed_ms       UInt32 CODEC(T64, ZSTD(1)),
     error            UInt8,
     error_class_id   UInt64,                                  -- 0 = none
     error_group_id   UInt64,                                  -- fingerprint computed by the server (F-S19)
@@ -60,25 +60,26 @@ CREATE TABLE IF NOT EXISTS {db}.{p}xlog
     user_id_mode     Enum8('off' = 0, 'plain' = 1, 'hashed' = 2),
     request_id       String CODEC(ZSTD(3)),                   -- configured request id header <= 128
     sql_count        UInt16,
-    sql_time_ms      UInt32 CODEC(T64, LZ4),                  -- exec + fetch
-    dbc_time_ms      UInt32 CODEC(T64, LZ4),                  -- C-17 dbc_wait_ms: connection acquisition wait
+    sql_time_ms      UInt32 CODEC(T64, ZSTD(1)),              -- exec + fetch
+    dbc_wait_ms      UInt32 CODEC(T64, ZSTD(1)),              -- C-17: connection acquisition wait
     ext_count        UInt16,
-    ext_time_ms      UInt32 CODEC(T64, LZ4),
-    cpu_time_ms      Int32  CODEC(T64, LZ4),                  -- -1 = not measured (D-23)
-    alloc_bytes      Int64  CODEC(T64, LZ4),                  -- -1 = not measured (D-23)
+    ext_time_ms      UInt32 CODEC(T64, ZSTD(1)),
+    cpu_time_ms      Int32  CODEC(T64, ZSTD(1)),              -- -1 = not measured (D-23)
+    alloc_bytes      Int64  CODEC(T64, ZSTD(1)),              -- -1 = not measured (D-23)
     thread_name_id   UInt64,                                  -- normalized thread name (F-A30)
     profile_captured UInt8,                                   -- 1 = profile_step rows exist (D-07)
     streaming        UInt8,                                   -- streaming response (F-A34)
-    timeout_flag     UInt8,                                   -- C-17 timed_out: max-duration cut (F-A34)
+    timed_out        UInt8,                                   -- C-17: max-duration cut (F-A34)
     dispatch_count   UInt16,                                  -- C-17 (F-A28)
     late             UInt8,                                   -- C-17: received - ts > 60 s (D-15)
-    flags            UInt16,                                  -- C-17 bit set: 1 virtual thread, 2 leaked, 4 summarized
+    flags            UInt16,                                  -- C-69 bits: 1 virtual thread, 2 leaked, 4 summarized; other bits reserved
     sql_ids          Array(UInt64),                           -- distinct SQL dictionary keys (A-10, <= 64)
-    INDEX idx_tx      tx_id      TYPE bloom_filter({bloom.tx.fpp})      GRANULARITY {bloom.tx.granularity},
-    INDEX idx_trace   trace_id   TYPE bloom_filter({bloom.trace.fpp})   GRANULARITY {bloom.trace.granularity},
-    INDEX idx_user    user_id    TYPE bloom_filter({bloom.user.fpp})    GRANULARITY {bloom.user.granularity},
-    INDEX idx_request request_id TYPE bloom_filter({bloom.request.fpp}) GRANULARITY {bloom.request.granularity},
-    INDEX idx_sql     sql_ids    TYPE bloom_filter({bloom.sql.fpp})     GRANULARITY {bloom.sql.granularity}
+    -- Bloom filter skip indexes (C-55): fpp 0.01, GRANULARITY 4; idx_user GRANULARITY 1.
+    INDEX idx_tx      tx_id      TYPE bloom_filter(0.01) GRANULARITY 4,
+    INDEX idx_trace   trace_id   TYPE bloom_filter(0.01) GRANULARITY 4,
+    INDEX idx_user    user_id    TYPE bloom_filter(0.01) GRANULARITY 1,
+    INDEX idx_request request_id TYPE bloom_filter(0.01) GRANULARITY 4,
+    INDEX idx_sql     sql_ids    TYPE bloom_filter(0.01) GRANULARITY 4
 )
 ENGINE = MergeTree
 PARTITION BY toDate(ts)
@@ -97,17 +98,17 @@ CREATE TABLE IF NOT EXISTS {db}.{p}profile_step
     env             LowCardinality(String),
     instance_id     UInt32,
     tx_id           UInt64,
-    ts              DateTime64(3, 'UTC') CODEC(DoubleDelta, LZ4),   -- transaction start (partition, TTL)
+    ts              DateTime64(3, 'UTC') CODEC(DoubleDelta, ZSTD(1)), -- transaction start (partition, TTL)
     kind            Enum8('HTTP' = 1, 'BATCH' = 2, 'MESSAGE' = 3),
     seq             UInt16,
     parent_seq      UInt16,                                         -- 0 = directly under the root
     type            Enum8('SQL' = 1, 'DBC' = 2, 'COMMIT' = 3, 'ROLLBACK' = 4, 'HTTP' = 5,
                           'METHOD' = 6, 'ASYNC' = 7, 'ERROR' = 8, 'STACK' = 9, 'MESSAGE' = 10,
                           'SUMMARY' = 11),
-    start_offset_ms UInt32 CODEC(T64, LZ4),                         -- from the transaction start
-    elapsed_ms      UInt32 CODEC(T64, LZ4),                         -- folded repeats: total
-    exec_ms         UInt32 CODEC(T64, LZ4),                         -- SQL execute time
-    fetch_ms        UInt32 CODEC(T64, LZ4),                         -- SQL fetch (ResultSet) time
+    start_offset_ms UInt32 CODEC(T64, ZSTD(1)),                     -- from the transaction start
+    elapsed_ms      UInt32 CODEC(T64, ZSTD(1)),                     -- folded repeats: total
+    exec_ms         UInt32 CODEC(T64, ZSTD(1)),                     -- SQL execute time
+    fetch_ms        UInt32 CODEC(T64, ZSTD(1)),                     -- SQL fetch (ResultSet) time
     name_id         UInt64,                                         -- SQL hash / URL pattern / method / class / pool
     target_id       UInt64,                                         -- SQL: db, HTTP: host, DBC: pool, else 0
     rows            UInt32,                                         -- SQL fetched rows, HTTP bytes, batch items
@@ -136,9 +137,9 @@ CREATE TABLE IF NOT EXISTS {db}.{p}metric
     instance_id UInt32,
     name        LowCardinality(String),                  -- OpenMetrics name with labels
     kind        Enum8('gauge' = 1, 'counter' = 2),
-    ts          DateTime('UTC') CODEC(DoubleDelta, LZ4),  -- aligned to the 5 s grid
-    value       Float64 CODEC(Gorilla, LZ4),             -- gauge: value, counter: cumulative value
-    delta       Float64 CODEC(Gorilla, LZ4)              -- counter: reset-corrected increase (agent), gauge: 0
+    ts          DateTime('UTC') CODEC(DoubleDelta, ZSTD(1)), -- aligned to the 5 s grid
+    value       Float64 CODEC(Gorilla, ZSTD(1)),         -- gauge: value, counter: cumulative value
+    delta       Float64 CODEC(Gorilla, ZSTD(1))          -- counter: reset-corrected increase (agent), gauge: 0
 )
 ENGINE = MergeTree
 PARTITION BY toDate(ts)
@@ -155,7 +156,7 @@ CREATE TABLE IF NOT EXISTS {db}.{p}sql_stat_raw
     app_id        UInt32,
     env           LowCardinality(String),
     instance_id   UInt32,
-    ts            DateTime('UTC') CODEC(DoubleDelta, LZ4),   -- window start
+    ts            DateTime('UTC') CODEC(DoubleDelta, ZSTD(1)), -- window start
     kind          Enum8('HTTP' = 1, 'BATCH' = 2, 'MESSAGE' = 3),
     sql_id        UInt64,
     db_id         UInt64,                                   -- JDBC target dictionary key
@@ -183,7 +184,7 @@ CREATE TABLE IF NOT EXISTS {db}.{p}ext_stat_raw
     app_id             UInt32,
     env                LowCardinality(String),
     instance_id        UInt32,
-    ts                 DateTime('UTC') CODEC(DoubleDelta, LZ4),
+    ts                 DateTime('UTC') CODEC(DoubleDelta, ZSTD(1)),
     kind               Enum8('HTTP' = 1, 'BATCH' = 2, 'MESSAGE' = 3),
     host_id            UInt64,                             -- scheme://host:port dictionary key
     count              UInt32,
@@ -212,6 +213,11 @@ SETTINGS ttl_only_drop_parts = 1,
 --   DSN-02-14), metric kind on the metric name (MetricDescriptor), error_stat kind on service_id.
 -- * Bucket arrays use AggregateFunction(sumForEach, ...) because SimpleAggregateFunction does not
 --   support sumForEach (13 section 17 item 10): queries read them with sumForEachMerge(buckets).
+-- * Transaction percentiles (app, service, instance) are quantilesDD states with relative accuracy
+--   0.01 (C-53): 1m quantilesDDState(0.01, 0.5, 0.95, 0.99)(elapsed_ms), 1h
+--   quantilesDDMergeState(0.01, 0.5, 0.95, 0.99)(q_elapsed); queries read them with
+--   quantilesDDMerge(0.01, 0.5, 0.95, 0.99)(q_elapsed). DD states are byte-identical after a rebuild
+--   (D-14). SQL and outgoing-call p95 stay 15-bucket estimates (C-14).
 -- ---------------------------------------------------------------------------------------------
 
 -- 4.2 app_stat_1m / app_stat_1h
@@ -226,11 +232,11 @@ CREATE TABLE IF NOT EXISTS {db}.{p}app_stat_1m
     sum_elapsed_ms    SimpleAggregateFunction(sum, UInt64),
     max_elapsed_ms    SimpleAggregateFunction(max, UInt32),
     sum_sql_time_ms   SimpleAggregateFunction(sum, UInt64),
-    sum_dbc_time_ms   SimpleAggregateFunction(sum, UInt64),
+    sum_dbc_wait_ms   SimpleAggregateFunction(sum, UInt64),
     sum_ext_time_ms   SimpleAggregateFunction(sum, UInt64),
     apdex_satisfied   SimpleAggregateFunction(sum, UInt64),
     apdex_tolerating  SimpleAggregateFunction(sum, UInt64),
-    q_elapsed         AggregateFunction(quantilesTDigest(0.5, 0.95, 0.99), UInt32)   -- A-11 (P-4 Q14)
+    q_elapsed         AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32)   -- C-53 (A-11)
 )
 ENGINE = AggregatingMergeTree
 PARTITION BY toDate(minute)
@@ -251,11 +257,11 @@ CREATE TABLE IF NOT EXISTS {db}.{p}app_stat_1h
     sum_elapsed_ms    SimpleAggregateFunction(sum, UInt64),
     max_elapsed_ms    SimpleAggregateFunction(max, UInt32),
     sum_sql_time_ms   SimpleAggregateFunction(sum, UInt64),
-    sum_dbc_time_ms   SimpleAggregateFunction(sum, UInt64),
+    sum_dbc_wait_ms   SimpleAggregateFunction(sum, UInt64),
     sum_ext_time_ms   SimpleAggregateFunction(sum, UInt64),
     apdex_satisfied   SimpleAggregateFunction(sum, UInt64),
     apdex_tolerating  SimpleAggregateFunction(sum, UInt64),
-    q_elapsed         AggregateFunction(quantilesTDigest(0.5, 0.95, 0.99), UInt32)
+    q_elapsed         AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32)
 )
 ENGINE = AggregatingMergeTree
 PARTITION BY toYYYYMM(hour)
@@ -266,7 +272,7 @@ SETTINGS ttl_only_drop_parts = 1,
          allow_dimensions_outside_sorting_key = 1;
 
 -- ---------------------------------------------------------------------------------------------
--- 4.3 service_stat_1m / service_stat_1h: app_stat columns + service_id, version_id (F-A21)
+-- 4.3 service_stat_1m / service_stat_1h: app_stat columns + service_id, app_version_id (F-A21)
 -- ---------------------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS {db}.{p}service_stat_1m
 (
@@ -274,22 +280,22 @@ CREATE TABLE IF NOT EXISTS {db}.{p}service_stat_1m
     env               LowCardinality(String),
     kind              Enum8('HTTP' = 1, 'BATCH' = 2, 'MESSAGE' = 3),
     service_id        UInt64,
-    version_id        UInt64,
+    app_version_id    UInt64,
     minute            DateTime('UTC'),
     count             SimpleAggregateFunction(sum, UInt64),
     error_count       SimpleAggregateFunction(sum, UInt64),
     sum_elapsed_ms    SimpleAggregateFunction(sum, UInt64),
     max_elapsed_ms    SimpleAggregateFunction(max, UInt32),
     sum_sql_time_ms   SimpleAggregateFunction(sum, UInt64),
-    sum_dbc_time_ms   SimpleAggregateFunction(sum, UInt64),
+    sum_dbc_wait_ms   SimpleAggregateFunction(sum, UInt64),
     sum_ext_time_ms   SimpleAggregateFunction(sum, UInt64),
     apdex_satisfied   SimpleAggregateFunction(sum, UInt64),
     apdex_tolerating  SimpleAggregateFunction(sum, UInt64),
-    q_elapsed         AggregateFunction(quantilesTDigest(0.5, 0.95, 0.99), UInt32)
+    q_elapsed         AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32)
 )
 ENGINE = AggregatingMergeTree
 PARTITION BY toDate(minute)
-ORDER BY (app_id, kind, service_id, version_id, minute)
+ORDER BY (app_id, kind, service_id, app_version_id, minute)
 TTL minute + INTERVAL {retention.rollup-1m-days} DAY
 SETTINGS ttl_only_drop_parts = 1,
          non_replicated_deduplication_window = 1000,
@@ -301,22 +307,22 @@ CREATE TABLE IF NOT EXISTS {db}.{p}service_stat_1h
     env               LowCardinality(String),
     kind              Enum8('HTTP' = 1, 'BATCH' = 2, 'MESSAGE' = 3),
     service_id        UInt64,
-    version_id        UInt64,
+    app_version_id    UInt64,
     hour              DateTime('UTC'),
     count             SimpleAggregateFunction(sum, UInt64),
     error_count       SimpleAggregateFunction(sum, UInt64),
     sum_elapsed_ms    SimpleAggregateFunction(sum, UInt64),
     max_elapsed_ms    SimpleAggregateFunction(max, UInt32),
     sum_sql_time_ms   SimpleAggregateFunction(sum, UInt64),
-    sum_dbc_time_ms   SimpleAggregateFunction(sum, UInt64),
+    sum_dbc_wait_ms   SimpleAggregateFunction(sum, UInt64),
     sum_ext_time_ms   SimpleAggregateFunction(sum, UInt64),
     apdex_satisfied   SimpleAggregateFunction(sum, UInt64),
     apdex_tolerating  SimpleAggregateFunction(sum, UInt64),
-    q_elapsed         AggregateFunction(quantilesTDigest(0.5, 0.95, 0.99), UInt32)
+    q_elapsed         AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32)
 )
 ENGINE = AggregatingMergeTree
 PARTITION BY toYYYYMM(hour)
-ORDER BY (app_id, kind, service_id, version_id, hour)
+ORDER BY (app_id, kind, service_id, app_version_id, hour)
 TTL hour + INTERVAL {retention.rollup-1h-days} DAY
 SETTINGS ttl_only_drop_parts = 1,
          non_replicated_deduplication_window = 1000,
@@ -337,11 +343,11 @@ CREATE TABLE IF NOT EXISTS {db}.{p}instance_stat_1m
     sum_elapsed_ms    SimpleAggregateFunction(sum, UInt64),
     max_elapsed_ms    SimpleAggregateFunction(max, UInt32),
     sum_sql_time_ms   SimpleAggregateFunction(sum, UInt64),
-    sum_dbc_time_ms   SimpleAggregateFunction(sum, UInt64),
+    sum_dbc_wait_ms   SimpleAggregateFunction(sum, UInt64),
     sum_ext_time_ms   SimpleAggregateFunction(sum, UInt64),
     apdex_satisfied   SimpleAggregateFunction(sum, UInt64),
     apdex_tolerating  SimpleAggregateFunction(sum, UInt64),
-    q_elapsed         AggregateFunction(quantilesTDigest(0.5, 0.95, 0.99), UInt32)
+    q_elapsed         AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32)
 )
 ENGINE = AggregatingMergeTree
 PARTITION BY toDate(minute)
@@ -361,7 +367,7 @@ CREATE TABLE IF NOT EXISTS {db}.{p}error_stat_1m
     kind           Enum8('HTTP' = 1, 'BATCH' = 2, 'MESSAGE' = 3),
     error_group_id UInt64,
     service_id     UInt64,                                  -- affected service distribution
-    version_id     UInt64,                                  -- first version (S-13)
+    app_version_id UInt64,                                  -- first version (S-13)
     minute         DateTime('UTC'),
     count          SimpleAggregateFunction(sum, UInt64),
     first_ts       SimpleAggregateFunction(min, DateTime64(3, 'UTC')),
@@ -369,7 +375,7 @@ CREATE TABLE IF NOT EXISTS {db}.{p}error_stat_1m
 )
 ENGINE = AggregatingMergeTree
 PARTITION BY toDate(minute)
-ORDER BY (app_id, error_group_id, service_id, version_id, minute)
+ORDER BY (app_id, error_group_id, service_id, app_version_id, minute)
 TTL minute + INTERVAL {retention.rollup-1m-days} DAY
 SETTINGS ttl_only_drop_parts = 1,
          non_replicated_deduplication_window = 1000,

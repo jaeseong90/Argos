@@ -2,8 +2,10 @@
 package io.argos.storage.schema.it;
 
 import io.argos.storage.clickhouse.ClickHouseHttp;
+import io.argos.storage.schema.RollupRebuild;
 import io.argos.storage.schema.SchemaParameters;
 import io.argos.storage.schema.SchemaRenderer;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -13,25 +15,20 @@ import java.util.List;
  * <p>A rollup table is compared through its <em>finalized</em> rows: one row per full key (every
  * plain column: app_id, env, kind, the other dimensions, minute or hour), each {@code
  * SimpleAggregateFunction} column aggregated with its own function and each {@code sumForEach}
- * state merged ({@code sumForEachMerge}). Two columns are left out because their merged value is
- * not a function of the data alone:
- *
- * <ul>
- *   <li>{@code q_elapsed} (tDigest state): the merged value depends on the merge order (PoC §8,
- *       UpgradeIT), so a rebuild cannot reproduce it.
- *   <li>{@code last_v} ({@code anyLast}): "the last value" depends on the order in which blocks and
- *       parts are read (PoC §14.3).
- * </ul>
- *
- * Any other aggregate column type fails the comparison instead of being skipped silently.
+ * state merged ({@code sumForEachMerge}). The {@code q_elapsed} quantilesDD states (ADR-0007 C-53)
+ * are compared twice: the hex of the state merged per key ({@code -MergeState}, the bytes D-14
+ * requires to be identical after a rebuild) and the finalized p50/p95/p99 ({@code -Merge}). One
+ * column is left out because its merged value is not a function of the data alone: {@code last_v}
+ * ({@code anyLast}), "the last value" depends on the order in which blocks and parts are read (PoC
+ * §14.3). Any other aggregate column type fails the comparison instead of being skipped silently.
  */
 final class Rollups {
 
-  /** The rebuild day of the schema tests (the 1m partition). */
-  static final String DAY = "2026-10-24";
+  /** The rebuild day of the schema tests (the 1m partition): the anchor day of the workloads. */
+  static final LocalDate DAY = Workload.anchorDay();
 
-  /** The rebuild month of the schema tests (the 1h partition). */
-  static final int MONTH = 202610;
+  /** The rebuild month of the schema tests (the 1h partition): the month of {@link #DAY}. */
+  static final String MONTH = RollupRebuild.monthPartition(DAY);
 
   private Rollups() {}
 
@@ -69,11 +66,23 @@ final class Rollups {
         }
       } else if (type.startsWith("AggregateFunction(sumForEach,")) {
         measures.add("sumForEachMerge(" + name + ") AS " + name);
+      } else if (type.startsWith("AggregateFunction(quantilesDD(")) {
+        String function =
+            type.substring("AggregateFunction(".length(), type.lastIndexOf("), ") + 1);
+        // Aliases differ from the column name: an alias equal to it would shadow the state column
+        // in the second expression.
+        measures.add(
+            "hex("
+                + function.replaceFirst("\\(", "MergeState(")
+                + "("
+                + name
+                + ")) AS "
+                + name
+                + "_state");
+        measures.add(
+            function.replaceFirst("\\(", "Merge(") + "(" + name + ") AS " + name + "_value");
       } else if (type.startsWith("AggregateFunction(")) {
-        // tDigest states are merge-order dependent (class comment); any other state is unknown.
-        if (!type.startsWith("AggregateFunction(quantilesTDigest(")) {
-          throw new IllegalStateException(rollupTable + "." + name + ": " + type);
-        }
+        throw new IllegalStateException(rollupTable + "." + name + ": " + type);
       } else {
         keys.add(name);
       }
@@ -127,41 +136,36 @@ final class Rollups {
 
   /** The partition literal of the test day or month. */
   static String partition(String rollupTable) {
-    return hourly(rollupTable) ? Integer.toString(MONTH) : "'" + DAY + "'";
+    return hourly(rollupTable) ? MONTH : "'" + DAY + "'";
   }
 
   /** Name of the staging table of a rebuild. */
   static String staging(SchemaParameters p, String rollupTable) {
-    return p.table(rollupTable + "_rebuild");
+    return RollupRebuild.staging(p, rollupTable);
   }
 
   /**
    * Fills a fresh staging table ({@code CREATE TABLE ... AS <rollup>}) with the rebuild SELECT of
-   * the rollup file for the test day (1m) or month (1h) and returns its name.
+   * the rollup file for the test day (1m) or month (1h) and returns its name ({@link
+   * RollupRebuild#fillStaging}).
    */
   static String fillStaging(
       ClickHouseHttp migrator, SchemaRenderer renderer, SchemaParameters p, String rollupTable) {
-    String staging = staging(p, rollupTable);
-    migrator.execute("DROP TABLE IF EXISTS " + staging + " SYNC");
-    migrator.execute("CREATE TABLE " + staging + " AS " + p.table(rollupTable));
-    migrator.execute(renderer.rebuildInsert(rollupTable, staging, p, sourcePredicate(rollupTable)));
-    return staging;
+    for (String sql : RollupRebuild.fillStaging(renderer, p, rollupTable, DAY)) {
+      migrator.execute(sql);
+    }
+    return staging(p, rollupTable);
   }
 
   /**
-   * The rebuild procedure (README "Rollup rebuild"): staging table, then {@code REPLACE PARTITION}
-   * of the whole day (1m) or month (1h), then the staging table is dropped.
+   * The rebuild procedure of ADR-0007 C-59 (README "Rollup rebuild", {@link
+   * RollupRebuild#partitionStatements}): staging table, then {@code REPLACE PARTITION} of the whole
+   * day (1m) or month (1h), then the staging table is dropped.
    */
   static void rebuildPartition(
       ClickHouseHttp migrator, SchemaRenderer renderer, SchemaParameters p, String rollupTable) {
-    String staging = fillStaging(migrator, renderer, p, rollupTable);
-    migrator.execute(
-        "ALTER TABLE "
-            + p.table(rollupTable)
-            + " REPLACE PARTITION "
-            + partition(rollupTable)
-            + " FROM "
-            + staging);
-    migrator.execute("DROP TABLE " + staging + " SYNC");
+    for (String sql : RollupRebuild.partitionStatements(renderer, p, rollupTable, DAY)) {
+      migrator.execute(sql);
+    }
   }
 }
