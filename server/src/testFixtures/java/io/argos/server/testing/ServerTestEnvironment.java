@@ -115,6 +115,7 @@ public final class ServerTestEnvironment implements AutoCloseable {
   private final Map<Account, String> chPasswords;
   private final Path secretsDir;
   private final Map<String, String> springProperties;
+  private io.argos.server.testing.fakeagent.TestCertificates.TestPki collectorPki;
 
   private ServerTestEnvironment(
       PostgreSQLContainer postgres,
@@ -249,7 +250,51 @@ public final class ServerTestEnvironment implements AutoCloseable {
     // is the source tree (server/) under Gradle.
     p.put("argos.jwt-key-file", path(secretsDir.resolve("conf").resolve("jwt.key")));
     p.put("argos.auth.setup-token-file", path(secretsDir.resolve("conf").resolve("setup-token")));
+    // WO-21: the gRPC collector listener (LISTENERS start step) of a server under test: loopback,
+    // a free port, TLS with a test PKI generated at run time in this private directory (nothing
+    // committed). Without it the server would look for conf/tls/server.crt and refuse to start.
+    collectorPki =
+        io.argos.server.testing.fakeagent.TestCertificates.generate(secretsDir.resolve("tls"));
+    p.put("argos.collector.bind", "127.0.0.1");
+    p.put("argos.collector.port", Integer.toString(freeLoopbackPort()));
+    p.put("argos.collector.tls.cert-file", path(collectorPki.serverCertificate()));
+    p.put("argos.collector.tls.key-file", path(collectorPki.serverKey()));
+    // WO-21: the WAL of a server under test lives in this private directory too (deleted by
+    // close()), never in data/wal of the working directory (server/ of the source tree under
+    // Gradle). Every server started on this environment shares it, so a restart recovers it.
+    p.put("argos.wal.dir", path(walDirectory()));
     return p;
+  }
+
+  /**
+   * {@code argos.wal.dir} of {@link #springProperties()}: a directory below the private secrets
+   * directory, created by the server's WAL recovery step (WO-21).
+   */
+  public Path walDirectory() {
+    return secretsDir.resolve("wal");
+  }
+
+  /**
+   * The CA certificate (PEM) of the collector's test TLS certificate ({@code
+   * argos.collector.tls.cert-file} of {@link #springProperties()}): what a fake agent trusts
+   * (WO-21).
+   */
+  public Path collectorCaCertificate() {
+    return collectorPki.caCertificate();
+  }
+
+  /** {@code argos.collector.port} of {@link #springProperties()} (WO-21). */
+  public int collectorPort() {
+    return Integer.parseInt(springProperties.get("argos.collector.port"));
+  }
+
+  private static int freeLoopbackPort() {
+    try (java.net.ServerSocket socket =
+        new java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())) {
+      return socket.getLocalPort();
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
   }
 
   private static String path(Path file) {

@@ -211,9 +211,77 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   new `checkThirdPartyNotices` step of `verifyAgentJar` fails when a bundled module under a license
   other than Apache-2.0 lacks its copyright line and license text, or a Netty, gRPC or PerfMark
   module lacks its NOTICE.
+- Agent request boundaries (servlet, javax and jakarta): one HTTP request is one transaction. It
+  starts on the REQUEST dispatch; forwards, includes, error pages and async re-dispatches join it and
+  are counted in the new `dispatch_count`; an error page dispatch after the request has ended (Spring
+  Boot's `/error`) is not recorded and is counted in `argos_agent_transactions_unanchored_total`.
+  Ignore rules are checked in the order method, path, extension, user agent. Verified on Tomcat 9,
+  10.1 and 11 (Spring Boot 2.7, 3.5, 4.1 and standalone WAR apps); Jetty and Undertow are not
+  verified yet.
+- Agent async and streaming requests (new module `servlet-async`): an async request ends exactly once
+  at its last dispatch, `onComplete`, `onError`, after `onTimeout`, at the first response flush of
+  server-sent events and streaming bodies (Tomcat 9, 10.1 and 11, matched by class name), or at
+  `transaction.max-duration-ms`, which the agent's watch thread now enforces (`timed_out` and `leaked`
+  flags). `101 Switching Protocols` responses are flagged `streaming`.
+- Agent request data modes: query string `off`/`whitelist`/`full`, client address
+  `masked`/`full`/`off` with `X-Forwarded-For` read only behind `capture.trusted-proxies`, user id
+  `off`/`plain`/`hashed` (HMAC-SHA256 with the per-application salt from the collector; without a
+  salt no user id is sent and `argos_agent_user_id_skipped_total{reason}` counts it), header allow
+  list, and the new key `capture.request-id-header` (not set by default, value cut at 128 bytes).
+  Every mode keeps its privacy default; the agent never reads request parameters, bodies or new
+  sessions.
+- Agent test harness: a servlet suite for the Spring Boot sample apps and the WAR apps, a servlet
+  fixture web application without Spring (`/servlet-fixture`, Tomcat 9 and 10.1), and a Tomcat log
+  check after a graceful shutdown of standalone Tomcat (no agent mention in a warning or in its
+  stack trace; SEVERE records and ThreadLocal leak warnings beyond a run without the agent fail).
+- Agent data ingestion in the collector server over gRPC (port 9100): agent sessions (hello checks,
+  automatic registration of new instances, clock offset from heartbeats) and the five batch calls.
+  An agent token writes only to its own application and to at most 8 environment variants
+  registered automatically from it; an existing application of another environment is refused.
+  Instance names longer than 128 characters are stored shortened with a hash suffix, so that two
+  long names never merge.
+  Every batch is written to a write-ahead log before it is acknowledged (`argos.wal.*`: group fsync,
+  256 MiB segments, 10 GiB cap with a warning at 80 %, recovery at start), deduplicated by its
+  sequence number, and loaded into the five ClickHouse raw tables by a batch writer (`argos.writer.*`:
+  every 2 s or 50,000 rows, explicit column lists, deduplication tokens, retries with the same token,
+  the write-ahead log as the spool while ClickHouse is unavailable). On the way the server corrects
+  timestamps of agents whose clock runs more than 5 s ahead, masks error messages again before
+  grouping them into error groups, records the application's Apdex threshold, and resolves
+  dictionary entries with caps per instance and per application. A shutdown closes the sessions,
+  drains running calls, flushes the writer and closes the log in that order; what was acknowledged
+  and not yet loaded is loaded at the next start. Until encrypted storage exists, SQL bind values
+  from agents in `full` mode (or an unknown mode) are removed before the log write and counted in
+  `argos_collector_redacted_total`. A batch whose log write is not on disk within 1 s
+  is answered `UNAVAILABLE` (retry after 1 s) and is still stored only once; while a log write is
+  stuck for more than 1 s, new batches get the same answer at once without waiting, and at most
+  64 MiB of batches wait in memory for the log (`argos_wal_queued_bytes`); readiness reports
+  `ingest` DOWN when the loader stops; known instances keep connecting while PostgreSQL is down if
+  their token is cached; one server holds at most 5,000 agent sessions.
+- Collector limits, quotas and authentication: TLS 1.2 or 1.3 with AEAD cipher suites only
+  (plaintext only with `argos.collector.allow-plaintext`), agent tokens checked by their SHA-256
+  hash with a cache, addresses blocked for 10 minutes after 20 failed authentications in a minute
+  (answered `RESOURCE_EXHAUSTED` with the remaining time, without a token lookup),
+  batches above the size (checked while decompressing), item, string or repeat limits refused, and
+  per-instance quotas for transactions, profile steps, metrics and statistics rows (new key
+  `argos.collector.quota.stats-per-10s`, default 6,000) that remove items from the end of a batch,
+  answer `ACK_PARTIAL_DROP`, and are given back when a batch is not written to the log. Instance and session caps per application and token; no gRPC reflection or
+  health service. `argos.collector.max-message-bytes` accepts at most 63 MiB, so that every
+  acknowledged batch fits one write-ahead log record that recovery can read.
+- ClickHouse schema V002 (`deploy/clickhouse/schema/V002__ingest_columns.sql`, added columns only):
+  `xlog.url_path`, `xlog.headers`, `profile_step.truncated` and `profile_step.total_steps`.
+  PostgreSQL V003 adds the dictionary kind `pool` and `apps.registered_from_app_id`.
+- Development-only server test tools: a protocol-level fake agent with the 18 §8 attacks
+  (`server/src/testFixtures`, package `io.argos.server.testing.fakeagent`), end-to-end tests from a
+  fake agent through the boot jar to ClickHouse (process kills, ClickHouse outage, broken
+  materialized view, duplicates), and a 1,000 TPS ingest lag run (`-Pserver.load=true`).
 
 ### Changed
 
+- Agent service names: the Spring MVC handler pattern is read on the REQUEST dispatch only and keeps
+  the request's method; a handler method without a pattern gives `Controller#method`, the Servlet 4
+  `HttpServletMapping` pattern names requests without a Spring handler, and otherwise the path is
+  normalized (numbers, UUIDs and hex strings of 32 or more characters become `{*}`; query strings and
+  fragments are dropped). Web applications with a context path prefix their names with it.
 - Agent transaction ids: the node part starts from a provisional value at premain and is replaced by
   12 bits of `SecureRandom` on an agent thread (later by the server-assigned instance id); above
   2,048 ids in one millisecond the generator waits for the next millisecond, so `tx_id >> 23` is

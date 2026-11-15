@@ -3,6 +3,7 @@ package io.argos.agent.testing.launcher;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.ClosedWatchServiceException;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
@@ -16,6 +17,7 @@ import java.nio.file.WatchService;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -146,6 +148,69 @@ public final class TempWatch implements AutoCloseable {
   /** Top-level entries seen created and when (ms after the watch started). */
   public Map<String, Long> events() {
     return new TreeMap<>(firstSeenMillis);
+  }
+
+  /**
+   * The longest AF_UNIX socket path, in UTF-8 bytes, that the JDK binds on Windows ({@code
+   * sun_path} of 108 bytes less 2; JDK 17, 21 and 25 throw "Unix domain path too long" above it).
+   */
+  static final int WINDOWS_AF_UNIX_MAX_PATH = 106;
+
+  /** The separator and {@code socket_} before the random number of a selector's socket file. */
+  private static final int SOCKET_PREFIX = 8;
+
+  /**
+   * Temp path lengths (bytes) up to this one fit every selector socket name: the random number has
+   * at most 10 digits ({@code nextInt(Integer.MAX_VALUE)}).
+   */
+  static final int SOCKET_NAMES_ALWAYS_FIT = WINDOWS_AF_UNIX_MAX_PATH - SOCKET_PREFIX - 10;
+
+  /** Temp path lengths (bytes) from this one on fit no selector socket name (1 digit or more). */
+  static final int SOCKET_NAMES_NEVER_FIT = WINDOWS_AF_UNIX_MAX_PATH - SOCKET_PREFIX;
+
+  /**
+   * The work directory {@code parent/name} of a run whose app gets {@code <workDir>/tmp} as its
+   * temp directory ({@link AppLauncher}: {@code java.io.tmpdir}, {@code TMP}, {@code TEMP}, {@code
+   * TMPDIR}), so that whether the JDK's NIO selectors create files there does not depend on chance
+   * (T-BLD-006 compares the temp entries of two runs).
+   *
+   * <p>On Windows from JDK 16 on, every {@code Selector} binds its wakeup pipe to an AF_UNIX socket
+   * file {@code %TEMP%\socket_<n>} (deleted at once; {@code n} a random int of 1 to 10 digits) when
+   * that path fits {@value #WINDOWS_AF_UNIX_MAX_PATH} bytes, and uses a loopback TCP pipe when it
+   * does not. With a temp path of {@value #SOCKET_NAMES_ALWAYS_FIT} bytes or less every name fits;
+   * from {@value #SOCKET_NAMES_NEVER_FIT} bytes on none does. In between only the names with fewer
+   * digits fit, so one run of an app creates {@code socket_<n>} files and the next run of the same
+   * app does not. Such a directory name gets a suffix ({@code -x...}) that makes the temp path
+   * {@value #SOCKET_NAMES_NEVER_FIT} bytes long; names of the same length get the same suffix.
+   * Other paths and other systems keep {@code parent/name}.
+   */
+  public static Path runDirectory(Path parent, String name) {
+    return runDirectory(
+        parent,
+        name,
+        System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows"));
+  }
+
+  static Path runDirectory(Path parent, String name, boolean windows) {
+    Path base = parent.toAbsolutePath();
+    Path dir = base.resolve(name);
+    if (!windows) {
+      return dir;
+    }
+    int pad = socketPadding(dir.resolve("tmp").toString().getBytes(StandardCharsets.UTF_8).length);
+    return pad == 0 ? dir : base.resolve(name + "-" + "x".repeat(pad - 1));
+  }
+
+  /**
+   * Bytes to add to a Windows temp path of {@code tempPathBytes} so that the JDK's selector socket
+   * names either always or never fit ({@link #runDirectory}): 0 outside the range where it depends
+   * on the random number, else up to {@value #SOCKET_NAMES_NEVER_FIT}.
+   */
+  static int socketPadding(int tempPathBytes) {
+    if (tempPathBytes <= SOCKET_NAMES_ALWAYS_FIT || tempPathBytes >= SOCKET_NAMES_NEVER_FIT) {
+      return 0;
+    }
+    return SOCKET_NAMES_NEVER_FIT - tempPathBytes;
   }
 
   /**

@@ -156,6 +156,55 @@ class WarLauncherTest {
 
   @Test
   @DisplayName(
+      "CATALINA_BASE of a launcher run: loopback shutdown port with a random command, extra web"
+          + " applications next to the contexts, English locale on the command line")
+  void stagingWithShutdownAndExtraWebapps() throws Exception {
+    SampleApp app = war();
+    Path base = TomcatStaging.base(dir.resolve("run2"));
+    Path fixture = Files.writeString(dir.resolve("fixture.war"), "fixture");
+    TomcatStaging.Shutdown shutdown = TomcatStaging.Shutdown.random(18005);
+    TomcatStaging.stage(
+        app,
+        app.tomcatHome("tomcat11"),
+        base,
+        18080,
+        shutdown,
+        Map.of("/servlet-fixture", fixture));
+    String server = Files.readString(base.resolve("conf").resolve("server.xml"));
+    assertThat(server)
+        .contains(
+            "<Server port=\"18005\" address=\"127.0.0.1\" shutdown=\"" + shutdown.command() + "\">")
+        .contains("<Connector port=\"18080\" address=\"127.0.0.1\"");
+    assertThat(shutdown.command()).matches("SHUTDOWN-[0-9a-f]{32}");
+    assertThat(TomcatStaging.Shutdown.random(18005).command()).isNotEqualTo(shutdown.command());
+    assertThat(shutdown.toString()).doesNotContain(shutdown.command());
+    assertThat(base.resolve("webapps").resolve("servlet-fixture.war")).hasContent("fixture");
+    assertThat(base.resolve("webapps").resolve("shop-a.war")).hasContent("war");
+    assertThatThrownBy(
+            () ->
+                TomcatStaging.stage(
+                    app,
+                    app.tomcatHome("tomcat11"),
+                    TomcatStaging.base(dir.resolve("run3")),
+                    18080,
+                    null,
+                    Map.of("shop-a", fixture)))
+        .hasMessageContaining("already a context");
+    List<String> arguments = TomcatStaging.arguments(app.tomcatHome("tomcat11"), base, 21);
+    assertThat(arguments).containsSubsequence("-Duser.language=en", "-Duser.country=US");
+    assertThat(arguments.indexOf("-Duser.country=US"))
+        .isLessThan(arguments.indexOf("-Dcatalina.home=" + app.tomcatHome("tomcat11")));
+    assertThatThrownBy(
+            () ->
+                AppLauncher.of(
+                        SampleApp.fromArtifact(Files.createFile(dir.resolve("boot.jar"))),
+                        new Jdk(21, Path.of("java")))
+                    .webapp("x", fixture))
+        .hasMessageContaining("not a WAR app");
+  }
+
+  @Test
+  @DisplayName(
       "container images: JDK 8, 11, 17, 21, 25 pinned by index digest; other JDKs fail; an"
           + " override must carry a digest")
   void containerImages() {

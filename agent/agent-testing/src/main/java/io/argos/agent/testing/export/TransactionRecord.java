@@ -158,6 +158,53 @@ public record TransactionRecord(Map<String, Object> fields, String line, RecordS
     return value == null ? null : value.longValue();
   }
 
+  /**
+   * The whitelisted request headers ({@code capture.http-headers}, WO-12), names compared without
+   * case: the collector's map or the JSONL exporter's list of {@code "name: value"} strings; empty
+   * when the record has none.
+   */
+  public Map<String, String> headers() {
+    Map<String, String> headers = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+    Object value = fields.get("headers");
+    if (value instanceof Map<?, ?> map) {
+      map.forEach((name, text) -> headers.put(String.valueOf(name), String.valueOf(text)));
+    } else if (value instanceof List<?> list) {
+      for (Object item : list) {
+        String text = String.valueOf(item);
+        int colon = text.indexOf(": ");
+        if (colon > 0) {
+          headers.put(text.substring(0, colon), text.substring(colon + 2));
+        }
+      }
+    }
+    return headers;
+  }
+
+  /** The {@code capture.request-id-header} value (ADR-0010 C-124), null while absent. */
+  public String requestId() {
+    String value = string("request_id");
+    return value == null || value.isEmpty() ? null : value;
+  }
+
+  /** Container dispatches of the request ({@code dispatch_count}, F-A28), null while absent. */
+  public Integer dispatchCount() {
+    Number value = number("dispatch_count");
+    return value == null ? null : value.intValue();
+  }
+
+  /**
+   * True when the agent ended the transaction at {@code transaction.max-duration-ms} (F-A34): the
+   * collector's {@code timed_out} field or the JSONL exporter's {@code timed_out} flag.
+   */
+  public boolean timedOut() {
+    return Boolean.TRUE.equals(fields.get("timed_out")) || flags().contains("timed_out");
+  }
+
+  /** {@code true} when the response streams (F-A34): the collector's field or the JSONL flag. */
+  public boolean streaming() {
+    return Boolean.TRUE.equals(fields.get("streaming")) || flags().contains("streaming");
+  }
+
   /** {@code virtual_thread}, {@code leaked}, {@code summarized}, {@code streaming}, ... */
   public List<String> flags() {
     List<String> flags = new ArrayList<>();

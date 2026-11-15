@@ -7,9 +7,12 @@
 //                    Bean Validation, Log4j 2 (JSON template layout), Flyway + PostgreSQL driver,
 //                    ClickHouse client-v2
 //                    + (WO-24) Spring Security, Caffeine, springdoc WebMVC API (runtime spec), Bucket4j
+//                    + (WO-21) the argos.v1 protocol (:proto) and the gRPC collector transport
+//                    grpc-netty on the server's Netty 4.2 (JDK SSL provider only)
 //   testFixtures     ServerTestEnvironment: PostgreSQL 16 and ClickHouse in Testcontainers (pinned
 //                    images, C-11 roles, generated passwords); reused by WO-21, WO-23 and WO-24.
 //                    testing.auth (WO-24): ApiTestClient (cookie jar, CSRF, Origin) and TestUsers
+//                    testing.fakeagent (WO-21): protocol-level fake agent (18 §8; reused by WO-29)
 //   integrationTest  real PostgreSQL and ClickHouse only (Testcontainers), plus the storage
 //                    generator for the 1/100 data of T-ST-052 path 2 and T-SV-002
 // test/storage/* projects are development-only: they appear in testFixtures and test suites, never
@@ -22,6 +25,9 @@ plugins {
 }
 
 description = "Argos collector server (gRPC ingest, REST API, alerting, administration)."
+
+/** The executable jar (child-JVM tests of WO-21: T-SV-010, IngestLagLoadIT, T-SEC-11). */
+val serverBootJar = tasks.named<Jar>("bootJar")
 
 /** -Pserver.nightly=true enables the nightly integration tests (T-SV-002, ADR-0010 C-100). */
 val serverNightly = providers.gradleProperty("server.nightly").map { it.toBoolean() }.getOrElse(false)
@@ -46,6 +52,17 @@ dependencies {
   implementation(libs.server.caffeine)
   implementation(libs.server.springdoc.webmvc.api)
   implementation(libs.server.bucket4j)
+  // WO-21: gRPC collector (12 §3.1, 11 §2). Messages and stubs come from :proto (ADR-0010 C-104);
+  // the transport is grpc-netty (not grpc-netty-shaded, which bundles the netty-tcnative BoringSSL
+  // native library) on the catalog Netty 4.2 BOM, used with the JDK SSL provider only (16 §3.1).
+  // No grpc-services: no reflection and no gRPC health service (16 §4.1, 12 open item 9,
+  // ADR-0010 C-130 (5)). Caffeine (token cache) is already above (WO-24).
+  implementation(project(":proto"))
+  implementation(platform(libs.grpc.bom))
+  implementation(platform(libs.netty.bom))
+  implementation(libs.grpc.netty)
+  implementation(libs.grpc.stub)
+  implementation(libs.grpc.protobuf)
 
   testFixturesImplementation(platform(libs.spring.boot.bom))
   testFixturesApi(project(":test:storage:clickhouse-support"))
@@ -60,6 +77,14 @@ dependencies {
   // io.argos.servertest.security (WO-24): the permission-matrix generator and the test-only header
   // authentication use the Spring Security types of ArgosAuthentication. No new artifacts.
   testFixturesImplementation(libs.server.starter.security)
+  // testing.fakeagent (WO-21): the fake agent speaks argos.v1 over grpc-netty (TLS with a CA
+  // generated at test run time, or plaintext) or an in-process channel. Tests get the protocol
+  // classes and both transports through the fixtures.
+  testFixturesApi(project(":proto"))
+  testFixturesImplementation(platform(libs.grpc.bom))
+  testFixturesImplementation(platform(libs.netty.bom))
+  testFixturesApi(libs.grpc.netty)
+  testFixturesApi(libs.grpc.inprocess)
 }
 
 testing {
@@ -77,7 +102,12 @@ testing {
     named<JvmTestSuite>("test") {
       // The reference renderer of WO-03 (SchemaRenderer): the ClickHouse migration runner is a
       // port and SchemaTemplatesEquivalenceTest compares both on every schema file (C-56).
-      dependencies { implementation(project(":test:storage:clickhouse-support")) }
+      // The storage generator (WO-21): BlockTokenTest checks the writer's C-61 tokens against the
+      // generator's DedupToken (shared vectors).
+      dependencies {
+        implementation(project(":test:storage:clickhouse-support"))
+        implementation(project(":test:storage:generator"))
+      }
     }
     named<JvmTestSuite>("integrationTest") {
       dependencies {
@@ -133,6 +163,42 @@ tasks.named<Test>("integrationTest") {
   systemProperty(
     "argos.migration.reportDir",
     layout.buildDirectory.dir("reports/migration").get().asFile.absolutePath,
+  )
+  // T-ACC-13 (c) (WO-21): minutes of the ClickHouse pause of ClickHouseOutageIT; 3 by default,
+  // -Pserver.chOutageMinutes=30 for the full outage variant of 03 §3.2 (run on a quiet machine).
+  systemProperty(
+    "argos.test.chOutageMinutes",
+    providers.gradleProperty("server.chOutageMinutes").getOrElse("3"),
+  )
+  // End-to-end tests (WO-21, io.argos.server.e2e): T-SV-010 runs the server as a child JVM from the
+  // boot jar. IngestLagLoadIT (1,000 TPS for 5 minutes, 03 §3.2 reference) runs only with
+  // -Pserver.load=true; its p99 <= 5 s is asserted only with -Pserver.load.enforce=true (a shared
+  // machine reports, a quiet machine enforces). Report: build/reports/ingest-load/report.md.
+  val bootJarFile = serverBootJar.flatMap { it.archiveFile }
+  inputs.file(bootJarFile).withPropertyName("serverBootJar").withPathSensitivity(PathSensitivity.NONE)
+  jvmArgumentProviders.add(
+    CommandLineArgumentProvider { listOf("-Dargos.test.bootJar=" + bootJarFile.get().asFile.absolutePath) }
+  )
+  systemProperty(
+    "argos.test.serverLoad",
+    providers.gradleProperty("server.load").getOrElse("false"),
+  )
+  systemProperty(
+    "argos.test.serverLoadEnforce",
+    providers.gradleProperty("server.load.enforce").getOrElse("false"),
+  )
+  systemProperty(
+    "argos.test.ingestLoadReportDir",
+    layout.buildDirectory.dir("reports/ingest-load").get().asFile.absolutePath,
+  )
+}
+
+// T-SEC-11 (GzipBombSecurityTest) measures the resident set of the server started from the boot jar.
+tasks.named<Test>("securityTest") {
+  val bootJarFile = serverBootJar.flatMap { it.archiveFile }
+  inputs.file(bootJarFile).withPropertyName("serverBootJar").withPathSensitivity(PathSensitivity.NONE)
+  jvmArgumentProviders.add(
+    CommandLineArgumentProvider { listOf("-Dargos.test.bootJar=" + bootJarFile.get().asFile.absolutePath) }
   )
 }
 

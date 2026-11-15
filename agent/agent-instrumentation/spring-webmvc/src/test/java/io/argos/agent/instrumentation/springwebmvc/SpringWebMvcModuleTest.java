@@ -51,22 +51,36 @@ class SpringWebMvcModuleTest {
   }
 
   @Test
-  @DisplayName("Spring's HandlerAdapter implementations are matched by name")
+  @DisplayName(
+      "C-123: the five Spring adapters are matched by name (RequestMappingHandlerAdapter through"
+          + " AbstractHandlerMethodAdapter, which declares handle); custom adapters are not")
   void adapterNames() {
     TypeInstrumentation instrumentation = module.types().get(0);
+    assertThat(SpringWebMvcModule.HANDLER_ADAPTERS)
+        .containsExactly(
+            "org.springframework.web.servlet.mvc.method.AbstractHandlerMethodAdapter",
+            "org.springframework.web.servlet.mvc.HttpRequestHandlerAdapter",
+            "org.springframework.web.servlet.mvc.SimpleControllerHandlerAdapter",
+            "org.springframework.web.servlet.handler.SimpleServletHandlerAdapter",
+            "org.springframework.web.servlet.function.support.HandlerFunctionAdapter");
     for (String adapter : SpringWebMvcModule.HANDLER_ADAPTERS) {
       assertThat(
               instrumentation.typeMatcher().matches(new TypeDescription.Latent(adapter, 0, null)))
           .as(adapter)
           .isTrue();
     }
-    assertThat(
-            instrumentation
-                .typeMatcher()
-                .matches(
-                    new TypeDescription.Latent(
-                        "org.springframework.web.servlet.DispatcherServlet", 0, null)))
-        .isFalse();
+    for (String other :
+        new String[] {
+          "org.springframework.web.servlet.DispatcherServlet",
+          // Inherits handle() from AbstractHandlerMethodAdapter: the declaring class is
+          // transformed.
+          "org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter",
+          "com.example.web.CustomHandlerAdapter"
+        }) {
+      assertThat(instrumentation.typeMatcher().matches(new TypeDescription.Latent(other, 0, null)))
+          .as(other)
+          .isFalse();
+    }
   }
 
   @Test

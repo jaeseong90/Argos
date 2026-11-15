@@ -140,11 +140,14 @@ class AssertionDslTest {
     assertThatThrownBy(() -> full.isNotProfileCaptured())
         .hasMessageContaining("profile_captured=false");
     // Still not produced by the JSONL exporter: unsupported, never passing silently.
-    assertThatThrownBy(() -> tx.field("headers").isMissing())
-        .hasMessageStartingWith("unsupported: transaction field 'headers'")
+    assertThatThrownBy(() -> tx.field("dbc_wait_ms").isMissing())
+        .hasMessageStartingWith("unsupported: transaction field 'dbc_wait_ms'")
         .hasMessageContaining("JSONL exporter");
-    assertThatThrownBy(() -> tx.field("request_id").isMissing())
-        .hasMessageStartingWith("unsupported");
+    assertThatThrownBy(() -> tx.field("sql_ids").isMissing()).hasMessageStartingWith("unsupported");
+    // WO-12: the JSONL exporter carries headers, request id and dispatch count (absent here).
+    tx.field("headers").isMissing();
+    tx.field("request_id").isMissing();
+    tx.field("dispatch_count").isMissing();
     assertThatThrownBy(() -> tx.steps().first().field("batch_size"))
         .hasMessageStartingWith("unsupported: step field 'batch_size'");
     assertThatThrownBy(() -> assertThat(collected).stats())

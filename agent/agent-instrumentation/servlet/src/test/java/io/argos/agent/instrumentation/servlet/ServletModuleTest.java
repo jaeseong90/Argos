@@ -14,6 +14,7 @@ import net.bytebuddy.description.method.MethodDescription;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /** ServletModule: identity, helper list, matchers of 10 §6.1 against the real servlet APIs. */
@@ -95,8 +96,10 @@ class ServletModuleTest {
     assertThat(module.helperClassNames())
         .containsExactly(
             ServletHelperCommon.class.getName(),
+            ServletMappingHelperJavax.class.getName(),
             ServletHelperJavax.class.getName(),
-            ServletHelperJakarta.class.getName());
+            ServletHelperJakarta.class.getName(),
+            AsyncListenerHelper.class.getName());
     assertThat(HelperClasses.problems(module)).isEmpty();
     assertThat(module.libraryVersionRange()).isNotEmpty();
     assertThat(module.witness().matches(ServletModuleTest.class.getClassLoader())).isTrue();
@@ -138,6 +141,11 @@ class ServletModuleTest {
       TypeDescription type = TypeDescription.ForLoadedType.of(filter);
       Recorder recorder = recorderFor(type);
       assertThat(recorder.advice).as(filter.getName()).hasSize(1);
+      assertThat(recorder.advice)
+          .containsExactly(
+              filter == JavaxFilter.class
+                  ? JavaxFilterAdvice.class.getName()
+                  : JakartaFilterAdvice.class.getName());
       int matched = 0;
       for (MethodDescription method : type.getDeclaredMethods()) {
         if (recorder.matchesAny(method)) {
@@ -156,6 +164,96 @@ class ServletModuleTest {
         .isEmpty();
     assertThat(matchingTypes(TypeDescription.ForLoadedType.of(AbstractJakartaFilter.class)))
         .isEmpty();
+  }
+
+  /** Stand-in with the shape of Tomcat's {@code ResponseFacade} (only the names matter). */
+  abstract static class FacadeShape {
+    public abstract void flushBuffer();
+
+    public abstract javax.servlet.ServletOutputStream getOutputStream();
+
+    public abstract java.io.PrintWriter getWriter();
+
+    public abstract int getStatus();
+
+    public abstract void flushBuffer(int unused);
+  }
+
+  /** Stand-in with the shape of Tomcat's {@code CoyoteOutputStream}. */
+  abstract static class StreamShape {
+    public abstract void flush();
+
+    public abstract void close();
+  }
+
+  @Test
+  @Tag("req:F-A34")
+  @DisplayName(
+      "T-AG-016a C-127: flush hooks only on the named Tomcat classes (ResponseFacade,"
+          + " CoyoteOutputStream, CoyoteWriter), exact methods, never by subtype")
+  void containerResponseClasses() {
+    List<TypeInstrumentation> responses = new ArrayList<TypeInstrumentation>();
+    for (TypeInstrumentation instrumentation : module.types()) {
+      if (instrumentation instanceof ContainerResponseInstrumentation) {
+        responses.add(instrumentation);
+      }
+    }
+    assertThat(responses).hasSize(2);
+    TypeDescription facade =
+        renamed(FacadeShape.class, ContainerResponseInstrumentation.TOMCAT_RESPONSE_FACADE);
+    TypeDescription stream =
+        renamed(StreamShape.class, ContainerResponseInstrumentation.TOMCAT_OUTPUT_STREAM);
+    TypeDescription writer =
+        renamed(StreamShape.class, ContainerResponseInstrumentation.TOMCAT_WRITER);
+    assertThat(responses.get(0).typeMatcher().matches(facade)).isTrue();
+    assertThat(responses.get(1).typeMatcher().matches(stream)).isTrue();
+    assertThat(responses.get(1).typeMatcher().matches(writer)).isTrue();
+    // A response wrapper or another container's class is not matched (no subtype matching).
+    for (TypeInstrumentation instrumentation : responses) {
+      assertThat(
+              instrumentation
+                  .typeMatcher()
+                  .matches(
+                      TypeDescription.ForLoadedType.of(
+                          javax.servlet.http.HttpServletResponseWrapper.class)))
+          .isFalse();
+      assertThat(
+              instrumentation
+                  .typeMatcher()
+                  .matches(TypeDescription.ForLoadedType.of(FacadeShape.class)))
+          .isFalse();
+    }
+    Recorder facadeAdvice = new Recorder();
+    responses.get(0).transform(facadeAdvice);
+    assertThat(facadeAdvice.advice)
+        .containsExactly(ResponseFlushAdvice.class.getName(), ResponseStreamAdvice.class.getName());
+    List<String> matched = new ArrayList<String>();
+    for (MethodDescription method :
+        TypeDescription.ForLoadedType.of(FacadeShape.class).getDeclaredMethods()) {
+      if (facadeAdvice.matchesAny(method)) {
+        matched.add(method.getName() + method.getParameters().size());
+      }
+    }
+    assertThat(matched).containsExactlyInAnyOrder("flushBuffer0", "getOutputStream0", "getWriter0");
+    Recorder streamAdvice = new Recorder();
+    responses.get(1).transform(streamAdvice);
+    assertThat(streamAdvice.advice).containsExactly(ResponseFlushAdvice.class.getName());
+    List<String> streamMethods = new ArrayList<String>();
+    for (MethodDescription method :
+        TypeDescription.ForLoadedType.of(StreamShape.class).getDeclaredMethods()) {
+      if (streamAdvice.matchesAny(method)) {
+        streamMethods.add(method.getName());
+      }
+    }
+    assertThat(streamMethods).containsExactly("flush");
+  }
+
+  /** A type of binary name {@code name} (the type matchers look at names only). */
+  private static TypeDescription renamed(Class<?> shape, String name) {
+    return new TypeDescription.Latent(
+        name,
+        shape.getModifiers(),
+        net.bytebuddy.description.type.TypeDefinition.Sort.describe(Object.class));
   }
 
   @Test

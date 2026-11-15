@@ -25,7 +25,7 @@ import java.util.Set;
  *       {@link #sessionClose} {@code TOKEN_REVOKED_CLOSE}: {@code UNAUTHENTICATED}, trailer {@code
  *       argos-reject-reason: TOKEN_REVOKED};
  *   <li>session (11 §3): no accepted session for {@code argos-session-id} and {@code
- *       argos-instance-id} (before a hello, after {@link #serverRestart}, after {@link
+ *       argos-instance-id} (before a hello, after {@link #serverRestart()}, after {@link
  *       #sessionClose}): {@code FAILED_PRECONDITION} with description {@code SESSION_REQUIRED};
  *       another token than the session's: {@code PERMISSION_DENIED};
  *   <li>{@link #failNext}: the given status (with {@code argos-retry-after-ms} when set);
@@ -39,11 +39,12 @@ import java.util.Set;
  * unanswered; otherwise they run the checks of the 11 §5 table in its order, each failure sending
  * {@code ServerHello{accepted = false}} and ending the stream with the status of {@link
  * #rejectionOf(String)}: 1 token ({@code TOKEN_INVALID}, {@code TOKEN_REVOKED} for a token revoked
- * by {@link #sessionClose}, and {@link #rejectHello} {@code TOKEN_*}), 2 {@code APP_MISMATCH}, 3
- * {@link #plaintextRejected()} on a plaintext connection, 4 protocol version outside {@code [1,
- * current]} (and the version reasons), 5 {@code APP_NOT_REGISTERED}, 6 {@code INSTANCE_LIMIT} and
- * {@code RATE_LIMITED}. {@link #rejectHello} injects a reason at its own check, so a test can show
- * the order.
+ * by {@link #sessionClose}, and {@link #rejectHello} {@code TOKEN_*}; {@code retry_after_s} {@value
+ * #TOKEN_REJECT_RETRY_AFTER_S}, ADR-0010 C-140), 2 {@code APP_MISMATCH}, 3 {@link
+ * #plaintextRejected()} on a plaintext connection, 4 protocol version outside {@code [1, current]}
+ * (and the version reasons), 5 {@code APP_NOT_REGISTERED}, 6 {@code INSTANCE_LIMIT} and {@code
+ * RATE_LIMITED}. {@link #rejectHello} injects a reason at its own check, so a test can show the
+ * order.
  */
 public final class FaultInjector {
   /** Trailer: retry advice in milliseconds (11 §10). */
@@ -63,7 +64,8 @@ public final class FaultInjector {
    * @param reason {@code RejectReason} name
    * @param code status that ends the stream after the {@code ServerHello} ({@code OK}: the stream
    *     completes normally)
-   * @param defaultRetryAfterS {@code retry_after_s} of 11 §5
+   * @param defaultRetryAfterS {@code retry_after_s} of 11 §5 ({@value #TOKEN_REJECT_RETRY_AFTER_S}
+   *     for {@code TOKEN_*}, ADR-0010 C-140)
    * @param check the row of the 11 §5 check table ({@value #AFTER_LAST_CHECK}: not in the table)
    */
   public record HelloRejection(
@@ -72,11 +74,17 @@ public final class FaultInjector {
   /** The check of a rejection that is not in the 11 §5 table: after every check of the table. */
   private static final int AFTER_LAST_CHECK = 7;
 
+  /**
+   * {@code retry_after_s} of every {@code TOKEN_*} hello rejection (ADR-0010 C-140 (1), as the
+   * server sends it): the agent ignores the value and retries after a fixed 5 minutes (C-102).
+   */
+  public static final int TOKEN_REJECT_RETRY_AFTER_S = 300;
+
   private static final Map<String, HelloRejection> REJECTIONS =
       Map.ofEntries(
-          rejection("TOKEN_INVALID", Status.Code.UNAUTHENTICATED, 0, 1),
-          rejection("TOKEN_REVOKED", Status.Code.UNAUTHENTICATED, 0, 1),
-          rejection("TOKEN_EXPIRED", Status.Code.UNAUTHENTICATED, 3600, 1),
+          rejection("TOKEN_INVALID", Status.Code.UNAUTHENTICATED, TOKEN_REJECT_RETRY_AFTER_S, 1),
+          rejection("TOKEN_REVOKED", Status.Code.UNAUTHENTICATED, TOKEN_REJECT_RETRY_AFTER_S, 1),
+          rejection("TOKEN_EXPIRED", Status.Code.UNAUTHENTICATED, TOKEN_REJECT_RETRY_AFTER_S, 1),
           rejection("APP_MISMATCH", Status.Code.PERMISSION_DENIED, 0, 2),
           rejection("PLAINTEXT_NOT_ALLOWED", Status.Code.FAILED_PRECONDITION, 0, 3),
           rejection("PROTOCOL_UNSUPPORTED", Status.Code.FAILED_PRECONDITION, 0, 4),
@@ -308,9 +316,10 @@ public final class FaultInjector {
    * cache is invalidated at once; 12 §3.1 {@code TokenAuthInterceptor} runs before the session
    * check): a data call with that token then ends {@code UNAUTHENTICATED} with trailer {@code
    * argos-reject-reason: TOKEN_REVOKED}, and a hello gets {@code ServerHello{rejected,
-   * TOKEN_REVOKED, retry_after_s 0}} and {@code UNAUTHENTICATED} (11 §5 check 1). Recovery: {@link
-   * #clear()} lifts the revocation, or the test uses another token (the collector accepts any
-   * well-formed token unless {@link #requireToken} narrows it), as an operator issues a new one.
+   * TOKEN_REVOKED, retry_after_s 300}} and {@code UNAUTHENTICATED} (11 §5 check 1, ADR-0010 C-140).
+   * Recovery: {@link #clear()} lifts the revocation, or the test uses another token (the collector
+   * accepts any well-formed token unless {@link #requireToken} narrows it), as an operator issues a
+   * new one.
    *
    * <p>{@code SERVER_SHUTDOWN} does not imitate the server's shutdown drain (12 §3.9: a server
    * shutting down answers new calls {@code UNAVAILABLE}): the collector keeps serving, so data
@@ -325,10 +334,28 @@ public final class FaultInjector {
   }
 
   /**
-   * Restarts the server on the same port: open calls and streams end, sessions are forgotten
-   * ({@code SESSION_REQUIRED}), and the next hello gets {@code newInstanceId}.
+   * Restarts the server on the same port as a real server restarts: open calls and streams end and
+   * sessions are forgotten ({@code SESSION_REQUIRED}), but the instances are not: the next hello of
+   * the same {@code (app_name, env, instance_name)} gets the same instance id (11 §5 "재기동 연속성") and
+   * that instance's deduplication windows hold (12 §3.4: rebuilt from the WAL), so a seq written
+   * before the restart is {@code ACK_DUPLICATE} after it (D-13).
+   */
+  public FaultInjector serverRestart() {
+    collector.restart(-1, collector.tls(), false);
+    return this;
+  }
+
+  /**
+   * As {@link #serverRestart()}, but the restarted server has also lost its instance registry (not
+   * what a server restart does: a collector with a new database): the next hello of each identity
+   * gets a new instance id, from {@code newInstanceId} on, so the deduplication windows of the old
+   * ids no longer apply. It shows that the agent takes the instance id of every {@code
+   * ServerHello}.
    */
   public FaultInjector serverRestart(long newInstanceId) {
+    if (newInstanceId < 0) {
+      throw new IllegalArgumentException("negative instance id " + newInstanceId);
+    }
     collector.restart(newInstanceId, collector.tls(), false);
     return this;
   }

@@ -39,6 +39,10 @@ public final class ProcessApp implements RunningApp {
           .build();
   private Duration startup = Duration.ZERO;
   private Duration ready = Duration.ZERO;
+  private volatile TomcatStaging.Shutdown tomcatShutdown;
+
+  /** Seconds a staged Tomcat gets to stop its web applications after the shutdown command. */
+  static final int TOMCAT_STOP_SECONDS = 60;
 
   ProcessApp(
       SampleApp app,
@@ -62,6 +66,11 @@ public final class ProcessApp implements RunningApp {
   void startup(Duration toPort, Duration toReady) {
     this.startup = toPort;
     this.ready = toReady;
+  }
+
+  /** The shutdown port of a staged Tomcat (WAR runs), used by {@link #gracefulStop()}. */
+  void tomcatShutdown(TomcatStaging.Shutdown shutdown) {
+    this.tomcatShutdown = shutdown;
   }
 
   void checkAlive(long deadlineNanos) {
@@ -155,8 +164,27 @@ public final class ProcessApp implements RunningApp {
     waitFor(15);
   }
 
+  /**
+   * {@inheritDoc}
+   *
+   * <p>A WAR run first sends the staged Tomcat's shutdown command ({@link TomcatStaging.Shutdown}):
+   * Tomcat stops its web applications (its leak detection logs to {@code catalina-base/logs}), the
+   * JVM runs its shutdown hooks and exits, on every OS. Only when that fails or takes longer than
+   * {@value #TOMCAT_STOP_SECONDS} s does the process get terminated.
+   */
   @Override
   public void gracefulStop() {
+    TomcatStaging.Shutdown shutdown = tomcatShutdown;
+    if (shutdown != null && process.isAlive()) {
+      try {
+        shutdown.send();
+        if (waitFor(TOMCAT_STOP_SECONDS)) {
+          return;
+        }
+      } catch (IOException e) {
+        // The shutdown port is gone (Tomcat is stopping already): terminate below.
+      }
+    }
     process.destroy();
     if (!waitFor(15)) {
       process.destroyForcibly();
@@ -221,6 +249,29 @@ public final class ProcessApp implements RunningApp {
         + "\nstderr:\n"
         + String.join("\n", err)
         + tomcatLogs();
+  }
+
+  /**
+   * {@inheritDoc}
+   *
+   * <p>Every line of every file in {@code catalina-base/logs}, files in name order (JULI writes
+   * UTF-8 there; a line being written is read leniently).
+   */
+  @Override
+  public List<String> tomcatLogLines() {
+    Path logs = TomcatStaging.base(dir).resolve("logs");
+    if (!app.isWar() || !Files.isDirectory(logs)) {
+      return List.of();
+    }
+    List<String> all = new ArrayList<>();
+    try (java.util.stream.Stream<Path> files = Files.list(logs)) {
+      for (Path file : files.filter(Files::isRegularFile).sorted().toList()) {
+        all.addAll(lines(file));
+      }
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+    return all;
   }
 
   /** The last 40 lines of each Tomcat log of a WAR run ({@code catalina-base/logs}). */

@@ -93,6 +93,13 @@ public final class ConfigKeys {
   public static final String CAPTURE_QUERY_STRING = "capture.query-string";
   public static final String CAPTURE_QUERY_STRING_WHITELIST = "capture.query-string.whitelist";
   public static final String CAPTURE_HTTP_HEADERS = "capture.http-headers";
+
+  /**
+   * One request header whose value becomes {@code TransactionRecord.request_id} (ADR-0010 C-124):
+   * empty by default (not collected), not remotely settable unless allowed, value cut at 128 bytes.
+   */
+  public static final String CAPTURE_REQUEST_ID_HEADER = "capture.request-id-header";
+
   public static final String CAPTURE_REMOTE_IP = "capture.remote-ip";
   public static final String CAPTURE_TRUSTED_PROXIES = "capture.trusted-proxies";
   public static final String CAPTURE_USER_ID_MODE = "capture.user-id.mode";
@@ -318,6 +325,14 @@ public final class ConfigKeys {
         list(CAPTURE_HTTP_HEADERS, "", "Request headers to capture (values up to 1 KB).")
             .format(KeySpec.Format.HEADER_NAME)
             .items(10, 128)
+            .remote(KeySpec.Remote.N));
+    add(
+        str(
+                CAPTURE_REQUEST_ID_HEADER,
+                null,
+                "Request header sent as the transaction's request id (128 B); empty: not collected.")
+            .format(KeySpec.Format.HEADER_NAME)
+            .maxLength(128)
             .remote(KeySpec.Remote.N));
     add(
         enumeration(

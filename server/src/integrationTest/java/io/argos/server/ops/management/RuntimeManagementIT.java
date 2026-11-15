@@ -548,6 +548,10 @@ class RuntimeManagementIT {
     int management = freePort();
     Map<String, Object> properties = baseProperties(http, management, tmp.resolve("metrics-token"));
     properties.put("argos.metrics.allow-cidrs[0]", "10.0.0.0/8");
+    // A second server next to the class's server on the same environment: its own gRPC port and its
+    // own WAL directory (WO-21), or it would collide with the first.
+    properties.put("argos.collector.port", Integer.toString(freePort()));
+    properties.put("argos.wal.dir", tmp.resolve("wal-outside-ranges").toString());
     try (ConfigurableApplicationContext other = application(properties).run()) {
       for (String path : List.of("/actuator/prometheus", "/actuator/info")) {
         HttpResponse<String> withToken = get(management, path, "Bearer " + token);

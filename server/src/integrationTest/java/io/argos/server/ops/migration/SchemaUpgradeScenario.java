@@ -22,15 +22,16 @@ import java.util.concurrent.TimeUnit;
 import org.springframework.context.ConfigurableApplicationContext;
 
 /**
- * The incremental migration path of 13 §13.2 (T-ST-052 path 2, T-SV-002): V001 on empty databases,
- * generator data in every raw table (rollups filled by the views), then the next-version fixture
- * ({@code migration-fixtures/upgrade}: V002 with {@code ADD COLUMN IF NOT EXISTS}, the M001
- * procedure that replaces the 1m rollup {@code instance_stat_1m} in four steps with a daily
- * backfill, and the M002 procedure that replaces the 1h rollup {@code app_stat_1h} with a monthly
- * backfill). Row counts must be the same before and after, the new rollups must equal their source
- * per minute and per hour (D-03 form), D-12 must hold before and after (Q13 form), {@code
- * settings.rollup_alias} must point at the new tables, every script, step and backfill partition
- * must finish within 10 minutes, and a further start applies nothing.
+ * The incremental migration path of 13 §13.2 (T-ST-052 path 2, T-SV-002): the bundled scripts (V001
+ * and the V002 ingest columns of ADR-0010 C-144) on empty databases, generator data in every raw
+ * table (rollups filled by the views), then the next-version fixture ({@code
+ * migration-fixtures/upgrade-v003}: V003 with {@code ADD COLUMN IF NOT EXISTS}, the M001 procedure
+ * that replaces the 1m rollup {@code instance_stat_1m} in four steps with a daily backfill, and the
+ * M002 procedure that replaces the 1h rollup {@code app_stat_1h} with a monthly backfill). Row
+ * counts must be the same before and after, the new rollups must equal their source per minute and
+ * per hour (D-03 form), D-12 must hold before and after (Q13 form), {@code settings.rollup_alias}
+ * must point at the new tables, every script, step and backfill partition must finish within 10
+ * minutes, and a further start applies nothing.
  *
  * <p>Generated rows are placed relative to the current time (the generator's default range ends
  * before now and crosses the last UTC midnight), so they are inside every retention whatever the
@@ -90,7 +91,7 @@ final class SchemaUpgradeScenario {
     ClickHouseMigrationRunner.Result upgrade;
     long upgradeStart = System.nanoTime();
     try (ConfigurableApplicationContext ctx =
-        MigrationApps.start(env, MigrationApps.withFixture("upgrade"), Map.of())) {
+        MigrationApps.start(env, MigrationApps.withFixture("upgrade-v003"), Map.of())) {
       upgrade = ctx.getBean(ClickHouseMigrationPhase.class).lastResult();
       assertThat(ctx.getBean(PostgresMigrationPhase.class).lastResult().migrationsExecuted())
           .isZero();
@@ -107,10 +108,10 @@ final class SchemaUpgradeScenario {
         upgrade.applied().stream().map(ClickHouseMigrationRunner.Applied::version).toList();
     // Scripts first, then the procedures in number and step order; backfill progress rows (one per
     // day of M001, one per month of M002) come right before their step.
-    assertThat(versions).startsWith("V002", "M001.create_v2");
+    assertThat(versions).startsWith("V003", "M001.create_v2");
     assertThat(versions.stream().filter(v -> !v.contains("/")).toList())
         .containsExactly(
-            "V002",
+            "V003",
             "M001.create_v2",
             "M001.backfill",
             "M001.switch",
@@ -226,7 +227,7 @@ final class SchemaUpgradeScenario {
 
     // Once applied, a further start applies nothing.
     try (ConfigurableApplicationContext ctx =
-        MigrationApps.start(env, MigrationApps.withFixture("upgrade"), Map.of())) {
+        MigrationApps.start(env, MigrationApps.withFixture("upgrade-v003"), Map.of())) {
       assertThat(ctx.getBean(ClickHouseMigrationPhase.class).lastResult().applied()).isEmpty();
     }
     timings.note(

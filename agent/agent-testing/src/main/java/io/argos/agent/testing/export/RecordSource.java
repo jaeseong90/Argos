@@ -25,9 +25,11 @@ public record RecordSource(String name, Set<String> transactionFields, Set<Strin
    * JsonlFileExporter.write}). From WO-10 on it carries {@code env}, {@code version} (when set),
    * CPU time and allocated bytes (absent when not measured, D-23), the C-69 flags, the normalized
    * thread name, the sampler decision ({@code profile_captured}), {@code truncated}/{@code
-   * total_steps}, and per step the recording thread and {@code repeat_count}. Not carried (they
-   * arrive with later work orders and fail as unsupported): headers, request id, connection wait,
-   * dispatch count, SQL ids, statistics, metrics, dictionary and counters.
+   * total_steps}, and per step the recording thread and {@code repeat_count}. From WO-12 on also
+   * {@code dispatch_count}, {@code request_id} and {@code headers} (a list of {@code "name: value"}
+   * strings; {@link TransactionRecord#headers()} reads both this and the collector's map) and the
+   * {@code timed_out} flag. Not carried (they arrive with later work orders and fail as
+   * unsupported): connection wait, SQL ids, statistics, metrics, dictionary and counters.
    */
   public static final RecordSource JSONL =
       new RecordSource(
@@ -56,6 +58,9 @@ public record RecordSource(String name, Set<String> transactionFields, Set<Strin
               "virtual_thread",
               "flags",
               "xlog_flags",
+              "dispatch_count",
+              "request_id",
+              "headers",
               "env",
               "version",
               "cpu_time_ms",

@@ -389,7 +389,8 @@ public record ArgosProperties(
    * @param bind listen address of the gRPC port (16 §10.7; 17 §3.8 {@code ARGOS_GRPC_BIND})
    * @param tls TLS of the gRPC listener
    * @param allowPlaintext plaintext gRPC (SEC-08, demo mode only)
-   * @param maxMessageBytes maximum message size after decompression
+   * @param maxMessageBytes maximum message size after decompression, at most {@link
+   *     #MAX_MESSAGE_BYTES_UPPER}
    * @param limits batch limits sent to agents in {@code ServerHello} (11 {@code Limits})
    * @param quota per-instance quotas
    * @param session session limits
@@ -404,7 +405,8 @@ public record ArgosProperties(
       @NotBlank @DefaultValue("0.0.0.0") String bind,
       @Valid @DefaultValue Tls tls,
       @DefaultValue("false") boolean allowPlaintext,
-      @Min(1024) @DefaultValue("4194304") int maxMessageBytes,
+      @Min(1024) @Max(Collector.MAX_MESSAGE_BYTES_UPPER) @DefaultValue("4194304")
+          int maxMessageBytes,
       @Valid @DefaultValue Limits limits,
       @Valid @DefaultValue Quota quota,
       @Valid @DefaultValue Session session,
@@ -413,6 +415,15 @@ public record ArgosProperties(
       @DefaultValue("60s") Duration staleAfter,
       @DefaultValue("180s") Duration downAfter,
       @DefaultValue("5m") Duration byeGrace) {
+
+    /**
+     * Largest {@code argos.collector.max-message-bytes} (63 MiB): every accepted batch is one WAL
+     * data record, and a record of the largest message with its session envelope must stay readable
+     * by recovery (a WAL body is at most 64 MiB) and fit into the WAL writer queue (64 MiB of
+     * waiting data records); a larger message would be acknowledged but never recovered, or refused
+     * on every resend (D-13).
+     */
+    public static final int MAX_MESSAGE_BYTES_UPPER = 63 * 1024 * 1024;
 
     public Collector {
       bind = blankToNull(bind) == null ? "0.0.0.0" : bind.strip();
@@ -464,16 +475,22 @@ public record ArgosProperties(
         @Positive @DefaultValue("10000") int maxDictionaryEntriesPerHour) {}
 
     /**
-     * Per-instance quotas (SEC-12).
+     * Per-instance quotas (SEC-12). Token buckets hold twice the rate (16 §4.3); items beyond a
+     * quota are removed from the end of the batch (DSN-12-04, ADR-0010 C-130 (1)).
      *
      * @param txPerSecond transactions per second
      * @param stepsPerSecond profile steps per second
      * @param metricsPer5s metric points per 5 s (key {@code metrics-per-5s})
+     * @param statsPer10s statistics rows ({@code SqlStat} + {@code ExtStat}) per 10 s (key {@code
+     *     stats-per-10s}; 16 §4.3, ADR-0010 C-130 (4), WO-21): 6,000 by default (bucket 12,000,
+     *     ADR-0010 C-157 (3)), the largest legal {@code StatBatch} (5,000 SQL + 1,000 outgoing-call
+     *     rows), so that an agent sending it every window loses nothing
      */
     public record Quota(
         @Positive @DefaultValue("2000") int txPerSecond,
         @Positive @DefaultValue("20000") int stepsPerSecond,
-        @Positive @DefaultValue("1000") int metricsPer5s) {}
+        @Positive @DefaultValue("1000") int metricsPer5s,
+        @Positive @DefaultValue("6000") int statsPer10s) {}
 
     /**
      * Session limits (SEC-13).

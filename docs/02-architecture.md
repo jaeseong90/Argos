@@ -154,9 +154,9 @@
 |---|---|---|---|---|---|
 | 서비스 이름(URL 패턴) | 내부 | 수집 | 쿼리스트링 제외, 숫자·UUID 세그먼트 정규화, 사전 상한(개수 10,000, 추정 바이트 4MiB·개수 상한에 비례, ADR-0010 C-120) | 사전 90일 미참조 정리 | 사전 관리자 삭제 |
 | URL(원 경로) | 개인정보 가능 | 경로만 | `capture.query-string: off`(기본)/whitelist/full, 길이 2KB | xlog 30일 | 삭제 API(tx 범위) |
-| HTTP 헤더 | 개인정보 가능 | 수집 안 함 | 화이트리스트에 있는 이름만, 값 1KB | xlog 30일 | 삭제 API |
-| remote_ip | 개인정보 가능 | 설치 시 선택 강제 | `full`/`masked`(권장 기본)/`off`, trusted-proxies가 있을 때만 XFF | xlog 30일 | 삭제 API(IP 기준) |
-| user_id | 개인정보 가능 | 수집 안 함 | `off`(기본)/`plain`/`hashed`(앱별 HMAC) | xlog 30일 | 삭제 API(user_id 기준) |
+| HTTP 헤더 | 개인정보 가능 | 수집 안 함 | 화이트리스트에 있는 이름만(소문자, 최대 10개, 이름 128B), 값 1KiB, 값 없는 헤더는 보내지 않음, 원격 설정 불가 | xlog 30일 | 삭제 API |
+| remote_ip | 개인정보 가능 | 설치 시 선택 강제 | `full`/`masked`(권장 기본)/`off`, trusted-proxies가 있을 때만 XFF(마지막 32줄, 오른쪽 2,048자를 항목 경계로 절단, 오른쪽 32홉까지) | xlog 30일 | 삭제 API(IP 기준) |
+| user_id | 개인정보 가능 | 수집 안 함 | `off`(기본)/`plain`/`hashed`(base64url(HMAC-SHA256(앱 솔트, 정규화 id)) 앞 16자, 솔트가 없으면 보내지 않음, ADR-0010 C-163). 정규화: ISO 제어문자 제거, 128자 절단, trim, UTF-8 | xlog 30일 | 삭제 API(user_id 기준) |
 | SQL 정규화문 | 내부 | 수집 | 리터럴 → `?`, 실패 시 원문 미전송(`<unparsed>`) | 사전 | 사전 관리자 삭제 |
 | SQL 바인드 파라미터 | 개인정보 가능 | 타입·길이만 | `masked`(기본)/`partial`(화이트리스트+정규식)/`full`(관리자 열람·감사) | profile 7일 | 삭제 API |
 | 예외 메시지 | 개인정보 가능 | 수집(마스킹 후) | 1KB 상한, 정규식 마스킹(이메일·전화·주민번호·카드(Luhn 검사)·IP), 사용자 패턴 평가가 실패하면 메시지 전체 `<masked>`(fail closed) | xlog·profile | 삭제 API |
@@ -187,6 +187,8 @@
 | DB 계정 비밀번호(PG owner·app·audit·backup, CH writer·reader·migrator) | 비밀값 | 설치기 생성 | 파일 0600·psql 변수, CH는 SHA-256만, 로그·유효 설정 마스킹 | 교체까지 | 교체 |
 | `ch_schema_history.error` | 내부 | 마이그레이션 실패 때 | 한 줄 2,000자 | 영구 | - |
 | `users.kiosk_ip_allowlist`, `pending_registrations.host` | 내부 | 설정·등록 때 | - | 행과 같음 | 행 삭제 |
+| xlog `dispatch_count`(C-17, WO-12) | 내부 | 수집 | REQUEST 1, 다른 디스패치마다 +1 | xlog 30일 | 삭제 API(tx 범위) |
+| xlog flags `streaming`·`timed_out`(C-17·C-69, F-A34) | 내부 | 수집 | - | xlog 30일 | 삭제 API(tx 범위) |
 | 액세스 JWT(`argos_at` 쿠키) | 비밀값 파생 | 로그인·리프레시 때 | 저장 안 함(서명 검증), HttpOnly 쿠키로만, 로그 마스킹 | 토큰 수명(16 §7.1) | 만료 |
 | CSRF 토큰 | 비밀값 파생 | 요청 때 | 저장 안 함(더블 서브밋 쿠키), 로그 마스킹 | 쿠키 수명 | - |
 | 세션 내부 열(`user_sessions.family_id`·`rotated_at`·`rotated_from`·`revoked_reason`·`idle_expires_at`·`absolute_expires_at`) | 내부(보안 기록) | 발급·회전·폐기 때 | - | 세션과 같음 | 세션과 같음 |

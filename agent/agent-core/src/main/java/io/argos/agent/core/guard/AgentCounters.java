@@ -40,6 +40,9 @@ import java.util.concurrent.atomic.LongAdder;
  *   <li>{@code argos_agent_profile_dropped_total} (10 §9.2 step 3)
  *   <li>{@code argos_agent_scope_chain_cut_total}: activations that found 64 unclosed bindings on
  *       their thread and started a new chain (10 §14 "상한", {@code TracerImpl.activate})
+ *   <li>{@code argos_agent_user_id_skipped_total{reason}}: {@link #USER_ID_SKIPPED_REASONS},
+ *       transactions whose user id was not recorded ({@code hashed} without salt, {@code mdc:}
+ *       source before WO-18; ADR-0010 C-125)
  * </ul>
  */
 public final class AgentCounters {
@@ -59,6 +62,17 @@ public final class AgentCounters {
   public static final List<String> TRANSFORM_ERROR_REASONS =
       Collections.unmodifiableList(Arrays.asList("error", "circularity"));
 
+  /** {@code user_id_skipped_total{reason}}: {@code hashed} without a salt (ADR-0010 C-125). */
+  public static final String USER_ID_SKIPPED_NO_SALT = "no_salt";
+
+  /** {@code user_id_skipped_total{reason}}: an {@code mdc:} source before WO-18 (C-125). */
+  public static final String USER_ID_SKIPPED_MDC_UNSUPPORTED = "mdc_unsupported";
+
+  /** Reasons of {@code argos_agent_user_id_skipped_total} (ADR-0010 C-125). */
+  public static final List<String> USER_ID_SKIPPED_REASONS =
+      Collections.unmodifiableList(
+          Arrays.asList(USER_ID_SKIPPED_NO_SALT, USER_ID_SKIPPED_MDC_UNSUPPORTED));
+
   static final String DROPPED = "argos_agent_dropped_total";
   static final String IGNORED = "argos_agent_ignored_total";
   static final String ORPHAN_STEPS = "argos_agent_orphan_steps_total";
@@ -72,6 +86,7 @@ public final class AgentCounters {
   static final String SQL_UNPARSED = "argos_agent_sql_unparsed_total";
   static final String PROFILE_DROPPED = "argos_agent_profile_dropped_total";
   static final String SCOPE_CHAIN_CUT = "argos_agent_scope_chain_cut_total";
+  static final String USER_ID_SKIPPED = "argos_agent_user_id_skipped_total";
 
   /** Step types that can be orphans: SQL (1) .. MESSAGE (10), index = type. */
   private static final int STEP_TYPES = StepType.MESSAGE + 1;
@@ -89,6 +104,7 @@ public final class AgentCounters {
   private final LongAdder sqlUnparsed = new LongAdder();
   private final LongAdder profileDropped = new LongAdder();
   private final LongAdder scopeChainCut = new LongAdder();
+  private final LongAdder[] userIdSkipped = adders(USER_ID_SKIPPED_REASONS.size() + 1);
 
   /** Module id to module name ({@link #setModuleNames}); null slots are not reported. */
   private final AtomicReferenceArray<String> moduleNames =
@@ -200,6 +216,18 @@ public final class AgentCounters {
     scopeChainCut.increment();
   }
 
+  /**
+   * One transaction whose user id was not recorded for {@code reason} ({@link
+   * #USER_ID_SKIPPED_REASONS}, ADR-0010 C-125).
+   */
+  public void incUserIdSkipped(String reason) {
+    userIdSkipped[index(USER_ID_SKIPPED_REASONS, reason)].increment();
+  }
+
+  public long userIdSkipped(String reason) {
+    return userIdSkipped[index(USER_ID_SKIPPED_REASONS, reason)].sum();
+  }
+
   // --- reads ----------------------------------------------------------------------------------
 
   public long dropped(String queue) {
@@ -270,7 +298,7 @@ public final class AgentCounters {
    * Every counter with its OpenMetrics name and labels, in a fixed order, zeros included: {@code
    * argos_agent_dropped_total{queue="transaction"}} ... The {@code _other_} label appears only when
    * it counted something; module labels for named modules, errors of unnamed or invalid module ids
-   * under {@code _other_}. Bounded: at most 110 entries.
+   * under {@code _other_}. Bounded: at most 113 entries.
    */
   public Map<String, Long> snapshot() {
     Map<String, Long> out = new LinkedHashMap<String, Long>();
@@ -307,6 +335,7 @@ public final class AgentCounters {
     out.put(SQL_UNPARSED, sqlUnparsed.sum());
     out.put(PROFILE_DROPPED, profileDropped.sum());
     out.put(SCOPE_CHAIN_CUT, scopeChainCut.sum());
+    labelled(out, USER_ID_SKIPPED, "reason", USER_ID_SKIPPED_REASONS, userIdSkipped);
     return Collections.unmodifiableMap(out);
   }
 

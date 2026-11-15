@@ -368,13 +368,36 @@ class SchemaApplyIT {
     long rows = migrator.scalarLong("SELECT count() FROM argos.xlog");
     long rollup = migrator.scalarLong("SELECT sum(count) FROM argos.app_stat_1h");
 
-    List<String> second = SchemaApplier.apply(migrator, SchemaParameters.defaults());
+    SchemaRenderer renderer = SchemaRenderer.fromRepository();
+    List<String> second =
+        SchemaApplier.apply(
+            migrator, renderer.render(renderer.migrations().get(0), SchemaParameters.defaults()));
 
     assertThat(second).hasSize(30);
     assertThat(migrator.rows(snapshot)).isEqualTo(before);
     assertThat(migrator.scalarLong("SELECT count() FROM argos.xlog"))
         .isEqualTo(rows)
         .isEqualTo(100);
+    assertThat(migrator.scalarLong("SELECT sum(count) FROM argos.app_stat_1h")).isEqualTo(rollup);
+
+    // V002 (ADR-0010 C-144, ADD COLUMN IF NOT EXISTS) applied again keeps every object (UUID, DDL)
+    // and the data; ClickHouse rewrites the metadata file of a table it ALTERs, so only the
+    // modification time of xlog and profile_step may move.
+    List<String> secondV002 =
+        SchemaApplier.apply(
+            migrator, renderer.render(renderer.migrations().get(1), SchemaParameters.defaults()));
+    assertThat(secondV002).hasSize(2);
+    List<List<String>> after = migrator.rows(snapshot);
+    assertThat(after).hasSameSizeAs(before);
+    for (int i = 0; i < before.size(); i++) {
+      List<String> b = before.get(i);
+      List<String> a = after.get(i);
+      assertThat(a.subList(0, 3)).as(b.get(0)).isEqualTo(b.subList(0, 3));
+      if (!List.of("xlog", "profile_step").contains(b.get(0))) {
+        assertThat(a.get(3)).as(b.get(0) + " metadata_modification_time").isEqualTo(b.get(3));
+      }
+    }
+    assertThat(migrator.scalarLong("SELECT count() FROM argos.xlog")).isEqualTo(rows);
     assertThat(migrator.scalarLong("SELECT sum(count) FROM argos.app_stat_1h")).isEqualTo(rollup);
   }
 

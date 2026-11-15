@@ -360,6 +360,11 @@ public final class AgentConfig {
     return getList(ConfigKeys.CAPTURE_HTTP_HEADERS);
   }
 
+  /** {@code capture.request-id-header} (ADR-0010 C-124), or null when not collected. */
+  public String captureRequestIdHeader() {
+    return getString(ConfigKeys.CAPTURE_REQUEST_ID_HEADER);
+  }
+
   /** {@code capture.remote-ip}: full, masked or off. */
   public String captureRemoteIp() {
     return getString(ConfigKeys.CAPTURE_REMOTE_IP);
@@ -675,6 +680,7 @@ public final class AgentConfig {
         .errorMessageMax(captureErrorMessageMaxLength())
         .stackDepth(captureStackDepth())
         .asyncStep(asyncStep())
+        .requestIdHeader(captureRequestIdHeader())
         .build();
   }
 

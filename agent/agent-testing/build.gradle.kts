@@ -198,6 +198,33 @@ val preloadAgentJar =
 val attachJdks =
   providers.gradleProperty("agent.attach.jdks").getOrElse("8,21").split(',').map { it.trim().toInt() }
 
+// --- Spring-free servlet WAR fixture (WO-12, T-AG-020 "Spring 없는 앱 HttpServletMapping 폴백") ----
+// Two tiny web applications without Spring: src/servletFixtureJakarta (jakarta.servlet 5.0 API,
+// deployed next to shop-war-jakarta on Tomcat 10.1/11) and src/servletFixtureJavax (javax.servlet
+// 3.1 API, next to shop-war-javax on Tomcat 9). Each maps one servlet under a prefix (/items/*), an
+// exact (/plain/exact) and an extension (*.do) pattern plus an async streaming and a forwarding
+// servlet (WEB-INF/web.xml). The servlet APIs are compileOnly (the container provides them; the same
+// dev-only rows as the agent's servlet modules, docs/licenses/dev-only.md). Java 8 bytecode, so the
+// javax fixture runs on JDK 8. Test-only, never shipped: AppLauncher.webapp(context, war) copies
+// them into the staged CATALINA_BASE (README, WAR apps).
+val servletFixtures = mapOf("Jakarta" to libs.agent.servlet.jakarta.api, "Javax" to libs.agent.servlet.javax.api)
+val servletFixtureWars =
+  servletFixtures.mapValues { (flavor, api) ->
+    val sourceSet = sourceSets.create("servletFixture$flavor")
+    dependencies { add(sourceSet.compileOnlyConfigurationName, api) }
+    tasks.named<JavaCompile>(sourceSet.compileJavaTaskName) {
+      options.release = ArgosProject.AGENT_JAVA_RELEASE
+      options.compilerArgs.addAll(listOf("-Xlint:-options", "-Xlint:-classfile"))
+    }
+    tasks.register<Jar>("servletFixture${flavor}War") {
+      description = "Spring-free servlet fixture WAR (${flavor.lowercase()}.servlet, test-only, never shipped)."
+      archiveFileName = "servlet-fixture-${flavor.lowercase()}.war"
+      destinationDirectory = layout.buildDirectory.dir("servlet-fixture")
+      from(sourceSet.output.classesDirs) { into("WEB-INF/classes") }
+      from(layout.projectDirectory.dir("src/servletFixture$flavor/webapp"))
+    }
+  }
+
 // --- Harness library (src/main, 18 §5.1, WO-05) and sample apps with the agent --------------------
 // src/main: launcher, collector, export, assertion, baseline, leak, log, jvm (README). The
 // integrationTest's e2e classes start WO-01 sample apps with the release agent jar through
@@ -210,6 +237,9 @@ dependencies {
   implementation(libs.assertj.core)
   // In-process target of the sample apps' outgoing calls (WO-02 P-6: HttpURLConnection, F-A32).
   "integrationTestImplementation"(project(":sample-apps:ext-stub"))
+  // The shop endpoint catalog and the PII seeds of 18 §4.2/§4.3 (ShopCatalog, Seeds; WO-12 seed
+  // traffic for T-SEC-26). Framework-neutral, no runtime dependencies of its own.
+  "integrationTestImplementation"(project(":sample-apps:common"))
   // FakeCollectorTest and the contract suite: a real gRPC client (grpc-netty) against the fake
   // collector.
   "integrationTestImplementation"(platform(libs.netty.bom))
@@ -338,6 +368,21 @@ tasks.named<Test>("integrationTest") {
   jvmArgumentProviders.add(
     CommandLineArgumentProvider { tomcatHomes.map { (key, home) -> "-Dargos.test.tomcatHome.$key=$home" } }
   )
+  // The Spring-free servlet fixture WARs (servlet.WarServletMappingTest): built only for runs with a
+  // WAR app.
+  if (tomcatHomes.isNotEmpty()) {
+    val fixtureWars = servletFixtureWars.mapValues { (_, task) -> task.flatMap { it.archiveFile } }
+    fixtureWars.forEach { (flavor, war) ->
+      inputs.file(war).withPropertyName("servletFixture$flavor").withPathSensitivity(PathSensitivity.NONE)
+    }
+    jvmArgumentProviders.add(
+      CommandLineArgumentProvider {
+        fixtureWars.map { (flavor, war) ->
+          "-Dargos.test.servletFixtureWar.${flavor.lowercase()}=" + war.get().asFile.absolutePath
+        }
+      }
+    )
+  }
   // Locals only inside the providers below (the configuration cache cannot keep script objects).
   val combos = e2eCombos.joinToString(",")
   // Transformed-class lists and JSONL of the e2e runs (T-AG-005 baseline input, PoC run table).

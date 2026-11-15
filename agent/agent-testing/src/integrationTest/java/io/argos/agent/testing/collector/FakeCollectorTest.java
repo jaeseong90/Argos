@@ -310,15 +310,17 @@ class FakeCollectorTest {
 
   @Test
   @DisplayName(
-      "rejectAuth(): data calls end UNAUTHENTICATED (trailer argos-reject-reason TOKEN_INVALID),"
-          + " hellos get ServerHello{TOKEN_INVALID, retry_after_s 0} and the stream ends"
-          + " UNAUTHENTICATED (11 §5 check 1, §10)")
+      "rejectAuth(): data calls end UNAUTHENTICATED (trailer argos-reject-reason TOKEN_INVALID, no"
+          + " retry advice), hellos get ServerHello{TOKEN_INVALID, retry_after_s 300} (ADR-0010"
+          + " C-140) and the stream ends UNAUTHENTICATED with argos-retry-after-ms 300000 (11 §5"
+          + " check 1, §10)")
   void rejectAuth() throws Exception {
     Connected c = connected(collector(FakeCollector.start()));
     c.collector.faults().rejectAuth();
     StatusRuntimeException e = failure(() -> c.send(1));
     assertThat(e.getStatus().getCode()).isEqualTo(Status.Code.UNAUTHENTICATED);
     assertThat(e.getTrailers().get(V1Protocol.REJECT_REASON)).isEqualTo("TOKEN_INVALID");
+    assertThat(e.getTrailers().get(V1Protocol.RETRY_AFTER_MS)).isNull();
     ScriptedAgent.assertNoToken(
         "the status description", e.getStatus().getDescription(), c.collector.token());
     Session session = new Session(c.channel, c.collector.token());
@@ -326,11 +328,12 @@ class FakeCollectorTest {
     ServerHello hello = session.next().getHello();
     assertThat(hello.getAccepted()).isFalse();
     assertThat(hello.getRejectReason()).isEqualTo(RejectReason.TOKEN_INVALID);
-    assertThat(hello.getRetryAfterS()).isZero();
+    assertThat(hello.getRetryAfterS()).isEqualTo(300);
     ScriptedAgent.assertNoToken("reject_message", hello.getRejectMessage(), c.collector.token());
     ScriptedAgent.Ended ended = session.awaitEnd();
     assertThat(ended.status().getCode()).isEqualTo(Status.Code.UNAUTHENTICATED);
     assertThat(ended.trailers().get(V1Protocol.REJECT_REASON)).isEqualTo("TOKEN_INVALID");
+    assertThat(ended.trailers().get(V1Protocol.RETRY_AFTER_MS)).isEqualTo("300000");
     assertThat(c.collector.sessions())
         .filteredOn(s -> !s.accepted())
         .singleElement()
@@ -453,13 +456,56 @@ class FakeCollectorTest {
 
   @Test
   @DisplayName(
-      "serverRestart(id): open streams end, the port stays, data calls of the old session get"
-          + " FAILED_PRECONDITION(SESSION_REQUIRED), the next hello gets the new instance id (11 §3)")
+      "serverRestart(): open streams end, the port stays, data calls of the old session get"
+          + " FAILED_PRECONDITION(SESSION_REQUIRED); the next hello of the same identity gets the"
+          + " same instance id and its dedup window holds, so a seq written before the restart is"
+          + " ACK_DUPLICATE (11 §3, §5, 12 §3.4, D-13); another identity gets the next id")
   void serverRestart() throws Exception {
     Connected c = connected(collector(FakeCollector.start()));
     FakeCollector collector = c.collector;
     int port = collector.port();
     assertThat(c.hello.getInstanceId()).isEqualTo(1);
+    assertThat(c.send(9).getStatus()).isEqualTo(AckStatus.ACK_OK);
+    collector.faults().serverRestart();
+    assertThat(c.session.awaitEnd().status().isOk()).isFalse();
+    assertThat(collector.port()).isEqualTo(port);
+    ManagedChannel channel = agent.plaintext(collector);
+    StatusRuntimeException stale =
+        failure(() -> ScriptedAgent.send(channel, collector.token(), c.hello, 3, 10));
+    assertThat(stale.getStatus().getCode()).isEqualTo(Status.Code.FAILED_PRECONDITION);
+    assertThat(stale.getStatus().getDescription()).isEqualTo("SESSION_REQUIRED");
+    ServerHello hello = new Session(channel, collector.token()).accepted("test");
+    assertThat(hello.getInstanceId()).isEqualTo(1);
+    assertThat(hello.getSessionId()).isNotEqualTo(c.hello.getSessionId());
+    Ack duplicate = ScriptedAgent.send(channel, collector.token(), hello, 3, 9);
+    assertThat(duplicate.getStatus()).isEqualTo(AckStatus.ACK_DUPLICATE);
+    assertThat(duplicate.getLastSeq()).isEqualTo(9);
+    Ack next = ScriptedAgent.send(channel, collector.token(), hello, 3, 10);
+    assertThat(next.getStatus()).isEqualTo(AckStatus.ACK_OK);
+    assertThat(next.getLastSeq()).isEqualTo(10);
+    Session other = new Session(channel, collector.token());
+    other.hello("shop", "test", "host:2", 3, 1, System.currentTimeMillis());
+    assertThat(other.next().getHello().getInstanceId()).isEqualTo(2);
+    assertThat(collector.batches())
+        .extracting(ReceivedBatch::outcome)
+        .containsExactly(
+            ReceivedBatch.ACKED,
+            ReceivedBatch.SESSION_REQUIRED,
+            ReceivedBatch.DUPLICATE,
+            ReceivedBatch.ACKED);
+  }
+
+  @Test
+  @DisplayName(
+      "serverRestart(id): as serverRestart(), but the instance registry is lost: the next hello"
+          + " gets the new instance id, whose dedup window is empty (a seq written under the old id"
+          + " is ACK_OK)")
+  void serverRestartWithNewInstanceId() throws Exception {
+    Connected c = connected(collector(FakeCollector.start()));
+    FakeCollector collector = c.collector;
+    int port = collector.port();
+    assertThat(c.hello.getInstanceId()).isEqualTo(1);
+    assertThat(c.send(9).getStatus()).isEqualTo(AckStatus.ACK_OK);
     collector.faults().serverRestart(42);
     assertThat(c.session.awaitEnd().status().isOk()).isFalse();
     assertThat(collector.port()).isEqualTo(port);
@@ -471,11 +517,14 @@ class FakeCollectorTest {
     Session second = new Session(channel, collector.token());
     ServerHello hello = second.accepted("test");
     assertThat(hello.getInstanceId()).isEqualTo(42);
-    assertThat(ScriptedAgent.send(channel, collector.token(), hello, 3, 9).getLastSeq())
-        .isEqualTo(9);
+    Ack ack = ScriptedAgent.send(channel, collector.token(), hello, 3, 9);
+    assertThat(ack.getStatus()).isEqualTo(AckStatus.ACK_OK);
+    assertThat(ack.getLastSeq()).isEqualTo(9);
     assertThat(collector.batches())
         .extracting(ReceivedBatch::outcome)
-        .containsExactly("SESSION_REQUIRED", "ACKED");
+        .containsExactly(ReceivedBatch.ACKED, ReceivedBatch.SESSION_REQUIRED, ReceivedBatch.ACKED);
+    assertThatThrownBy(() -> collector.faults().serverRestart(-1))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 
   /** How a stream ends after {@code SessionClose{reason}} and what a data call gets afterwards. */
@@ -540,9 +589,9 @@ class FakeCollectorTest {
   @Test
   @DisplayName(
       "sessionClose(TOKEN_REVOKED_CLOSE) (11 §5 check 1, §10, 12 §4.1): a hello with the revoked"
-          + " token gets ServerHello{TOKEN_REVOKED, retry_after_s 0} and UNAUTHENTICATED with"
-          + " argos-reject-reason TOKEN_REVOKED; another token is accepted, and clear() lifts the"
-          + " revocation")
+          + " token gets ServerHello{TOKEN_REVOKED, retry_after_s 300} (ADR-0010 C-140) and"
+          + " UNAUTHENTICATED with argos-reject-reason TOKEN_REVOKED and argos-retry-after-ms"
+          + " 300000; another token is accepted, and clear() lifts the revocation")
   void revokedToken() throws Exception {
     Connected c = connected(collector(FakeCollector.start()));
     FakeCollector collector = c.collector;
@@ -557,12 +606,12 @@ class FakeCollectorTest {
     ServerHello refused = again.next().getHello();
     assertThat(refused.getAccepted()).isFalse();
     assertThat(refused.getRejectReason()).isEqualTo(RejectReason.TOKEN_REVOKED);
-    assertThat(refused.getRetryAfterS()).isZero();
+    assertThat(refused.getRetryAfterS()).isEqualTo(300);
     ScriptedAgent.assertNoToken("reject_message", refused.getRejectMessage(), collector.token());
     ScriptedAgent.Ended refusedEnd = again.awaitEnd();
     assertThat(refusedEnd.status().getCode()).isEqualTo(Status.Code.UNAUTHENTICATED);
     assertThat(refusedEnd.trailers().get(V1Protocol.REJECT_REASON)).isEqualTo("TOKEN_REVOKED");
-    assertThat(refusedEnd.trailers().get(V1Protocol.RETRY_AFTER_MS)).isNull();
+    assertThat(refusedEnd.trailers().get(V1Protocol.RETRY_AFTER_MS)).isEqualTo("300000");
     assertThat(collector.sessions())
         .filteredOn(s -> !s.accepted())
         .singleElement()

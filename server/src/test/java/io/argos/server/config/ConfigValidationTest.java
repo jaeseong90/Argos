@@ -84,6 +84,26 @@ class ConfigValidationTest {
   }
 
   @Test
+  @Tag("req:D-13")
+  @DisplayName(
+      "T-SV-010v argos.collector.max-message-bytes is at most 63 MiB (one WAL record per batch,"
+          + " readable by recovery); 63 MiB is accepted")
+  void maxMessageBytesUpperBound() {
+    Map<String, Object> settings = validSettings(dir);
+    settings.put(
+        "argos.collector.max-message-bytes",
+        Integer.toString(ArgosProperties.Collector.MAX_MESSAGE_BYTES_UPPER + 1));
+    assertThat(violations(settings))
+        .containsExactly(
+            "argos.collector.max-message-bytes: must be less than or equal to 66060288"
+                + " (file [conf/application.yml])");
+    settings.put(
+        "argos.collector.max-message-bytes",
+        Integer.toString(ArgosProperties.Collector.MAX_MESSAGE_BYTES_UPPER));
+    assertThat(violations(settings)).isEmpty();
+  }
+
+  @Test
   @DisplayName("cross-key rules: durations, retention days, thresholds, cron, CIDRs, SMTP")
   void crossKeyRules() {
     Map<String, Object> settings = validSettings(dir);

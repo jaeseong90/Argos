@@ -46,11 +46,22 @@ class SchemaRendererTest {
   private final SchemaRenderer renderer = SchemaRenderer.fromRepository();
 
   @Test
-  @DisplayName("V001 renders to 1 database + 17 tables + 12 views, every placeholder resolved")
+  @DisplayName(
+      "V001 renders to 1 database + 17 tables + 12 views, V002 to 2 ADD COLUMN statements (C-144),"
+          + " every placeholder resolved")
   void rendersEveryObject() {
     List<String> statements = renderer.renderAll(SchemaParameters.defaults());
 
-    assertThat(statements).hasSize(30);
+    assertThat(renderer.render(renderer.migrations().get(0), SchemaParameters.defaults()))
+        .hasSize(30);
+    // V002 (ADR-0010 C-144, WO-21) only appends columns: one ALTER TABLE per table it changes.
+    assertThat(statements).hasSize(32);
+    assertThat(statements.subList(30, 32))
+        .allMatch(s -> s.contains("ADD COLUMN IF NOT EXISTS"))
+        .anyMatch(s -> s.startsWith("ALTER TABLE argos.xlog ADD COLUMN IF NOT EXISTS url_path "))
+        .anyMatch(
+            s ->
+                s.startsWith("ALTER TABLE argos.profile_step ADD COLUMN IF NOT EXISTS truncated "));
     assertThat(statements.get(0)).isEqualTo("CREATE DATABASE IF NOT EXISTS argos ENGINE = Atomic");
     for (String table : RAW_TABLES) {
       assertThat(statements)

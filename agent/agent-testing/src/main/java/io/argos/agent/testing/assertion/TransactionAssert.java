@@ -19,8 +19,8 @@ import org.assertj.core.api.AbstractAssert;
  *     .transaction().noStepFromThread(startsWith("argos-"));
  * </pre>
  *
- * Fields the record's source cannot carry (on the JSONL exporter: headers, request id, connection
- * wait, step threads) fail as {@link Unsupported} instead of passing.
+ * Fields the record's source cannot carry (on the JSONL exporter: connection wait, SQL ids; on the
+ * collector view: step threads) fail as {@link Unsupported} instead of passing.
  */
 public final class TransactionAssert extends AbstractAssert<TransactionAssert, TransactionRecord> {
 

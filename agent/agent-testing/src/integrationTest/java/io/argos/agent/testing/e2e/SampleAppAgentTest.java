@@ -334,7 +334,13 @@ class SampleAppAgentTest {
       // T-BLD-006 for a real app: no agent-like temp entry (the baseline test compares the rest).
       Set<String> temp = running.tempCreated();
       System.out.println(
-          "[e2e] " + combo + ": temp events (ms after spawn) " + running.tempEvents());
+          "[e2e] "
+              + combo
+              + ": temp events (ms after spawn) "
+              + running.tempEvents()
+              + ", temp path "
+              + running.workDir().resolve("tmp").toString().length()
+              + " characters");
       AGENT_TEMP.put(combo, temp);
       assertThat(temp)
           .noneMatch(

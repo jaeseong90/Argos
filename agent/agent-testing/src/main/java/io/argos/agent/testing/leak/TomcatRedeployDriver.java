@@ -22,9 +22,12 @@ import java.util.regex.Pattern;
  * checks {@link #webappLoaders} (1: only the current deployment's {@code
  * ParallelWebappClassLoader}) and {@link #threadLocalLeakWarnings} (0) in the Tomcat log.
  *
- * <p>The standalone Tomcat with the manager app (role {@code manager-script}) is the matrix
- * container's (18 §18 #10); the launcher has no WAR mode yet (open WO-05 item), so the driver is
- * unit-tested with a fake {@link Manager} and runs in the matrix.
+ * <p>The redeploy cycles need Tomcat's manager app (role {@code manager-script}), which only the
+ * matrix container has (18 §18 #10, WO-50): the launcher's WAR mode ({@code AppLauncher}, {@code
+ * TomcatStaging}) stages a standalone Tomcat without it. The cycles are therefore unit-tested with
+ * a fake {@link Manager} and run in the matrix. {@link #threadLocalLeakWarnings} is also used on
+ * every WAR run of the launcher: {@code log.TomcatLogCheck} judges the staged Tomcat's log after
+ * its graceful stop ({@code WarAppAgentTest}, WO-05 r1-new-1).
  */
 public final class TomcatRedeployDriver {
   /** Class of a webapp's class loader on Tomcat 9, 10.1 and 11. */

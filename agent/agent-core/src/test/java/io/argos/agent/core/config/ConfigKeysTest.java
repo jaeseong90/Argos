@@ -44,6 +44,8 @@ class ConfigKeysTest {
     {"capture.query-string", "off", "N"},
     {"capture.query-string.whitelist", "", "N"},
     {"capture.http-headers", "", "N"},
+    // ADR-0010 C-124 adds this row to 10 §15 (WO-12).
+    {"capture.request-id-header", null, "N"},
     {"capture.remote-ip", "masked", "N"},
     {"capture.trusted-proxies", "", "N"},
     {"capture.user-id.mode", "off", "N"},

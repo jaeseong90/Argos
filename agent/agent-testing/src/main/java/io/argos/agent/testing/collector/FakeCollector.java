@@ -67,23 +67,26 @@ import java.util.function.Supplier;
  *
  * <ul>
  *   <li>11 §5 session: {@code AgentHello} → {@code ServerHello} with an instance id ({@link
- *       Builder#firstInstanceId}, reused for the same {@code (app_name, env, instance_name)} as
- *       long as the server runs, 11 §5 "재기동 연속성"), a new UUID {@code session_id}, {@code
- *       server_time_ms}, the 11 §4.2 {@code Limits} defaults ({@code ProtocolLimits.defaults()}),
- *       {@code heartbeat_interval_s} ({@link Builder#heartbeatIntervalS}) and {@code config}. An
- *       instance has one session (12 §4.1): a new hello sends the open session of that instance
- *       {@code SessionClose{REPLACED}} and ends its stream (11 §5 check 7), and the old session id
- *       is refused from then on, also when its stream had already ended.
+ *       Builder#firstInstanceId}, reused for the same {@code (app_name, env, instance_name)} in
+ *       every session, also after {@link FaultInjector#serverRestart()}, 11 §5 "재기동 연속성"), a new
+ *       UUID {@code session_id}, {@code server_time_ms}, the 11 §4.2 {@code Limits} defaults
+ *       ({@code ProtocolLimits.defaults()}), {@code heartbeat_interval_s} ({@link
+ *       Builder#heartbeatIntervalS}) and {@code config}. An instance has one session (12 §4.1): a
+ *       new hello sends the open session of that instance {@code SessionClose{REPLACED}} and ends
+ *       its stream (11 §5 check 7), and the old session id is refused from then on, also when its
+ *       stream had already ended.
  *   <li>11 §2, §3 data calls need {@code authorization: Bearer argos_<base64url>}, {@code
  *       argos-instance-id} and {@code argos-session-id} of an accepted session; otherwise {@code
  *       UNAUTHENTICATED} or {@code FAILED_PRECONDITION} ({@code SESSION_REQUIRED}). A session stays
  *       known after its stream ends (the agent's shutdown flush after {@code AgentBye}, 11 §6)
- *       until {@link FaultInjector#serverRestart}, {@link FaultInjector#sessionClose} or a new
+ *       until {@link FaultInjector#serverRestart()}, {@link FaultInjector#sessionClose} or a new
  *       hello of the instance. {@code sessionClose(TOKEN_REVOKED_CLOSE)} also revokes the token (11
  *       §10, 12 §3.1, §4.1): its data calls and hellos are then {@code UNAUTHENTICATED} with {@code
  *       TOKEN_REVOKED}.
  *   <li>11 §6 deduplication ({@link Deduplicator}): {@code ACK_DUPLICATE} with {@code last_seq};
- *       the duplicate is still recorded (flagged), so the sent count stays exact.
+ *       the duplicate is still recorded (flagged), so the sent count stays exact. The windows
+ *       survive a {@link FaultInjector#serverRestart()} (12 §3.4: the server rebuilds them from the
+ *       WAL), so the reused instance id still finds its window (D-13).
  *   <li>11 §9 clock ({@link ClockEstimator}): every heartbeat is answered with t2/t3 (shifted by
  *       {@link FaultInjector#clockOffset}) and completes the previous round; {@link
  *       #clockOffsetMs(long)} is the instance's estimate.
@@ -363,7 +366,12 @@ public final class FakeCollector implements AutoCloseable {
     }
   }
 
-  /** {@link FaultInjector#serverRestart}, {@code plaintextOnly}, {@code wrongHostCertificate}. */
+  /**
+   * {@link FaultInjector#serverRestart()}, {@code plaintextOnly}, {@code wrongHostCertificate}
+   * ({@code newInstanceId} -1: the instances and their dedup windows are kept), and {@link
+   * FaultInjector#serverRestart(long)} (the instance registry is lost: new ids from {@code
+   * newInstanceId}).
+   */
   synchronized void restart(long newInstanceId, boolean tls, boolean wrongHost) {
     Status status = Status.UNAVAILABLE.withDescription("FakeCollector restart");
     closeSessions(status);
@@ -376,9 +384,11 @@ public final class FakeCollector implements AutoCloseable {
       throw new IllegalStateException("interrupted while restarting the fake collector", e);
     }
     synchronized (registry) {
-      // A restarted server knows no session (data calls get SESSION_REQUIRED, 11 §3).
+      // A restarted server knows no session (data calls get SESSION_REQUIRED, 11 §3), but it keeps
+      // the instance ids of (app, instance_name) (11 §5) and the dedup windows (12 §3.4, D-13).
       sessionsById.clear();
       if (newInstanceId >= 0) {
+        // serverRestart(long): the instance registry is lost.
         nextInstanceId.set(newInstanceId);
         instanceIds.clear();
       }

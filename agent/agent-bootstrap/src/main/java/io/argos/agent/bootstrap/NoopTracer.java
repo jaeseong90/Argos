@@ -32,6 +32,9 @@ public final class NoopTracer implements Tracer {
       long endNanos) {}
 
   @Override
+  public void endStreaming(TraceContext ctx, int status, Throwable error, long endNanos) {}
+
+  @Override
   public Scope activate(TraceContext ctx) {
     return Scope.NOOP;
   }
@@ -60,6 +63,27 @@ public final class NoopTracer implements Tracer {
   @Override
   public void setHttp(
       TraceContext ctx, String method, String path, String remoteIp, String userId) {}
+
+  @Override
+  public void setHttpRequest(
+      TraceContext ctx,
+      String method,
+      String requestUri,
+      String queryString,
+      String socketAddress,
+      String forwardedFor) {}
+
+  @Override
+  public void setUserId(TraceContext ctx, String rawUserId) {}
+
+  @Override
+  public void setHeaders(TraceContext ctx, String[] namesAndValues) {}
+
+  @Override
+  public void setRequestId(TraceContext ctx, String value) {}
+
+  @Override
+  public void countUnanchored() {}
 
   @Override
   public void setStatus(TraceContext ctx, int status) {}

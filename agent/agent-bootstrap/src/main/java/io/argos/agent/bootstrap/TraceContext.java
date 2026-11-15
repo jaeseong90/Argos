@@ -66,8 +66,60 @@ public final class TraceContext {
   /** Servlet dispatch nesting (10 §7.1). */
   public volatile int dispatchDepth;
 
+  /**
+   * Container dispatches of the request (F-A28, 11 {@code dispatch_count}): 1 for the REQUEST
+   * dispatch, plus one per FORWARD, INCLUDE, ERROR or ASYNC dispatch that reached a servlet while
+   * the transaction ran. Written by the servlet helper on the thread that runs the dispatch.
+   */
+  public volatile int dispatchCount;
+
+  /**
+   * The dispatch counted last in {@link #dispatchCount}: the identity hash code of its request
+   * object (an int, never the object, A-9), valid while {@link #countedDispatchDepth} is above 0. A
+   * servlet that hands the same request object on to another servlet (Jasper's {@code JspServlet}
+   * and the generated page) is still that dispatch and does not count again. Written by the servlet
+   * helper on the thread that runs the dispatch.
+   */
+  public volatile int countedDispatchRequest;
+
+  /**
+   * The {@link #dispatchDepth} of the servlet call that counted {@link #countedDispatchRequest}; 0
+   * when none. Cleared when the depth drops below it, so that a later dispatch with the same
+   * request object (the next ASYNC or ERROR dispatch) counts again.
+   */
+  public volatile int countedDispatchDepth;
+
+  /**
+   * True while the request is in servlet async mode (10 §7.1 ASYNC_PENDING): {@code startAsync} was
+   * called and no ASYNC dispatch has joined since. A response flush in this state ends a streaming
+   * response (10 §6.7, F-A34).
+   */
   public volatile boolean asyncStarted;
+
+  /** F-A34: the response streams (101 upgrade, first flush after {@code startAsync}). */
   public volatile boolean streaming;
+
+  /**
+   * F-A34 {@code timed_out}: the agent ended the transaction at {@code transaction.max-duration-ms}
+   * (10 §6.7, §13.1).
+   */
+  public volatile boolean timedOut;
+
+  /**
+   * An {@code AsyncListener.onTimeout} was seen (10 §6.7): the end keeps the status the container
+   * sets afterwards, or 500 when that status stays below 400.
+   */
+  public volatile boolean asyncTimedOut;
+
+  /**
+   * The output stream or writer the container's response facade handed out while the transaction
+   * ran synchronously on the request thread (WO-12 addition to 10 §3, ADR-0010 C-127): a weak
+   * reference, never a strong one (A-9). Written and read by the servlet helpers on the request
+   * thread only. A synchronous request records its stream here instead of in a shared store; {@code
+   * startAsync} and the suspending exit link it to the response facade, so that its first flush in
+   * async mode still ends a streaming response (10 §6.7).
+   */
+  public volatile WeakReference<Object> responseStream;
 
   public int sqlCount;
   public int extCount;

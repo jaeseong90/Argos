@@ -9,8 +9,11 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import org.springframework.boot.SpringApplication;
 import org.springframework.context.ConfigurableApplicationContext;
@@ -34,17 +37,42 @@ import org.springframework.context.ConfigurableApplicationContext;
  */
 public final class ArgosTestServer implements AutoCloseable {
 
+  /** Running servers per environment (identity): the first one owns its gRPC port and WAL. */
+  private static final IdentityHashMap<ServerTestEnvironment, Integer> RUNNING =
+      new IdentityHashMap<>();
+
+  private static final AtomicInteger NEXT_PRIVATE = new AtomicInteger();
+
   private final ConfigurableApplicationContext context;
   private final int port;
   private final int managementPort;
   private final String baseUrl;
+  private final ServerTestEnvironment env;
+  private final int collectorPort;
+  private final AtomicBoolean closed = new AtomicBoolean();
 
   private ArgosTestServer(
-      ConfigurableApplicationContext context, int port, int managementPort, String baseUrl) {
+      ConfigurableApplicationContext context,
+      int port,
+      int managementPort,
+      String baseUrl,
+      ServerTestEnvironment env,
+      int collectorPort) {
     this.context = context;
     this.port = port;
     this.managementPort = managementPort;
     this.baseUrl = baseUrl;
+    this.env = env;
+    this.collectorPort = collectorPort;
+  }
+
+  /**
+   * The gRPC collector port of this server: the environment's ({@link
+   * ServerTestEnvironment#collectorPort()}) unless another server of the environment was running
+   * when this one started (WO-21).
+   */
+  public int collectorPort() {
+    return collectorPort;
   }
 
   /** Starts the server with the default properties. */
@@ -75,11 +103,36 @@ public final class ArgosTestServer implements AutoCloseable {
     properties.put("management.server.address", "127.0.0.1");
     properties.put("management.server.port", Integer.toString(management));
     properties.put("argos.web.public-url", baseUrl);
+    // WO-21: the environment's gRPC port and WAL directory belong to one server at a time. A server
+    // started while another one of this environment runs gets its own (a restart after close()
+    // reuses the environment's, so it recovers that WAL).
+    int second = 0;
+    synchronized (RUNNING) {
+      if (RUNNING.getOrDefault(env, 0) > 0) {
+        second = NEXT_PRIVATE.incrementAndGet();
+      }
+    }
+    if (second > 0) {
+      properties.put("argos.collector.port", Integer.toString(freePort()));
+      properties.put(
+          "argos.wal.dir",
+          env.secretsDirectory().resolve("wal-concurrent-" + second).toAbsolutePath().toString());
+    }
     properties.putAll(extra);
     SpringApplication app = new SpringApplication(ServerApplication.class);
     app.setDefaultProperties(properties);
     customizer.accept(app);
-    return new ArgosTestServer(app.run(), port, management, baseUrl);
+    ConfigurableApplicationContext context = app.run();
+    synchronized (RUNNING) {
+      RUNNING.merge(env, 1, Integer::sum);
+    }
+    return new ArgosTestServer(
+        context,
+        port,
+        management,
+        baseUrl,
+        env,
+        Integer.parseInt(String.valueOf(properties.get("argos.collector.port"))));
   }
 
   /** A new browser-like client of this server (empty cookie jar). */
@@ -115,7 +168,16 @@ public final class ArgosTestServer implements AutoCloseable {
   /** Stops the server. */
   @Override
   public void close() {
-    context.close();
+    if (!closed.compareAndSet(false, true)) {
+      return;
+    }
+    try {
+      context.close();
+    } finally {
+      synchronized (RUNNING) {
+        RUNNING.computeIfPresent(env, (k, n) -> n > 1 ? n - 1 : null);
+      }
+    }
   }
 
   private static int freePort() {

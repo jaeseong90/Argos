@@ -28,7 +28,7 @@ ClickHouse the way the Argos server writes (13 §7.4, 12 §3.8). Development-onl
 | Profile | agent sampler (errors, >= 1 s, 10 % of the rest), about 14 steps per capture, STACK captures, summary mode beyond 1,000 steps |
 | Metrics | 100 series per instance on the 5 s grid (JVM, pools, GC, threads, JDBC, Tomcat, HTTP, agent) |
 | Statistics | 10 s windows derived from the transactions (D-12 holds by construction), 15 buckets |
-| Server path | clock skew +/-2 s, two instances +60 s (timestamp guard clamps them, D-15), late batches 0.5 % (1-30 min, `late` flag), midnight crossing |
+| Server path | clock skew +/-2 s, two instances +60 s (the server corrects their transactions, statistics windows and metric samples by the lead rounded to 10 s, ADR-0009 C-84 as fixed by ADR-0010 C-129; the D-15 guard then runs on the corrected value and clamps nothing; `tx_id` keeps the agent time), late batches 0.5 % (1-30 min, `late` flag), midnight crossing |
 
 `scale` shrinks the time span of every table (xlog 30 days, profile_step the last 7, metric the last
 14, statistics the whole xlog span); rates and cardinalities do not change, so a 10-minute query reads

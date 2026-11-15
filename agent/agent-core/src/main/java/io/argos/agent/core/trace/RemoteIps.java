@@ -2,15 +2,202 @@
 package io.argos.agent.core.trace;
 
 import io.argos.agent.bootstrap.CaptureConfig;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * {@code capture.remote-ip} (SEC-31, 10 §15): {@code full} keeps the address, {@code masked} (the
  * default) zeroes the last IPv4 octet or the low 80 bits of an IPv6 address, {@code off} drops it.
  * Addresses are parsed as text only (never resolved); text that is not an IP literal is dropped in
  * {@code masked} mode so that nothing unmasked leaks.
+ *
+ * <p>The client address ({@link #client}, 16 §6.2, SEC-37): the socket address unless {@code
+ * capture.trusted-proxies} is set. With trusted proxies the hops are read from the right: the
+ * socket peer first, then the {@code X-Forwarded-For} entries from right to left; trusted hops are
+ * dropped and the first untrusted address is the client. A peer that is not a trusted proxy is the
+ * client itself, so a client that connects directly cannot choose its address with a forged header
+ * (SEC-37 "스푸핑 XFF → 소켓 IP"). A header with an entry that is not an IP literal, or an empty header,
+ * gives the socket address; a chain of trusted hops only gives its leftmost entry.
+ *
+ * <p>At most 32 entries ({@code MAX_FORWARDED_HOPS}) are read, the rightmost ones (the hops that
+ * the trusted proxies appended). When all 32 are trusted, the client is the leftmost entry read
+ * (the 32nd from the right, a trusted proxy address): entries further left, which the sender of the
+ * request may have forged, are never used. The servlet helper hands over the last 32 {@code
+ * X-Forwarded-For} header lines, cut on the left at an entry boundary to 2,048 characters, so the
+ * rightmost entries always arrive here.
  */
 public final class RemoteIps {
+  /** {@code X-Forwarded-For} entries read at most (from the right). */
+  static final int MAX_FORWARDED_HOPS = 32;
+
   private RemoteIps() {}
+
+  /**
+   * The client address of a request (class comment): {@code socket} when {@code trusted} is empty,
+   * else the first untrusted hop from the right of {@code socket} preceded by {@code forwardedFor}.
+   */
+  public static String client(String socket, String forwardedFor, Trusted trusted) {
+    if (socket == null || trusted == null || trusted.isEmpty()) {
+      return socket;
+    }
+    byte[] peer = bytes(socket);
+    if (peer == null || !trusted.contains(peer)) {
+      return socket;
+    }
+    if (forwardedFor == null) {
+      return socket;
+    }
+    String[] hops = forwardedFor.split(",", -1);
+    String leftmost = null;
+    int read = 0;
+    for (int i = hops.length - 1; i >= 0 && read < MAX_FORWARDED_HOPS; i--, read++) {
+      String hop = stripPort(hops[i].trim());
+      byte[] address = bytes(hop);
+      if (address == null) {
+        return socket; // 16 §6.2: parse failure or empty value -> socket address
+      }
+      if (!trusted.contains(address)) {
+        return hop;
+      }
+      leftmost = hop;
+    }
+    return leftmost == null ? socket : leftmost;
+  }
+
+  /**
+   * An IPv4 {@code a.b.c.d:port} or a bracketed IPv6 {@code [x::y]:port} without the port; other
+   * text unchanged (an unbracketed IPv6 literal has colons of its own).
+   */
+  static String stripPort(String hop) {
+    if (hop.startsWith("[")) {
+      int close = hop.indexOf(']');
+      return close > 0 ? hop.substring(1, close) : hop;
+    }
+    int colon = hop.indexOf(':');
+    if (colon > 0 && hop.indexOf(':', colon + 1) < 0 && hop.indexOf('.') >= 0) {
+      return hop.substring(0, colon);
+    }
+    return hop;
+  }
+
+  /**
+   * {@code capture.trusted-proxies} compiled once (immutable): CIDRs {@code 10.0.0.0/8}, {@code
+   * 2001:db8::/32} or single addresses. Entries that do not parse are skipped (the configuration
+   * validates the format before).
+   */
+  public static final class Trusted {
+    /** No trusted proxy: {@code X-Forwarded-For} is ignored. */
+    public static final Trusted NONE = new Trusted(null, new byte[0][], new int[0]);
+
+    private final String[] source;
+    private final byte[][] networks;
+    private final int[] prefixes;
+
+    private Trusted(String[] source, byte[][] networks, int[] prefixes) {
+      this.source = source;
+      this.networks = networks;
+      this.prefixes = prefixes;
+    }
+
+    /** Compiles {@code cidrs} (null or empty: {@link #NONE}). */
+    public static Trusted of(String[] cidrs) {
+      if (cidrs == null || cidrs.length == 0) {
+        return NONE;
+      }
+      List<byte[]> networks = new ArrayList<byte[]>();
+      List<Integer> prefixes = new ArrayList<Integer>();
+      for (String cidr : cidrs) {
+        if (cidr == null) {
+          continue;
+        }
+        String value = cidr.trim();
+        int slash = value.indexOf('/');
+        byte[] network = bytes(slash < 0 ? value : value.substring(0, slash));
+        if (network == null) {
+          continue;
+        }
+        int bits = network.length * 8;
+        int prefix = bits;
+        if (slash >= 0) {
+          try {
+            prefix = Integer.parseInt(value.substring(slash + 1).trim());
+          } catch (NumberFormatException e) {
+            continue;
+          }
+          if (prefix < 0 || prefix > bits) {
+            continue;
+          }
+        }
+        networks.add(network);
+        prefixes.add(prefix);
+      }
+      int[] prefixArray = new int[prefixes.size()];
+      for (int i = 0; i < prefixArray.length; i++) {
+        prefixArray[i] = prefixes.get(i);
+      }
+      return new Trusted(cidrs, networks.toArray(new byte[0][]), prefixArray);
+    }
+
+    /** True when this was compiled from exactly {@code cidrs} (the same array instance). */
+    @SuppressWarnings("ReferenceEquality") // CaptureConfig shares one array per snapshot
+    public boolean compiledFrom(String[] cidrs) {
+      return source == cidrs || (source == null && (cidrs == null || cidrs.length == 0));
+    }
+
+    public boolean isEmpty() {
+      return networks.length == 0;
+    }
+
+    /** True when {@code address} (4 or 16 bytes) is in one of the networks. */
+    boolean contains(byte[] address) {
+      byte[] candidate = address;
+      for (int i = 0; i < networks.length; i++) {
+        byte[] network = networks[i];
+        if (candidate.length != network.length) {
+          byte[] mapped = candidate.length == 16 ? ipv4Mapped(candidate) : null;
+          if (mapped == null || mapped.length != network.length) {
+            continue;
+          }
+          if (inNetwork(mapped, network, prefixes[i])) {
+            return true;
+          }
+          continue;
+        }
+        if (inNetwork(candidate, network, prefixes[i])) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    private static boolean inNetwork(byte[] address, byte[] network, int prefix) {
+      int full = prefix / 8;
+      for (int i = 0; i < full; i++) {
+        if (address[i] != network[i]) {
+          return false;
+        }
+      }
+      int rest = prefix % 8;
+      if (rest == 0) {
+        return true;
+      }
+      int mask = (0xff << (8 - rest)) & 0xff;
+      return (address[full] & mask) == (network[full] & mask);
+    }
+
+    /** The IPv4 address of an IPv4-mapped IPv6 address ({@code ::ffff:a.b.c.d}), else null. */
+    private static byte[] ipv4Mapped(byte[] address) {
+      for (int i = 0; i < 10; i++) {
+        if (address[i] != 0) {
+          return null;
+        }
+      }
+      if (address[10] != (byte) 0xff || address[11] != (byte) 0xff) {
+        return null;
+      }
+      return new byte[] {address[12], address[13], address[14], address[15]};
+    }
+  }
 
   /** The address to record for {@code mode} ({@link CaptureConfig#REMOTE_IP_MASKED}, ...). */
   public static String apply(String address, int mode) {

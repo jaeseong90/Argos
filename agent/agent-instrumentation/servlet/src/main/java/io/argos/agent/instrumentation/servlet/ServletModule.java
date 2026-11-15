@@ -13,19 +13,21 @@ import net.bytebuddy.matcher.ElementMatcher;
 /**
  * The servlet request boundary (10 §6.1, §7.1, F-A01, F-A28, D-04, D-21, D-26): one transaction per
  * request, begun on the first {@code Filter.doFilter} or {@code HttpServlet.service} of the REQUEST
- * dispatch and ended when that outermost call returns (or, after {@code startAsync}, when the
- * outermost call of the last ASYNC dispatch returns). FORWARD, INCLUDE, ERROR and ASYNC dispatches
- * inside the request join the transaction anchored on the request attribute {@value
+ * dispatch and ended when that outermost call returns, or, for an async request, by its {@code
+ * AsyncListener}, the ASYNC dispatch that completes it, the first flush of a streaming response or
+ * {@code transaction.max-duration-ms}, whichever comes first. FORWARD, INCLUDE, ERROR and ASYNC
+ * dispatches inside the request join the transaction anchored on the request attribute {@value
  * ServletHelperCommon#TX_ATTRIBUTE}; an ERROR dispatch that the container starts after the
- * transaction ended (Tomcat's error page handling) is not recorded and never names a service.
+ * transaction ended (Tomcat's error page handling, Spring Boot's {@code /error}) is not recorded,
+ * never names a service (C-48) and is counted as unanchored.
  *
  * <p>javax.servlet (3.1, 4.0) and jakarta.servlet (5.0-6.1) are matched by name with one advice and
  * one helper per namespace; the namespace-independent logic is in {@link ServletHelperCommon}.
- *
- * <p>PoC scope (WO-02): no header whitelist, user id or query string capture (all off by default,
- * 10 §15), no {@code transactions_unanchored_total}, no leaked-context handling (10 §7.1), no
- * {@code HttpServletMapping} fallback name; servlet async completion without an ASYNC dispatch
- * ({@code AsyncContext.complete()}) needs the servlet-async module.
+ * Response flushes (streaming end, ADR-0010 C-127) are matched by Tomcat class names ({@link
+ * ContainerResponseInstrumentation}). The async listener is registered here, at the exit of the
+ * dispatch that left the request in async mode, so that it works on every container; it follows the
+ * switch of the servlet-async module ({@code instrumentation.disabled: servlet-async}), whose
+ * container hooks ({@code startAsync}, {@code AsyncContext.start}) complete it.
  */
 public final class ServletModule implements InstrumentationModule {
   public static final int MODULE_ID = ModuleIds.SERVLET;
@@ -51,23 +53,29 @@ public final class ServletModule implements InstrumentationModule {
 
   @Override
   public List<TypeInstrumentation> types() {
-    String javax = JavaxServletAdvice.class.getName();
-    String jakarta = JakartaServletAdvice.class.getName();
     return Arrays.<TypeInstrumentation>asList(
-        ServletInstrumentation.httpServlet(JAVAX, javax),
-        ServletInstrumentation.filter(JAVAX, javax),
-        ServletInstrumentation.httpServlet(JAKARTA, jakarta),
-        ServletInstrumentation.filter(JAKARTA, jakarta));
+        ServletInstrumentation.httpServlet(JAVAX, JavaxServletAdvice.class.getName()),
+        ServletInstrumentation.filter(JAVAX, JavaxFilterAdvice.class.getName()),
+        ServletInstrumentation.httpServlet(JAKARTA, JakartaServletAdvice.class.getName()),
+        ServletInstrumentation.filter(JAKARTA, JakartaFilterAdvice.class.getName()),
+        ContainerResponseInstrumentation.facades(),
+        ContainerResponseInstrumentation.streams());
   }
 
   /**
-   * Both namespace helpers go into every matching loader: a helper whose namespace is absent is
-   * defined but never linked (only advice of its own namespace calls it).
+   * Every helper goes into every matching loader: a helper whose namespace (or Servlet 4 API) is
+   * absent is defined but never linked (only code of its own namespace calls it, and {@link
+   * ServletMappingHelperJavax} only on a Servlet 4+ container).
    */
   @Override
   public List<String> helperClassNames() {
     return HelperClasses.of(
-        ServletModule.class, "ServletHelperCommon", "ServletHelperJavax", "ServletHelperJakarta");
+        ServletModule.class,
+        "ServletHelperCommon",
+        "ServletMappingHelperJavax",
+        "ServletHelperJavax",
+        "ServletHelperJakarta",
+        "AsyncListenerHelper");
   }
 
   @Override

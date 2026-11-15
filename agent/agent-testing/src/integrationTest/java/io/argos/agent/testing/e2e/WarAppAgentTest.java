@@ -14,6 +14,7 @@ import io.argos.agent.testing.launcher.AppLauncher;
 import io.argos.agent.testing.launcher.HttpResult;
 import io.argos.agent.testing.launcher.RunningApp;
 import io.argos.agent.testing.log.AgentLogAssert;
+import io.argos.agent.testing.log.TomcatLogCheck;
 import io.argos.sample.extstub.ExtStub;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -36,9 +37,15 @@ import org.junit.jupiter.api.io.TempDir;
  * waits for every context's health endpoint.
  *
  * <p>One request to the first context's {@code /api/orders/1} answers 200 and is exactly one
- * transaction with status 200; the agent log has no ERROR and the console nothing but the
- * applications' own output. The service name and its context prefix are WO-12's rules (10 §7,
- * F-A36) and are not asserted here.
+ * transaction with status 200 named {@code <context> GET /api/orders/{id}} (F-A36); the agent log
+ * has no ERROR and the console nothing but the applications' own output. Then the Tomcat is stopped
+ * through its shutdown port (graceful: the web applications stop and Tomcat's leak detection runs)
+ * and its own log ({@code RunningApp.tomcatLogLines()}, judged by {@link TomcatLogCheck}, WO-05
+ * r1-new-1) has no WARNING or SEVERE line naming the agent, and no SEVERE line and no ThreadLocal
+ * leak warning that the same run without the agent does not log as well (18 §5.9): the WAR of
+ * shop-boot3 leaves Netty's {@code InternalThreadLocalMap} of its own WebClient in Tomcat's
+ * threads, a leak of the application. The no-agent run starts only when the agent run has such
+ * lines. The rest of the WO-12 WAR scenarios are in package {@code servlet} ({@code War*Test}).
  */
 @Tag("req:F-A01")
 @Tag("req:DSN-18-03")
@@ -74,7 +81,9 @@ class WarAppAgentTest {
                     "WAR "
                         + combo
                         + ": standalone Tomcat with the agent, one request is one transaction"
-                        + " (status 200), no agent ERROR, quiet console",
+                        + " (status 200, context prefix), no agent ERROR, quiet console; after a"
+                        + " graceful stop the Tomcat log names no agent and has no SEVERE line or"
+                        + " ThreadLocal leak beyond a run without the agent",
                     () -> run(combo)));
   }
 
@@ -96,11 +105,39 @@ class WarAppAgentTest {
       Thread.sleep(300);
       List<TransactionRecord> recorded = running.transactions().read(ordersPath);
       assertThat(recorded).as("transactions of GET %s%n%s", path, running.describe()).hasSize(1);
-      assertThatTransaction(recorded.get(0)).hasStatus(200);
+      assertThatTransaction(recorded.get(0))
+          .hasStatus(200)
+          .hasService(contexts.get(0) + " GET /api/orders/{id}");
 
       String log = running.agentLog();
       assertThatAgentLog(log).hasStartBanner().hasNoErrors();
       AgentLogAssert.assertQuietConsole(running.stdoutLines(), running.stderrLines());
+
+      // WO-05 r1-new-1: Tomcat's own log after a graceful stop (the web applications are stopped,
+      // so Tomcat's leak detection has run): no SEVERE, no WARNING naming the agent, no ThreadLocal
+      // leak warning (18 §5.9, F-A36).
+      long stopStart = System.nanoTime();
+      running.gracefulStop();
+      long stopMs = (System.nanoTime() - stopStart) / 1_000_000;
+      assertThat(running.isAlive()).as("Tomcat stopped by its shutdown command").isFalse();
+      List<String> tomcatLog = running.tomcatLogLines();
+      assertThat(tomcatLog)
+          .as("Tomcat log of %s", combo)
+          .anyMatch(line -> line.contains("Stopping service [Catalina]"));
+      TomcatLogCheck.Findings findings = TomcatLogCheck.judge(tomcatLog);
+      assertThat(findings.agentWarnings()).as(findings.toString()).isEmpty();
+      String baselineNote = "";
+      if (!findings.clean()) {
+        // The application's own SEVERE records and leak warnings (shop-war-jakarta: Netty's
+        // InternalThreadLocalMap of the app's WebClient) are not the agent's: compare with the same
+        // run without the agent and judge what the agent adds.
+        TomcatLogCheck.Findings baseline = withoutAgent(combo, path);
+        baselineNote = ", without the agent " + baseline;
+        findings = findings.beyond(baseline);
+      }
+      assertThat(findings.severe()).as(findings + baselineNote).isEmpty();
+      assertThat(findings.threadLocalLeaks()).as(findings + baselineNote).isEmpty();
+      assertThatAgentLog(running.agentLog()).hasNoErrors();
       System.out.println(
           "[e2e-run] "
               + combo
@@ -120,7 +157,28 @@ class WarAppAgentTest {
               + recorded.get(0).path()
               + ", service "
               + recorded.get(0).service()
+              + " | graceful stop "
+              + stopMs
+              + " ms, Tomcat log "
+              + tomcatLog.size()
+              + " lines clean"
+              + (baselineNote.isEmpty() ? "" : " beyond the no-agent run")
               + " | PASS");
+    }
+  }
+
+  /**
+   * The Tomcat log findings of the same WAR app, Tomcat and request without the agent, after a
+   * graceful stop: what the application logs on its own.
+   */
+  TomcatLogCheck.Findings withoutAgent(Combo combo, String path) throws Exception {
+    try (RunningApp baseline =
+        E2eRuns.launcher(work, extStub, combo, "-noag").withoutAgent().start()) {
+      assertThat(baseline.get(path).status()).isEqualTo(200);
+      baseline.gracefulStop();
+      TomcatLogCheck.Findings findings = TomcatLogCheck.judge(baseline.tomcatLogLines());
+      System.out.println("[e2e] " + combo + ": Tomcat log without the agent: " + findings);
+      return findings;
     }
   }
 }

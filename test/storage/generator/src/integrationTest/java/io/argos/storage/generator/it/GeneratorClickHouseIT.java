@@ -41,6 +41,17 @@ import org.junit.jupiter.api.Test;
  */
 class GeneratorClickHouseIT {
 
+  /**
+   * The columns deploy/clickhouse/schema/V002__ingest_columns.sql appends (ADR-0010 C-144), per
+   * table, with their exact types.
+   */
+  private static final Map<String, Map<String, String>> V002_COLUMNS =
+      Map.of(
+          "xlog",
+          orderedOf("url_path", "String", "headers", "Map(LowCardinality(String), String)"),
+          "profile_step",
+          orderedOf("truncated", "UInt8", "total_steps", "UInt32"));
+
   private static ArgosClickHouse server;
   private static ClickHouseHttp reader;
   private static Path reports;
@@ -256,9 +267,19 @@ class GeneratorClickHouseIT {
       for (Table.Column c : table.columns()) {
         ours.put(c.name(), c.type());
       }
+      // The generator writes the V001 columns; V002 (ADR-0010 C-144) appends these, which the
+      // generator's inserts leave at their defaults (explicit column lists, 13 §7.4).
+      ours.putAll(V002_COLUMNS.getOrDefault(table.name(), Map.of()));
       assertThat(ours).as(table.name()).containsExactlyEntriesOf(server);
     }
     assertThat(config.tablePrefix).isEqualTo("gt_");
+  }
+
+  private static Map<String, String> orderedOf(String k1, String v1, String k2, String v2) {
+    Map<String, String> m = new LinkedHashMap<>();
+    m.put(k1, v1);
+    m.put(k2, v2);
+    return m;
   }
 
   private static long sumRows(Generator.Result result) {

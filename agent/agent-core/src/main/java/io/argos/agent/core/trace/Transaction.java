@@ -10,7 +10,7 @@ import io.argos.agent.core.transport.QueueItem;
  * and the item of the transaction queue once it ended (10 §9.2 step 2, the XLog point of 11 {@code
  * TransactionRecord}). Keeps strings, primitives, bootstrap and core types only (T-AG-004).
  *
- * <p>Threads: the request fields ({@link #http}) are written while the transaction runs; the end
+ * <p>Threads: the request fields ({@link #request}) are written while the transaction runs; the end
  * fields are written once by the thread that ends it ({@code TracerImpl.end}) before the item is
  * handed to a queue, and read after that hand-over (the queue orders the two).
  *
@@ -19,8 +19,9 @@ import io.argos.agent.core.transport.QueueItem;
  * exporters then leave the field out.
  *
  * <p>Memory: the strings are cut (method 16, path 2,048, remote IP 64, user id 128, error class
- * 1,024 characters; 10 §14, 11 §4.4); {@link #estimatedBytes()} is fixed at the end and includes
- * the step buffer only while the transaction still holds it ({@link #steps()}).
+ * 1,024 characters, at most 10 headers of 128 + 1,024 characters, request id 128; 10 §14, 11 §4.4);
+ * {@link #estimatedBytes()} is fixed at the end and includes the step buffer only while the
+ * transaction still holds it ({@link #steps()}).
  */
 public final class Transaction implements QueueItem {
   /** Upper bounds of captured strings (10 §14, 11 §4.4). */
@@ -33,6 +34,8 @@ public final class Transaction implements QueueItem {
   /** Estimated bytes of the transaction and its context without strings and steps. */
   static final long BASE_BYTES = 512L;
 
+  private static final String[] NO_HEADERS = new String[0];
+
   private final TraceContext context;
   private final String threadName;
   private final String threadNameNormalized;
@@ -43,6 +46,9 @@ public final class Transaction implements QueueItem {
   private volatile String path;
   private volatile String remoteIp;
   private volatile String userId;
+  private volatile boolean userIdDecided;
+  private volatile String[] headers = NO_HEADERS;
+  private volatile String requestId;
 
   private String errorClass;
   private String errorMessage;
@@ -75,11 +81,32 @@ public final class Transaction implements QueueItem {
     this.threadNameId = threadNameId;
   }
 
-  void http(String method, String requestPath, String ip, String user) {
+  /** Method, recorded URL (path and query by mode) and client address after the IP mode. */
+  void request(String method, String requestPath, String ip) {
     httpMethod = truncate(method, METHOD_MAX_CHARS);
     path = truncate(requestPath, PATH_MAX_CHARS);
     remoteIp = truncate(ip, IP_MAX_CHARS);
-    userId = truncate(user, CaptureConfig.USER_ID_MAX_LENGTH);
+  }
+
+  /** True once {@code capture.user-id} decided what this transaction records ({@link UserIds}). */
+  boolean userIdDecided() {
+    return userIdDecided;
+  }
+
+  /** The user id decision of {@link UserIds}: {@code value} to send, or null to send none. */
+  void decideUserId(String value) {
+    userId = truncate(value, CaptureConfig.USER_ID_MAX_LENGTH);
+    userIdDecided = true;
+  }
+
+  /** Header pairs already cut by {@link HeaderCapture#headers}. */
+  void headers(String[] pairs) {
+    headers = pairs == null ? NO_HEADERS : pairs;
+  }
+
+  /** The request id already cut by {@link HeaderCapture#requestId}. */
+  void requestId(String value) {
+    requestId = value;
   }
 
   /** Called once by the ending thread, after the step buffer was sealed. */
@@ -174,6 +201,19 @@ public final class Transaction implements QueueItem {
     return userId;
   }
 
+  /**
+   * Whitelisted request headers as name, value pairs ({@code [name0, value0, name1, ...]}, at most
+   * 10 pairs, names lower case); empty when none was captured. Callers must not modify it.
+   */
+  public String[] headers() {
+    return headers;
+  }
+
+  /** The {@code capture.request-id-header} value (C-124), or null. */
+  public String requestId() {
+    return requestId;
+  }
+
   public String errorClass() {
     return errorClass;
   }
@@ -253,7 +293,11 @@ public final class Transaction implements QueueItem {
     long bytes = BASE_BYTES;
     bytes += chars(context.serviceName) + chars(threadNameNormalized);
     bytes += chars(threadName) + chars(httpMethod) + chars(path) + chars(remoteIp);
-    bytes += chars(userId) + chars(errorClass) + chars(errorMessage);
+    bytes += chars(userId) + chars(errorClass) + chars(errorMessage) + chars(requestId);
+    String[] pairs = headers;
+    for (String value : pairs) {
+      bytes += chars(value);
+    }
     StepBuffer buffer = steps;
     if (buffer != null) {
       bytes += buffer.estimatedBytes();

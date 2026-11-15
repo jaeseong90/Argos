@@ -9,6 +9,7 @@ import io.argos.agent.testing.launcher.AppLauncher;
 import io.argos.agent.testing.launcher.Jdk;
 import io.argos.agent.testing.launcher.RunningApp;
 import io.argos.agent.testing.launcher.SampleApp;
+import io.argos.agent.testing.launcher.TempWatch;
 import io.argos.sample.extstub.ExtStub;
 import java.io.IOException;
 import java.net.InetAddress;
@@ -99,14 +100,16 @@ final class E2eRuns {
    * The launcher of every run: ext-stub, the given work directory. The T-BLD-006 baseline and the
    * agent run use run names of the same length: on Windows the JDK binds the wakeup pipe of every
    * NIO selector to an AF_UNIX socket file in %TEMP% (socket_<n>, deleted at once) only when that
-   * path fits the 108-character AF_UNIX limit, so the temp path length decides whether the app
-   * creates such files at all.
+   * path fits the AF_UNIX limit (106 bytes), so the temp path length decides whether the app
+   * creates such files at all. {@link TempWatch#runDirectory} keeps the length out of the range
+   * where the random digits of n decide it (a temp path of 90 bytes failed T-BLD-006 twice: only
+   * 8-digit names fit there, and the agent run happened to get one).
    */
   static AppLauncher launcher(Path work, ExtStub extStub, Combo combo, String runName) {
     SampleApp app = SampleApp.named(combo.app());
     return AppLauncher.of(app, Jdk.of(combo.jdk()))
         .withEnv("SAMPLE_EXT_URL", extStub.baseUri().toString())
-        .workDir(work.resolve(combo.app() + "-jdk" + combo.jdk() + runName));
+        .workDir(TempWatch.runDirectory(work, combo.app() + "-jdk" + combo.jdk() + runName));
   }
 
   /** The requests of the P-6 part (also the T-BLD-006 baseline workload). */

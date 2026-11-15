@@ -77,11 +77,18 @@ public final class IgnoreRules {
     return DEFAULTS;
   }
 
-  /** Compiles the four rule lists; blank entries are skipped. */
+  /**
+   * Compiles the four rule lists; blank entries are skipped and a null list is empty. The result is
+   * immutable: a configuration change compiles a new object and the tracer swaps it in one volatile
+   * write ({@code TracerImpl.setIgnoreRules}), so a request sees either the old or the new rules.
+   */
   public static IgnoreRules of(
       List<String> paths, List<String> extensions, List<String> userAgents, List<String> methods) {
     Set<String> methodSet = new HashSet<String>();
-    for (String method : methods) {
+    for (String method : orEmpty(methods)) {
+      if (method == null) {
+        continue;
+      }
       String trimmed = method.trim();
       if (!trimmed.isEmpty()) {
         methodSet.add(trimmed.toUpperCase(Locale.ROOT));
@@ -89,8 +96,8 @@ public final class IgnoreRules {
     }
     Set<String> exact = new HashSet<String>();
     List<Pattern> patterns = new ArrayList<Pattern>();
-    for (String glob : paths) {
-      String trimmed = glob.trim();
+    for (String glob : orEmpty(paths)) {
+      String trimmed = glob == null ? "" : glob.trim();
       if (trimmed.isEmpty()) {
         continue;
       }
@@ -101,8 +108,8 @@ public final class IgnoreRules {
       }
     }
     Set<String> extensionSet = new HashSet<String>();
-    for (String extension : extensions) {
-      String trimmed = extension.trim();
+    for (String extension : orEmpty(extensions)) {
+      String trimmed = extension == null ? "" : extension.trim();
       if (trimmed.startsWith(".")) {
         trimmed = trimmed.substring(1);
       }
@@ -111,8 +118,8 @@ public final class IgnoreRules {
       }
     }
     List<Pattern> agents = new ArrayList<Pattern>();
-    for (String glob : userAgents) {
-      String trimmed = glob.trim();
+    for (String glob : orEmpty(userAgents)) {
+      String trimmed = glob == null ? "" : glob.trim();
       if (!trimmed.isEmpty()) {
         agents.add(Pattern.compile(userAgentGlobToRegex(trimmed)));
       }
@@ -123,6 +130,10 @@ public final class IgnoreRules {
         patterns.toArray(new Pattern[0]),
         Collections.unmodifiableSet(extensionSet),
         agents.toArray(new Pattern[0]));
+  }
+
+  private static List<String> orEmpty(List<String> values) {
+    return values == null ? Collections.<String>emptyList() : values;
   }
 
   /**

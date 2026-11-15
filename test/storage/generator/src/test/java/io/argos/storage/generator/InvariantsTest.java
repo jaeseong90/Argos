@@ -8,6 +8,7 @@ import io.argos.storage.generator.model.Topology;
 import io.argos.storage.generator.model.Transaction;
 import io.argos.storage.generator.model.TransactionFactory;
 import io.argos.storage.generator.rows.Table;
+import io.argos.storage.generator.sim.Simulation;
 import java.time.LocalDate;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
@@ -93,23 +94,44 @@ class InvariantsTest {
 
   @Test
   @DisplayName(
-      "Timestamp guard: only the +60 s instances are clamped, and their tx_id time is ahead")
+      "Timestamp guard (ADR-0010 C-129): the +60 s instances are corrected by 60 s instead of"
+          + " clamped, the others are untouched, tx_id keeps the agent time")
   void timestampGuard() {
-    assertThat(f.clamped).isPositive();
+    // C-129 (4): the guard runs on the corrected value; no instance is still 5 s ahead after it.
+    assertThat(f.clamped).isZero();
+    long corrected = 0;
     for (Transaction tx : f.capturedTx.values()) {
       long idTime = (tx.txId >>> 23) + RunRange.TX_EPOCH_MS;
-      assertThat(idTime).isEqualTo(tx.tsAgentMs);
+      assertThat(idTime).isEqualTo(tx.tsAgentMs); // C-129 (6): tx_id is never changed
+      assertThat(tx.clamped).isFalse();
       if (tx.instance.skewed) {
-        // Clamped to the receive time, unless a late batch arrived after the agent timestamp.
-        assertThat(tx.clamped || tx.receivedMs > tx.tsAgentMs).isTrue();
-        if (tx.clamped) {
-          assertThat(tx.tsMs).isEqualTo(tx.receivedMs);
-          assertThat(idTime - tx.tsMs).isGreaterThan(5_000L);
-        }
+        // Skew 60 s +- 2 s: the lead rounded to 10 s.
+        assertThat(tx.correctionMs)
+            .isEqualTo(Simulation.correctionMs(tx.instance.skewMs))
+            .isEqualTo(60_000L);
+        assertThat(tx.tsMs).isEqualTo(tx.tsAgentMs - tx.correctionMs);
+        assertThat(Math.abs(tx.tsMs - tx.startTrueMs)).isLessThanOrEqualTo(2_000L);
+        corrected++;
       } else {
-        assertThat(tx.clamped).isFalse();
+        assertThat(tx.correctionMs).isZero();
+        assertThat(tx.tsMs).isEqualTo(tx.tsAgentMs);
       }
     }
+    assertThat(corrected).isPositive();
+    assertThat(f.manifest.correctedTransactions()).isPositive();
+  }
+
+  @Test
+  @DisplayName(
+      "ADR-0010 C-129 (1)(2)(5): correction of a clock ahead, rounded to 10 s; none behind")
+  void correctionRule() {
+    assertThat(Simulation.correctionMs(5_000)).isZero();
+    assertThat(Simulation.correctionMs(5_001)).isEqualTo(10_000);
+    assertThat(Simulation.correctionMs(64_999)).isEqualTo(60_000);
+    assertThat(Simulation.correctionMs(65_000)).isEqualTo(70_000);
+    assertThat(Simulation.correctionMs(90_000_000)).isEqualTo(90_000_000);
+    assertThat(Simulation.correctionMs(-60_000)).isZero();
+    assertThat(Simulation.correctionMs(0)).isZero();
   }
 
   @Test
@@ -118,9 +140,10 @@ class InvariantsTest {
     int series = f.config.metricSeries;
     assertThat(f.metricSamplesPerGridPoint.values())
         .allSatisfy(v -> assertThat(v).isEqualTo(series));
-    // 48 instances (without the 2 skewed ones), 280 s of metrics, 5 s grid, minus restarts.
+    // 50 instances (the 2 skewed ones included since ADR-0010 C-129 corrects instead of clamping),
+    // 280 s of metrics, 5 s grid, minus restarts.
     long points = f.metricSamplesPerGridPoint.size();
-    assertThat(points).isBetween(48L * 56 - 48 * 8, 48L * 56 + 48);
+    assertThat(points).isBetween(50L * 56 - 50 * 8, 50L * 56 + 50);
     assertThat(f.counterResets).isPositive(); // counters restart after the rolling restart
   }
 

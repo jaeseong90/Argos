@@ -224,7 +224,8 @@ class ProtocolContractTest {
   @DisplayName(
       "11 §2/§3/§5 over gRPC: SESSION_REQUIRED before a hello and after a restart, token and"
           + " session metadata checks, hello checks in order (token, plaintext, protocol version),"
-          + " instance reuse and SessionClose REPLACED")
+          + " instance reuse (also across a restart, with its dedup window) and SessionClose"
+          + " REPLACED")
   void session() throws Exception {
     for (Map<String, Object> scenario : section("session")) {
       new SessionScript(ContractVectors.string(scenario, "name"))
@@ -253,9 +254,10 @@ class ProtocolContractTest {
           case "data" -> data(step, what);
           case "hello" -> hello(step, what);
           case "restart" -> {
-            // "previous" names the session the restart made stale.
+            // "previous" names the session the restart made stale; the instance and its dedup
+            // window survive the restart (11 §5, 12 §3.4).
             previous = current;
-            collector.faults().serverRestart(ContractVectors.number(step, "new_instance_id"));
+            collector.faults().serverRestart();
           }
           case "fault" -> fault(step);
           case "complete" -> {

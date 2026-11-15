@@ -8,10 +8,12 @@ import net.bytebuddy.asm.Advice;
 
 /**
  * Inlined into {@code jakarta.servlet.http.HttpServlet.service(ServletRequest, ServletResponse)}
- * and {@code jakarta.servlet.Filter.doFilter(ServletRequest, ServletResponse, FilterChain)}
- * implementations (10 §6.1). Arguments are taken as {@code Object} (advice references bootstrap
- * types and own helpers only); {@link ServletHelperJakarta} does the work. The enter value is the
- * transaction this call takes part in; the scope binds it to the thread of an ASYNC dispatch.
+ * (10 §6.1): the servlet of a dispatch, which also counts FORWARD, INCLUDE, ERROR and ASYNC
+ * dispatches ({@code dispatch_count}). Arguments are taken as {@code Object} (advice references
+ * bootstrap types and own helpers only); {@link ServletHelperJakarta} does the work. The enter
+ * value is the transaction this call takes part in; the scope binds it to the thread of an ASYNC
+ * dispatch. Mirror of {@link JavaxServletAdvice}; {@link JakartaFilterAdvice} is the filter
+ * variant.
  */
 public final class JakartaServletAdvice {
   private JakartaServletAdvice() {}
@@ -24,7 +26,7 @@ public final class JakartaServletAdvice {
     if (Argos.skip(ServletModule.MODULE_ID)) {
       return null;
     }
-    TraceContext context = ServletHelperJakarta.enter(request);
+    TraceContext context = ServletHelperJakarta.enter(request, true);
     if (context != null) {
       scope = Argos.tracer().activate(context);
     }

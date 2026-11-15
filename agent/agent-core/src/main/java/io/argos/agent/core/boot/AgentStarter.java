@@ -221,6 +221,8 @@ public final class AgentStarter {
             ContextStore.expungeAll();
           }
         });
+    // WO-12: transaction.max-duration-ms (10 §6.7, §13.1) on every 1 s tick.
+    watch.every(1, recording.maxDurationEnforcer());
     final SelfDiagnosticsFile selfDiagnostics = selfDiagnosticsFile(config, diagnostics);
     if (selfDiagnostics != null) {
       watch.every(

@@ -64,16 +64,23 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
 ./gradlew integrationTest -Pqueries.profile=ci    # CI와 같다: 저장소 정합 T-ST-030~033·053을 생성기 1/100 프로파일로(12스레드 개발 머신에서 전체 약 7분)
 ./gradlew :agent:agent-core:integrationTest       # T-ACC-11(tx_id 1,000만 건 충돌 0·tx_id >> 23 ±1ms·두 인스턴스·begin 경로 start_ts 일치)과 N-02 축소판 힙 예산(포크 JVM, 큐·사전 상한, io.argos.agent. ≤ 64MB),
                                                   # SessionFlowControlIntegrationTest(실제 grpc-netty 스택: isReady 백프레셔·메타데이터·SESSION_REQUIRED 같은 seq 재전송). 약 1.5~2분
-./gradlew :agent:agent-testing:integrationTest -Pagent.attach.jdks=8,11,17,21,25 -Pagent.e2e=shop-boot2@8,shop-boot2@11,shop-boot2@17,shop-boot2@21,shop-boot3@17,shop-boot3@21,shop-boot3@25
+./gradlew :agent:agent-testing:integrationTest -Pagent.attach.jdks=8,11,17,21,25 -Pagent.e2e=shop-boot2@8,shop-boot2@11,shop-boot2@17,shop-boot2@21,shop-boot3@17,shop-boot3@21,shop-boot3@25,shop-boot4@21
                                                   # 에이전트 하네스(agent/agent-testing/README.md) 위의 부착(JDK별)·샘플 앱 종단 매트릭스와 FakeCollector
                                                   # (T-AG-005·010·040~045·050·053·060·070, T-BLD-006·010, T-NFR-30a premain 클래스 예산, C-27 플래그, JDK 25는 deny).
-                                                  # 기본은 부착 JDK 8·21 + shop-boot3@21, -Pagent.e2e=none이면 종단 생략. 결과 agent/agent-testing/build/reports/agent-e2e/(<app>-jdk<N>-transform.log 포함).
+                                                  # 서블릿 스위트(WO-12, 패키지 io.argos.agent.testing.servlet, --tests '*servlet*'): T-AG-010~017·020, T-ACC-04·19·21,
+                                                  # T-SEC-26b·31·32·34·37 에이전트 측을 -Pagent.e2e의 부트 앱마다 실행(앱당 실행 4개, 동시 6개 상한).
+                                                  # 기본은 부착 JDK 8·21 + shop-boot3@21(이 노트북 약 19분), -Pagent.e2e=none이면 종단 생략. 결과 agent/agent-testing/build/reports/agent-e2e/
+                                                  # (<app>-jdk<N>-transform.log, 서블릿 스위트는 wo12-<app>-jdk<N>-<profile>[-<n>]-{agent,stdout,tomcat}.log,
+                                                  # <n>은 같은 실행의 재기동 순번, WAR 무에이전트 기준선은 wo12-<app>-jdk<N>-war-noagent-tomcat.log).
                                                   # 자가 진단(18 §19)은 개발 빌드 전용 키 -Dargos.test.selfdiag-file=<파일>(C-95)로 하네스가 읽는다(RunningApp.selfDiagnostics(),
                                                   # 에이전트가 보고하지 않은 값은 0이 아니라 NOT_AVAILABLE). 기동 단계별 ms·클래스 수는 -Dargos.debug.transform-timing=true(C-79)
                                                   # -Pagent.baseline.record=true는 변환 베이스라인(agent/agent-testing/baselines/transformed-classes)과 premain 클래스 예산
                                                   # (baselines/premain-classes/trivial-release-<jdk>.txt, 부착 JDK별) 재녹화(계측·기동 경로를 바꾸는 WO는 diff를 PR에),
                                                   # -Pagent.e2e에 WAR 조합(shop-war-javax@8·11·17·21, shop-war-jakarta@17·21·25)을 넣으면 독립 Tomcat(127.0.0.1)에서 WarAppAgentTest
                                                   # (조합당 약 30~50초, 기본에는 WAR 조합이 없어 skip). 예: -Pagent.e2e=shop-war-jakarta@21 --tests '*WarAppAgentTest'
+                                                  # WAR 조합은 Spring 없는 서블릿 픽스처(src/servletFixture{Javax,Jakarta}, /servlet-fixture)도 함께 배포해 War*Test(T-AG-011·015·016·020)를 돌리고,
+                                                  # War*Test 클래스마다 Tomcat을 새로 띄우고 마지막에 종료 포트로 우아하게 끝낸 뒤 Tomcat 로그를 판정한다(TomcatLogCheck: 경고·스택의 에이전트 언급 0,
+                                                  # SEVERE·ThreadLocal 누수는 무에이전트 실행 대비). 예: -Pagent.e2e=shop-war-javax@8,shop-war-jakarta@21 --tests '*War*'(약 10분)
                                                   # -Pagent.container=true는 컨테이너 모드 테스트 추가(Docker, JDK 이미지는 다이제스트 고정, -Pagent.container.image.<jdk>=<image>@sha256:<digest>로 교체)
 ./gradlew :agent:agent-testing:integrationTest --tests '*transport*' -Pagent.jdk8u252=<JRE> -Pagent.jdk8u242=<JRE>
                                                   # gRPC 전송(WO-11) 대 FakeCollector: T-AG-071·067, T-ACC-02a·06a, T-SEC-06·07a·08c, T-NFR-26a, C-74 증명(T-BLD-004a), C-75, T-BLD-011·011a(실행 시점 프록시 미사용),
@@ -88,9 +95,18 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
                                                   # P-3 측정 매트릭스(약 35분) → test/agent/transport-poc/build/poc/bench/<시각>/summary.md. 조용한 머신에서
 ./gradlew :server:bootJar                         # 서버 실행 jar → server/build/libs/argos-server-<버전>.jar(레이어 4종: java -Djarmode=tools -jar <jar> list-layers).
                                                   # -Pargos.ui.skip=true가 없으면 ui/dist를 static/에 넣는다. :server:checkFlywayNames(check 포함)는 db/pg 파일명 규칙(C-28)
-./gradlew :server:integrationTest                 # 서버 기동 순서·설정·관리 포트·PG/CH 마이그레이션·DB 권한(실제 PostgreSQL 16·ClickHouse 26.8, Testcontainers, 약 1.5분).
+./gradlew :server:integrationTest                 # 서버 기동 순서·설정·관리 포트·PG/CH 마이그레이션·DB 권한(실제 PostgreSQL 16·ClickHouse 26.8, Testcontainers),
+                                                  # WO-21 수집 경로(collector·ingest·e2e: FakeAgent → gRPC → WAL → ClickHouse, T-SV-010은 bootJar 자식 JVM 강제 종료 2회,
+                                                  # T-ACC-13 (c) ClickHouse 3분 중단 2종(ingest 수준·gRPC 종단) 포함, 약 17분. bootJar를 먼저 빌드한다).
+                                                  # 실시간 1초를 넘는 테스트는 @Tag("slow")로 integrationTest에 둔다(WAL fsync 1초 → UNAVAILABLE, 기록기 플러시 요청, keepalive 강제)
                                                   # 소요 표 server/build/reports/migration/timings.md. -Pserver.nightly=true면 T-SV-002(V001 + 생성기 1/100 → 다음 버전, 약 2분) 추가, 없으면 SKIPPED.
-                                                  # 두 Gradle 실행이 같은 :server:integrationTest를 동시에 돌리면 결과 파일이 깨진다
+                                                  # -Pserver.chOutageMinutes=30 --tests '*ClickHouseOutage*'는 30분 중단 변형(03 §3.2, 두 클래스라 약 65분, 조용한 머신에서).
+                                                  # -Pserver.load=true --tests '*IngestLagLoad*'는 1,000 TPS 5분(인스턴스 10, 프로파일 0.12·통계·메트릭, 약 6분) 적재 지연
+                                                  # p50/p99를 /actuator/prometheus에서 읽어 server/build/reports/ingest-load/report.md로(공유 머신은 참고값).
+                                                  # -Pserver.load.enforce=true를 더하면 p99 ≤ 5초를 단언한다(조용한 머신·CI). 없으면 IngestLagLoadIT는 SKIPPED.
+                                                  # 프로토콜 수준 가짜 에이전트(공격 5종 포함)는 server/src/testFixtures의 io.argos.server.testing.fakeagent(FakeAgent, WO-29 재사용).
+                                                  # 두 Gradle 실행이 같은 :server:integrationTest를 동시에 돌리면 결과 파일이 깨진다. --tests 부분 실행은 결과 XML을 지워
+                                                  # traceabilityReport에서 나머지가 NOT RUN이 된다(전체 실행 뒤에 돌릴 것). :server:securityTest와 한 실행에 주면 병렬로 돈다(org.gradle.parallel)
 ./gradlew :server:jibDockerBuild                  # 로컬 이미지 argos-server:<버전>(베이스 다이제스트 고정, user 10001:10001, 포트 8080·9100). Jib은 구성 캐시 미호환.
                                                   # 로그 /logs/server·WAL /data/wal: 두 볼륨은 uid 10001 소유 0700으로 미리 준비(server/README.md)
 test/storage/bench/bench-server.sh start          # 저장소 PoC 벤치용 단독 ClickHouse(127.0.0.1:18123, 비밀번호는 test/storage/bench/build/). 절차는 test/storage/bench/README.md
@@ -101,6 +117,8 @@ test/storage/bench/bench-server.sh start          # 저장소 PoC 벤치용 단�
 ./gradlew securityTest                            # 보안 테스트 스위트. check에 포함되지 않음
 ./gradlew :server:securityTest                    # 서버 SEC 스위트(T-SEC-40~49·55·56 서버 부분: 쿠키·세션 수명·CSRF·설정 토큰·비밀번호·헤더·CSP·레이트 리밋·에러 본문,
                                                   # 실제 로그인 세션 권한 매트릭스, 미존재 사용자명 잠금(재기동·노드 간 유지). Testcontainers, 약 4분). 실측 표 server/build/reports/rate-limits.md·permission-matrix-session.md.
+                                                  # WO-21 수집기: T-SEC-07b TLS 1.1·CBC 거부, T-SEC-11 gzip 폭탄(bootJar 자식 JVM, 최대 RSS 증가 ≤ 200MB, 조용한 머신에서),
+                                                  # T-SEC-11~14 공격 중 다른 인스턴스 적재 ≤ 5초, T-SEC-15 리플렉션·미인증·Hello 폭주 차단
                                                   # 웹 계층 스텁 매트릭스(Docker 없음)는 :server:contractTest → permission-matrix.md. 두 Gradle 실행이 같은 :server:securityTest를 동시에 돌리면 결과 파일이 깨진다
 java server/scripts/GeneratePasswordDenylist.java # 비밀번호 금지 목록 해시 재생성(개발 도구, SecLists 10k를 고정 커밋·SHA-256으로 내려받음, 출처 NOTICE)
                                                   # → server/src/main/resources/security/password-denylist.sha256. 빌드·실행 시에는 아무것도 내려받지 않는다

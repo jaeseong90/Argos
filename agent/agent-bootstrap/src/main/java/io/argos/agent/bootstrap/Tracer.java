@@ -56,6 +56,15 @@ public interface Tracer {
       long endNanos);
 
   /**
+   * {@link #end} of a streaming response (F-A34 {@code streaming}, 10 §6.7): the first flush of an
+   * async response (SSE, {@code StreamingResponseBody}) or a 101 / {@code Upgrade} response. The
+   * {@code streaming} flag is set only by the call that ends the transaction (first call only, 10
+   * §7.1): a call that loses to another end changes nothing on the context (WO-12 addition to 10
+   * §3).
+   */
+  void endStreaming(TraceContext ctx, int status, Throwable error, long endNanos);
+
+  /**
    * Binds {@code ctx} to the current thread (async hand-over); close the scope to restore. {@code
    * null} unbinds the current context on purpose (servlet ASYNC_PENDING, 10 §7.1): a transaction
    * unbound that way keeps running elsewhere and is not ended as leaked by a later {@link #begin}.
@@ -87,7 +96,69 @@ public interface Tracer {
   /** Sets the service name; once fixed ({@code fix=true}) later calls do not change it. */
   void setServiceName(TraceContext ctx, String name, boolean fix);
 
+  /**
+   * Request data with values as given: {@code path} without query string, {@code remoteIp} is the
+   * client address before {@code capture.remote-ip} (the core applies the mode). A non-null {@code
+   * userId} is the raw user id: {@code capture.user-id} applies to it exactly as to {@link
+   * #setUserId} (off: nothing; hashed without a salt: nothing, counted; SEC-32, ADR-0010 C-125), so
+   * this method never records a plain user id the mode does not allow. New code uses {@link
+   * #setHttpRequest} and {@link #setUserId}, as the servlet module does.
+   */
   void setHttp(TraceContext ctx, String method, String path, String remoteIp, String userId);
+
+  /**
+   * The request data of an HTTP transaction, raw as the servlet helper reads it (WO-12 addition to
+   * 10 §3); the core applies every capture mode, so no helper decides what may be kept (16 §6.1 to
+   * §6.4):
+   *
+   * <ul>
+   *   <li>{@code requestUri}: {@code getRequestURI()}; path parameters are removed and the recorded
+   *       path is cut at 2 KiB (SEC-34);
+   *   <li>{@code queryString}: {@code getQueryString()}, passed only when {@code
+   *       capture.query-string} is not {@code off}; kept by mode (whitelist, full), never in a
+   *       service name or a dictionary;
+   *   <li>{@code socketAddress}: {@code getRemoteAddr()}, null when {@code capture.remote-ip} is
+   *       {@code off}; {@code forwardedFor}: the {@code X-Forwarded-For} values, passed only when
+   *       {@code capture.trusted-proxies} is set (SEC-37); the core picks the client address and
+   *       applies the IP mode (SEC-31).
+   * </ul>
+   */
+  void setHttpRequest(
+      TraceContext ctx,
+      String method,
+      String requestUri,
+      String queryString,
+      String socketAddress,
+      String forwardedFor);
+
+  /**
+   * The raw user id of {@code capture.user-id.source} (WO-12 addition to 10 §3), null when the
+   * source has no value (yet). The core applies {@code capture.user-id.mode} (16 §6.3, SEC-32):
+   * {@code plain} keeps at most 128 characters without control characters, {@code hashed} sends the
+   * first 16 characters of base64url(HMAC-SHA256(app salt, user id)) and nothing (counted, one
+   * WARN) while no salt is known, an {@code mdc:} source records nothing until WO-18 (ADR-0010
+   * C-125). The first decided value is kept; later calls of the same transaction are ignored.
+   */
+  void setUserId(TraceContext ctx, String rawUserId);
+
+  /**
+   * Values of the {@code capture.http-headers} whitelist as name, value pairs (WO-12 addition to 10
+   * §3); the core keeps at most 10 pairs, names lower case, values cut at 1 KiB.
+   */
+  void setHeaders(TraceContext ctx, String[] namesAndValues);
+
+  /**
+   * The value of the {@code capture.request-id-header} header (WO-12 addition to 10 §3, ADR-0010
+   * C-124), sent only as {@code TransactionRecord.request_id}, cut at 128 bytes.
+   */
+  void setRequestId(TraceContext ctx, String value);
+
+  /**
+   * Counts a non-REQUEST dispatch without a running transaction anchored on its request (WO-12
+   * addition to 10 §3; 10 §7.1, {@code argos_agent_transactions_unanchored_total}): an ERROR
+   * dispatch the container starts after the transaction ended, for example.
+   */
+  void countUnanchored();
 
   void setStatus(TraceContext ctx, int status);
 

@@ -43,8 +43,14 @@ import org.springframework.context.ConfigurableApplicationContext;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class MigrationStartupIT {
 
-  /** The PostgreSQL scripts of db/pg: V001 (13 §12, WO-20) and V002 (authentication, WO-24). */
-  static final List<String> PG_VERSIONS = List.of("001", "002");
+  /**
+   * The PostgreSQL scripts of db/pg: V001 (13 §12, WO-20), V002 (authentication, WO-24) and V003
+   * (dict_kind 'pool', ADR-0010 C-101, and apps.registered_from_app_id, C-155; WO-21).
+   */
+  static final List<String> PG_VERSIONS = List.of("001", "002", "003");
+
+  /** The bundled ClickHouse scripts: V001 and V002 (ingest columns, ADR-0010 C-144, WO-21). */
+  static final List<String> CH_VERSIONS = List.of("V001", "V002");
 
   /**
    * The 13 §12 tables of V001 (ADR-0010 C-98) and {@code user_permissions} and {@code
@@ -120,7 +126,7 @@ class MigrationStartupIT {
       assertThat(flyway.schemaVersion()).isEqualTo(PG_VERSIONS.get(PG_VERSIONS.size() - 1));
       assertThat(ch.applied())
           .extracting(ClickHouseMigrationRunner.Applied::version)
-          .containsExactly("V001");
+          .containsExactlyElementsOf(CH_VERSIONS);
       TIMINGS.flyway("empty, start 1", flyway);
       TIMINGS.clickHouse("empty, start 1", ch);
       for (StartupSequence.StepResult r : ctx.getBean(StartupSequence.class).results()) {
@@ -194,9 +200,29 @@ class MigrationStartupIT {
                 PgAccount.OWNER,
                 "SELECT string_agg(e.enumlabel, ',' ORDER BY e.enumsortorder) FROM pg_enum e"
                     + " JOIN pg_type t ON t.oid = e.enumtypid WHERE t.typname = 'dict_kind'"))
-        .as("C-16")
+        .as("C-16, and 'pool' of V003 (ADR-0010 C-101)")
         .isEqualTo(
-            "service,sql,class,method,thread,host,frame,metric,error_group,db_target,app_version");
+            "service,sql,class,method,thread,host,frame,metric,error_group,db_target,app_version,"
+                + "pool");
+    assertThat(
+            pgScalar(
+                env,
+                PgAccount.OWNER,
+                "SELECT data_type || ' ' || is_nullable FROM information_schema.columns"
+                    + " WHERE table_schema = 'argos' AND table_name = 'apps'"
+                    + " AND column_name = 'registered_from_app_id'"))
+        .as("V003 apps.registered_from_app_id (ADR-0010 C-155)")
+        .isEqualTo("integer YES");
+    assertThat(
+            pgScalar(
+                env,
+                PgAccount.OWNER,
+                "SELECT c.confdeltype::text || ' ' || r.relname || ' ' || a.attname"
+                    + " FROM pg_constraint c JOIN pg_class r ON r.oid = c.confrelid"
+                    + " JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]"
+                    + " WHERE c.conrelid = 'argos.apps'::regclass AND c.contype = 'f'"))
+        .as("its foreign key to apps(id), ON DELETE SET NULL (C-155 (5))")
+        .isEqualTo("n apps registered_from_app_id");
     assertThat(
             pgScalar(
                 env,
@@ -383,7 +409,7 @@ class MigrationStartupIT {
       assertThat(ch.recreated()).isTrue();
       assertThat(ch.applied())
           .extracting(ClickHouseMigrationRunner.Applied::version)
-          .containsExactly("V001");
+          .containsExactlyElementsOf(CH_VERSIONS);
       TIMINGS.clickHouse("ClickHouse reset", ch);
     }
     assertThat(

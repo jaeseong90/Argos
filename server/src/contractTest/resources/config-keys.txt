@@ -67,6 +67,7 @@ argos.collector.limits.max-transactions-per-batch	int	5000
 argos.collector.max-message-bytes	int	4194304
 argos.collector.port	int	9100
 argos.collector.quota.metrics-per-5s	int	1000
+argos.collector.quota.stats-per-10s	int	6000
 argos.collector.quota.steps-per-second	int	20000
 argos.collector.quota.tx-per-second	int	2000
 argos.collector.session.instances-per-app	int	1000

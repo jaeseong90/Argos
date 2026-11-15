@@ -89,9 +89,11 @@ management:
         # Readiness (17 §3.5): the start sequence (migrations, WAL recovery) has completed, the
         # application accepts traffic, the PostgreSQL runtime pool answers ("db") and ClickHouse
         # answers SELECT 1 as the reader account within 2 s ("clickhouse",
-        # ClickHouseHealthIndicator). Liveness is separate and does not depend on the databases.
+        # ClickHouseHealthIndicator), and the ingest dispatcher that loads the WAL into ClickHouse
+        # has not stopped on a failure ("ingest", IngestHealthIndicator, 12 §3.9). Liveness is
+        # separate and does not depend on the databases.
         readiness:
-          include: readinessState,migrations,db,clickhouse
+          include: readinessState,migrations,db,clickhouse,ingest
         liveness:
           include: livenessState
     info:

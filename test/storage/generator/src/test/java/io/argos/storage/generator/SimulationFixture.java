@@ -206,11 +206,8 @@ final class SimulationFixture implements RowConsumer {
       if (m.tsMs % 5_000 != 0) {
         violations.add("metric ts not on the 5 s grid: " + m.tsMs);
       }
-      if (m.instance.skewed) {
-        // Clamped to the receive time by the server; a late batch keeps the agent time, so a
-        // series of a skewed instance may have two samples on one grid point.
-        return;
-      }
+      // ADR-0010 C-129: the samples of a skewed instance are corrected by the same 10 s multiple
+      // (no clamp), so they stay on the 5 s grid with one sample per grid point like the others.
       metricSamplesPerGridPoint.merge(
           m.instance.id * 1_000_000_000_000L + m.tsMs / 1000, 1, Integer::sum);
       if (m.kind == 2) {

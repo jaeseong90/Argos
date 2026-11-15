@@ -27,8 +27,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -110,8 +108,8 @@ class ConsistencyIT {
   @DisplayName(
       "T-ST-031 Q13 D-12: sum(xlog.sql_count / ext_count) = sum(sql/ext_stat_1m.count) over the"
           + " range, raw statistics = 1m and 1h rollups per day and = 1m per minute: 0 mismatches;"
-          + " per day (daily_30d, nightly) the C-57 rule: 0 days beyond the bound for every instance"
-          + " the server does not clamp, exactly the predicted groups otherwise (D-15 clamp)")
+          + " per day (daily_30d, nightly) the C-57 rule: 0 days beyond the bound for every instance,"
+          + " the +60 s instances included (ADR-0009 C-84 as fixed by ADR-0010 C-129)")
   void q13() {
     Datasets.Snapshot snap = data.snapshot();
     Manifest m = data.manifest();
@@ -167,55 +165,40 @@ class ConsistencyIT {
       return;
     }
     // Independent per-day values from the raw tables (raw = 1m per minute, minute_raw_1m above),
-    // once for every instance and once without the instances whose clock is 60 s ahead.
+    // once for every instance and once for the instances whose clock is 60 s ahead only.
     List<Integer> skewed = data.skewedInstanceIds();
     assertThat(skewed).hasSize(data.skewedInstances()).isNotEmpty();
+    String skewedList = String.join(",", skewed.stream().map(String::valueOf).toList());
     Map<List<String>, long[]> all = perDay("");
-    Map<List<String>, long[]> withoutSkewed =
-        perDay(
-            " AND instance_id NOT IN ("
-                + String.join(",", skewed.stream().map(String::valueOf).toList())
-                + ")");
-    // (1) C-57 is sound for every instance whose timestamps the server keeps (D-15 does not clamp
-    // them): no day exceeds the bound, and the bound is needed (days with a difference exist).
-    assertThat(exceeding(withoutSkewed))
-        .as("days beyond the C-57 bound, unclamped instances")
+    Map<List<String>, long[]> onlySkewed = perDay(" AND instance_id IN (" + skewedList + ")");
+    // (1) C-57 is sound for every instance (ADR-0009 C-84, ADR-0010 C-129): the server corrects
+    // the ts, the statistics window and the metric ts of a session more than 5 s ahead by the same
+    // 10 s multiple instead of clamping the transaction to the receive time and the window to the
+    // flush window, so a statement that ends just before midnight on the agent clock stays on the
+    // day of its transaction. No day exceeds the bound, and the bound is needed (days with a
+    // difference exist).
+    assertThat(exceeding(all)).as("days beyond the C-57 bound, all instances").isEmpty();
+    assertThat(onlySkewed).as("per-day values of the skewed instances").isNotEmpty();
+    assertThat(exceeding(onlySkewed))
+        .as("days beyond the C-57 bound, skewed instances " + skewed)
         .isEmpty();
-    long differing =
-        withoutSkewed.values().stream().filter(v -> v[0] != v[1] || v[2] != v[3]).count();
-    assertThat(differing)
-        .as("days whose xlog and statistics differ (unclamped instances)")
-        .isPositive();
-    // (2) daily_30d applies the rule exactly: it reports the groups the independent values put
-    // beyond the bound, no more, no less.
-    Set<List<String>> reported = new TreeSet<>(java.util.Comparator.comparing(Object::toString));
-    for (List<String> row : daily.lastRows()) {
-      reported.add(List.of(row.get(0), row.get(1), row.get(2)));
+    long differing = all.values().stream().filter(v -> v[0] != v[1] || v[2] != v[3]).count();
+    assertThat(differing).as("days whose xlog and statistics differ (all instances)").isPositive();
+    // (2) daily_30d applies the rule: it reports no group (the independent values above put none
+    // beyond the bound).
+    assertThat(daily.lastRows())
+        .as("daily_30d groups beyond the C-57 bound " + firstRows(daily))
+        .isEmpty();
+    assertThat(daily.verdict()).as(daily.label()).isEqualTo(Verdict.PASS);
+    // (3) The correction is what the server applied: no row of the load is clamped (the skewed
+    // instances are corrected by 60 s, the others are within 2 s), and the corrected transactions
+    // exist (C-129 (7) counts them as session_offset).
+    for (io.argos.storage.generator.rows.Table table : io.argos.storage.generator.rows.Table.ALL) {
+      assertThat(m.clampedRows(table)).as("clamped rows of " + table.name()).isZero();
     }
-    Set<List<String>> expected = new TreeSet<>(java.util.Comparator.comparing(Object::toString));
-    expected.addAll(exceeding(all));
-    assertThat(reported).as("daily_30d groups = groups beyond the C-57 bound").isEqualTo(expected);
-    // (3) What remains is the D-15 clamp: the clock of these instances is 60 s ahead, so the server
-    // sets the ts of their transactions to the receive time and the window of their statistics to
-    // the window of the flush (up to 11 s after the statement ended). A statement that ends in the
-    // last seconds before midnight then lands on the next day without crossing it. Every reported
-    // group belongs to an application of a skewed instance (new conflict for the PM, PoC 17).
-    Set<String> skewedApps = new TreeSet<>();
-    for (List<String> r :
-        ctx.client(Account.MIGRATOR)
-            .rows(
-                "SELECT DISTINCT app_id FROM "
-                    + Fixture.schema().table("xlog")
-                    + " WHERE instance_id IN ("
-                    + String.join(",", skewed.stream().map(String::valueOf).toList())
-                    + ")")) {
-      skewedApps.add(r.get(0));
-    }
-    for (List<String> group : reported) {
-      assertThat(skewedApps).as("application of reported group " + group).contains(group.get(0));
-    }
-    // (4) nightly (13 §6.3 (14): one day, every application, SQL only) reports the day exactly
-    // when the summed difference exceeds the summed bound.
+    assertThat(m.correctedTransactions()).as("transactions of corrected sessions").isPositive();
+    // (4) nightly (13 §6.3 (14): one day, every application, SQL only): |sum of the differences| is
+    // at most the sum of the bounds, so the day is not reported.
     String fullDay = ctx.shared().get("full_day");
     long deltaSql = 0;
     long boundSql = 0;
@@ -225,18 +208,20 @@ class ConsistencyIT {
         boundSql += e.getValue()[4];
       }
     }
+    assertThat(Math.abs(deltaSql)).as("nightly delta on " + fullDay).isLessThanOrEqualTo(boundSql);
     assertThat(nightly.lastRows())
         .as("nightly on " + fullDay + ": |delta| " + Math.abs(deltaSql) + ", bound " + boundSql)
-        .hasSize(Math.abs(deltaSql) > boundSql ? 1 : 0);
+        .isEmpty();
+    assertThat(nightly.verdict()).as(nightly.label()).isEqualTo(Verdict.PASS);
     Evidence.record(
         "consistency",
-        "Q13 per day (C-57): groups beyond the bound (all instances) / without the skewed"
+        "Q13 per day (C-57, C-84/C-129): groups beyond the bound (all instances) / skewed"
             + " instances "
             + skewed
-            + " / days with a difference (unclamped) / nightly rows",
-        expected
+            + " / days with a difference / nightly rows",
+        exceeding(all)
             + " / "
-            + exceeding(withoutSkewed)
+            + exceeding(onlySkewed)
             + " / "
             + differing
             + " / "

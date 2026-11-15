@@ -34,11 +34,15 @@ import java.util.function.LongToDoubleFunction;
  * of true time ({@code tick-ms}, 1 s by default) it creates the transactions starting in the tick
  * (Poisson arrivals per instance, rolling-restart aware), accumulates the agent's 10 s statistics
  * windows and flushes the closed ones, samples the 5 s metric grid, and applies what the server
- * does before the writer (docs/12 §3.5): receive time (send cycle, late batches of 1-30 min),
- * timestamp guard (D-15: an agent clock more than 5 s ahead is clamped to the receive time) and the
- * {@code late} flag (received - ts &gt; 60 s). Rows leave in receive order through the {@link
- * RowConsumer}, at the end of the tick of their receive time: in replay a row reaches the writer up
- * to one tick after its receive time, which the ingest lag (receive to ack) includes.
+ * does before the writer (docs/12 §3.5): receive time (send cycle, late batches of 1-30 min), the
+ * session correction of ADR-0009 C-84 as ADR-0010 C-129 fixes it (an instance whose clock is more
+ * than 5 s ahead has its ts, statistics window and metric ts moved back by that lead rounded to 10
+ * s; the server's median offset is taken as exactly minus the skew), then the timestamp guard on
+ * the corrected value (D-15: still more than 5 s ahead of the receive time is clamped to it,
+ * statistics and metrics to their grid) and the {@code late} flag (received - ts &gt; 60 s). Rows
+ * leave in receive order through the {@link RowConsumer}, at the end of the tick of their receive
+ * time: in replay a row reaches the writer up to one tick after its receive time, which the ingest
+ * lag (receive to ack) includes.
  *
  * <p>With {@code profile-step-rate} the capture rate of normal transactions is adapted before every
  * tick so that the profile_step rows follow the target (N-06 load); statistics stay derived from
@@ -60,6 +64,12 @@ public final class Simulation {
 
   /** Timestamp guard tolerance (D-15). */
   static final long FUTURE_TOLERANCE_MS = 5_000L;
+
+  /** ADR-0010 C-129 (1): a clock more than this far ahead is a corrected instance. */
+  static final long CORRECTION_THRESHOLD_MS = 5_000L;
+
+  /** ADR-0010 C-129 (2): the correction is the lead rounded half up to a multiple of this. */
+  static final long CORRECTION_STEP_MS = 10_000L;
 
   /** Simulated time after the end for in-flight transactions and the last windows. */
   static final long SETTLE_MS = 45_000L;
@@ -98,6 +108,10 @@ public final class Simulation {
     final long statSendDelayMs;
 
     final long metricSendDelayMs;
+
+    /** ADR-0010 C-129 correction of this instance's timestamps (0 unless 5 s or more ahead). */
+    final long correctionMs;
+
     double nextHttpMs = Double.NaN;
     double nextBatchMs = Double.NaN;
     long sequence;
@@ -112,7 +126,26 @@ public final class Simulation {
       this.metrics = new MetricCatalog.State(series, metricRandom);
       this.statSendDelayMs = 5L + statRandom.nextInt(196);
       this.metricSendDelayMs = 200L + metricRandom.nextInt(501);
+      this.correctionMs = correctionMs(instance.skewMs);
     }
+  }
+
+  /**
+   * The ADR-0010 C-129 correction of an agent clock {@code skewMs} ahead of true time (the server
+   * clock): the server's 11 §9 offset is server - agent = -skew; a session below -5,000 ms is
+   * corrected by the lead rounded half up to 10 s; a clock behind or less than 5 s ahead is never
+   * corrected. The same rule as {@code io.argos.server.session.api.ClockOffsetProvider} (the
+   * generator does not depend on the server).
+   */
+  public static long correctionMs(long skewMs) {
+    if (skewMs <= CORRECTION_THRESHOLD_MS) {
+      return 0;
+    }
+    long steps = skewMs / CORRECTION_STEP_MS;
+    if (skewMs % CORRECTION_STEP_MS >= CORRECTION_STEP_MS / 2) {
+      steps++;
+    }
+    return steps * CORRECTION_STEP_MS;
   }
 
   /** Waits for wall-clock time (replay) or not at all (bulk). */
@@ -375,8 +408,10 @@ public final class Simulation {
     long sent = tx.endTrueMs() + 5 + random.nextInt(996);
     long received = sent + lateDelay(s, 0, Math.floorDiv(sent, 1000L), SALT_LATE_TX);
     tx.receivedMs = received;
-    tx.clamped = tx.tsAgentMs > received + FUTURE_TOLERANCE_MS;
-    tx.tsMs = tx.clamped ? received : tx.tsAgentMs;
+    tx.correctionMs = s.correctionMs;
+    long corrected = tx.tsAgentMs - s.correctionMs;
+    tx.clamped = corrected > received + FUTURE_TOLERANCE_MS;
+    tx.tsMs = tx.clamped ? received : corrected;
     tx.late = received - tx.tsMs > LATE_FLAG_MS;
     addStats(s, tx);
     if (tx.startTrueMs >= range.profileFrom()) {
@@ -452,8 +487,9 @@ public final class Simulation {
         long flushTrue = w + 11_000L - s.instance.skewMs;
         long sent = flushTrue + s.statSendDelayMs;
         long received = sent + lateDelay(s, 1, Math.floorDiv(sent, 1000L), SALT_LATE_STAT);
-        boolean clamped = w > received + FUTURE_TOLERANCE_MS;
-        long ts = clamped ? window(received) : w;
+        long corrected = w - s.correctionMs;
+        boolean clamped = corrected > received + FUTURE_TOLERANCE_MS;
+        long ts = clamped ? window(received) : corrected;
         for (StatRow row : e.getValue().sql.values()) {
           stat(row, w, ts, clamped, Table.SQL_STAT_RAW, received);
         }
@@ -498,8 +534,9 @@ public final class Simulation {
         s.metrics.step(s.metricRandom, metricValues, metricDeltas);
         long sent = trueMs + s.metricSendDelayMs;
         long received = sent + lateDelay(s, 2, Math.floorDiv(sent, 1000L), SALT_LATE_METRIC);
-        boolean clamped = g > received + FUTURE_TOLERANCE_MS;
-        long ts = clamped ? Math.floorDiv(received, 5_000L) * 5_000L : g;
+        long corrected = g - s.correctionMs;
+        boolean clamped = corrected > received + FUTURE_TOLERANCE_MS;
+        long ts = clamped ? Math.floorDiv(received, 5_000L) * 5_000L : corrected;
         for (int i = 0; i < series.size(); i++) {
           MetricCatalog.Series m = series.get(i);
           Row row =

@@ -4,7 +4,6 @@ package io.argos.agent.core.trace;
 import io.argos.agent.bootstrap.AgentControl;
 import io.argos.agent.bootstrap.CaptureConfig;
 import io.argos.agent.bootstrap.DictKind;
-import io.argos.agent.bootstrap.Kind;
 import io.argos.agent.bootstrap.ModuleHealth;
 import io.argos.agent.bootstrap.Scope;
 import io.argos.agent.bootstrap.StepType;
@@ -93,6 +92,12 @@ public final class TracerImpl implements Tracer {
   private volatile IgnoreRules ignoreRules = IgnoreRules.defaults();
   private volatile ServiceNames serviceNames = new ServiceNames(ServiceNames.DEFAULT_MAX);
 
+  /** {@code capture.trusted-proxies} of the last capture snapshot, compiled (WO-12, SEC-37). */
+  private volatile RemoteIps.Trusted trustedProxies = RemoteIps.Trusted.NONE;
+
+  /** {@code capture.user-id.*} (WO-12, 16 §6.3, ADR-0010 C-125). */
+  private final UserIds userIds;
+
   /**
    * A tracer for module tests: every ended transaction, with its steps, goes to {@code sink}; no
    * queues, a private {@link AgentCounters}, the default sampler, no CPU or allocation meter.
@@ -142,6 +147,7 @@ public final class TracerImpl implements Tracer {
     this.maxSteps = b.maxSteps;
     this.sampler = b.sampler != null ? b.sampler : Sampler.defaults();
     this.threadMeter = b.threadMeter != null ? b.threadMeter : ThreadMeter.NONE;
+    this.userIds = new UserIds(counters, b.userIdSalts);
   }
 
   /** A builder of the agent's tracer ({@link TraceRuntime}). */
@@ -208,7 +214,9 @@ public final class TracerImpl implements Tracer {
    * at an explicit unbind ({@code activate(null)}, a binding without context): what lies below it
    * was handed over on purpose, such as a servlet request that went asynchronous (ASYNC_PENDING, 10
    * §7.1) and is still running on another thread; it is not a leak. The whole chain is dropped
-   * either way, so the new transaction starts on an empty binding stack.
+   * either way, so the new transaction starts on an empty binding stack. The leaked flag and the
+   * counter belong to the end that wins ({@link #endByAgent}): a transaction that another thread
+   * ends at the same moment keeps its own record.
    */
   private void endLeftOver(ThreadSlots.Slot slot) {
     ThreadSlots.Binding left = slot.binding();
@@ -219,9 +227,7 @@ public final class TracerImpl implements Tracer {
     while (binding != null && binding.ctx != null) {
       TraceContext old = binding.ctx;
       if (binding.root && old != null && !old.isEnded()) {
-        old.addFlags(TraceContext.FLAG_LEAKED);
-        counters.incTransactionLeaked();
-        end(old, LEAKED_STATUS, null, null, null, clock.nanoTime());
+        endByAgent(old, false, clock.nanoTime());
       }
       binding = binding.previous;
     }
@@ -303,25 +309,106 @@ public final class TracerImpl implements Tracer {
     }
     try {
       unbind(ctx);
-      if (!ctx.markEnded()) {
-        return;
-      }
-      Transaction tx = transaction(ctx);
-      if (tx == null) {
-        return;
-      }
-      try {
-        finish(ctx, tx, status, errorClass, errorMessage, error, endNanos);
-      } finally {
-        if (activeRegistry != null) {
-          activeRegistry.remove(ctx);
-        }
-        // WO-02 A-3: a context still referenced elsewhere (an async store value) must not keep
-        // the steps alive after the end.
-        ctx.coreRef = null;
+      if (ctx.markEnded()) {
+        complete(ctx, status, errorClass, errorMessage, error, endNanos);
       }
     } catch (Throwable t) {
       AgentLogger.warnOnce("tracer.end", "transaction end failed: {}", t.toString());
+    }
+  }
+
+  /**
+   * {@inheritDoc}
+   *
+   * <p>{@code streaming} is set after {@link TraceContext#markEnded()} was won and before the
+   * record is built; a losing call only drops this thread's binding, like a second {@link #end}.
+   */
+  @Override
+  public void endStreaming(TraceContext ctx, int status, Throwable error, long endNanos) {
+    if (ctx == null) {
+      return;
+    }
+    try {
+      unbind(ctx);
+      if (ctx.markEnded()) {
+        ctx.streaming = true;
+        complete(ctx, status, null, null, error, endNanos);
+      }
+    } catch (Throwable t) {
+      AgentLogger.warnOnce("tracer.end", "transaction end failed: {}", t.toString());
+    }
+  }
+
+  /**
+   * Ends {@code ctx} at {@code transaction.max-duration-ms} ({@code MaxDurationEnforcer}, 10 §6.7,
+   * §13.1, F-A34): the status recorded so far (599, {@link #LEAKED_STATUS}, when none was), {@code
+   * timed_out}, the C-69 {@code leaked} flag and {@code argos_agent_transactions_leaked_total}.
+   * Agent core only, not part of {@link io.argos.agent.bootstrap.Tracer}.
+   *
+   * @return true when this call ended the transaction; false when another end came first (its
+   *     record is left unchanged: no flag, no counter)
+   */
+  public boolean endTimedOut(TraceContext ctx, long endNanos) {
+    return endByAgent(ctx, true, endNanos);
+  }
+
+  /**
+   * An end the agent decides itself: a context leaked on its thread (10 §7.1, status 599) or {@code
+   * transaction.max-duration-ms} ({@code timedOut}). Unbind, then {@link TraceContext#markEnded()};
+   * only the winner of that single end sets {@code timed_out}, the {@code leaked} flag and counts
+   * {@code argos_agent_transactions_leaked_total}, before the record is built. A concurrent end by
+   * the instrumentation that wins keeps its record unchanged. Never throws.
+   */
+  private boolean endByAgent(TraceContext ctx, boolean timedOut, long endNanos) {
+    if (ctx == null) {
+      return false;
+    }
+    boolean won = false;
+    try {
+      unbind(ctx);
+      if (!ctx.markEnded()) {
+        return false;
+      }
+      won = true;
+      int status = LEAKED_STATUS;
+      if (timedOut) {
+        ctx.timedOut = true;
+        int recorded = ctx.status;
+        status = recorded > 0 ? recorded : LEAKED_STATUS;
+      }
+      ctx.addFlags(TraceContext.FLAG_LEAKED);
+      counters.incTransactionLeaked();
+      complete(ctx, status, null, null, null, endNanos);
+    } catch (Throwable t) {
+      AgentLogger.warnOnce("tracer.end", "transaction end failed: {}", t.toString());
+    }
+    return won;
+  }
+
+  /**
+   * The end after {@link TraceContext#markEnded()} was won: the record ({@link #finish}), then the
+   * active-registry removal and the release of the core state, always.
+   */
+  private void complete(
+      TraceContext ctx,
+      int status,
+      String errorClass,
+      String errorMessage,
+      Throwable error,
+      long endNanos) {
+    Transaction tx = transaction(ctx);
+    if (tx == null) {
+      return;
+    }
+    try {
+      finish(ctx, tx, status, errorClass, errorMessage, error, endNanos);
+    } finally {
+      if (activeRegistry != null) {
+        activeRegistry.remove(ctx);
+      }
+      // WO-02 A-3: a context still referenced elsewhere (an async store value) must not keep
+      // the steps alive after the end.
+      ctx.coreRef = null;
     }
   }
 
@@ -410,17 +497,14 @@ public final class TracerImpl implements Tracer {
   }
 
   /**
-   * The service name a transaction ends with: an HTTP name that no module fixed gets the F-A29
-   * fallback normalization; every name is subject to the per-agent cap ({@link ServiceNames}).
+   * The service name a transaction ends with: the candidate the modules left on the context
+   * resolved by {@link ServiceNameResolver} (an HTTP name that no module fixed, including the
+   * servlet module's {@code HttpServletMapping} candidate, gets the F-A29 fallback normalization;
+   * every name is cut to {@link #MAX_SERVICE_NAME_CHARS}), then subject to the per-agent cap
+   * ({@link ServiceNames}).
    */
   private String finalServiceName(TraceContext ctx) {
-    String name = ctx.serviceName;
-    if (ctx.kind == Kind.HTTP && !ctx.serviceFixed) {
-      name = ServiceNames.fallback(name);
-    }
-    if (name != null && name.length() > MAX_SERVICE_NAME_CHARS) {
-      name = name.substring(0, MAX_SERVICE_NAME_CHARS);
-    }
+    String name = ServiceNameResolver.resolve(ctx.kind, ctx.serviceName, ctx.serviceFixed);
     String admitted = serviceNames.admit(name);
     if (name != null && admitted != null && !admitted.equals(name)) {
       counters.incServiceDictionaryOverflow();
@@ -561,21 +645,111 @@ public final class TracerImpl implements Tracer {
     }
   }
 
+  /**
+   * {@inheritDoc}
+   *
+   * <p>The user id goes through {@link UserIds} like {@link #setUserId}: never kept as given
+   * (SEC-32 applies to every caller of this bootstrap API, ADR-0010 C-125).
+   */
   @Override
   public void setHttp(
       TraceContext ctx, String method, String path, String remoteIp, String userId) {
     try {
       Transaction tx = open(ctx);
       if (tx != null) {
-        tx.http(
-            method,
-            HttpPaths.clean(path),
-            RemoteIps.apply(remoteIp, capture().remoteIpMode()),
-            userId);
+        CaptureConfig capture = capture();
+        tx.request(
+            method, HttpPaths.clean(path), RemoteIps.apply(remoteIp, capture.remoteIpMode()));
+        if (userId != null) {
+          userIds.apply(tx, capture, userId);
+        }
       }
     } catch (Throwable t) {
       AgentLogger.warnOnce("tracer.http", "request data capture failed: {}", t.toString());
     }
+  }
+
+  /**
+   * {@inheritDoc}
+   *
+   * <p>Recorded URL by {@code capture.query-string} ({@link HttpPaths#recorded}), client address by
+   * {@code capture.trusted-proxies} ({@link RemoteIps#client}) and {@code capture.remote-ip}
+   * ({@link RemoteIps#apply}).
+   */
+  @Override
+  public void setHttpRequest(
+      TraceContext ctx,
+      String method,
+      String requestUri,
+      String queryString,
+      String socketAddress,
+      String forwardedFor) {
+    try {
+      Transaction tx = open(ctx);
+      if (tx == null) {
+        return;
+      }
+      CaptureConfig capture = capture();
+      String url =
+          HttpPaths.recorded(
+              requestUri, queryString, capture.queryStringMode(), capture.queryStringWhitelist());
+      String client = RemoteIps.client(socketAddress, forwardedFor, trusted(capture));
+      tx.request(method, url, RemoteIps.apply(client, capture.remoteIpMode()));
+    } catch (Throwable t) {
+      AgentLogger.warnOnce("tracer.http", "request data capture failed: {}", t.toString());
+    }
+  }
+
+  /** The compiled {@code capture.trusted-proxies} of {@code capture} (recompiled on a change). */
+  private RemoteIps.Trusted trusted(CaptureConfig capture) {
+    String[] cidrs = capture.trustedProxies();
+    RemoteIps.Trusted current = trustedProxies;
+    if (!current.compiledFrom(cidrs)) {
+      current = RemoteIps.Trusted.of(cidrs);
+      trustedProxies = current;
+    }
+    return current;
+  }
+
+  /** {@inheritDoc} ({@link UserIds}) */
+  @Override
+  public void setUserId(TraceContext ctx, String rawUserId) {
+    try {
+      Transaction tx = open(ctx);
+      if (tx != null) {
+        userIds.apply(tx, capture(), rawUserId);
+      }
+    } catch (Throwable t) {
+      AgentLogger.warnOnce("tracer.user-id", "user id capture failed: {}", t.getClass());
+    }
+  }
+
+  /** {@inheritDoc} ({@link HeaderCapture#headers}) */
+  @Override
+  public void setHeaders(TraceContext ctx, String[] namesAndValues) {
+    try {
+      Transaction tx = open(ctx);
+      if (tx != null) {
+        tx.headers(HeaderCapture.headers(namesAndValues));
+      }
+    } catch (Throwable t) {
+      AgentLogger.warnOnce("tracer.headers", "header capture failed: {}", t.getClass());
+    }
+  }
+
+  /** {@inheritDoc} ({@link HeaderCapture#requestId}) */
+  @Override
+  public void setRequestId(TraceContext ctx, String value) {
+    Transaction tx = open(ctx);
+    if (tx != null) {
+      tx.requestId(HeaderCapture.requestId(value));
+    }
+  }
+
+  /** Counts in {@code argos_agent_transactions_unanchored_total} (10 §7.1). */
+  @Override
+  public void countUnanchored() {
+    counters.incTransactionUnanchored();
   }
 
   @Override
@@ -852,10 +1026,20 @@ public final class TracerImpl implements Tracer {
     private ThreadMeter threadMeter;
     private boolean retainSteps;
     private ModuleErrors moduleErrors;
+    private UserIds.SaltSource userIdSalts;
     private int maxSteps = 1000;
     private int errorThreshold = 100;
 
     Builder() {}
+
+    /**
+     * The salt of {@code capture.user-id.mode: hashed}; default: the transport session's {@code
+     * ServerHello.user_id_salt} ({@link UserIds#SESSION}).
+     */
+    public Builder userIdSalts(UserIds.SaltSource value) {
+      this.userIdSalts = value;
+      return this;
+    }
 
     public Builder dictionary(Dictionary value) {
       this.dictionary = value;

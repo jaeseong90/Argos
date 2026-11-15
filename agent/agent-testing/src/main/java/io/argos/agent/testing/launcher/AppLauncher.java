@@ -74,11 +74,14 @@ import java.util.stream.Stream;
  *
  * <p>WAR apps ({@link SampleApp#isWar}) run in a standalone Tomcat staged for the run ({@link
  * TomcatStaging}: CATALINA_HOME from the sample app's build, CATALINA_BASE {@code
- * <workDir>/catalina-base} with a {@code 127.0.0.1:<port>} connector, one WAR copy per context)
+ * <workDir>/catalina-base} with a {@code 127.0.0.1:<port>} connector, a loopback shutdown port with
+ * a random command, one WAR copy per context and the extra web applications of {@link #webapp})
  * with the same JVM presets, agent, temp directory, environment rules and output files; readiness
  * is the port plus {@code /<context><readiness path>} = 200 for every context. The Tomcat is {@link
  * #tomcat(String)}, else {@link SampleApp#defaultTomcat(int)}. Request paths carry the context
- * ({@code app.get("/shop-a/api/orders/1")}).
+ * ({@code app.get("/shop-a/api/orders/1")}). {@link RunningApp#gracefulStop()} (and {@code
+ * close()}) of a WAR run sends the shutdown command first, so Tomcat stops its web applications
+ * (and its leak detection logs) before the JVM exits, on Windows too.
  */
 public final class AppLauncher {
   /** {@code app.env} of every harness run (harness defaults). */
@@ -106,6 +109,7 @@ public final class AppLauncher {
   private String memory;
   private String tokenFileMode;
   private String tomcatKey;
+  private final Map<String, Path> webapps = new LinkedHashMap<>();
 
   private AppLauncher(SampleApp app, Jdk jdk) {
     this.app = app;
@@ -261,6 +265,20 @@ public final class AppLauncher {
    */
   public AppLauncher tomcat(String key) {
     this.tomcatKey = key;
+    return this;
+  }
+
+  /**
+   * WAR apps only: deploys {@code war} as one more web application of the staged Tomcat, served
+   * under {@code /<context>} (e.g. agent-testing's Spring-free servlet fixture next to the sample
+   * app's contexts). Readiness still waits for the sample app's contexts only; Tomcat deploys every
+   * web application before it opens its connector.
+   */
+  public AppLauncher webapp(String context, Path war) {
+    if (!app.isWar()) {
+      throw new IllegalStateException(app.name() + " is not a WAR app");
+    }
+    webapps.put(context, war);
     return this;
   }
 
@@ -488,8 +506,15 @@ public final class AppLauncher {
     }
     Path dir = prepare();
     int port = freePort();
+    TomcatStaging.Shutdown shutdown = null;
     if (app.isWar()) {
-      TomcatStaging.stage(app, app.tomcatHome(tomcatKey()), TomcatStaging.base(dir), port);
+      int shutdownPort = freePort();
+      while (shutdownPort == port) {
+        shutdownPort = freePort();
+      }
+      shutdown = TomcatStaging.Shutdown.random(shutdownPort);
+      TomcatStaging.stage(
+          app, app.tomcatHome(tomcatKey()), TomcatStaging.base(dir), port, shutdown, webapps);
     }
     List<String> command = command(dir);
     ProcessBuilder builder = processBuilder(dir, command);
@@ -510,6 +535,7 @@ public final class AppLauncher {
     Process process = builder.start();
     ProcessApp running =
         new ProcessApp(app, jdk, process, port, dir, command, tempWatch, collector);
+    running.tomcatShutdown(shutdown);
     try {
       long deadline = spawn + timeout.toNanos();
       while (!portOpen(port)) {

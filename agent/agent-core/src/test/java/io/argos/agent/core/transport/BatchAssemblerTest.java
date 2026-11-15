@@ -3,6 +3,7 @@ package io.argos.agent.core.transport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.argos.agent.bootstrap.CaptureConfig;
 import io.argos.agent.bootstrap.DictKind;
 import io.argos.agent.bootstrap.Kind;
 import io.argos.agent.bootstrap.StepType;
@@ -111,6 +112,47 @@ class BatchAssemblerTest {
   }
 
   @Test
+  @Tag("req:F-A28")
+  @Tag("req:F-A34")
+  @DisplayName(
+      "T-AG-017a WO-12 fields: dispatch_count, streaming, timed_out, whitelisted headers (<= 10,"
+          + " values 1 KiB) and request_id (128 B) reach the record; nothing when not captured")
+  void requestFields() {
+    TracerImpl tracer = runtime.tracerImpl();
+    TraceContext ctx = tracer.begin(Kind.HTTP, "GET /sse", 0);
+    ctx.dispatchCount = 3;
+    ctx.streaming = true;
+    ctx.timedOut = true;
+    String[] headers = new String[24];
+    for (int i = 0; i < 12; i++) {
+      headers[2 * i] = "X-H" + i;
+      headers[2 * i + 1] = i == 0 ? repeat('한', 600) : "v" + i;
+    }
+    tracer.setHeaders(ctx, headers);
+    tracer.setRequestId(ctx, repeat('한', 100));
+    tracer.end(ctx, 200, null, null, null, 1);
+    TransactionRecord record = assembler.record(endedTransaction());
+    assertThat(record.getDispatchCount()).isEqualTo(3);
+    assertThat(record.getStreaming()).isTrue();
+    assertThat(record.getTimedOut()).isTrue();
+    assertThat(record.getHeadersCount()).isEqualTo(ProtocolLimits.MAX_HEADERS);
+    assertThat(record.getHeaders(0).getKey()).isEqualTo("x-h0");
+    assertThat(record.getHeaders(0).getValue().getBytes(java.nio.charset.StandardCharsets.UTF_8))
+        .hasSizeLessThanOrEqualTo(ProtocolLimits.MAX_VALUE_BYTES);
+    assertThat(record.getHeaders(1).getValue()).isEqualTo("v1");
+    assertThat(record.getRequestId().getBytes(java.nio.charset.StandardCharsets.UTF_8))
+        .hasSizeLessThanOrEqualTo(ProtocolLimits.MAX_REQUEST_ID_BYTES);
+
+    TraceContext plain = tracer.begin(Kind.HTTP, "GET /a", 0);
+    tracer.end(plain, 200, null, null, null, 1);
+    TransactionRecord empty = assembler.record(endedTransaction());
+    assertThat(empty.getHeadersCount()).isZero();
+    assertThat(empty.getRequestId()).isEmpty();
+    assertThat(empty.getTimedOut()).isFalse();
+    assertThat(empty.getDispatchCount()).isZero();
+  }
+
+  @Test
   @Tag("req:C-4")
   @Tag("req:D-23")
   @DisplayName("C-4: CPU time and allocation that were not measured stay absent optional fields")
@@ -130,12 +172,16 @@ class BatchAssemblerTest {
   void stringCaps() {
     TracerImpl tracer = runtime.tracerImpl();
     assembler.limits(Limits.newBuilder().setMaxStringBytes(100).build());
+    // setHttp applies capture.user-id (SEC-32): plain mode so that a user id reaches the record.
+    tracer.setCapture(
+        CaptureConfig.DEFAULT.toBuilder().userIdMode(CaptureConfig.USER_ID_PLAIN).build());
     TraceContext ctx = tracer.begin(Kind.HTTP, "GET /a", 0);
     tracer.setHttp(ctx, "GET", "/" + repeat('p', 500), "127.0.0.1", repeat('한', 200));
     tracer.end(ctx, 500, IllegalStateException.class.getName(), repeat('x', 3_000), null, 1);
     TransactionRecord record = assembler.record(endedTransaction());
     assertThat(record.getUrlPath().getBytes(java.nio.charset.StandardCharsets.UTF_8).length)
         .isLessThanOrEqualTo(100);
+    assertThat(record.getUserId()).isNotEmpty();
     assertThat(record.getUserId().getBytes(java.nio.charset.StandardCharsets.UTF_8).length)
         .isLessThanOrEqualTo(ProtocolLimits.MAX_USER_ID_BYTES);
     assertThat(record.getErrorMessage().getBytes(java.nio.charset.StandardCharsets.UTF_8).length)

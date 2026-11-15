@@ -177,6 +177,17 @@ public interface RunningApp extends AutoCloseable {
   /** The agent log ({@code logs/argos-agent.log}), empty when absent. */
   String agentLog();
 
+  /**
+   * The standalone Tomcat's own log lines of a WAR run ({@code catalina-base/logs/*}, JULI one-line
+   * format, English, see {@link TomcatStaging}); empty for every other app. Judge them with {@code
+   * log.TomcatLogCheck} (SEVERE, agent WARNING, ThreadLocal leak lines; WO-05 r1-new-1). Tomcat
+   * writes its leak warnings when it stops a web application, so read them after {@link
+   * #gracefulStop()}.
+   */
+  default List<String> tomcatLogLines() {
+    return List.of();
+  }
+
   /** {@code -Dargos.debug.transform-list} ({@code <workDir>/out/transformed.txt}). */
   default Path transformListFile() {
     return workDir().resolve("out").resolve("transformed.txt");

@@ -68,6 +68,9 @@ final class AuthSuite {
   }
 
   static TestUsers users() {
+    // Users live in the schema the suite server's start migrates: start it first, whatever test
+    // runs first (a test that created a user before any server start depended on the class order).
+    server();
     return new TestUsers(environment());
   }
 

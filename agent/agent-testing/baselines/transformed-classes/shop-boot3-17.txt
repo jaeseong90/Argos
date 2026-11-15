@@ -8,6 +8,10 @@ com.zaxxer.hikari.pool.ProxyPreparedStatement jdbc org.springframework.boot.load
 com.zaxxer.hikari.pool.ProxyStatement jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
 jakarta.servlet.http.HttpServlet servlet org.springframework.boot.loader.launch.LaunchedClassLoader
 java.util.concurrent.ThreadPoolExecutor executor bootstrap
+org.apache.catalina.connector.CoyoteOutputStream servlet org.springframework.boot.loader.launch.LaunchedClassLoader
+org.apache.catalina.connector.CoyoteWriter servlet org.springframework.boot.loader.launch.LaunchedClassLoader
+org.apache.catalina.connector.Request servlet-async org.springframework.boot.loader.launch.LaunchedClassLoader
+org.apache.catalina.connector.ResponseFacade servlet org.springframework.boot.loader.launch.LaunchedClassLoader
 org.apache.tomcat.websocket.server.WsFilter servlet org.springframework.boot.loader.launch.LaunchedClassLoader
 org.h2.jdbc.JdbcConnection jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
 org.h2.jdbc.JdbcPreparedStatement jdbc org.springframework.boot.loader.launch.LaunchedClassLoader

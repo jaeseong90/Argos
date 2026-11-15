@@ -19,9 +19,10 @@ import net.bytebuddy.matcher.ElementMatcher;
 
 /**
  * The two entry points of 10 §6.1 per servlet namespace: {@code HttpServlet.service(ServletRequest,
- * ServletResponse)} (matched by name) and {@code doFilter(ServletRequest, ServletResponse,
- * FilterChain)} of every class that declares a concrete {@code doFilter} and implements {@code
- * Filter} (subtype matching through {@link SafeMatchers}, allowed for servlet filters by 10 §5.1).
+ * ServletResponse)} (matched by name, servlet advice) and {@code doFilter(ServletRequest,
+ * ServletResponse, FilterChain)} of every class that declares a concrete {@code doFilter} and
+ * implements {@code Filter} (subtype matching through {@link SafeMatchers}, allowed for servlet
+ * filters by 10 §5.1, filter advice).
  */
 final class ServletInstrumentation implements TypeInstrumentation {
   private final ElementMatcher<TypeDescription> types;

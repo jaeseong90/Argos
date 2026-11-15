@@ -228,6 +228,68 @@ default) is applied after masking. An added pattern that would take too long on 
 64 character reads per input character) stops, and the whole text is replaced by `<masked>`, so
 that nothing unmasked leaves the agent.
 
+## Request data
+
+The servlet instrumentation records, for every HTTP transaction, the method, the path, the final
+status and the elapsed time. Everything else about the request is off or reduced by default, and
+none of the `capture.*` keys is in the default `remote-config.allow` list: widening what is
+collected takes a change of the local configuration.
+
+The agent never consumes or changes a request: it does not call `getParameter*`, `getReader`,
+`getInputStream`, `getParts` or `getSession()`/`getSession(true)`. A session is only read when one
+already exists (`getSession(false)`).
+
+| What | Keys | Default | Behaviour |
+|---|---|---|---|
+| Path | - | always | The request URI without query string and path parameters (`;jsessionid=...`), cut at 2 KiB. Service names and dictionaries never contain a query string. |
+| Query string | `capture.query-string`, `capture.query-string.whitelist` | `off` | `off`: path only. `whitelist`: only the listed parameter names (exact, as sent) among the first 256 parameters of the query string, sorted by name, each value cut at 256 characters, re-assembled as `?a=1&b=2`. `full`: the raw query string. The URL with its query string is cut at 2 KiB. |
+| Client address | `capture.remote-ip`, `capture.trusted-proxies` | `masked`, `[]` | Without trusted proxies the socket address is used and `X-Forwarded-For` is ignored. With trusted proxies the hops are read from the right: the socket peer, then the `X-Forwarded-For` entries from right to left; trusted hops are skipped and the first untrusted address is the client. A peer that is not a trusted proxy is the client itself (a forged header from a direct client has no effect); an entry that is not an IP address gives the socket address. At most the last 32 `X-Forwarded-For` lines, their last 2,048 characters (cut between entries) and 32 hops from the right are read; when all 32 hops are trusted, the leftmost of them is used, never an entry further left. Then the mode: `full` keeps the address, `masked` zeroes the last IPv4 octet or the low 80 bits of an IPv6 address, `off` sends nothing (the address is not even read). |
+| User id | `capture.user-id.mode`, `capture.user-id.source` | `off` | `header:<name>` reads one request header, `session:<attribute>` an attribute of an existing session (a `String`, a JDK number or a `UUID`; other objects are ignored), `mdc:<key>` is not supported yet: nothing is recorded, `argos_agent_user_id_skipped_total{reason="mdc_unsupported"}` counts it and one WARN is logged. `plain` keeps at most 128 characters without control characters, with leading and trailing spaces removed. `hashed` sends the first 16 characters of base64url(HMAC-SHA256(salt, user id)) with the application's salt that the collector sends over TLS: 16 characters of `A-Z`, `a-z`, `0-9`, `-` and `_` (unpadded base64url, not hexadecimal). The HMAC input is the user id normalized exactly as `plain` records it (control characters removed, cut at 128 characters, leading and trailing spaces removed), encoded as UTF-8, so ` kim` followed by a control character hashes like `kim`; a search by user id must normalize the same way. While the collector has sent no salt, no user id is recorded (never the plain value): `argos_agent_user_id_skipped_total{reason="no_salt"}` counts it and one WARN is logged. The salt stays in memory and is never logged. |
+| Headers | `capture.http-headers` | `[]` | Only the listed headers (names case-insensitive, at most 10), each value cut at 1 KiB. |
+| Request id | `capture.request-id-header` | not set | The value of the one named header, leading and trailing spaces removed, cut at 128 bytes, sent only as the transaction's request id (searchable on the collector). |
+
+Requests that match `instrumentation.ignore-methods`, `instrumentation.ignore-paths` (globs on the
+path within the web application: `*` within one segment, `**` across segments, `?` one character),
+`instrumentation.ignore-extensions` or `instrumentation.ignore-user-agents` (globs: `*` any
+characters, `?` one character), checked in this order, are not recorded; the first matching rule
+is counted in `argos_agent_ignored_total{reason}` (`method`, `path`, `extension`, `user_agent`).
+The query string is never part of these checks.
+
+### Transactions and service names
+
+One HTTP request is one transaction. It starts on the container's REQUEST dispatch; forwards,
+includes, error page dispatches and async re-dispatches of the same request join it and are counted
+in its `dispatch_count`. An error page dispatch that starts after the request has ended (Spring
+Boot's `/error` for a request without a handler) is not recorded and never becomes a service name;
+it is counted in `argos_agent_transactions_unanchored_total`. The final status follows the
+response: an uncaught exception with a status below 400 ends as 500.
+
+The service name is the first of: the Spring MVC handler pattern with the request's method (`GET
+/api/orders/{id}`, read on the REQUEST dispatch only, so a forward keeps it); `Controller#method`
+for a handler method without a pattern; the servlet mapping pattern on Servlet 4 and later (`GET
+/items/*`, `GET *.do`, `GET /plain/exact`); otherwise the path with every number, UUID and hex
+string of 32 or more characters replaced by `{*}` (`GET /api/orders/{*}`). Custom Spring
+`HandlerAdapter` classes are not matched (only the five Spring adapters are), so their requests get
+the servlet mapping or path name. A web application with a context path (several WAR files in one
+standalone container) starts its names with it (`/shop-a GET /api/orders/{id}`). The agent keeps at most
+`instrumentation.service-dictionary-max` names for all web applications of the JVM; later new names
+become `_other_` and are counted in `argos_agent_service_dictionary_overflow_total`.
+
+### Async and streaming requests
+
+A request that calls `startAsync` ends exactly once, at the first of: its last async dispatch,
+`AsyncListener.onComplete`, `onError`, the container's handling after `onTimeout` (its error page
+dispatch, or `onComplete` when there is no error page; a status below 400 then ends as 500), the
+first flush of the response after `startAsync` (server-sent events, `ResponseBodyEmitter`,
+`StreamingResponseBody`, also when the application opened the output stream before `startAsync`;
+flagged `streaming`), or `transaction.max-duration-ms`. A flush before `startAsync` (Spring commits
+the headers of a server-sent events response this way) does not end it. A `101 Switching
+Protocols` response (WebSocket) is flagged `streaming` and ends when the upgrade request returns.
+A transaction still open after `transaction.max-duration-ms` (default one
+hour) is ended by the agent's watch thread with the status recorded so far (599 when there is none)
+and the flags `timed_out` and `leaked` (`argos_agent_transactions_leaked_total`). The response flush
+is detected by container class names, Tomcat 9, 10.1 and 11 only; see the known limitations.
+
 ## Effective configuration and configuration hash
 
 The agent keeps, for every key, the value in force and where it came from: `default`, `file`,
@@ -293,6 +355,7 @@ start.
 | `capture.query-string` | enum: off, whitelist, full | `off` | N | URL query string capture. |
 | `capture.query-string.whitelist` | list (<= 64 items) | `[]` | N | Query parameter names kept in `whitelist` mode. |
 | `capture.http-headers` | list (<= 10 items) | `[]` | N | Request headers to capture (values up to 1 KiB). |
+| `capture.request-id-header` | string | - | N | One request header whose value is sent as the transaction's request id (cut at 128 bytes); not set means not collected. See [Request data](#request-data). |
 | `capture.remote-ip` | enum: full, masked, off | `masked` | N | Client IP capture; `masked` zeroes the last IPv4 octet and the low 80 IPv6 bits. |
 | `capture.trusted-proxies` | list (<= 64 items) | `[]` | N | Proxy CIDRs whose `X-Forwarded-For` is trusted; empty means the socket address is used. |
 | `capture.user-id.mode` | enum: off, plain, hashed | `off` | N | User id capture. |
@@ -428,6 +491,19 @@ may change at any time.
   access control.
 - **YAML subset.** Only the subset in [The YAML file](#the-yaml-file) is read; anything else makes
   the agent ignore the whole file with a WARN.
+- **Servlet containers.** Request boundaries, async requests and the response flush are verified on
+  Tomcat 9, 10.1 and 11, embedded (Spring Boot 2.7, 3.5 and 4.1) and standalone. Jetty (ee8, ee10)
+  and Undertow 2.3 are expected to record requests and names but are not verified yet. On them the
+  first flush of a streaming response is not detected: server-sent events and
+  `StreamingResponseBody` responses end at `onComplete` or `onTimeout` of the async request, at the
+  latest at `transaction.max-duration-ms`. With `instrumentation.disabled: [servlet-async]` no
+  listener is registered: an async request still ends at its last async dispatch and at the error
+  page dispatch that follows a timeout, but one that completes without a dispatch
+  (`AsyncContext.complete()`, a timeout without an error page) stays open until
+  `transaction.max-duration-ms`.
+- **`dispatch_count`.** Only dispatches that reach an `HttpServlet` are counted; a forward or include
+  that a filter answers without a servlet is not. A dispatch counts once even when its servlet hands
+  the same request on to another servlet (a JSP: Jasper's `JspServlet` and the page).
 - **Java 8 needs 8u252 or later for the transport.** TLS to the collector needs ALPN in the JDK,
   which Java 8 has from 8u252 on (negotiating TLS 1.2; TLS 1.3 depends on the update). On an older
   Java 8 with `server.tls: true` the agent logs one ERROR and turns the transport off: the

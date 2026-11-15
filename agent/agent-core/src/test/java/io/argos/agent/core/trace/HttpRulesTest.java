@@ -81,6 +81,31 @@ class HttpRulesTest {
   }
 
   @Test
+  @Tag("req:F-A23")
+  @Tag("req:D-19")
+  @DisplayName(
+      "T-AG-012a 10 §7.2 order: method > path > extension > user agent; the first matching rule"
+          + " names the reason; null lists are empty")
+  void evaluationOrder() {
+    IgnoreRules rules =
+        IgnoreRules.of(
+            Arrays.asList("/static/**"),
+            Arrays.asList("js"),
+            Arrays.asList("kube-probe/*"),
+            Arrays.asList("options", "HEAD"));
+    String probe = "kube-probe/1.29";
+    assertThat(rules.reason("OPTIONS", "/static/app.js", probe)).isEqualTo("method");
+    assertThat(rules.reason("HEAD", "/x", null)).isEqualTo("method");
+    assertThat(rules.reason("GET", "/static/app.js", probe)).isEqualTo("path");
+    assertThat(rules.reason("GET", "/x/app.js", probe)).isEqualTo("extension");
+    assertThat(rules.reason("GET", "/x/app", probe)).isEqualTo("user_agent");
+    assertThat(rules.reason("GET", "/x/app", "curl/8")).isNull();
+    assertThat(rules.reason(null, null, null)).isNull();
+    IgnoreRules empty = IgnoreRules.of(null, null, null, null);
+    assertThat(empty.reason("OPTIONS", "/actuator/health", probe)).isNull();
+  }
+
+  @Test
   @DisplayName("glob semantics: * within a segment, ** across, ? one char; user-agent globs")
   void globs() {
     IgnoreRules rules =

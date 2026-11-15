@@ -9,6 +9,7 @@ import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -88,8 +89,17 @@ class StartupOrderIT {
     Path java = Paths.get(System.getProperty("java.home"), "bin", "java");
     List<String> command = new ArrayList<>();
     command.add(java.toString());
-    command.add("-cp");
-    command.add(System.getProperty("java.class.path"));
+    // The class path is longer than a Windows command line (32 K characters) since the collector's
+    // gRPC stack (WO-21): a JDK argument file carries it.
+    Path argFile = Files.createTempFile("startup-order-cp", ".args");
+    argFile.toFile().deleteOnExit();
+    Files.writeString(
+        argFile,
+        "-cp\n\""
+            + System.getProperty("java.class.path").replace("\\", "\\\\").replace("\"", "\\\"")
+            + "\"\n",
+        StandardCharsets.UTF_8);
+    command.add("@" + argFile);
     command.add("-Dargos.it.fail-phase=KEYS");
     command.add("-DLOG_PATH=" + IntegrationLogs.ensureLogPath());
     command.add("-Dargos.it.sentinel=" + sentinel);

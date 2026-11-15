@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.agent.core.trace;
 
+import io.argos.agent.bootstrap.CaptureConfig;
 import io.argos.agent.bootstrap.DictKind;
 import io.argos.agent.bootstrap.Kind;
 import io.argos.agent.bootstrap.StepType;
@@ -53,6 +54,10 @@ public final class HeapBudgetProbe {
     AgentCounters counters = new AgentCounters();
     TraceRuntime runtime = TraceRuntime.create(config, counters);
     TracerImpl tracer = runtime.tracerImpl();
+    // Worst case: capture.user-id plain, so that every record keeps its 128-character user id
+    // (setHttp applies the mode, SEC-32).
+    tracer.setCapture(
+        CaptureConfig.DEFAULT.toBuilder().userIdMode(CaptureConfig.USER_ID_PLAIN).build());
     Queues queues = runtime.queues();
     long baseline = usedAfterGc();
 

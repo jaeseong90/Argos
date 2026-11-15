@@ -11,12 +11,18 @@ import java.util.concurrent.atomic.AtomicLong;
  * <ul>
  *   <li>{@link #fallback}: the provisional name {@code [<context path> ]<METHOD> <path>} that the
  *       servlet helper gives a transaction, with identifier segments of the path replaced by {@code
- *       {*}} ({@link HttpPaths#normalize}). Used when no module fixed a name (404, requests
- *       rejected by a filter, static resources, non-Spring servlets).
+ *       {*}} ({@link HttpPaths#normalize}) and no query string. Used when no module fixed a name
+ *       (404, requests rejected by a filter, static resources, non-Spring servlets without a
+ *       mapping pattern); the order of the candidates is in {@link ServiceNameResolver}.
  *   <li>{@link #admit}: at most {@code instrumentation.service-dictionary-max} (10,000) distinct
  *       names per agent; later new names become {@value #OTHER} and are counted ({@code
  *       service_dictionary_overflow_total}).
  * </ul>
+ *
+ * <p>Scope of the cap (F-A29 "앱당", 10 U-18): one agent serves one JVM, so all web applications of a
+ * standalone Tomcat share one cap; their names stay apart through the context path prefix (F-A36).
+ * The interplay of several web applications with the cap is an assumption until it is dogfooded
+ * (WO-12 report, U-18).
  *
  * <p>Memory (10 §14 "상한", N-02 heap budget "기타 8MB"): the kept names are also bounded by their
  * estimated bytes ({@link #bytesOf}: {@value #STRING_BYTES} + 2 per character + {@value
@@ -71,19 +77,12 @@ public final class ServiceNames {
 
   /**
    * F-A29 fallback: normalizes the path (the last space-separated token when it starts with {@code
-   * /}) of a provisional name such as {@code GET /api/orders/42} or {@code /shop GET /api/x/1}.
+   * /}) of a provisional name such as {@code GET /api/orders/42} or {@code /shop GET /api/x/1}, and
+   * drops a query string from it (SEC-34). Same as {@link ServiceNameResolver#fallback}, which
+   * holds the rules and the order of the name candidates.
    */
   public static String fallback(String provisional) {
-    if (provisional == null) {
-      return null;
-    }
-    int space = provisional.lastIndexOf(' ');
-    String path = provisional.substring(space + 1);
-    if (!path.startsWith("/")) {
-      return provisional;
-    }
-    String normalized = HttpPaths.normalize(path);
-    return normalized.equals(path) ? provisional : provisional.substring(0, space + 1) + normalized;
+    return ServiceNameResolver.fallback(provisional);
   }
 
   /**

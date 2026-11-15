@@ -21,20 +21,21 @@ Test layers, test IDs and requirement tags: [test/README.md](../../test/README.m
 
 | Package | Classes | 18 |
 |---|---|---|
-| `launcher` | `AppLauncher`, `RunningApp` (`ProcessApp`, `ContainerApp`), `ExitedApp`, `Jdk`, `JvmOptions`, `SampleApp`, `TomcatStaging`, `AgentSettings`, `LoadResult`, `SelfDiagnostics`, `TempWatch`, `HttpResult` | §5.2, §5.10 |
+| `launcher` | `AppLauncher`, `RunningApp` (`ProcessApp`, `ContainerApp`), `ExitedApp`, `Jdk`, `JvmOptions`, `SampleApp`, `TomcatStaging` (with `TomcatStaging.Shutdown`), `AgentSettings`, `LoadResult`, `SelfDiagnostics`, `TempWatch`, `HttpResult` | §5.2, §5.10 |
 | `collector` | `FakeCollector`, `FaultInjector`, `Collected` (`JsonlCollected`, collector view), `ReceivedBatch`, `SessionInfo`, `HeartbeatRecord`, `ByeInfo`, `KindCounts`, `ReceivedToken`, `ConfigApplyOutcome`, `CommandOutcome`, `ClockEstimator` (11 §9), `Deduplicator` (11 §6), `ContractVectors`, `FakeCollectorMain` (standalone), `CollectorProtocol` (wire seam), `v1.V1Protocol` (argos.v1 of `:proto`) | §5.3 |
 | `export` | `FileExporterReader` (JSONL), `TransactionRecord`, `RecordSource`, `ExporterSettings` | §5.4 |
 | `assertion` | `ArgosAssertions`, `CollectedAssert`, `TransactionsAssert`, `TransactionAssert`, `StepsAssert`, `StepAssert`, `MetricAssert`, `ValueAssert` (missing vs zero), `Unsupported` | §5.5 |
 | `baseline` | `TransformLog`, `TransformBaseline` (record and diff), `TransformList`, `PremainClassBudget` (C-79) | §5.6 |
 | `leak` | `LeakProbe`, `LeakReport`, `TomcatRedeployDriver` | §5.9 |
-| `log` | `AgentLogAssert` (allow-list fixture), `AppOutput` (console) | §5.10 |
+| `log` | `AgentLogAssert` (allow-list fixture), `AppOutput` (console), `TomcatLogCheck` (standalone Tomcat log of WAR runs) | §5.9, §5.10 |
 | `jvm` | `JcmdClient`, `ClassHistogram`, `NmtSummary`, `ThreadCounter`, `UnsafeScanner`, `AgentJars` | §5.9, §5.10 |
 
 Other directories: `baselines/transformed-classes/<app>-<jdk>[-vt].txt` (T-AG-005),
 `baselines/premain-classes/trivial-release-<jdk>.txt` (premain class budget, ADR-0009 C-79),
 `fixtures/log-allowlist/agent-info.txt` (T-AG-060), `src/integrationTest`, `src/matrixTest`,
 `src/probeModule` (test-only agent modules), `src/trivialApp`, `src/preloadAgent`,
-`src/archTest` and `src/archFixtures` (ArchUnit).
+`src/servletFixtureJakarta` and `src/servletFixtureJavax` (the Spring-free servlet WARs of WO-12,
+below), `src/archTest` and `src/archFixtures` (ArchUnit).
 
 ## Starting an application (`launcher`, 18 §5.2, DSN-18-04)
 
@@ -97,15 +98,32 @@ try (RunningApp app =
   (`TomcatStaging`, after the smoke runner's `TomcatBase`): CATALINA_HOME is the distribution the
   sample app's build unpacked (`sample-apps/<app>/build/tomcat/<key>`, passed as
   `argos.test.tomcatHome.<app>.<key>`), CATALINA_BASE is `<workDir>/catalina-base` (configuration
-  copied, `server.xml` generated with one connector on `127.0.0.1:<port>` and the shutdown port
-  off, the WAR copied once per context, Tomcat's JULI log in `catalina-base/logs` only, not on the
-  console), started as `java ... org.apache.catalina.startup.Bootstrap start` with the `--add-opens`
-  of catalina.sh on JDK 9+. Presets, agent, `tmp/`, environment rules and output files are those of
-  jar apps. Readiness: the port and `/<context>/actuator/health` = 200 for every context. Request
-  paths carry the context (`app.get("/shop-a/api/orders/1")`). Tomcat: `tomcat(key)`, else
+  copied, `server.xml` generated with one connector on `127.0.0.1:<port>` and a shutdown port on
+  `127.0.0.1` with a random 128-bit command per run (`TomcatStaging.Shutdown`, never printed), the
+  WAR copied once per context plus the extra web applications of `webapp(context, war)`, Tomcat's
+  JULI log in `catalina-base/logs` only, not on the console), started as `java ...
+  org.apache.catalina.startup.Bootstrap start` with the `--add-opens` of catalina.sh on JDK 9+ and
+  an English locale (`-Duser.language=en -Duser.country=US`: Tomcat ships translated messages and
+  JULI translates level names, the log judgement below matches the English ones). Presets, agent,
+  `tmp/`, environment rules and output files are those of jar apps. Readiness: the port and
+  `/<context>/actuator/health` = 200 for every context of the app (Tomcat deploys every web
+  application, extra ones included, before it opens its connector). Request paths carry the
+  context (`app.get("/shop-a/api/orders/1")`). Tomcat: `tomcat(key)`, else
   `SampleApp.defaultTomcat(jdk)`: the descriptor's first Tomcat up to the app's build JDK, the
   newest above it (shop-war-jakarta: Tomcat 10.1 on 17, Tomcat 11 on 21 and 25; shop-war-javax:
   Tomcat 9). Container mode runs jar apps only.
+- Stopping a WAR run: `gracefulStop()` and `close()` first send the shutdown command, so Tomcat
+  stops its web applications (its leak detection runs and logs) and the JVM runs its shutdown hooks,
+  on Windows too; only after 60 s without exit is the process terminated. `tomcatLogLines()` reads
+  every line of `catalina-base/logs/*` (empty for jar apps); `log.TomcatLogCheck.judge(lines)` is
+  the pure judgement of WO-05 r1-new-1 (unit-tested in `TomcatLogCheckTest`): SEVERE records,
+  WARNING records that name the agent (`io.argos.agent`, `argos-agent`, `argos-<thread>`,
+  `argos.<key>`, `argos:`; not the sample apps' `io.argos.sample` or paths that contain the
+  repository name) and Tomcat's ThreadLocal leak warnings (`TomcatRedeployDriver.
+  threadLocalLeakWarnings`). `Findings.beyond(baseline)` drops the SEVERE records and leak
+  warnings that the same run without the agent logs too (timestamps and hash codes ignored), never
+  an agent warning. `WarAppAgentTest` asserts zero agent warnings and zero SEVERE records and leak
+  warnings beyond a no-agent run after a graceful stop.
 - Container mode: `container(true, cpus, memory)` runs the app in `eclipse-temurin:<jdk>-jdk`
   pinned by its multi-arch index digest (`ContainerApp.IMAGES`, JDK 8, 11, 17, 21, 25, looked up
   with `docker buildx imagetools inspect`; another JDK fails unless
@@ -149,7 +167,20 @@ try (RunningApp app =
   loader defined on the premain thread, C-79). WO-17 adds the `SELF_DIAGNOSTICS` command as a second
   source of the same snapshot.
 - Not yet: the 50 WAR redeploys of `TomcatRedeployDriver` against a real Tomcat (manager app,
-  matrix, WO-50).
+  matrix, WO-50); the staged Tomcat has no manager app.
+
+### Spring-free servlet fixture (WO-12, T-AG-020)
+
+`src/servletFixtureJakarta` (jakarta.servlet 5.0 API) and `src/servletFixtureJavax` (javax.servlet
+3.1 API), both `compileOnly` with the agent modules' catalog entries and compiled to Java 8
+bytecode, are two tiny web applications without Spring: one `EchoServlet` class under a prefix
+(`/items/*`), an exact (`/plain/exact`) and an extension (`*.do`) mapping, an async streaming
+`StreamServlet` (`/stream`: `startAsync`, three chunks flushed 150 ms apart from a container thread)
+and a `ForwardServlet` (`/forward/*` forwards to `/plain/exact`), declared in `webapp/WEB-INF/web.xml`.
+`./gradlew :agent:agent-testing:servletFixtureJakartaWar servletFixtureJavaxWar` builds
+`build/servlet-fixture/servlet-fixture-{jakarta,javax}.war`; an integration run with a WAR app gets
+their paths as `argos.test.servletFixtureWar.{jakarta,javax}`, and the WO-12 WAR runs deploy them
+as `/servlet-fixture` next to the sample app (`AppLauncher.webapp`). Test-only, never shipped.
 
 ## FakeCollector (`collector`, 18 §5.3)
 
@@ -179,7 +210,8 @@ try (FakeCollector collector = FakeCollector.builder().tls(true).heartbeatInterv
 - The 11 §16 contract (each behaviour cites its clause in the javadoc of `FakeCollector` and
   `FaultInjector`; `contract.ProtocolContractTest` replays the vectors below):
   - 11 §5 session: `AgentHello` → `ServerHello` with an instance id (from `firstInstanceId`, reused
-    for the same `(app_name, env, instance_name)` while the server runs), a new UUID `session_id`,
+    for the same `(app_name, env, instance_name)` in every session, also after `serverRestart()`,
+    11 §5 "재기동 연속성"), a new UUID `session_id`,
     `server_time_ms`, the 11 §4.2 `Limits` defaults (`ProtocolLimits.defaults()`),
     `heartbeat_interval_s` (`heartbeatIntervalS(n)`, default 30), `config(...)`, `user_id_salt`
     (`userIdSalt(...)`, over TLS only). Hello checks in the order of the 11 §5 table: 1 token, 2
@@ -201,7 +233,9 @@ try (FakeCollector collector = FakeCollector.builder().tls(true).heartbeatInterv
   - 11 §6 deduplication (`Deduplicator`): key `(instance_id, agent_epoch, kind, seq)`, the 1,000
     most recently written seqs per `(instance, epoch, kind)`; `ACK_DUPLICATE` with `last_seq`, the
     seq most recently written for the key (11 §4.3, 12 §3.2: the batch's own seq on `ACK_OK`, so a
-    retry of an older seq lowers it); an error answer writes nothing, so its retry is `ACK_OK`.
+    retry of an older seq lowers it); an error answer writes nothing, so its retry is `ACK_OK`. The
+    windows survive `serverRestart()` (12 §3.4: the server rebuilds them from the WAL), so a seq
+    written before a restart is `ACK_DUPLICATE` after it (D-13).
   - 11 §9 clock (`ClockEstimator`): every heartbeat is answered with t2/t3 and completes the round
     of its `prev_t1`/`prev_t4`: `offset = ((t2 - t1) + (t3 - t4)) / 2` (server minus agent),
     `rtt = (t4 - t1) - (t3 - t2)`, median of the last 5 accepted offsets, a round with rtt > 3 x the
@@ -215,7 +249,8 @@ try (FakeCollector collector = FakeCollector.builder().tls(true).heartbeatInterv
   `failNext(n, Status[, retryAfter])` (`argos-retry-after-ms`), `hang()` (no answer to data calls,
   hellos or heartbeats), `rejectAuth()`, `requireToken(token)`, `plaintextRejected()`
   (`PLAINTEXT_NOT_ALLOWED`, `FAILED_PRECONDITION`), `rejectHello(reason[, retryAfter])` (the 11 §5
-  status of each `RejectReason`: `TOKEN_*` `UNAUTHENTICATED`, `APP_MISMATCH` `PERMISSION_DENIED`,
+  status of each `RejectReason`: `TOKEN_*` `UNAUTHENTICATED` with 300 s as the server sends it
+  (ADR-0010 C-140; the agent waits a fixed 5 minutes anyway), `APP_MISMATCH` `PERMISSION_DENIED`,
   version and plaintext `FAILED_PRECONDITION`, `APP_NOT_REGISTERED` completes, `INSTANCE_LIMIT`
   and `RATE_LIMITED` `RESOURCE_EXHAUSTED` with 60 s), `partialDrop(n)` (`ACK_PARTIAL_DROP`),
   `walFull()` (`ACK_OK` with every item dropped and nothing written, 11 §6 "서버 드롭", DSN-11-09),
@@ -226,10 +261,12 @@ try (FakeCollector collector = FakeCollector.builder().tls(true).heartbeatInterv
   loss, `UNAVAILABLE`), `sessionClose(reason, retryAfter)` (`SessionClose`, then
   `TOKEN_REVOKED_CLOSE` `UNAUTHENTICATED`, `SERVER_SHUTDOWN` `UNAVAILABLE`, others OK; sessions
   forgotten; `TOKEN_REVOKED_CLOSE` also revokes the sessions' tokens, 12 §4.1: data calls get
-  `UNAUTHENTICATED`/`TOKEN_REVOKED`, hellos `ServerHello{TOKEN_REVOKED, retry_after_s 0}`, until
+  `UNAUTHENTICATED`/`TOKEN_REVOKED`, hellos `ServerHello{TOKEN_REVOKED, retry_after_s 300}`, until
   `clear()` or another token; `SERVER_SHUTDOWN` does not imitate the 12 §3.9 drain, so data calls
   get `SESSION_REQUIRED` where a real server answers `UNAVAILABLE`),
-  `serverRestart(newInstanceId)` (same port, sessions forgotten), `plaintextOnly()`,
+  `serverRestart()` (same port, sessions forgotten, instance ids and dedup windows kept as a real
+  restart keeps them, 11 §5, 12 §3.4), `serverRestart(newInstanceId)` (a restart that also lost
+  the instance registry: the next hellos get new ids from `newInstanceId`), `plaintextOnly()`,
   `wrongHostCertificate()` (TLS for `wrong.example`), `clear()` (also lifts revocations).
 - The collector view reads like the JSONL one (`V1Protocol`, same assertion DSL, 18 §5.5): the field
   names of the JSONL exporter, step `seq` and `parent` in its numbering (0-based, -1 for a root; the
@@ -272,13 +309,17 @@ try (FakeCollector collector = FakeCollector.builder().tls(true).heartbeatInterv
 and expected outputs: `clock` (11 §9 heartbeats with t1/prev_t1/prev_t4/t2/t3, the completed
 round, the estimate after each heartbeat), `dedup` (11 §6 steps with kind, epoch, seq and the
 expected `AckStatus`/`last_seq`, the 1,000 window and a retry after an error), `session` (11 §3/§5
-scripted steps: data before a hello, metadata and token checks, restart, hello check order,
-REPLACED) and `status_codes` (11 §5/§10: rejections, failures, quota drop, WAL full, deadline,
-throttle and session closes with their code, `retry_after_s` and trailers). `interpretations` lists
+scripted steps: data before a hello, metadata and token checks, a restart that keeps the instance
+id and its dedup window, hello check order, REPLACED) and `status_codes` (11 §5/§10: rejections,
+failures, quota drop, WAL full, deadline, throttle and session closes with their code,
+`retry_after_s` and trailers; `TOKEN_*` hellos carry 300 s, ADR-0010 C-140). `interpretations` lists
 the choices 11 leaves open or that 12 settles (window semantics, `last_seq`, rounding, which rounds
 count for the median rtt, session validity after the stream ends, REPLACED without an epoch
-exception). The unit tests `ClockEstimatorTest` and `DeduplicatorTest` check the arithmetic without
-network;
+exception, restart continuity, the `TOKEN_*` retry advice). The vectors carry the design values
+(ADR-0010 C-159 (2)), so the server's `ContractVectorsIT` asserts them as they are;
+`expected_instance_id` numbers the instances of a scenario from 1 (the FakeCollector's first id),
+and a server with its own ids checks that equal numbers are one id. The unit tests
+`ClockEstimatorTest` and `DeduplicatorTest` check the arithmetic without network;
 `contract.ProtocolContractTest` replays every section over gRPC (the clock with
 `FakeCollector.builder().clock(...)`). The server's ingest tests (WO-21, WO-22) can replay the
 `session`, `dedup` and `clock` sections (a `fault` step there names the state to set up first) and
@@ -383,7 +424,8 @@ and `ClassCircularityError` 0 (also those met by type matchers), then compares `
 missing class prints `[baseline] WARN`. Record with
 `./gradlew :agent:agent-testing:integrationTest -Pagent.baseline.record=true` (same `-Pagent.*`
 combinations) and review the diff in the PR. Recorded: `trivial-release-<jdk>` and
-`trivial-probe-<jdk>` for JDK 8, 11, 17, 21, 25, `shop-boot2-{8,11,17,21}`, `shop-boot3-{17,21,25}`.
+`trivial-probe-<jdk>` for JDK 8, 11, 17, 21, 25, `shop-boot2-{8,11,17,21}`, `shop-boot3-{17,21,25}`,
+`shop-boot4-21` (WO-12).
 
 Premain class budget (ADR-0009 C-79, N-30, `PremainBudgetAttachTest`): the release agent jar on the
 trivial app with `-Dargos.debug.transform-timing=true`; the agent writes the classes its class
@@ -440,8 +482,9 @@ re-records the budgets; review the class diff like a transform baseline.
   `assertNoFailure()` fails on FAIL; `assertAllPassed()` also fails on NOT_AVAILABLE.
   `isNotFromThread`/`noneFromThread` fail on a transaction without a thread name. `TomcatRedeployDriver` (manager text
   API, `ParallelWebappClassLoader` count, ThreadLocal leak warnings) and `NmtSummary` (`Internal +
-  Other` <= 16 MB, threads <= 6) are the WAR and native parts, unit-tested; they run with the WAR
-  matrix (WO-50).
+  Other` <= 16 MB, threads <= 6) are the WAR and native parts, unit-tested; the redeploy cycles and
+  NMT run with the WAR matrix (WO-50), while the ThreadLocal leak warnings are judged on every WAR
+  run of the launcher (`TomcatLogCheck`, `WarAppAgentTest`).
 
 ## Logs and Unsafe (18 §5.10)
 
@@ -528,9 +571,37 @@ happens once, as before.
 | `e2e.SampleAppAgentTest` | F-A01, F-A02, F-A03, F-A05, F-A07, F-A28, F-A31 | per jar combination of `-Pagent.e2e`: T-AG-010/T-AG-070/T-AG-005; first combination: T-BLD-006 baseline |
 | `e2e.FailSafeE2eTest` | F-A15 | first jar combination: T-AG-040 servlet and data-module faults, T-AG-041 jdbc transform errors, T-AG-040 helper-nocdef jdbc |
 | `e2e.LoadLeakE2eTest` | F-A15, N-02 | first jar combination: T-AG-050/T-AG-053 10,000 requests (18 §5.9) in two batches of 5,000: no transaction or step from an `argos-` thread, counters unchanged (no producer before WO-13/15/18), ThreadLocal / registry / weak map (`weakmap_size`) 0 after GC, `weakmap_entries` after GC not higher after batch 2 than after batch 1, heap <= 64 MB (C-87); every check measured (no NOT_AVAILABLE) |
-| `e2e.WarAppAgentTest` | F-A01, DSN-18-03 | per WAR combination of `-Pagent.e2e` (none by default: the class is then skipped): one request to the first context is one transaction (status 200), no agent ERROR, quiet console |
+| `e2e.WarAppAgentTest` | F-A01, DSN-18-03 | per WAR combination of `-Pagent.e2e` (none by default: the class is then skipped), default Tomcat of the JDK: one request to the first context is one transaction (status 200, `<context> GET /api/orders/{id}`), no agent ERROR, quiet console; after a graceful stop the Tomcat log has no WARNING or SEVERE line naming the agent, and no SEVERE line or ThreadLocal leak warning beyond the same run without the agent (started only when needed: shop-war-jakarta's own WebClient leaves Netty's `InternalThreadLocalMap` behind) (WO-05 r1-new-1) |
+| `servlet.RequestBoundaryTest` | F-A01, F-A02, F-A28, D-04, D-21 | WO-12, per shop jar app (`shop-boot2/3/4` of `-Pagent.e2e`): T-AG-010; T-AG-011/T-ACC-04/T-ACC-21 (exception, 404, sendError, forward, async dispatch x 100 each = exactly 100 transactions each, final status, no `/error`; `argos_agent_transactions_unanchored_total` in the self-diagnostics +100 for exception, 404 and sendError, whose ERROR dispatch runs after the transaction ended, +0 for forward and async); T-AG-011 `dispatch_count` over gRPC |
+| `servlet.IgnoreRulesTest` | F-A23, D-19 | T-AG-012/T-ACC-19: 100 noise requests (health, favicon, `.js`, OPTIONS, `kube-probe` User-Agent) = 0 transactions, exclusion counters +100 by reason in the self-diagnostics |
+| `servlet.FallbackNameTest` | F-A29 | T-AG-013: F-A29 fallback names (404, 405), no `/error`; first combination with `instrumentation.service-dictionary-max=5`: `_other_` and `service_dictionary_overflow_total` |
+| `servlet.SpringPatternTest` | F-A02 | T-AG-020 Spring part on Framework 5.3/6.2/7.0 (10 U-8): `bestMatchingPattern` names |
+| `servlet.StreamingTest` | F-A34, F-A28 | T-AG-016: SSE and WebSocket 101 with the streaming flag, DeferredResult and Callable one transaction each; over gRPC `transaction.max-duration-ms=1000` -> `timed_out`, wire `streaming` |
+| `servlet.CaptureTest` | SEC-31, SEC-32, SEC-34, SEC-37 | T-AG-014/T-AG-017 and the agent side of T-SEC-31/32/34/37: privacy defaults (JSONL); query whitelist, IP full, trusted `X-Forwarded-For`, hashed session user id, header whitelist, request id (C-124) over gRPC with a salt; query full, IP off, plain header user id; hashed without salt (C-125: no user id, `no_salt` counter, one WARN) |
+| `servlet.SeedLogTest` | SEC-26, SEC-32 | T-SEC-26b (partial T-SEC-26, request path only): the `seed.*` catalog requests and one request with seed values in every capture input (session and header user id, whitelisted header, request id, `X-Forwarded-For`, query string), in the `DEFAULTS`, `CAPTURE` (hashed user id with the salt) and `MODES` (query full, plain user id) runs; the records show the values were read, the INFO agent log has no `ARGOS_SEED`/`ARGOSSEED`, seed PII, plain or hashed user id, header or request id value, and no form of the salt (hex, Base64, Base64url, array text; SEC-32); the console has none of the agent-only values |
+| `servlet.WarContextPrefixTest`, `WarDispatchTest`, `WarServletMappingTest`, `WarStreamingTest` | F-A36; F-A28, D-04, D-21; F-A02; F-A34 | per WAR combination (shop-war-jakarta on Tomcat 10.1 with `/shop-a` and `/shop-b`, shop-war-javax on Tomcat 9) plus the Spring-free fixture: T-AG-015 context prefixes, T-AG-011 in a WAR (`ErrorPageFilter`, nothing unanchored), T-AG-020 `HttpServletMapping` names (prefix, exact, extension, forward, default servlet fallback), T-AG-016 servlet streaming and SSE. Each class ends per combination with the Tomcat log of its run after a graceful stop (`WarRuns.judgeTomcatLog`, `TomcatLogCheck`: no WARNING or SEVERE naming the agent in its line or stack, no SEVERE or ThreadLocal leak beyond the same web applications without the agent) |
+
+The `servlet` classes share their app processes (`servlet.ServletRuns`, JUnit root store, at most
+6 alive, the least recently used one stopped first; tests run profile by profile): profiles `DEFAULTS` (privacy defaults plus
+`instrumentation.ignore-user-agents=kube-probe/*`, JSONL, every shop jar app), `CAPTURE`
+(widened capture, TLS FakeCollector with a user id salt, `transaction.max-duration-ms=1000`, every
+shop jar app), `MODES` (query full, IP off, plain user id, JSONL, first shop jar app), `LIMITS`
+(`service-dictionary-max=5`, hashed user id, TLS FakeCollector without salt, first shop jar app),
+`WAR` (privacy defaults plus the servlet fixture). Each test counts only the transactions its own
+requests add, so class order does not matter. A `WAR` run serves one class and stops at its end
+(Tomcat log judgement), so each WAR class starts its own Tomcat; the no-agent run of a WAR
+combination starts at most once, only when a Tomcat log is not clean. A process started again gets
+a new directory and evidence prefix (`wo12-<app>-jdk<N>-<profile>-<n>-*`, n = 2, 3, ...; the
+no-agent run `wo12-<app>-jdk<N>-war-noagent-tomcat.log`). Every factory carries its test IDs in
+its `@DisplayName`, so a factory skipped by its assumption (no shop jar or WAR app in
+`-Pagent.e2e`) still shows its IDs as SKIPPED in `traceabilityReport`. Commands:
+
+```
+./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot3@21,shop-boot4@21 --tests '*servlet*'
+./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-war-javax@8,shop-war-jakarta@21 --tests '*War*'
+```
 | `BytecodeVerificationFlagTest` | T-AG-006: the test JVM and the preset on every attach JDK |
-| `collector.FakeCollectorTest` | DSN-18-04: recording and acks, `ServerHello` contents and instance reuse, `latency`, `failNext` (retry-after trailer), `hang`, `rejectAuth`, `requireToken` (masked tokens), session round trips (config, command, dictionary request, throttle), `closeStream`, `serverRestart` (`SESSION_REQUIRED`), `sessionClose` (per reason) and the revoked token (`TOKEN_REVOKED` on data calls and hellos, `clear()` lifts it), `plaintextRejected`, `rejectHello` and the §5 check order, `clockOffset` (T-ACC-02 collector side), `partialDrop`, `walFull`, `pauseSessionReads`, `throttle`, duplicates, concurrency high-water mark, `AgentBye` and flush, `REPLACED`, large batch, gzip, TLS modes |
+| `collector.FakeCollectorTest` | DSN-18-04: recording and acks, `ServerHello` contents and instance reuse, `latency`, `failNext` (retry-after trailer), `hang`, `rejectAuth`, `requireToken` (masked tokens), session round trips (config, command, dictionary request, throttle), `closeStream`, `serverRestart` (`SESSION_REQUIRED`; instance id and dedup window kept, or a new id with `serverRestart(id)`), `sessionClose` (per reason) and the revoked token (`TOKEN_REVOKED` on data calls and hellos, `clear()` lifts it), `plaintextRejected`, `rejectHello` and the §5 check order, `clockOffset` (T-ACC-02 collector side), `partialDrop`, `walFull`, `pauseSessionReads`, `throttle`, duplicates, concurrency high-water mark, `AgentBye` and flush, `REPLACED`, large batch, gzip, TLS modes |
 | `collector.StandaloneCollectorTest` | DSN-18-04: `fake-collector.jar` as a process (TLS, token file, report, summary); `--report-every 0` sleeps, wildcard `--bind` |
 | `collector.CollectorWiringTest` | DSN-18-04, SEC-06: `collector(c)` settings, token file and CA copy, no token on the command line or in the agent's output; end to end over gRPC, with the JSONL view of the same request as the reference (process; container with `-Pagent.container=true`) when the release jar has the gRPC exporter, else skipped |
 | `contract.ProtocolContractTest` | DSN-11-01, DSN-11-02: the contract vectors over gRPC (11 §3/§5 session order, §6 dedup and acks, §9 clock, §5/§10 codes and trailers) |

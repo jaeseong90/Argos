@@ -173,8 +173,21 @@ public final class JsonlFileExporter implements Exporter {
     if (ctx.streaming) {
       json.value("streaming");
     }
+    if (ctx.timedOut) {
+      json.value("timed_out");
+    }
     json.endArray();
     json.field("xlog_flags", flags);
+    // WO-12: dispatch count (F-A28), request id header (C-124), whitelisted headers ("name:
+    // value").
+    json.field("dispatch_count", ctx.dispatchCount);
+    json.field("request_id", tx.requestId());
+    String[] headers = tx.headers();
+    json.beginArray("headers");
+    for (int i = 0; i + 1 < headers.length; i += 2) {
+      json.value(headers[i] + ": " + headers[i + 1]);
+    }
+    json.endArray();
     if (tx.cpuNanos() >= 0) {
       json.millis("cpu_time_ms", tx.cpuNanos());
     }

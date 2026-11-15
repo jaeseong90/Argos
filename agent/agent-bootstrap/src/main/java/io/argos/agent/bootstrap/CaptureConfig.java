@@ -17,13 +17,17 @@ package io.argos.agent.bootstrap;
  * ({@code capture.sql-parameters}, masked), {@link #sqlParamWhitelistColumns()} ({@code
  * capture.sql-parameters.whitelist-columns}, empty), {@link #errorMessageMax()} ({@code
  * capture.error-message-max-length}, 1024), {@link #stackDepth()} ({@code capture.stack-depth}, 30)
- * and {@link #asyncStep()} ({@code async.step}, false). {@code capture.mask-patterns} stays in the
- * core ({@code Masker}): helpers never mask, the core does (16 §6.6).
+ * {@link #asyncStep()} ({@code async.step}, false) and {@link #requestIdHeader()} ({@code
+ * capture.request-id-header}, empty: not collected, ADR-0010 C-124). {@code capture.mask-patterns}
+ * stays in the core ({@code Masker}): helpers never mask, the core does (16 §6.6).
  *
  * <p>Additions to the field list of 10 §3 (WO-02 report item D-2, ADR-0010 C-93): {@link
  * #asyncStep()} (the executor advice runs inside JDK classes and can read bootstrap state only),
  * {@link #queryStringWhitelist()} and {@link #userIdMaxLength()} (16 §6.1 lists both next to their
- * modes); the user id length is the fixed 128 of SEC-32 because 10 §15 has no key for it.
+ * modes); the user id length is the fixed 128 of SEC-32 because 10 §15 has no key for it. WO-12
+ * adds {@link #requestIdHeader()} (ADR-0010 C-124) and the parsed form of {@code
+ * capture.user-id.source} ({@link #userIdSourceType()}, {@link #userIdSourceKey()}), so that a
+ * servlet helper reads the one header or session attribute without parsing the setting per request.
  */
 public final class CaptureConfig {
   /** {@code capture.query-string}: off (default), whitelist, full. */
@@ -59,6 +63,17 @@ public final class CaptureConfig {
   /** Default of {@code capture.stack-depth} (10 §15). */
   public static final int DEFAULT_STACK_DEPTH = 30;
 
+  /** {@link #userIdSourceType()} of {@code header:<name>}: a request header. */
+  public static final String USER_ID_SOURCE_HEADER = "header";
+
+  /**
+   * {@link #userIdSourceType()} of {@code session:<attribute>}: an existing session's attribute.
+   */
+  public static final String USER_ID_SOURCE_SESSION = "session";
+
+  /** {@link #userIdSourceType()} of {@code mdc:<key>}: not supported until WO-18 (C-125). */
+  public static final String USER_ID_SOURCE_MDC = "mdc";
+
   private static final String[] NONE = new String[0];
 
   /** The documented defaults (10 §15). */
@@ -74,12 +89,15 @@ public final class CaptureConfig {
   private final String[] trustedProxies;
   private final int userIdMode;
   private final String userIdSource;
+  private final String userIdSourceType;
+  private final String userIdSourceKey;
   private final int userIdMaxLength;
   private final int sqlParamMode;
   private final String[] sqlParamWhitelistColumns;
   private final int errorMessageMax;
   private final int stackDepth;
   private final boolean asyncStep;
+  private final String requestIdHeader;
 
   /**
    * The WO-02 constructor (no query-string whitelist, user id length 128, {@code async.step} off);
@@ -104,12 +122,15 @@ public final class CaptureConfig {
     this.trustedProxies = copy(trustedProxies);
     this.userIdMode = userIdMode;
     this.userIdSource = userIdSource;
+    this.userIdSourceType = sourceType(userIdSource);
+    this.userIdSourceKey = sourceKey(userIdSource);
     this.userIdMaxLength = USER_ID_MAX_LENGTH;
     this.sqlParamMode = sqlParamMode;
     this.sqlParamWhitelistColumns = copy(sqlParamWhitelistColumns);
     this.errorMessageMax = errorMessageMax;
     this.stackDepth = stackDepth;
     this.asyncStep = false;
+    this.requestIdHeader = null;
   }
 
   private CaptureConfig(Builder b) {
@@ -120,12 +141,15 @@ public final class CaptureConfig {
     this.trustedProxies = copy(b.trustedProxies);
     this.userIdMode = b.userIdMode;
     this.userIdSource = b.userIdSource;
+    this.userIdSourceType = sourceType(b.userIdSource);
+    this.userIdSourceKey = sourceKey(b.userIdSource);
     this.userIdMaxLength = b.userIdMaxLength;
     this.sqlParamMode = b.sqlParamMode;
     this.sqlParamWhitelistColumns = copy(b.sqlParamWhitelistColumns);
     this.errorMessageMax = b.errorMessageMax;
     this.stackDepth = b.stackDepth;
     this.asyncStep = b.asyncStep;
+    this.requestIdHeader = blankToNull(b.requestIdHeader);
   }
 
   /** A builder with the documented defaults. */
@@ -149,6 +173,7 @@ public final class CaptureConfig {
     b.errorMessageMax = errorMessageMax;
     b.stackDepth = stackDepth;
     b.asyncStep = asyncStep;
+    b.requestIdHeader = requestIdHeader;
     return b;
   }
 
@@ -175,6 +200,41 @@ public final class CaptureConfig {
 
   private static String[] copy(String[] values) {
     return values == null || values.length == 0 ? NONE : values.clone();
+  }
+
+  private static String blankToNull(String value) {
+    if (value == null) {
+      return null;
+    }
+    String trimmed = value.trim();
+    return trimmed.isEmpty() ? null : trimmed;
+  }
+
+  /** {@code header}, {@code session} or {@code mdc} of {@code <type>:<key>}; null otherwise. */
+  private static String sourceType(String source) {
+    if (sourceKey(source) == null) {
+      return null;
+    }
+    String type = source.substring(0, source.indexOf(':')).trim();
+    if (USER_ID_SOURCE_HEADER.equals(type)) {
+      return USER_ID_SOURCE_HEADER;
+    }
+    if (USER_ID_SOURCE_SESSION.equals(type)) {
+      return USER_ID_SOURCE_SESSION;
+    }
+    return USER_ID_SOURCE_MDC.equals(type) ? USER_ID_SOURCE_MDC : null;
+  }
+
+  /** The non-blank key after the first {@code :}; null when there is none. */
+  private static String sourceKey(String source) {
+    if (source == null) {
+      return null;
+    }
+    int colon = source.indexOf(':');
+    if (colon <= 0) {
+      return null;
+    }
+    return blankToNull(source.substring(colon + 1));
   }
 
   public int queryStringMode() {
@@ -211,6 +271,20 @@ public final class CaptureConfig {
     return userIdSource;
   }
 
+  /**
+   * The type of {@link #userIdSource()}: {@link #USER_ID_SOURCE_HEADER}, {@link
+   * #USER_ID_SOURCE_SESSION} or {@link #USER_ID_SOURCE_MDC} (compare with {@code equals}); null
+   * when the source is unset or not of the form {@code <type>:<key>}.
+   */
+  public String userIdSourceType() {
+    return userIdSourceType;
+  }
+
+  /** The header name, session attribute or MDC key of {@link #userIdSource()}, or null. */
+  public String userIdSourceKey() {
+    return userIdSourceKey;
+  }
+
   /** Characters of a user id kept before hashing or sending (SEC-32: 128). */
   public int userIdMaxLength() {
     return userIdMaxLength;
@@ -239,6 +313,14 @@ public final class CaptureConfig {
     return asyncStep;
   }
 
+  /**
+   * {@code capture.request-id-header} (ADR-0010 C-124): the one request header whose value becomes
+   * {@code TransactionRecord.request_id} (cut at 128 bytes); null when not collected (the default).
+   */
+  public String requestIdHeader() {
+    return requestIdHeader;
+  }
+
   /** Builder of a {@link CaptureConfig}; starts from the documented defaults. Not thread-safe. */
   public static final class Builder {
     private int queryStringMode = QUERY_STRING_OFF;
@@ -254,6 +336,7 @@ public final class CaptureConfig {
     private int errorMessageMax = DEFAULT_ERROR_MESSAGE_MAX;
     private int stackDepth = DEFAULT_STACK_DEPTH;
     private boolean asyncStep;
+    private String requestIdHeader;
 
     Builder() {}
 
@@ -319,6 +402,12 @@ public final class CaptureConfig {
 
     public Builder asyncStep(boolean on) {
       this.asyncStep = on;
+      return this;
+    }
+
+    /** {@code capture.request-id-header}; null or blank: not collected. */
+    public Builder requestIdHeader(String header) {
+      this.requestIdHeader = header;
       return this;
     }
 

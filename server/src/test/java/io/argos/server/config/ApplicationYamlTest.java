@@ -126,7 +126,7 @@ class ApplicationYamlTest {
     assertThat(e.getProperty("management.endpoint.health.show-details")).isEqualTo("never");
     assertThat(e.getProperty("management.endpoint.health.show-components")).isEqualTo("never");
     assertThat(e.getProperty("management.endpoint.health.group.readiness.include"))
-        .isEqualTo("readinessState,migrations,db,clickhouse");
+        .isEqualTo("readinessState,migrations,db,clickhouse,ingest");
     assertThat(e.getProperty("management.endpoint.health.group.liveness.include"))
         .isEqualTo("livenessState");
     assertThat(e.getProperty("management.metrics.tags.application")).isEqualTo("argos-server");

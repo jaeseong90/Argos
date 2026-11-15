@@ -643,7 +643,11 @@ class TracerImplTest {
       path.append('p');
       user.append('u');
     }
+    // setHttp applies capture.user-id like setUserId (SEC-32): plain keeps the cut value.
+    tracer.setCapture(
+        CaptureConfig.DEFAULT.toBuilder().userIdMode(CaptureConfig.USER_ID_PLAIN).build());
     tracer.setHttp(ctx, "GET", path.toString(), "10.0.0.1", user.toString());
+    tracer.setCapture(null);
     tracer.end(ctx, 200, null, null, null, 1);
     assertThat(ctx.serviceName).isEqualTo("GET /orders/{id}");
     assertThat(ctx.serviceFixed).isTrue();

@@ -37,6 +37,9 @@ testcontainers = "2.0.5"
 # The lowest supported API version of each target, so that a module cannot call a newer method by
 # accident; at run time the application's own classes are used (docs/licenses/dev-only.md).
 agent-servlet-javax-api = "3.1.0"
+# javax.servlet 4.0 for the one Servlet 4 helper (HttpServletMapping) of the servlet module only,
+# compiled in its own source set; every other javax helper stays on 3.1 (WO-12).
+agent-servlet-javax-api4 = "4.0.1"
 agent-servlet-jakarta-api = "5.0.0"
 # --- build tools ---
 errorprone = "2.51.0"
@@ -154,6 +157,7 @@ testcontainers-clickhouse = { module = "org.testcontainers:testcontainers-clickh
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
 # agent instrumentation compile-time APIs (compileOnly and module tests only, never shipped)
 agent-servlet-javax-api = { module = "javax.servlet:javax.servlet-api", version.ref = "agent-servlet-javax-api" }
+agent-servlet-javax-api4 = { module = "javax.servlet:javax.servlet-api", version.ref = "agent-servlet-javax-api4" }
 agent-servlet-jakarta-api = { module = "jakarta.servlet:jakarta.servlet-api", version.ref = "agent-servlet-jakarta-api" }
 # build tools (resolved by convention plugins, never shipped)
 errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }

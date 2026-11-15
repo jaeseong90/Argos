@@ -143,6 +143,9 @@ public final class Transaction implements Row {
   public boolean late;
   public boolean clamped;
 
+  /** ADR-0010 C-129 correction subtracted from {@link #tsAgentMs} (0: not a corrected instance). */
+  public long correctionMs;
+
   Transaction(Instance instance, Service service, int kind, long startTrueMs) {
     this.instance = instance;
     this.service = service;

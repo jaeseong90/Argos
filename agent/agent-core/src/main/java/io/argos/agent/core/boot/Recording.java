@@ -13,6 +13,7 @@ import io.argos.agent.core.guard.SelfDiagnosticsCollector;
 import io.argos.agent.core.guard.SelfProtection;
 import io.argos.agent.core.trace.TraceRuntime;
 import io.argos.agent.core.trace.TracerImpl;
+import io.argos.agent.core.watch.MaxDurationEnforcer;
 import java.io.File;
 import java.util.List;
 import java.util.Map;
@@ -63,6 +64,15 @@ final class Recording {
 
   Tracer tracer() {
     return runtime.tracer();
+  }
+
+  /**
+   * The {@code transaction.max-duration-ms} task of {@code argos-watch} over this runtime's active
+   * registry (WO-12, 10 §6.7, §13.1).
+   */
+  MaxDurationEnforcer maxDurationEnforcer() {
+    return new MaxDurationEnforcer(
+        runtime.activeRegistry(), runtime.tracerImpl(), null, config.transactionMaxDurationMs());
   }
 
   /** The 18 §19 gauges of the runtime ({@code TraceRuntime.selfValues()}). */

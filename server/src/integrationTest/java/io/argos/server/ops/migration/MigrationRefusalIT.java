@@ -39,7 +39,8 @@ class MigrationRefusalIT {
   static void start() throws Exception {
     env = ServerTestEnvironment.start();
     try (ConfigurableApplicationContext ctx = MigrationApps.start(env)) {
-      assertThat(ctx.getBean(ClickHouseMigrationPhase.class).lastResult().applied()).hasSize(1);
+      // The bundled scripts: V001 and V002 (ADR-0010 C-144).
+      assertThat(ctx.getBean(ClickHouseMigrationPhase.class).lastResult().applied()).hasSize(2);
     }
     chHistory = history();
   }
@@ -157,13 +158,13 @@ class MigrationRefusalIT {
           + " runs")
   void nonIdempotent() throws Exception {
     StartupAbortedException e =
-        MigrationApps.refused(env, MigrationApps.withFixture("bad-idempotency"), Map.of());
+        MigrationApps.refused(env, MigrationApps.withFixture("bad-idempotency-v003"), Map.of());
 
     assertRefused(
         e,
         PhaseOrder.CLICKHOUSE_MIGRATION,
         "nothing was applied",
-        "schema/V002__fixture_not_idempotent.sql statement 2: CREATE without IF NOT EXISTS");
+        "schema/V003__fixture_not_idempotent.sql statement 2: CREATE without IF NOT EXISTS");
     assertThat(
             MigrationApps.chCount(
                 env,
@@ -176,16 +177,16 @@ class MigrationRefusalIT {
   @DisplayName("T-ST-052 a placeholder outside C-56 refuses the start, naming the file")
   void unknownPlaceholder() {
     assertRefused(
-        MigrationApps.refused(env, MigrationApps.withFixture("bad-placeholder"), Map.of()),
+        MigrationApps.refused(env, MigrationApps.withFixture("bad-placeholder-v003"), Map.of()),
         PhaseOrder.CLICKHOUSE_MIGRATION,
-        "schema/V002__fixture_unknown_placeholder.sql: unknown placeholders [codec.default]");
+        "schema/V003__fixture_unknown_placeholder.sql: unknown placeholders [codec.default]");
   }
 
   @Test
   @DisplayName("T-ST-052 a MODIFY COLUMN type change refuses the start")
   void typeChange() {
     assertRefused(
-        MigrationApps.refused(env, MigrationApps.withFixture("bad-type-change"), Map.of()),
+        MigrationApps.refused(env, MigrationApps.withFixture("bad-type-change-v003"), Map.of()),
         PhaseOrder.CLICKHOUSE_MIGRATION,
         "MODIFY COLUMN with a type change is forbidden");
     assertThat(

@@ -4,6 +4,7 @@ package io.argos.agent.testing.transport;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.argos.agent.testing.collector.BatchKind;
+import io.argos.agent.testing.collector.Collected;
 import io.argos.agent.testing.collector.CommandOutcome;
 import io.argos.agent.testing.collector.ConfigApplyOutcome;
 import io.argos.agent.testing.collector.FakeCollector;
@@ -139,14 +140,27 @@ class SessionTransportTest {
               .findFirst()
               .orElseThrow()
               .getKey();
+      // Entries of other kinds keep arriving after this point: the profile batches of the two
+      // requests pre-send their METHOD_NAME, SQL_TEXT, THREAD, ... entries (11 §7) whenever they
+      // are sent. The SERVICE kind is the one this test controls: its only service was pre-sent
+      // above and the agent never sends a sent id again on its own, so every SERVICE entry from
+      // here on is the answer to the request.
       int entries = collector.dictionaryEntries().size();
       collector.requestDictionary("SERVICE", service, 123_456_789L);
+      Collected.DictionaryItem answer =
+          new Collected.DictionaryItem("SERVICE", service, "GET /api/orders/{id}");
       assertThat(
               TransportRuns.await(
-                  () -> collector.dictionaryEntries().size() == entries + 1,
+                  () -> serviceEntriesAfter(collector, entries).contains(answer),
                   Duration.ofSeconds(10)))
-          .as("the known id is answered, the unknown one skipped silently (11 §7)")
+          .as("the known id is answered (11 §7); %s", collector.dictionaryEntries())
           .isTrue();
+      assertThat(serviceEntriesAfter(collector, entries))
+          .as("exactly the answer: the known id once, no other SERVICE entry")
+          .containsExactly(answer);
+      assertThat(collector.dictionaryEntries())
+          .as("the unknown id is skipped silently (11 §7)")
+          .noneMatch(item -> item.hash() == 123_456_789L);
       AgentLogAssert.assertThatAgentLog(app.agentLog()).hasNoErrors().hasNoWarnings();
     }
   }
@@ -225,6 +239,15 @@ class SessionTransportTest {
     }
   }
 
+  /** The {@code SERVICE} dictionary entries the collector received after its first {@code from}. */
+  private static List<Collected.DictionaryItem> serviceEntriesAfter(
+      FakeCollector collector, int from) {
+    List<Collected.DictionaryItem> all = collector.dictionaryEntries();
+    return all.subList(Math.min(from, all.size()), all.size()).stream()
+        .filter(item -> item.kind().equals("SERVICE"))
+        .toList();
+  }
+
   /** True when a batch refused with the injected status was later acknowledged under its key. */
   private static boolean refusedAndResent(FakeCollector collector) {
     List<ReceivedBatch> batches = collector.batches();
@@ -246,23 +269,55 @@ class SessionTransportTest {
 
   @Test
   @DisplayName(
-      "11 §3, §6 a server restart is a reconnect, seq goes on with the same epoch; 11 §5, §10"
-          + " SessionClose SERVER_SHUTDOWN waits its retry_after_s (REPLACED is never retried: see"
-          + " ConnectionTransportTest)")
+      "11 §3, §5, §6 a server restart is a reconnect: the instance id survives it and seq goes on"
+          + " with the same epoch; after a restart that lost the instance registry the agent takes"
+          + " the new id; 11 §5, §10 SessionClose SERVER_SHUTDOWN waits its retry_after_s"
+          + " (REPLACED is never retried: see ConnectionTransportTest)")
   void serverRestartKeepsSeqGoing() throws Exception {
     try (FakeCollector collector =
             FakeCollector.builder().tls(true).tlsDirectory(work).firstInstanceId(11).start();
         RunningApp app = app(collector, "restart").start(Duration.ofMinutes(4))) {
       assertThat(collector.awaitSessions(1, Duration.ofSeconds(30))).isNotEmpty();
       assertThat(app.get(PATH).status()).isEqualTo(200);
-      List<ReceivedBatch> before =
+      List<ReceivedBatch> first =
           collector.awaitBatches(BatchKind.TRANSACTIONS, 1, Duration.ofSeconds(20));
-      long lastSeq = before.get(before.size() - 1).seq();
+      long firstSeq = first.get(first.size() - 1).seq();
 
+      // 11 §5 "재기동 연속성", 12 §3.4: a server restart keeps the instance (and its dedup window).
+      int hellos = collector.sessions().size();
+      collector.faults().serverRestart();
+      assertThat(collector.awaitSessions(hellos + 1, Duration.ofSeconds(20)))
+          .as("a new session after the restart; log:\n%s", app.agentLog())
+          .hasSizeGreaterThan(hellos);
+      SessionInfo again = collector.sessions().get(hellos);
+      assertThat(again.accepted()).as("hello after the restart: %s", again).isTrue();
+      assertThat(again.instanceId()).as("the instance id survives the restart").isEqualTo(11);
+      assertThat(app.get(PATH).status()).isEqualTo(200);
+      assertThat(
+              TransportRuns.await(
+                  () ->
+                      collector.batches(BatchKind.TRANSACTIONS).stream()
+                          .anyMatch(
+                              batch ->
+                                  batch.acked()
+                                      && batch.instanceId() == 11
+                                      && batch.seq() > firstSeq),
+                  Duration.ofSeconds(20)))
+          .as("a batch of the same instance after the restart; %s", collector.counts())
+          .isTrue();
+      long lastSeq =
+          collector.batches(BatchKind.TRANSACTIONS).stream()
+              .filter(ReceivedBatch::acked)
+              .mapToLong(ReceivedBatch::seq)
+              .max()
+              .orElseThrow();
+
+      // A restart that also lost the instance registry (FaultInjector.serverRestart(long)).
+      int beforeNewId = collector.sessions().size();
       collector.faults().serverRestart(21);
-      assertThat(collector.awaitSessions(2, Duration.ofSeconds(20)))
+      assertThat(collector.awaitSessions(beforeNewId + 1, Duration.ofSeconds(20)))
           .as("a new session; log:\n%s", app.agentLog())
-          .hasSizeGreaterThanOrEqualTo(2);
+          .hasSizeGreaterThan(beforeNewId);
       assertThat(app.get(PATH).status()).isEqualTo(200);
       assertThat(
               TransportRuns.await(

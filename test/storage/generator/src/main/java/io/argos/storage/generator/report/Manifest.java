@@ -40,6 +40,7 @@ public final class Manifest {
 
   private final long[] rows = new long[Table.ALL.size()];
   private final long[] clamped = new long[Table.ALL.size()];
+  private long correctedTransactions;
   private final long[] lateRows = new long[Table.ALL.size()];
   private final long[] minTs = new long[Table.ALL.size()];
   private final long[] maxTs = new long[Table.ALL.size()];
@@ -95,6 +96,9 @@ public final class Manifest {
       d[XLOG_SQL_MS] += tx.sqlTimeMs;
       if (tx.clamped) {
         clamped[t]++;
+      }
+      if (tx.correctionMs > 0) {
+        correctedTransactions++;
       }
       if (tx.callerAppId != 0) {
         childTransactions++;
@@ -185,6 +189,11 @@ public final class Manifest {
   /** Rows whose ts was clamped by the timestamp guard. */
   public long clampedRows(Table table) {
     return clamped[table.index()];
+  }
+
+  /** Transactions of corrected instances (ADR-0010 C-129: clock more than 5 s ahead). */
+  public long correctedTransactions() {
+    return correctedTransactions;
   }
 
   /** Rows that arrived more than 60 s after their ts. */
@@ -343,6 +352,7 @@ public final class Manifest {
     tx.put("batch", batchTransactions);
     tx.put("profileCaptured", capturedTransactions);
     tx.put("summarized", summarizedTransactions);
+    tx.put("correctedC129", correctedTransactions);
     tx.put("timedOut", timedOutCount);
     tx.put("lateFlag", xlogLateRows());
     tx.put("lateAgentBatches", lateBatches);

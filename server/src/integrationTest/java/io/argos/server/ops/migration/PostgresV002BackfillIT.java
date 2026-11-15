@@ -128,10 +128,11 @@ class PostgresV002BackfillIT {
 
     try (ConfigurableApplicationContext ctx = MigrationApps.start(env)) {
       PostgresMigrationPhase.Result v002 = ctx.getBean(PostgresMigrationPhase.class).lastResult();
+      // V002 (WO-24) and the later V003 (dict_kind 'pool', ADR-0010 C-101, WO-21).
       assertThat(v002.applied())
           .extracting(PostgresMigrationPhase.Applied::version)
-          .containsExactly("002");
-      assertThat(v002.schemaVersion()).isEqualTo("002");
+          .containsExactly("002", "003");
+      assertThat(v002.schemaVersion()).isEqualTo("003");
       TIMINGS.flyway("V001 + 2 users, 3 sessions -> start", v002);
     }
 

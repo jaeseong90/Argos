@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Spring-free servlet fixture of agent-testing (jakarta.servlet 5.0, Tomcat 10.1 and 11): one
+  servlet class under the three Servlet mapping kinds that name a transaction through
+  HttpServletMapping (T-AG-020): prefix /items/*, exact /plain/exact, extension *.do; an async
+  streaming servlet (/stream), one that opens its stream before startAsync (/stream-early, the
+  order of Spring's StreamingResponseBody), an async request that times out (/async-timeout), a
+  forwarding one (/forward/*, /forward-page) and one that runs a page servlet of its own, like
+  Jasper's JspServlet (/page/*, T-AG-011). Everything else goes to Tomcat's default servlet
+  (mapping "/", a 404 here). No error page. Test-only, never shipped.
+-->
+<web-app xmlns="https://jakarta.ee/xml/ns/jakartaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee https://jakarta.ee/xml/ns/jakartaee/web-app_5_0.xsd"
+         version="5.0" metadata-complete="true">
+  <display-name>servlet fixture of the agent test harness</display-name>
+
+  <servlet>
+    <servlet-name>items</servlet-name>
+    <servlet-class>example.servlet.jakarta.EchoServlet</servlet-class>
+  </servlet>
+  <servlet>
+    <servlet-name>exact</servlet-name>
+    <servlet-class>example.servlet.jakarta.EchoServlet</servlet-class>
+  </servlet>
+  <servlet>
+    <servlet-name>extension</servlet-name>
+    <servlet-class>example.servlet.jakarta.EchoServlet</servlet-class>
+  </servlet>
+  <servlet>
+    <servlet-name>stream</servlet-name>
+    <servlet-class>example.servlet.jakarta.StreamServlet</servlet-class>
+    <async-supported>true</async-supported>
+  </servlet>
+  <servlet>
+    <servlet-name>forward</servlet-name>
+    <servlet-class>example.servlet.jakarta.ForwardServlet</servlet-class>
+  </servlet>
+  <servlet>
+    <servlet-name>stream-early</servlet-name>
+    <servlet-class>example.servlet.jakarta.StreamEarlyServlet</servlet-class>
+    <async-supported>true</async-supported>
+  </servlet>
+  <servlet>
+    <servlet-name>async-timeout</servlet-name>
+    <servlet-class>example.servlet.jakarta.AsyncTimeoutServlet</servlet-class>
+    <async-supported>true</async-supported>
+  </servlet>
+  <servlet>
+    <servlet-name>forward-page</servlet-name>
+    <servlet-class>example.servlet.jakarta.ForwardServlet</servlet-class>
+    <init-param>
+      <param-name>target</param-name>
+      <param-value>/page/forwarded</param-value>
+    </init-param>
+  </servlet>
+  <servlet>
+    <servlet-name>page</servlet-name>
+    <servlet-class>example.servlet.jakarta.HandOffServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>items</servlet-name>
+    <url-pattern>/items/*</url-pattern>
+  </servlet-mapping>
+  <servlet-mapping>
+    <servlet-name>exact</servlet-name>
+    <url-pattern>/plain/exact</url-pattern>
+  </servlet-mapping>
+  <servlet-mapping>
+    <servlet-name>extension</servlet-name>
+    <url-pattern>*.do</url-pattern>
+  </servlet-mapping>
+  <servlet-mapping>
+    <servlet-name>stream</servlet-name>
+    <url-pattern>/stream</url-pattern>
+  </servlet-mapping>
+  <servlet-mapping>
+    <servlet-name>forward</servlet-name>
+    <url-pattern>/forward/*</url-pattern>
+  </servlet-mapping>
+  <servlet-mapping>
+    <servlet-name>stream-early</servlet-name>
+    <url-pattern>/stream-early</url-pattern>
+  </servlet-mapping>
+  <servlet-mapping>
+    <servlet-name>async-timeout</servlet-name>
+    <url-pattern>/async-timeout</url-pattern>
+  </servlet-mapping>
+  <servlet-mapping>
+    <servlet-name>forward-page</servlet-name>
+    <url-pattern>/forward-page</url-pattern>
+  </servlet-mapping>
+  <servlet-mapping>
+    <servlet-name>page</servlet-name>
+    <url-pattern>/page/*</url-pattern>
+  </servlet-mapping>
+</web-app>

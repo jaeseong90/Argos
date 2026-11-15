@@ -102,7 +102,8 @@ message TransactionRecord {
   uint64 error_top_frame_id = 17;
   // 4 or 16 bytes. Empty when IP_OFF; masked by the agent when IP_MASKED.
   bytes remote_ip = 18;
-  // <= 128 B. Empty when OFF; 16 hex characters when HASHED.
+  // <= 128 B. Empty when OFF. When HASHED: the first 16 characters of
+  // base64url(HMAC-SHA256(app salt, normalized id)) (16 §6.3, SEC-32).
   string user_id = 19;
   uint32 sql_count = 20;
   uint32 sql_time_ms = 21;

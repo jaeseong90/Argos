@@ -11,8 +11,9 @@ import java.util.concurrent.locks.LockSupport;
 /**
  * The {@code argos-watch} thread (10 §14 thread budget): runs a fixed set of periodic house-keeping
  * tasks on a one-second tick. WO-02 tasks: writing the transformed-class list, expunging collected
- * keys of the fallback context stores. Slow stacks, max-duration and the overhead monitor (10
- * §13.1) join this thread later.
+ * keys of the fallback context stores. WO-12 adds {@code transaction.max-duration-ms} ({@code
+ * core.watch.MaxDurationEnforcer}, registered by {@code AgentStarter}); slow stacks and the
+ * overhead monitor (10 §13.1) join this thread with WO-19.
  */
 final class WatchThread {
   private static final long TICK_NANOS = TimeUnit.SECONDS.toNanos(1);

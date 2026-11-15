@@ -11,6 +11,7 @@ import io.argos.agent.core.trace.ProfileSteps;
 import io.argos.agent.core.trace.RemoteIps;
 import io.argos.agent.core.trace.Transaction;
 import io.argos.proto.ProtocolLimits;
+import io.argos.proto.v1.KeyValue;
 import io.argos.proto.v1.Limits;
 import io.argos.proto.v1.ProfileStep;
 import io.argos.proto.v1.TransactionProfile;
@@ -138,6 +139,8 @@ final class BatchAssembler {
             .setVirtualThread(ctx.virtualThread)
             .setProfileCaptured(tx.profileCaptured())
             .setStreaming(ctx.streaming)
+            .setTimedOut(ctx.timedOut)
+            .setDispatchCount(Math.max(0, ctx.dispatchCount))
             .setFlags(tx.flags() & TraceContext.FLAG_MASK);
     long serviceId = dictionary.id(DictKind.SERVICE, ctx.serviceName);
     record.setServiceId(serviceId);
@@ -171,6 +174,20 @@ final class BatchAssembler {
     String user = tx.userId();
     if (user != null) {
       record.setUserId(Utf8.cut(user, ProtocolLimits.MAX_USER_ID_BYTES));
+    }
+    // WO-12: whitelisted headers (<= 10 pairs) and the request id header value (C-124).
+    String[] headers = tx.headers();
+    for (int i = 0;
+        i + 1 < headers.length && record.getHeadersCount() < ProtocolLimits.MAX_HEADERS;
+        i += 2) {
+      record.addHeaders(
+          KeyValue.newBuilder()
+              .setKey(Utf8.cut(headers[i], ProtocolLimits.MAX_KEY_BYTES))
+              .setValue(Utf8.cut(headers[i + 1], ProtocolLimits.MAX_VALUE_BYTES)));
+    }
+    String requestId = tx.requestId();
+    if (requestId != null) {
+      record.setRequestId(Utf8.cut(requestId, ProtocolLimits.MAX_REQUEST_ID_BYTES));
     }
     if (tx.cpuNanos() >= 0) {
       record.setCpuTimeUs(tx.cpuNanos() / 1000L);

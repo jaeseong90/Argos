@@ -84,6 +84,7 @@ io.argos.agent.core.sql.SqlNormalizer
 io.argos.agent.core.trace.ActiveRegistry
 io.argos.agent.core.trace.Dictionary
 io.argos.agent.core.trace.IgnoreRules
+io.argos.agent.core.trace.RemoteIps$Trusted
 io.argos.agent.core.trace.Sampler
 io.argos.agent.core.trace.Sampler$RandomSource
 io.argos.agent.core.trace.Sampler$ThreadLocalSource
@@ -103,6 +104,9 @@ io.argos.agent.core.trace.TxIdGenerator$MillisClock
 io.argos.agent.core.trace.TxIdGenerator$Park
 io.argos.agent.core.trace.TxIdGenerator$SystemMillis
 io.argos.agent.core.trace.TxIdGenerator$Waiter
+io.argos.agent.core.trace.UserIds
+io.argos.agent.core.trace.UserIds$1
+io.argos.agent.core.trace.UserIds$SaltSource
 io.argos.agent.core.transport.AgentQueue
 io.argos.agent.core.transport.BoundedQueue
 io.argos.agent.core.transport.BoundedQueue$NanoClock
@@ -111,6 +115,7 @@ io.argos.agent.core.transport.ByteBudget
 io.argos.agent.core.transport.LatestSlot
 io.argos.agent.core.transport.QueueItem
 io.argos.agent.core.transport.Queues
+io.argos.agent.core.watch.MaxDurationEnforcer
 io.argos.agent.instrumentation.api.InstrumentationModule
 io.argos.agent.instrumentation.api.SafeMatchers
 io.argos.agent.instrumentation.api.SafeMatchers$ErrorSink
@@ -125,10 +130,18 @@ io.argos.agent.instrumentation.httpclient.jdk.HttpClientJdkModule
 io.argos.agent.instrumentation.httpclient.jdk.HttpClientJdkModule$1
 io.argos.agent.instrumentation.jdbc.JdbcInstrumentation
 io.argos.agent.instrumentation.jdbc.JdbcModule
+io.argos.agent.instrumentation.servlet.ContainerResponseInstrumentation
+io.argos.agent.instrumentation.servlet.JakartaFilterAdvice
 io.argos.agent.instrumentation.servlet.JakartaServletAdvice
+io.argos.agent.instrumentation.servlet.JavaxFilterAdvice
 io.argos.agent.instrumentation.servlet.JavaxServletAdvice
 io.argos.agent.instrumentation.servlet.ServletInstrumentation
 io.argos.agent.instrumentation.servlet.ServletModule
+io.argos.agent.instrumentation.servletasync.AsyncInstrumentation
+io.argos.agent.instrumentation.servletasync.AsyncStartAdvice
+io.argos.agent.instrumentation.servletasync.JakartaStartAsyncAdvice
+io.argos.agent.instrumentation.servletasync.JavaxStartAsyncAdvice
+io.argos.agent.instrumentation.servletasync.ServletAsyncModule
 io.argos.agent.instrumentation.springwebmvc.SpringWebMvcModule
 io.argos.agent.instrumentation.springwebmvc.SpringWebMvcModule$HandlerAdapterInstrumentation
 io.argos.agent.shaded.net.bytebuddy.ByteBuddy
