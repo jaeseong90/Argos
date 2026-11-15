@@ -66,6 +66,11 @@ final class Recording {
     return runtime.tracer();
   }
 
+  /** The tracer implementation (its pool and Tomcat registries, WO-13), or null. */
+  TracerImpl tracerImpl() {
+    return runtime.tracerImpl();
+  }
+
   /**
    * The {@code transaction.max-duration-ms} task of {@code argos-watch} over this runtime's active
    * registry (WO-12, 10 §6.7, §13.1).

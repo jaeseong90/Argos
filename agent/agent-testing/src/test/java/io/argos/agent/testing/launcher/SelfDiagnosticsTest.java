@@ -31,6 +31,38 @@ class SelfDiagnosticsTest {
 
   @Test
   @DisplayName(
+      "T-AG-062f WO-13 registry members: pools and connectors by name with their measured values;"
+          + " a missing value (DBCP2 waiting) is absent, not zero; registry counters join counters")
+  void registryMembers() {
+    SelfDiagnostics diagnostics =
+        SelfDiagnostics.parse(
+            "{\"format\":1,\"pools\":[{\"name\":\"HikariPool-1\",\"kind\":\"hikari\",\"active\":0,"
+                + "\"idle\":10,\"waiting\":0,\"total\":10,\"max\":10},{\"name\":"
+                + "\"BasicDataSource-1\",\"kind\":\"dbcp2\",\"active\":1,\"idle\":2,\"max\":8}],"
+                + "\"connectors\":[{\"name\":\"http-nio-8080\",\"port\":8080,\"threads_busy\":1,"
+                + "\"threads_current\":10,\"connections_max\":8192}],\"registry_counters\":"
+                + "{\"argos_agent_registry_overflow_total{registry=\\\"pool\\\"}\":0}}");
+    assertThat(diagnostics.pools())
+        .extracting(SelfDiagnostics.Gauges::name)
+        .containsExactly("HikariPool-1", "BasicDataSource-1");
+    SelfDiagnostics.Gauges dbcp2 = diagnostics.pools().get(1);
+    assertThat(dbcp2.kind()).isEqualTo("dbcp2");
+    assertThat(dbcp2.value("max")).isEqualTo(8);
+    assertThat(dbcp2.has("waiting")).isFalse();
+    assertThatThrownBy(() -> dbcp2.value("waiting"))
+        .isInstanceOf(SelfDiagnostics.NotAvailableException.class);
+    SelfDiagnostics.Gauges connector = diagnostics.connectors().get(0);
+    assertThat(connector.value("port")).isEqualTo(8080);
+    assertThat(connector.has("threads_max")).isFalse();
+    assertThat(diagnostics.counter("argos_agent_registry_overflow_total{registry=\"pool\"}"))
+        .isZero();
+    assertThatThrownBy(() -> SelfDiagnostics.parse(SNAPSHOT).pools())
+        .isInstanceOf(SelfDiagnostics.NotAvailableException.class)
+        .hasMessageContaining("pools: not reported");
+  }
+
+  @Test
+  @DisplayName(
       "18 §19 fields of the agent's snapshot, the flat counters sql_outside_tx_total and"
           + " orphan_steps_total, modules")
   void parsesTheAgentSnapshot() {

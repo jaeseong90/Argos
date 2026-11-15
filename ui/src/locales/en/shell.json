@@ -1,0 +1,147 @@
+{
+  "documentTitle": "{{screen}} · Argos APM",
+  "skipToContent": "Skip to main content",
+  "topbar": {
+    "label": "Global controls",
+    "home": "Argos APM home",
+    "app": {
+      "label": "Application",
+      "placeholder": "Select an application",
+      "globalHint": "Choose an application from the overview"
+    },
+    "env": {
+      "label": "Environment",
+      "all": "All environments",
+      "otherEnvMissing": "No application named like this one exists in that environment."
+    },
+    "search": {
+      "label": "Search",
+      "placeholder": "ID, service, SQL",
+      "hint": "Transaction ID, trace ID, service, SQL",
+      "shortcut": "Ctrl+K"
+    },
+    "alerts": {
+      "label": "Firing alerts",
+      "count_one": "{{count}} firing alert",
+      "count_other": "{{count}} firing alerts"
+    },
+    "account": {
+      "label": "Account",
+      "role": "Role: {{role}}",
+      "page": "My account",
+      "language": "Language",
+      "logout": "Log out"
+    }
+  },
+  "role": {
+    "viewer": "Viewer",
+    "operator": "Operator",
+    "admin": "Administrator",
+    "none": "No role"
+  },
+  "menu": {
+    "label": "Main menu",
+    "collapse": "Collapse menu",
+    "expand": "Expand menu",
+    "group": {
+      "app": "Application",
+      "stats": "Statistics",
+      "global": "All applications",
+      "alerts": "Alerts",
+      "admin": "Administration",
+      "about": "About"
+    }
+  },
+  "screen": {
+    "overview": "$t(common:term.overview)",
+    "dashboard": "Dashboard",
+    "xlog": "$t(common:term.xlog)",
+    "transaction": "Transaction",
+    "trace": "Trace",
+    "active": "$t(common:term.activeTransactions)",
+    "services": "Services",
+    "serviceDetail": "Service",
+    "sql": "SQL",
+    "sqlDetail": "SQL statement",
+    "external": "External calls",
+    "externalDetail": "External host",
+    "errors": "Errors",
+    "errorDetail": "$t(common:term.errorGroup)",
+    "instances": "Instances",
+    "instanceDetail": "Instance",
+    "map": "$t(common:term.applicationMap)",
+    "alerts": "Alert history",
+    "alertRules": "Alert rules",
+    "alertRule": "Alert rule",
+    "alertChannels": "Notification channels",
+    "adminApps": "Applications",
+    "adminPending": "Pending registrations",
+    "adminInstances": "Instance management",
+    "adminTokens": "Agent tokens",
+    "adminConfig": "Configuration",
+    "adminUsers": "Users",
+    "adminAudit": "Audit log",
+    "adminPrivacy": "Privacy",
+    "licenses": "Open source licenses",
+    "about": "About",
+    "search": "Search",
+    "account": "My account"
+  },
+  "pending": {
+    "title": "{{screen}} is not available yet",
+    "description": "This screen comes with a later version of the user interface. Open another screen from the menu.",
+    "overview": "Open the overview"
+  },
+  "notice": {
+    "urlRestore": "Some conditions in the link could not be applied and were reset to their defaults.",
+    "urlTooLong": "The view was not saved in the address because links are limited to 2 KB. Remove some filters and try again.",
+    "dismiss": "Dismiss"
+  },
+  "realtime": {
+    "stale_one": "No updates for {{count}} s",
+    "stale_other": "No updates for {{count}} s",
+    "staleTitle_one": "No realtime updates for {{count}} second. The data on screen may be out of date.",
+    "staleTitle_other": "No realtime updates for {{count}} seconds. The data on screen may be out of date.",
+    "staleAnnounce": "Realtime updates have stopped. The data on screen may be out of date."
+  },
+  "kiosk": {
+    "badge_one": "Live · updated {{count}} second ago",
+    "badge_other": "Live · updated {{count}} seconds ago",
+    "badgeWaiting": "Live · waiting for the first update",
+    "expiring_one": "The session expires in {{count}} minute",
+    "expiring_other": "The session expires in {{count}} minutes",
+    "expiringAnnounce_one": "The session of this display expires within {{count}} minute.",
+    "expiringAnnounce_other": "The session of this display expires within {{count}} minutes."
+  },
+  "sessionExpired": {
+    "title": "Session expired",
+    "description": "The session of this display has ended. Sign in again to continue.",
+    "action": "Sign in again"
+  },
+  "transactionLink": {
+    "loading": "Looking up the transaction…",
+    "notFoundTitle": "Transaction not found",
+    "notFoundDescription": "The transaction was not found near the time in its ID. Open it from a transaction list, or add its start time to the link as ts.",
+    "overview": "Open the overview"
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "close": "Close",
+    "typingNote": "Shortcuts are inactive while you type in a field.",
+    "search": "Focus the search",
+    "goOverview": "Go to the overview",
+    "goDashboard": "Go to the dashboard",
+    "goXlog": "Go to XLog",
+    "goActive": "Go to active transactions",
+    "preset": "Choose a preset range (1 = last 5 minutes … 9 = yesterday)",
+    "prev": "Previous time range",
+    "next": "Next time range",
+    "zoomIn": "Zoom in (half the range)",
+    "zoomOut": "Zoom out (double the range)",
+    "now": "Back to now",
+    "live": "Turn live on or off",
+    "escape": "Close a dialog or clear the selection",
+    "list": "Move through a list and open the focused row",
+    "help": "Show this help"
+  }
+}

@@ -223,6 +223,65 @@ class BatchAssemblerTest {
   }
 
   @Test
+  @Tag("req:F-A03")
+  @DisplayName(
+      "T-AG-032a WO-13 batch step: Tracer.stepBatch fills ProfileStep.batch_size, folded repeats add"
+          + " their items; absent when not set; -1, counts below 1 and ended transactions ignored")
+  void batchSize() {
+    TracerImpl tracer = runtime.tracerImpl();
+    TraceContext ctx = tracer.begin(Kind.HTTP, "POST /orders", 0);
+    long insert = tracer.dict(DictKind.SQL, "insert into orders values (?, ?)");
+    long select = tracer.dict(DictKind.SQL, "select 1");
+    for (int i = 0; i < 2; i++) {
+      int seq = tracer.stepStart(ctx, StepType.SQL, insert, 0, 10 + 20 * i);
+      tracer.stepBatch(ctx, seq, 50 + i);
+      tracer.stepEnd(ctx, seq, 0, false, 0, 20 + 20 * i);
+    }
+    int plain = tracer.stepStart(ctx, StepType.SQL, select, 0, 50);
+    tracer.stepBatch(ctx, plain, 0);
+    tracer.stepBatch(ctx, plain, -3);
+    tracer.stepBatch(ctx, -1, 9);
+    tracer.stepEnd(ctx, plain, 0, false, 0, 60);
+    tracer.end(ctx, 200, null, null, null, 70);
+    tracer.stepBatch(ctx, plain, 7);
+
+    TransactionProfile profile = assembler.profile(endedProfile());
+    assertThat(profile.getStepsCount()).isEqualTo(2);
+    ProfileStep folded = profile.getSteps(0);
+    assertThat(folded.getRepeatCount()).isEqualTo(2);
+    assertThat(folded.getBatchSize())
+        .as("50 + 51 items of the two folded executions")
+        .isEqualTo(101);
+    ProfileStep single = profile.getSteps(1);
+    assertThat(single.getRepeatCount()).isEqualTo(1);
+    assertThat(single.getBatchSize()).as("not a batch: absent (0)").isZero();
+  }
+
+  @Test
+  @Tag("req:F-A03")
+  @DisplayName(
+      "T-AG-030a WO-13 SQL step encoding: elapsed_us = exec + fetch, fetch_us = fetch, rows from"
+          + " the fetch (the server stores exec_ms = elapsed - fetch); dbc_wait_ms from the"
+          + " transaction's getConnection time")
+  void execAndFetchAndDbcWait() {
+    TracerImpl tracer = runtime.tracerImpl();
+    TraceContext ctx = tracer.begin(Kind.HTTP, "GET /orders", 0);
+    long select = tracer.dict(DictKind.SQL, "select * from orders");
+    int seq = tracer.stepStart(ctx, StepType.SQL, select, 0, 1_000_000L);
+    tracer.stepEnd(ctx, seq, 0, false, 0, 4_000_000L);
+    tracer.stepFetch(ctx, seq, 25, 2_000_000L);
+    ctx.dbcNanos = 7_500_000L;
+    tracer.end(ctx, 200, null, null, null, 10_000_000L);
+
+    TransactionRecord record = assembler.record(endedTransaction());
+    assertThat(record.getDbcWaitMs()).isEqualTo(7);
+    ProfileStep step = assembler.profile(endedProfile()).getSteps(0);
+    assertThat(step.getElapsedUs()).as("3 ms exec + 2 ms fetch").isEqualTo(5_000);
+    assertThat(step.getFetchUs()).isEqualTo(2_000);
+    assertThat(step.getRows()).isEqualTo(25);
+  }
+
+  @Test
   @Tag("req:C-138")
   @DisplayName(
       "ADR-0010 C-138: the profile carries the transaction's kind (HTTP, BATCH, MESSAGE), equal to"

@@ -1,0 +1,255 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* DataTable (docs/15 §6.3). Rows are CSS grids sharing the column template --dt-cols (set through
+   the CSSOM, CSP-safe). Up to 100 rows the table is part of the page (one page scroll); above
+   that the body is virtualized inside .data-table__scroll--virtual with a sticky header. */
+.data-table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.data-table__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.data-table__toolbar-start {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.data-table__count {
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+.data-table__anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.data-table__scroll {
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.data-table__scroll--virtual {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.data-table__grid {
+  display: block;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table__head,
+.data-table__body {
+  display: block;
+}
+
+.data-table__head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--color-surface);
+}
+
+.data-table__body {
+  position: relative;
+}
+
+.data-table__row {
+  display: grid;
+  grid-template-columns: var(--dt-cols);
+  min-width: 100%;
+  height: var(--row-h);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.data-table__grid--dense .data-table__row {
+  height: var(--row-h-dense);
+}
+
+.data-table__scroll--virtual .data-table__body .data-table__row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+.data-table__row--head {
+  height: 34px;
+  border-bottom: 1px solid var(--color-border-strong);
+}
+
+.data-table__body .data-table__row:hover {
+  background: var(--color-hover);
+}
+
+.data-table__row--focused,
+.data-table__body .data-table__row--focused:hover {
+  background: var(--color-selected);
+}
+
+.data-table__row:focus-visible {
+  outline: var(--focus-ring-w) solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+/* Focus cell of the focused row (Left/Right, Shift+F10 opens its value menu): a second ring
+   inside the row ring. */
+.data-table__row:focus-visible > .data-table__cell--focus {
+  outline: var(--focus-ring-w) solid var(--color-focus);
+  outline-offset: calc(-2 * var(--focus-ring-w));
+}
+
+.data-table__th,
+.data-table__cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0 var(--space-2);
+  overflow: hidden;
+  text-align: left;
+}
+
+.data-table__th {
+  overflow: visible;
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.data-table__th--num,
+.data-table__cell--num {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.data-table__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.data-table__header-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-table__sort-indicator {
+  font-size: 9px;
+}
+
+.data-table__filter-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.data-table__filter-button--active {
+  color: var(--color-primary-text);
+}
+
+.data-table__resize {
+  position: absolute;
+  top: 4px;
+  right: 0;
+  bottom: 4px;
+  width: 6px;
+  padding: 0;
+  border: 0;
+  border-right: 2px solid var(--color-border);
+  background: transparent;
+  cursor: col-resize;
+}
+
+.data-table__resize:hover,
+.data-table__resize:focus-visible {
+  border-right-color: var(--color-primary);
+}
+
+.data-table__value {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.data-table__cell-actions {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  visibility: hidden;
+}
+
+.data-table__cell:hover .data-table__cell-actions,
+.data-table__cell:focus-within .data-table__cell-actions,
+.data-table__row--focused .data-table__cell-actions {
+  visibility: visible;
+}
+
+.data-table__cell-action {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.data-table__cell-action:hover:not(:disabled) {
+  color: var(--color-primary-text);
+}
+
+/* Value over the filter limit (SEC-64): shown, but disabled. */
+.data-table__cell-action:disabled {
+  color: var(--color-border-strong);
+  cursor: not-allowed;
+}
+
+.data-table__cell--menu {
+  z-index: 3;
+  overflow: visible;
+}
+
+.data-table__cell-menu {
+  top: 100%;
+  min-width: 200px;
+}
+
+.data-table__cell-menu-note {
+  display: block;
+  max-width: 280px;
+  padding: var(--space-1) var(--space-2);
+  white-space: normal;
+}

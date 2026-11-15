@@ -851,6 +851,55 @@ class SessionClientTest {
   }
 
   @Test
+  @Tag("req:F-A10")
+  @DisplayName(
+      "T-AG-062c WO-13 Tomcat registry through the session API (10 §10.4, 11 §4.2): connector names"
+          + " as InstanceUpdate, the instance name host:port of the first connector unless"
+          + " app.instance is configured")
+  void tomcatConnectorsReachTheSession() {
+    SessionClient client = establishedClient();
+    AgentIdentity identity = identity();
+    AgentSession session = new AgentSession(identity, client);
+    AgentSession.install(session);
+    try {
+      opener.last().sent.clear();
+      org.apache.tomcat.util.net.NioEndpoint http = new org.apache.tomcat.util.net.NioEndpoint();
+      http.setName("http-nio-18080");
+      http.setPort(18080);
+      io.argos.agent.core.metric.TomcatRegistry automatic =
+          new io.argos.agent.core.metric.TomcatRegistry(true);
+      assertThat(automatic.register(http)).isTrue();
+      loop.run();
+      List<InstanceUpdate> sent = updates(opener.last());
+      assertThat(sent).hasSize(2);
+      assertThat(sent.get(0).getConnectorsList()).containsExactly("http-nio-18080");
+      assertThat(sent.get(1).getInstanceName()).isEqualTo(identity.host() + ":18080");
+      assertThat(identity.hello().getInstanceName())
+          .as("the next hello carries it too")
+          .isEqualTo(identity.host() + ":18080");
+      automatic.snapshot();
+      loop.run();
+      assertThat(updates(opener.last())).as("nothing changed: nothing sent").hasSize(2);
+
+      opener.last().sent.clear();
+      org.apache.tomcat.util.net.NioEndpoint other = new org.apache.tomcat.util.net.NioEndpoint();
+      other.setName("http-nio-19090");
+      other.setPort(19090);
+      io.argos.agent.core.metric.TomcatRegistry configured =
+          new io.argos.agent.core.metric.TomcatRegistry(false);
+      assertThat(configured.register(other)).isTrue();
+      loop.run();
+      sent = updates(opener.last());
+      assertThat(sent).hasSize(1);
+      assertThat(sent.get(0).getConnectorsList()).containsExactly("http-nio-19090");
+      assertThat(sent.get(0).hasInstanceName()).as("app.instance configured: kept").isFalse();
+      assertThat(http.getPort() + other.getPort()).isEqualTo(18080 + 19090);
+    } finally {
+      AgentSession.install(null);
+    }
+  }
+
+  @Test
   @Tag("req:N-05")
   @DisplayName(
       "10 §10.4 AgentSession from any thread: the same value 1,000 times posts one task to the"

@@ -74,13 +74,35 @@ public final class ShopSchema {
     return NAMES[(int) ((id - 1) % NAMES.length)] + id + "@example.test";
   }
 
+  /**
+   * The statements of the schema script of {@code db}: comment lines ({@code --}) and blank lines
+   * are skipped; a statement ends with {@code ;} at the end of a line (the {@code ;} is dropped). A
+   * PL/SQL block (Oracle: a statement starting with {@code BEGIN} or {@code DECLARE}) ends with a
+   * line holding only {@code /}, as in SQL*Plus, and keeps its own semicolons.
+   */
   static List<String> statements(DbKind db) {
     String script = readResource(db.schemaResource());
     List<String> result = new ArrayList<>();
     StringBuilder current = new StringBuilder();
+    boolean block = false;
     for (String line : script.split("\n", -1)) {
       String trimmed = line.trim();
+      if (block) {
+        if (trimmed.equals("/")) {
+          result.add(current.toString().trim());
+          current.setLength(0);
+          block = false;
+        } else {
+          current.append(line).append('\n');
+        }
+        continue;
+      }
       if (trimmed.isEmpty() || trimmed.startsWith("--")) {
+        continue;
+      }
+      if (current.length() == 0 && startsBlock(trimmed)) {
+        block = true;
+        current.append(line).append('\n');
         continue;
       }
       current.append(line).append('\n');
@@ -90,10 +112,21 @@ public final class ShopSchema {
         current.setLength(0);
       }
     }
+    if (block) {
+      throw new IllegalStateException(db.schemaResource() + ": PL/SQL block without a '/' line");
+    }
     if (current.toString().trim().length() > 0) {
       throw new IllegalStateException(db.schemaResource() + ": last statement has no ';'");
     }
     return result;
+  }
+
+  private static boolean startsBlock(String line) {
+    String upper = line.toUpperCase(java.util.Locale.ROOT);
+    return upper.equals("BEGIN")
+        || upper.startsWith("BEGIN ")
+        || upper.equals("DECLARE")
+        || upper.startsWith("DECLARE ");
   }
 
   private static String readResource(String name) {

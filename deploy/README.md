@@ -2,9 +2,19 @@
 
 Installation packages of the Argos APM server (17 deployment and operations design, 19 §3.5):
 
-- `compose/`: Docker Compose files (WO-40, demo profile WO-41)
-- `tar/`: `tar.gz` + systemd layout (`/opt/argos/{bin,conf,lib,logs,data}`)
-- `airgap/`: air-gapped bundle (images, checksums, signatures)
-- `monitoring/`, `clickhouse/`: ClickHouse schema, rollups and configuration (13)
+- [`compose/`](compose/README.md): single-node Docker Compose installation (server, ClickHouse,
+  PostgreSQL), its scripts and tests (WO-40; demo profile WO-41). Installation guide:
+  [docs/install/compose.md](../docs/install/compose.md)
+- `postgres/`: PostgreSQL image pin and role SQL (`roles.sql`, run by the Compose installation)
+- [`clickhouse/`](clickhouse/README.md): ClickHouse schema, rollups and configuration (13)
 
-Gradle tasks `:deploy:tarDist` and `:deploy:airgapBundle` are added by WO-40.
+Planned, not in the repository yet (17, 19 §2):
+
+- `tar/`: `tar.gz` + systemd layout (`/opt/argos/{bin,conf,lib,logs,data}`), planned in WO-76
+- `airgap/`: air-gapped bundle (images, checksums, signatures), planned in WO-76; its verification
+  in WO-63
+- `monitoring/`: Prometheus scrape example and Grafana dashboard of the server's own state (17
+  §11.1); no work order is assigned yet
+
+Gradle tasks: `:deploy:composeSmoke` (end-to-end run of `compose/`, not part of `check`).
+`:deploy:tarDist` and `:deploy:airgapBundle` are added by WO-76 (air-gap verification WO-63).

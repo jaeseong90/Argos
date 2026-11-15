@@ -37,7 +37,9 @@ spring:
     timeout-per-shutdown-phase: 30s
 
 server:
-  address: ${ARGOS_HTTP_BIND:0.0.0.0}
+  # No address: every interface (Spring's default; server.address sets another one). ARGOS_HTTP_BIND
+  # and ARGOS_GRPC_BIND are host-side publish addresses of the Compose installation, never read by
+  # the server (17 §3.8, ADR-0010 C-113).
   port: 8080
   shutdown: graceful
   # WO-24: X-Forwarded-* headers are ignored unless the operator trusts a reverse proxy (also on
@@ -52,6 +54,16 @@ server:
   tomcat:
     max-http-form-post-size: 1MB
     max-swallow-size: 1MB
+  # ADR-0010 C-190 (15 §14, N-14): gzip for the UI's static files (the page, CSS, JavaScript, SVG)
+  # of 2 KB or more when the client accepts it. The list replaces Spring Boot's default on
+  # purpose: API JSON, text/plain and CSV are not compressed here, so a response that mixes
+  # reflected input with a secret never gets a compression side channel (the XLog points endpoint
+  # has its own gzip path). Hashed /assets/** files are cached for a year
+  # (StaticAssetsConfiguration); no pre-compressed files.
+  compression:
+    enabled: true
+    mime-types: text/html,text/css,text/javascript,application/javascript,image/svg+xml
+    min-response-size: 2KB
   # Error responses never carry messages, stack traces, exception classes or binding details
   # (16 §7.14).
   error:
@@ -128,6 +140,10 @@ springdoc:
     path: /api/v1/openapi
   paths-to-match: /api/**
   show-actuator: false
+  # 14 §7.4: the REST API answers application/json; charset=utf-8. Operations without an explicit
+  # produces are documented as application/json, not */* (CSV operations declare text/csv
+  # themselves, 14 §4.17). Documentation only: content negotiation is unchanged.
+  default-produces-media-type: application/json
   # The error shape is 14 §2.6 for every operation; the exception handlers are not per-operation
   # responses.
   override-with-generic-response: false
@@ -138,7 +154,8 @@ argos:
   server:
     timezone: ${ARGOS_TZ_DISPLAY:UTC}
   collector:
-    bind: ${ARGOS_GRPC_BIND:0.0.0.0}
+    # bind: every interface by default (ArgosProperties); ARGOS_GRPC_BIND is a Compose publish
+    # address, not a server setting (ADR-0010 C-113).
     tls:
       cert-file: ${ARGOS_TLS_CERT_FILE:conf/tls/server.crt}
       key-file: ${ARGOS_TLS_KEY_FILE:conf/tls/server.key}

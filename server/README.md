@@ -5,42 +5,53 @@ The Argos collector server (Java 21, Spring Boot). Design: `docs/12-server-desig
 
 ## Container image
 
-`./gradlew :server:jibDockerBuild` builds the local image `argos-server:<version>` with Jib (rules in
-`build-logic/src/main/kotlin/io/argos/buildlogic/server/ServerImage.kt`).
+`./gradlew :server:jibDockerBuild` builds the local image `argos-server:<version>` (linux/amd64) with Jib (rules in
+`build-logic/src/main/kotlin/io/argos/buildlogic/server/ServerImage.kt`, directory owner in `ImageOwnershipExtension.kt`
+next to it). The multi-arch image, its publication and signing belong to the release pipeline (WO-44).
 
 | Item | Value |
 |---|---|
-| Base image | Eclipse Temurin 21 JRE, pinned by digest |
-| User | `10001:10001` (non-root, no passwd entry; `HOME=/opt/argos`) |
+| Base image | Eclipse Temurin 21 JRE (Ubuntu 26.04), pinned by the digest of its multi-arch index |
+| User | `10001:10001` (non-root, no passwd entry; `HOME=/data`, `user.home=/data`) |
 | Working directory | `/opt/argos` (owned by root, read-only for the server) |
 | Ports | 8080 (UI/API), 9100 (gRPC). The management port 8081 is not exposed (C-7) |
+| JVM flags | `-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxDirectMemorySize=512m -XX:+ExitOnOutOfMemoryError -Dfile.encoding=UTF-8 -Duser.timezone=UTC -Djava.io.tmpdir=/data/tmp -Duser.home=/data` (17 section 7.2 for a container) |
+| Heap and other JVM options | `JAVA_TOOL_OPTIONS`, for example `-Xms1g -Xmx1g`. Without `-Xmx` the JVM takes 25% of the container memory limit. A flag of the row above keeps its value even when `JAVA_TOOL_OPTIONS` repeats it (the command line wins) |
 | `LOGGING_FILE_PATH` | `/logs/server`: JSON Lines server log `argos-server.log`, 100 MB x 10 (17 section 11.3) |
 | `ARGOS_WAL_DIR` | `/data/wal` (`argos.wal.dir`) |
+| `ARGOS_AUTH_SETUP_TOKEN_FILE` | `/data/setup-token` (`argos.auth.setup-token-file`; the image's place for `conf/setup-token` below) |
+| `ARGOS_JWT_KEY_FILE` | `/data/jwt.key` (`argos.jwt-key-file`; created owner-only at the first start when missing) |
+| Creation time | the Unix epoch, or the commit time from `SOURCE_DATE_EPOCH` when set: the same inputs give the same image id |
+| Labels | `org.opencontainers.image.*`: title, description, version, revision, licenses (`Apache-2.0`), source, created, base.name, base.digest |
+| Tools | `wget`, `curl`, `bash` and `openssl` from the base image (healthcheck: `wget -q -O /dev/null http://127.0.0.1:8081/actuator/health`); no `ss` or `netstat` (listening sockets: `/proc/net/tcp`, `/proc/net/tcp6`) |
 
 ### Volumes
 
-The image expects two volumes (17 sections 3.2 and 3.4):
+The image ships `/data`, `/data/tmp` and `/logs` owned by `10001:10001` with mode 0700; nothing in it is
+world-writable. An empty Docker named volume mounted on `/data` or `/logs` copies that owner and mode, so a new named
+volume needs no preparation (17 sections 3.2 and 3.4):
 
 | Mount point | Volume | Content | Owner and mode |
 |---|---|---|---|
-| `/data` | `argos-data` | WAL, setup token, spool | uid 10001, 0700 |
-| `/logs` | `argos-logs` | server log files | uid 10001, 0700 |
-
-Both must be mounted and writable for uid 10001. Jib cannot set the owner of a directory in the image, and the image
-does not ship world-writable directories, so the installer prepares the volumes (WO-40). Known limitation: without them
-the server keeps logging to the console (`docker logs`), but it cannot create its log file (Log4j prints a status ERROR
-with a stack trace for every log event) or its WAL.
-
-The image has no `/data` or `/logs` directory, so Docker creates a new named volume owned by root with mode 0755, which
-uid 10001 cannot write. Prepare each volume once with a root helper container:
+| `/data` | `argos-data` | WAL (`wal/`), setup token, JWT key, temporary files (`tmp/`), spool | uid 10001, 0700 |
+| `/logs` | `argos-logs` | server log files (`server/`) | uid 10001, 0700 |
 
 ```
-docker volume create argos-data
+docker run -d -v argos-data:/data -v argos-logs:/logs ... argos-server:<version>
+```
+
+Docker copies nothing into a bind mount or into a named volume that already holds files (for example one used by an
+earlier version of this image): such a mount keeps its own owner. Prepare it once as root; `/data` also needs `tmp/`
+(`java.io.tmpdir`):
+
+```
 docker run --rm --user 0 --entrypoint sh -v argos-data:/data argos-server:<version> \
-  -c 'chown 10001:10001 /data && chmod 0700 /data'
+  -c 'mkdir -p /data/tmp && chown 10001:10001 /data /data/tmp && chmod 0700 /data /data/tmp'
 ```
 
-A host directory works the same way (`chown 10001:10001` and `chmod 0700` on the host, then `-v <dir>:/logs`).
+For a host directory run `chown` and `chmod` on the host. Known limitation: without a writable `/logs` the server keeps
+logging to the console (`docker logs`) but cannot create its log file (Log4j prints a status ERROR for every log
+event); without a writable `/data` it cannot create its WAL, JWT key or temporary files.
 
 ## First start: setup token and login with curl
 

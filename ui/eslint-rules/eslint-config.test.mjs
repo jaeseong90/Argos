@@ -3,6 +3,7 @@
 // Negative tests for the real eslint.config.mjs (SEC-60, T-UI-006, T-BLD-007): each snippet is
 // linted as if it were a file at the given path in this project and must be rejected by the
 // named rule. This also proves the plugins still work on the installed ESLint major.
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,10 +24,11 @@ const PROBE_FILES = [
   'src/features/probe/ws.ts',
   'src/features/probe/a.ts',
   'src/features/probe/a.test.ts',
-  'src/api/client.ts',
+  'src/api/probeClient.ts',
   'src/api/client.mts',
   'src/api/wrapper.ts',
-  'src/realtime/WsManager.ts',
+  'src/api/GeneratedProbe.tsx',
+  'src/realtime/probeSocket.ts',
   'src/components/Button.ts',
   'src/components/Icon.ts',
   'src/app/providers.ts',
@@ -45,8 +47,10 @@ const PROBE_FILES = [
 let eslint;
 // The first lintText call loads the plugins and starts the TypeScript project service, which
 // takes several seconds (longer on a cold cache or a busy machine). Do that once here, under an
-// explicit hook timeout, so every test below runs against a warm linter within the default
-// per-test timeout. The warm-up result is not asserted; the first test checks the same input.
+// explicit hook timeout, so every test below runs against a warm linter. The warm-up result is not
+// asserted; the first test checks the same input. The first lint of each further probe path still
+// builds a default-project program for it (several seconds, far more on a machine that runs a full
+// Gradle build in parallel), so the tests below get a 60 s timeout instead of the default 5 s.
 beforeAll(async () => {
   eslint = new ESLint({
     cwd: UI_ROOT,
@@ -77,6 +81,11 @@ async function ruleIds(code, file = 'src/features/probe/Probe.tsx') {
   if (file.startsWith('src/') && !PROBE_FILES.includes(file)) {
     throw new Error(`add ${file} to PROBE_FILES`);
   }
+  // A probe path that exists on disk is also in the project service, and typescript-eslint then
+  // refuses it as a default-project file (parsing error): probe names must stay virtual.
+  if (existsSync(join(UI_ROOT, file))) {
+    throw new Error(`${file} exists on disk; use a virtual probe path`);
+  }
   const [result] = await eslint.lintText(code, { filePath: join(UI_ROOT, file) });
   if (result === undefined) {
     throw new Error('no lint result');
@@ -98,7 +107,7 @@ export function Probe({ value }: { value: string }) {
 }
 `;
 
-describe('eslint.config.mjs', () => {
+describe('eslint.config.mjs', { timeout: 60_000 }, () => {
   it('accepts a clean component', async () => {
     expect(await ruleIds(CLEAN_COMPONENT)).toEqual([]);
   });
@@ -264,14 +273,135 @@ export function Probe({ html }: { html: string }) {
     expect(outside).toContain('no-restricted-globals');
     expect(outside).toContain('no-restricted-properties');
 
-    expect(await ruleIds(code, 'src/api/client.ts')).toEqual([]);
+    expect(await ruleIds(code, 'src/api/probeClient.ts')).toEqual([]);
   });
 
   it('rejects WebSocket outside src/realtime', async () => {
     const code = `${HEADER}export const socket = new WebSocket('/ws');
 `;
     expect(await ruleIds(code, 'src/features/probe/ws.ts')).toContain('no-restricted-globals');
-    expect(await ruleIds(code, 'src/realtime/WsManager.ts')).toEqual([]);
+    expect(await ruleIds(code, 'src/realtime/probeSocket.ts')).toEqual([]);
+    expect(await ruleIds(code, 'src/api/probeClient.ts')).toContain('no-restricted-globals');
+  });
+
+  it('rejects window.WebSocket outside src/realtime (no-restricted-properties)', async () => {
+    const code = `${HEADER}export const socket = new window.WebSocket('/ws');
+`;
+    expect(await ruleIds(code, 'src/features/probe/ws.ts')).toContain('no-restricted-properties');
+    expect(await ruleIds(code, 'src/realtime/probeSocket.ts')).toEqual([]);
+  });
+
+  it('rejects XMLHttpRequest outside src/api and allows it inside', async () => {
+    const code = `${HEADER}export const a = new XMLHttpRequest();
+export const b = new window.XMLHttpRequest();
+`;
+    const outside = await ruleIds(code, 'src/features/probe/load.ts');
+    expect(outside).toContain('no-restricted-globals');
+    expect(outside).toContain('no-restricted-properties');
+    expect(await ruleIds(code, 'src/realtime/probeSocket.ts')).toContain('no-restricted-globals');
+    expect(await ruleIds(code, 'src/api/probeClient.ts')).toEqual([]);
+  });
+
+  it.each([
+    ['navigator.sendBeacon', "navigator.sendBeacon('/api/v1/apps', 'x');", 'no-restricted-syntax'],
+    [
+      'window.navigator.sendBeacon',
+      "window.navigator.sendBeacon('/api/v1/apps', 'x');",
+      'no-restricted-syntax',
+    ],
+    [
+      "navigator['sendBeacon']",
+      "navigator['sendBeacon']('/api/v1/apps', 'x');",
+      'no-restricted-syntax',
+    ],
+    [
+      'const { sendBeacon } = navigator',
+      "const { sendBeacon } = navigator;\n  sendBeacon.call(navigator, '/api/v1/apps', 'x');",
+      'no-restricted-syntax',
+    ],
+    ['new EventSource', "void new EventSource('/x');", 'no-restricted-globals'],
+    ['new window.EventSource', "void new window.EventSource('/x');", 'no-restricted-properties'],
+  ])(
+    'rejects %s in every scope, src/api included (SEC-43: no network channel past the CSRF wrapper)',
+    async (_name, statement, rule) => {
+      const code = `${HEADER}export function send(): void {
+  ${statement}
+}
+`;
+      for (const file of [
+        'src/features/probe/load.ts',
+        'src/api/probeClient.ts',
+        'src/realtime/probeSocket.ts',
+      ]) {
+        expect(await ruleIds(code, file), file).toContain(rule);
+      }
+    },
+  );
+
+  it('applies argos/no-token-storage to src/ but not to tests', async () => {
+    const code = `${HEADER}export function save(token: string): void {
+  localStorage.setItem('token', token);
+  document.cookie = 'argos_at=' + token;
+}
+`;
+    const ids = await ruleIds(code, 'src/features/probe/a.ts');
+    expect(ids.filter((id) => id === 'argos/no-token-storage')).toHaveLength(2);
+    expect(await ruleIds(code, 'src/features/probe/a.test.ts')).not.toContain(
+      'argos/no-token-storage',
+    );
+    const preference = `${HEADER}export function save(language: string): void {
+  localStorage.setItem('argos.ui.language', language);
+}
+`;
+    expect(await ruleIds(preference, 'src/features/probe/a.ts')).toEqual([]);
+  });
+
+  it('applies argos/no-raw-href to src/', async () => {
+    const code = `${HEADER}export function Probe({ url }: { url: string }) {
+  return <a href={url}>{null}</a>;
+}
+`;
+    expect(await ruleIds(code)).toContain('argos/no-raw-href');
+  });
+
+  it('applies argos/no-object-url to src/ (also src/api) but not to tests', async () => {
+    const code = `${HEADER}export function link(blob: Blob): string {
+  return URL.createObjectURL(blob);
+}
+`;
+    expect(await ruleIds(code, 'src/features/probe/a.ts')).toContain('argos/no-object-url');
+    // Only src/api/exportCsv.ts is exempt (eslint-allow.json), not the rest of src/api.
+    expect(await ruleIds(code, 'src/api/wrapper.ts')).toContain('argos/no-object-url');
+    expect(await ruleIds(code, 'src/features/probe/a.test.ts')).not.toContain(
+      'argos/no-object-url',
+    );
+  });
+
+  it('applies argos/untrusted-text to src/', async () => {
+    const code = `${HEADER}import type { Untrusted } from '../../api/untrusted';
+
+export function Probe({ service }: { service: Untrusted }) {
+  return <td>{service}</td>;
+}
+`;
+    expect(await ruleIds(code)).toContain('argos/untrusted-text');
+  });
+
+  it('brands the generated API types for argos/untrusted-text (x-argos-untrusted)', async () => {
+    const code = `${HEADER}import type { components } from './generated/schema';
+
+export function Probe({ app }: { app: components['schemas']['App'] }) {
+  return <td>{app.name}</td>;
+}
+`;
+    expect(await ruleIds(code, 'src/api/GeneratedProbe.tsx')).toEqual(['argos/untrusted-text']);
+    const plain = `${HEADER}import type { components } from './generated/schema';
+
+export function Probe({ app }: { app: components['schemas']['App'] }) {
+  return <td>{app.app_id}</td>;
+}
+`;
+    expect(await ruleIds(plain, 'src/api/GeneratedProbe.tsx')).toEqual([]);
   });
 
   it.each([
@@ -288,6 +418,14 @@ export function Probe({ html }: { html: string }) {
       'src/features/probe/a.ts',
       'src/api/wrapper.ts',
     ],
+    ["import createClient from 'openapi-fetch';", 'src/features/probe/a.ts', 'src/api/wrapper.ts'],
+    [
+      "import createClient from 'openapi-fetch';",
+      'src/components/Button.ts',
+      'src/api/probeClient.ts',
+    ],
+    ["import { z } from 'zod';", 'src/features/probe/a.ts', 'src/app/providers.ts'],
+    ["import { z } from 'zod/v4';", 'src/api/wrapper.ts', 'src/app/providers.ts'],
   ])(
     'restricts %s to its wrapper module (no-restricted-imports)',
     async (statement, outsideFile, insideFile) => {
@@ -303,6 +441,8 @@ export function Probe({ html }: { html: string }) {
     ['import(`@ant-design/icons`)', 'src/features/probe/a.ts', 'src/components/Icon.ts'],
     ["import('uplot')", 'src/features/probe/a.ts', 'src/charts/TimeSeriesChart.ts'],
     ["import('../../api/generated/client')", 'src/features/probe/a.ts', 'src/api/wrapper.ts'],
+    ["import('openapi-fetch')", 'src/features/probe/a.ts', 'src/api/wrapper.ts'],
+    ["import('zod')", 'src/features/probe/a.ts', 'src/app/providers.ts'],
   ])(
     'restricts the dynamic %s to its wrapper module (no-restricted-syntax)',
     async (expression, outsideFile, insideFile) => {

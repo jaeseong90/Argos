@@ -18,13 +18,21 @@ import java.util.Properties;
  * <table>
  *   <caption>Switches</caption>
  *   <tr><th>Variable</th><th>Values</th><th>Default</th></tr>
- *   <tr><td>SAMPLE_DB</td><td>h2, postgres, mysql</td><td>h2 (in memory)</td></tr>
+ *   <tr><td>SAMPLE_DB</td><td>h2, postgres, mysql, mariadb, mssql, oracle</td>
+ *       <td>h2 (in memory)</td></tr>
  *   <tr><td>SAMPLE_DB_URL, SAMPLE_DB_USER, SAMPLE_DB_PASSWORD</td><td>JDBC URL and account
  *       (Testcontainers inject them)</td><td>per database</td></tr>
  *   <tr><td>SAMPLE_POOL</td><td>hikari, tomcat, dbcp2</td><td>hikari</td></tr>
  *   <tr><td>SAMPLE_POOL_MAX</td><td>1..200</td><td>10</td></tr>
  *   <tr><td>SAMPLE_ROUTING_DS</td><td>true/false: AbstractRoutingDataSource ->
  *       TransactionAwareDataSourceProxy -> pool -> driver</td><td>false</td></tr>
+ *   <tr><td>SAMPLE_DRIVER_WRAPPER</td><td>true/false: a delegating java.sql.Driver, Connection and
+ *       Statement wrapper between the pool and the driver (ADR-0004 C-40), combinable with
+ *       SAMPLE_ROUTING_DS</td><td>false</td></tr>
+ *   <tr><td>SAMPLE_SECOND_POOL</td><td>true/false: a second pool of the SAMPLE_POOL kind on the
+ *       same database, named shop-secondary (the app's pool is then named shop-primary), that sets
+ *       up the schema and is then restarted under the same name (pool registry fixture of the
+ *       agent tests, 10 §6.4)</td><td>false</td></tr>
  *   <tr><td>SAMPLE_VT</td><td>true/false: virtual threads (Boot 3.2+ on JDK 21+)</td>
  *       <td>false</td></tr>
  *   <tr><td>SAMPLE_CUSTOM_EXECUTOR</td><td>true/false: ThreadPoolExecutor subclass, thread names
@@ -45,6 +53,12 @@ public final class SampleConfig {
   /** System property of the fixed business clock (18 §4.4). */
   public static final String FIXED_CLOCK_PROPERTY = "sample.fixed-clock";
 
+  /** The driver wrapper of SAMPLE_DRIVER_WRAPPER (ADR-0004 C-40), outside io.argos on purpose. */
+  public static final String WRAPPER_DRIVER_CLASS = "example.jdbcwrapper.WrappingDriver";
+
+  /** URL prefix of the driver wrapper ({@code WrappingDriver.PREFIX}). */
+  public static final String WRAPPER_URL_PREFIX = "jdbc:argos-wrapper:";
+
   private final DbKind db;
   private final String dbUrl;
   private final String dbUser;
@@ -52,6 +66,8 @@ public final class SampleConfig {
   private final PoolKind pool;
   private final int poolMaxSize;
   private final boolean routingDataSource;
+  private final boolean driverWrapper;
+  private final boolean secondPool;
   private final boolean virtualThreads;
   private final boolean customExecutor;
   private final String extUrl;
@@ -72,6 +88,8 @@ public final class SampleConfig {
     this.pool = PoolKind.parse(text(env, "SAMPLE_POOL", "hikari"));
     this.poolMaxSize = integer(env, "SAMPLE_POOL_MAX", 10, 1, 200);
     this.routingDataSource = bool(env, "SAMPLE_ROUTING_DS");
+    this.driverWrapper = bool(env, "SAMPLE_DRIVER_WRAPPER");
+    this.secondPool = bool(env, "SAMPLE_SECOND_POOL");
     this.virtualThreads = bool(env, "SAMPLE_VT");
     this.customExecutor = bool(env, "SAMPLE_CUSTOM_EXECUTOR");
     this.extUrl = trimTrailingSlash(text(env, "SAMPLE_EXT_URL", "http://127.0.0.1:18080"));
@@ -122,6 +140,34 @@ public final class SampleConfig {
 
   public boolean routingDataSource() {
     return routingDataSource;
+  }
+
+  /**
+   * SAMPLE_DRIVER_WRAPPER: the pool connects through {@code example.jdbcwrapper.WrappingDriver}.
+   */
+  public boolean driverWrapper() {
+    return driverWrapper;
+  }
+
+  /**
+   * The JDBC URL the pool is configured with: {@link #dbUrl()}, behind the wrapper prefix with
+   * SAMPLE_DRIVER_WRAPPER=true.
+   */
+  public String poolUrl() {
+    return driverWrapper ? WRAPPER_URL_PREFIX + dbUrl : dbUrl;
+  }
+
+  /** The driver class the pool is configured with (the wrapper with SAMPLE_DRIVER_WRAPPER=true). */
+  public String poolDriverClass() {
+    return driverWrapper ? WRAPPER_DRIVER_CLASS : db.driverClass();
+  }
+
+  /**
+   * SAMPLE_SECOND_POOL: a second, named pool next to the app's pool (two pools told apart by name
+   * and a restarted pool for the agent's pool registry; see {@code SampleDataSources}).
+   */
+  public boolean secondPool() {
+    return secondPool;
   }
 
   /** SAMPLE_VT as configured; whether requests really run on virtual threads is a runtime fact. */

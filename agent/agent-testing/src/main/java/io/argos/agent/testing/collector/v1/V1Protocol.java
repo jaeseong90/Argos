@@ -426,6 +426,12 @@ public final class V1Protocol implements CollectorProtocol {
                   bye.getLastMetricSeq(),
                   bye.getLastStatSeq());
             }
+            case INSTANCE_UPDATE -> {
+              if (message.getInstanceUpdate().hasInstanceName()) {
+                collector.onInstanceName(channel, message.getInstanceUpdate().getInstanceName());
+              }
+              collector.onSessionMessage(message);
+            }
             default -> collector.onSessionMessage(message);
           }
         }

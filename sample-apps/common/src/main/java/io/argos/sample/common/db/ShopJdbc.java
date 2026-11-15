@@ -79,10 +79,17 @@ public final class ShopJdbc {
           try (PreparedStatement ps =
               c.prepareStatement(
                   "SELECT id, customer_id, status, amount, created_at FROM orders"
-                      + " ORDER BY id LIMIT ? OFFSET ?")) {
+                      + " ORDER BY id"
+                      + db.pageClause())) {
             ps.setFetchSize(ShopSchema.PAGE_SIZE);
-            ps.setInt(1, ShopSchema.PAGE_SIZE);
-            ps.setLong(2, (long) page * ShopSchema.PAGE_SIZE);
+            long offset = (long) page * ShopSchema.PAGE_SIZE;
+            if (db.offsetFirst()) {
+              ps.setLong(1, offset);
+              ps.setInt(2, ShopSchema.PAGE_SIZE);
+            } else {
+              ps.setInt(1, ShopSchema.PAGE_SIZE);
+              ps.setLong(2, offset);
+            }
             try (ResultSet rs = ps.executeQuery()) {
               while (rs.next()) {
                 orders.add(order(rs));
@@ -228,10 +235,12 @@ public final class ShopJdbc {
   public long insertAudit(String message) {
     return run(
         c -> {
+          String insert = "INSERT INTO audit_log (message, created_at) VALUES (?, ?)";
+          String[] keyColumns = db.generatedKeyColumns();
           try (PreparedStatement ps =
-              c.prepareStatement(
-                  "INSERT INTO audit_log (message, created_at) VALUES (?, ?)",
-                  Statement.RETURN_GENERATED_KEYS)) {
+              keyColumns == null
+                  ? c.prepareStatement(insert, Statement.RETURN_GENERATED_KEYS)
+                  : c.prepareStatement(insert, keyColumns)) {
             ps.setString(1, message);
             ps.setTimestamp(2, now());
             ps.executeUpdate();
@@ -276,7 +285,7 @@ public final class ShopJdbc {
     run(
         c -> {
           try (Statement st = c.createStatement();
-              ResultSet rs = st.executeQuery("SELECT 1")) {
+              ResultSet rs = st.executeQuery(db.pingSql())) {
             return rs.next();
           }
         });

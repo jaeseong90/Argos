@@ -32,6 +32,9 @@ public final class PoolExhauster {
   private final int maxPoolSize;
   private final Semaphore running = new Semaphore(1);
 
+  /** The statement after the wait, found on first use ({@link #pingSql}). */
+  private volatile String pingSql;
+
   public PoolExhauster(JdbcAccess access, int maxPoolSize) {
     this.access = access;
     this.maxPoolSize = maxPoolSize;
@@ -71,7 +74,7 @@ public final class PoolExhauster {
       }
       long waitedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
       try (Statement st = connection.createStatement()) {
-        st.execute("SELECT 1");
+        st.execute(pingSql(connection));
       } catch (SQLException e) {
         throw new ShopDataException(e.getMessage(), e);
       } finally {
@@ -96,6 +99,23 @@ public final class PoolExhauster {
         running.release();
       }
     }
+  }
+
+  /**
+   * {@code SELECT 1}, or {@code SELECT 1 FROM DUAL} on Oracle (SAMPLE_DB=oracle), decided once from
+   * the database product name: the exhauster is built without the {@link DbKind}.
+   */
+  private String pingSql(Connection connection) throws SQLException {
+    String known = pingSql;
+    if (known == null) {
+      java.sql.DatabaseMetaData metaData = connection.getMetaData();
+      String product = metaData == null ? null : metaData.getDatabaseProductName();
+      boolean oracle =
+          product != null && product.toLowerCase(java.util.Locale.ROOT).contains("oracle");
+      known = (oracle ? DbKind.ORACLE : DbKind.H2).pingSql();
+      pingSql = known;
+    }
+    return known;
   }
 
   private void hold(

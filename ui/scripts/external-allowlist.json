@@ -36,6 +36,22 @@
     {
       "url": "https://github.com/ungap/url-search-params",
       "reason": "Polyfill suggestion in a react-router error message for browsers without URLSearchParams; text only."
+    },
+    {
+      "url": "http://[$",
+      "reason": "zod: start of the template literal `http://[${address}]` that zod passes to new URL() to validate an IPv6 address (string ipv6 checks); parsing only, never requested."
+    },
+    {
+      "url": "https://json-schema.org/draft/2020-12/schema",
+      "reason": "zod: JSON Schema dialect identifier that z.toJSONSchema() writes into $schema (and reads back to pick the target); an identifier, never requested."
+    },
+    {
+      "url": "http://json-schema.org/draft-07/schema#",
+      "reason": "zod: JSON Schema draft-07 dialect identifier for the $schema field of z.toJSONSchema(); an identifier, never requested."
+    },
+    {
+      "url": "http://json-schema.org/draft-04/schema#",
+      "reason": "zod: JSON Schema draft-04 dialect identifier for the $schema field of z.toJSONSchema(); an identifier, never requested."
     }
   ]
 }

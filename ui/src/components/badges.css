@@ -1,0 +1,202 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* StatusBadge (docs/15 §6.4, C-8): dot in the status colour, label in its -text colour. */
+.status-badge,
+.alert-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-bg);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.status-badge__dot,
+.alert-state__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-unknown);
+}
+
+.status-badge--up {
+  color: var(--status-up-text);
+}
+
+.status-badge--up .status-badge__dot {
+  background: var(--status-up);
+}
+
+.status-badge--stale {
+  color: var(--status-stale-text);
+}
+
+.status-badge--stale .status-badge__dot {
+  background: var(--status-stale);
+}
+
+.status-badge--down {
+  color: var(--status-down-text);
+}
+
+.status-badge--down .status-badge__dot {
+  background: var(--status-down);
+}
+
+/* WARN: the base (UP) colour with an orange border (docs/15 §6.4). */
+.status-badge--warn {
+  border: 2px solid var(--status-warn);
+  color: var(--status-warn-text);
+}
+
+.status-badge--warn .status-badge__dot {
+  background: var(--status-up);
+}
+
+.status-badge--unknown {
+  color: var(--status-unknown-text);
+}
+
+/* Alert states (docs/01 appendix B labels). */
+.alert-state--ok,
+.alert-state--resolved {
+  color: var(--status-up-text);
+}
+
+.alert-state--ok .alert-state__dot,
+.alert-state--resolved .alert-state__dot {
+  background: var(--status-up);
+}
+
+.alert-state--pending {
+  color: var(--status-stale-text);
+}
+
+.alert-state--pending .alert-state__dot {
+  background: var(--status-stale);
+}
+
+.alert-state--firing {
+  color: var(--status-down-text);
+}
+
+.alert-state--firing .alert-state__dot {
+  background: var(--status-down);
+}
+
+.alert-state--acked {
+  color: var(--color-primary-text);
+}
+
+.alert-state--acked .alert-state__dot {
+  background: var(--color-primary);
+}
+
+.alert-state--no_data,
+.alert-state--unknown {
+  color: var(--status-unknown-text);
+}
+
+.alert-state--sev-warn .alert-state__dot {
+  background: var(--sev-warn);
+}
+
+.alert-state--sev-critical .alert-state__dot {
+  background: var(--sev-critical);
+}
+
+.alert-state__severity {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+/* Deltas: arrow + signed percent, colour by good/bad direction (docs/15 §6.2). */
+.delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.delta--good {
+  color: var(--delta-good);
+}
+
+.delta--bad {
+  color: var(--delta-bad);
+}
+
+.delta--neutral {
+  color: var(--delta-neutral);
+}
+
+/* StatTile (docs/15 §6.2, "요약 지표"). */
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+}
+
+button.stat-tile {
+  cursor: pointer;
+}
+
+button.stat-tile:hover {
+  background: var(--color-hover);
+}
+
+.stat-tile__label {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stat-tile__value {
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.stat-tile__value .value-text--missing {
+  color: var(--color-text-muted);
+}
+
+.stat-tile__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 18px;
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}
+
+.stat-tile__sparkline {
+  display: block;
+  width: 100%;
+  height: 24px;
+}
+
+.stat-tile__sparkline path {
+  fill: none;
+  stroke: var(--series-1);
+  stroke-width: 1.5;
+}

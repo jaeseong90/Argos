@@ -1,0 +1,360 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SQL normalization cases (10 §9.4 test list, 16 §6.5 PII seeds; T-AG-034, T-ACC-22, T-SEC-35).
+# Read by io.argos.agent.core.sql.NormalizationCasesTest. YAML subset: one mapping per case, every
+# value a double-quoted string (JSON escapes only), a plain scalar or a flow list of double-quoted
+# strings.
+#
+# Keys:
+#   id          case number (1..50)
+#   name        what the case checks
+#   pii         true for the PII seed cases of 16 §6.5
+#   dialect     unknown (default), mysql, postgresql, oracle, sqlserver, ansi (SqlDialect)
+#   options     backslash_escape=false, keep_hints=true (comma separated; defaults of 10 §15 else)
+#   input       the raw statement
+#   generate    instead of input: "truncation" builds a statement longer than sql.max-length
+#   inject      "budget": the normalizer runs without a work budget (failure injection)
+#   normalized  the expected normalized text
+#   truncated   true when the statement is longer than sql.max-length (dictionary flag)
+#   sql_id      xxh3_64(UTF-8 normalized), unsigned hex: pins the dictionary id (D-22, T-ACC-08)
+#   seeds       strings that must not appear in the normalized text (SEC-35)
+#   same_as     the case whose sql_id must be the same (whitespace and comment variants)
+cases:
+  - id: 1
+    name: "simple select with a number"
+    input: "select * from orders where id = 42"
+    normalized: "select * from orders where id = ?"
+    sql_id: "0x2d6229274f294bd3"
+    seeds: ["42"]
+  - id: 2
+    name: "simple select with a string"
+    input: "SELECT name FROM customer WHERE name = 'kim'"
+    normalized: "SELECT name FROM customer WHERE name = ?"
+    sql_id: "0xcbbe5694fe366bd"
+    seeds: ["kim"]
+  - id: 3
+    name: "resident registration and card numbers in an update"
+    input: "UPDATE customer SET rrn = '900101-1234567', card = 4111111111111111 WHERE id = ?"
+    normalized: "UPDATE customer SET rrn = ?, card = ? WHERE id = ?"
+    sql_id: "0xdac604c67b4a9c00"
+    seeds: ["900101-1234567", "4111111111111111", "1234567"]
+  - id: 4
+    name: "IN list of numbers"
+    pii: true
+    input: "select * from t where a in (1, 2, 3)"
+    normalized: "select * from t where a in (?)"
+    sql_id: "0xb05a46faddbc9aad"
+    seeds: ["1", "2", "3"]
+  - id: 5
+    name: "IN list of strings"
+    pii: true
+    input: "select * from t where code in ('a1x','b2y')"
+    normalized: "select * from t where code in (?)"
+    sql_id: "0x568fd9e6b7dbbca4"
+    seeds: ["a1x", "b2y"]
+  - id: 6
+    name: "IN list of bind markers"
+    input: "select * from t where a IN (?,?,?)"
+    normalized: "select * from t where a IN (?)"
+    sql_id: "0xb9afe06716c55fee"
+  - id: 7
+    name: "a group that is not all markers stays"
+    input: "select * from t where a in (?, b)"
+    normalized: "select * from t where a in (?, b)"
+    sql_id: "0x699b93d268e33380"
+  - id: 8
+    name: "multi-row VALUES with literals keeps one row"
+    input: "insert into t (a, b) values (1, 'xq7'), (2, 'yq8'), (3, 'zq9')"
+    normalized: "insert into t (a, b) values (?, ?)"
+    sql_id: "0x8115973dc5d6253"
+    seeds: ["xq7", "yq8", "zq9"]
+  - id: 9
+    name: "multi-row VALUES with markers keeps one row"
+    input: "INSERT INTO t VALUES (?,?),(?,?),(?,?)"
+    normalized: "INSERT INTO t VALUES (?,?)"
+    sql_id: "0x8be54c2826b2865f"
+  - id: 10
+    name: "bind markers ?, :name, :1, $1, @p1, @name, ?2 stay"
+    input: "select ?, :name, :1, $1, @p1, @user, ?2 from dual"
+    normalized: "select ?, :name, :1, $1, @p1, @user, ?2 from dual"
+    sql_id: "0xe205a51703e730a4"
+  - id: 11
+    name: "doubled quote escape O''Brien"
+    pii: true
+    input: "select * from customer where last_name = 'O''Brien'"
+    normalized: "select * from customer where last_name = ?"
+    sql_id: "0x9dbd256d936c32e"
+    seeds: ["Brien"]
+  - id: 12
+    name: "backslash escape a\\'b in the MySQL dialect"
+    pii: true
+    dialect: mysql
+    input: "select * from t where s = 'a\\'bseed'"
+    normalized: "select * from t where s = ?"
+    sql_id: "0xdd4f3df5215bef5a"
+    seeds: ["bseed"]
+  - id: 13
+    name: "backslash before a quote in the unknown dialect is ambiguous: <unparsed>"
+    input: "select * from t where s = 'a\\'bseed'"
+    normalized: "<unparsed>"
+    sql_id: "0x8bb03b734b3a7b59"
+    seeds: ["bseed"]
+  # ADR-0010 C-183 (c), a criterion change by PM decision (not a weakening): this case expected
+  # "select ?, ?" (sql_id 0x27d91a55c1d86f28). With standard_conforming_strings=off the backslash
+  # escapes the quote and 'secret9' would be code, so an odd run of backslashes before a quote in a
+  # PostgreSQL string is now <unparsed>, without a setting key.
+  - id: 14
+    name: "PostgreSQL: a quote after an odd run of backslashes in a string is <unparsed> (C-183)"
+    dialect: postgresql
+    input: "select 'C:\\', 'secret9'"
+    normalized: "<unparsed>"
+    sql_id: "0x8bb03b734b3a7b59"
+    seeds: ["secret9", "C:"]
+  - id: 15
+    name: "national character literal N'..'"
+    pii: true
+    input: "select * from t where n = N'유니코드'"
+    normalized: "select * from t where n = ?"
+    sql_id: "0x8df0bfa80aa42786"
+    seeds: ["유니코드"]
+  - id: 16
+    name: "Korean string literal"
+    pii: true
+    input: "select * from member where name = '홍길동'"
+    normalized: "select * from member where name = ?"
+    sql_id: "0x1e34fafd4f26f3e9"
+    seeds: ["홍길동"]
+  - id: 17
+    name: "prefixed literals E'..', X'..', B'..'"
+    input: "select E'\\x41sec', X'0FAB', B'101'"
+    normalized: "select ?, ?, ?"
+    sql_id: "0xf87d71e1ed896682"
+    seeds: ["0FAB", "x41sec", "101"]
+  - id: 18
+    name: "a literal in a line comment"
+    input: "select * from t -- where email = 'kim@x.com'\nwhere x = 1"
+    normalized: "select * from t where x = ?"
+    sql_id: "0x1b55c4b911df1817"
+    seeds: ["kim@x.com"]
+  - id: 19
+    name: "a literal in a block comment"
+    pii: true
+    input: "select /* kim@x.com */ id from t"
+    normalized: "select id from t"
+    sql_id: "0x23c2b39383137af3"
+    seeds: ["kim@x.com"]
+  - id: 20
+    name: "an Oracle hint is removed"
+    dialect: oracle
+    input: "select /*+ INDEX(t idx_t_01) */ * from t where y = 2"
+    normalized: "select * from t where y = ?"
+    sql_id: "0x7f76737594f6f721"
+  - id: 21
+    name: "sql.keep-hints keeps a hint with its literals masked"
+    dialect: oracle
+    options: "keep_hints=true"
+    input: "select /*+ INDEX(t idx_t_01) OPT_PARAM('optimizer_mode' 'all_rows') */ * from t"
+    normalized: "select /*+ INDEX(t idx_t_01) OPT_PARAM(? ?) */ * from t"
+    sql_id: "0x74c5ec48d60f8ef"
+    seeds: ["all_rows", "optimizer_mode"]
+  - id: 22
+    name: "nested block comments"
+    input: "select 1 /* a /* 'b9' */ c */ from dual"
+    normalized: "select ? from dual"
+    sql_id: "0x109c9e330e13e5a0"
+    seeds: ["b9"]
+  - id: 23
+    name: "MySQL # line comment"
+    dialect: mysql
+    input: "select * from t # where p = '010-1234-5678'\nwhere z = 3"
+    normalized: "select * from t where z = ?"
+    sql_id: "0x6859586cda78424e"
+    seeds: ["010-1234-5678"]
+  - id: 24
+    name: "SQL Server temporary tables #temp and ##global stay"
+    dialect: sqlserver
+    input: "select * from #temp t join ##global g on t.id = g.id where t.v = 5"
+    normalized: "select * from #temp t join ##global g on t.id = g.id where t.v = ?"
+    sql_id: "0x851ea89ff2c69059"
+  - id: 25
+    name: "hexadecimal 0xDEAD"
+    pii: true
+    input: "select * from t where flags = 0xDEAD"
+    normalized: "select * from t where flags = ?"
+    sql_id: "0x596ce0fae4bc7408"
+    seeds: ["DEAD"]
+  - id: 26
+    name: "exponents and decimals 1.5e3, 2.5E-3, .25"
+    pii: true
+    input: "select * from t where v > 1.5e3 and w < 2.5E-3 and x = .25"
+    normalized: "select * from t where v > ? and w < ? and x = ?"
+    sql_id: "0xbcbad6576d6a4d88"
+    seeds: ["1.5e3", "2.5E-3", ".25", "25"]
+  - id: 27
+    name: "negative -42: a sign only after an operator, ( or ,"
+    pii: true
+    input: "select * from t where balance = -42 and a-1 > 0 and f(-3) = b - 2"
+    normalized: "select * from t where balance = ? and a-? > ? and f(?) = b - ?"
+    sql_id: "0x546d6127e518beb"
+    seeds: ["42", "-3"]
+  - id: 28
+    name: "PostgreSQL dollar quoting $$secret$$ and $tag$..$tag$"
+    pii: true
+    dialect: postgresql
+    input: "select $$secret$$, $tag$more 'x'$tag$ from t"
+    normalized: "select ?, ? from t"
+    sql_id: "0x69056e2f2baf5fd9"
+    seeds: ["secret", "more"]
+  - id: 29
+    name: "backtick identifiers with digits stay"
+    pii: true
+    dialect: mysql
+    input: "select `col1`, `order` from `table_2024`"
+    normalized: "select `col1`, `order` from `table_2024`"
+    sql_id: "0x94bad19d97b9756d"
+  - id: 30
+    name: "digits inside identifiers stay"
+    pii: true
+    input: "select col1, t_2024.v2 from table_2024 where c3 = 3"
+    normalized: "select col1, t_2024.v2 from table_2024 where c3 = ?"
+    sql_id: "0x32a38d05cda64a71"
+  # ADR-0010 C-183 (d), a criterion change by PM decision (not a weakening): this case expected
+  # "select \"Name 1\", [Total 2] from t" (sql_id 0x9078b8c83eda7147). With QUOTED_IDENTIFIER OFF
+  # SQL Server reads "..." as a string, so a "..." whose content is not identifier-shaped (here a
+  # space) is now masked; [..] stays. Identifier-shaped "..." keep their text and sql_id
+  # (SqlNormalizerTest T-SEC-35e).
+  - id: 31
+    name: "SQL Server: [..] stays, a \"..\" that is not identifier-shaped is a literal (C-183)"
+    dialect: sqlserver
+    input: "select \"Name 1\", [Total 2] from t"
+    normalized: "select ?, [Total 2] from t"
+    sql_id: "0x3059442fd33116b1"
+    seeds: ["Name 1"]
+  - id: 32
+    name: "a double-quoted string in the MySQL dialect"
+    dialect: mysql
+    input: "select * from t where name = \"kim9\""
+    normalized: "select * from t where name = ?"
+    sql_id: "0xd8c8f0c7944f4f77"
+    seeds: ["kim9"]
+  - id: 33
+    name: "DATE literal"
+    pii: true
+    input: "select * from t where d = DATE '2026-01-01'"
+    normalized: "select * from t where d = DATE ?"
+    sql_id: "0x123525faf50acb7"
+    seeds: ["2026-01-01"]
+  - id: 34
+    name: "INTERVAL literal"
+    pii: true
+    input: "select now() - INTERVAL '1 day' from dual"
+    normalized: "select now() - INTERVAL ? from dual"
+    sql_id: "0xe9d245d5502d89c4"
+    seeds: ["1 day"]
+  - id: 35
+    name: "MERGE"
+    pii: true
+    dialect: oracle
+    input: "MERGE INTO account a USING (SELECT 7 AS id, 'kim@x.com' AS email FROM dual) s ON (a.id = s.id) WHEN MATCHED THEN UPDATE SET a.email = s.email WHEN NOT MATCHED THEN INSERT (id, email) VALUES (s.id, s.email)"
+    normalized: "MERGE INTO account a USING (SELECT ? AS id, ? AS email FROM dual) s ON (a.id = s.id) WHEN MATCHED THEN UPDATE SET a.email = s.email WHEN NOT MATCHED THEN INSERT (id, email) VALUES (s.id, s.email)"
+    sql_id: "0x78214e7db5e84fe2"
+    seeds: ["kim@x.com"]
+  - id: 36
+    name: "common table expression"
+    pii: true
+    input: "WITH recent AS (SELECT * FROM orders WHERE created > '2026-01-01' AND amount > 100) SELECT count(*) FROM recent WHERE status = 'PAID'"
+    normalized: "WITH recent AS (SELECT * FROM orders WHERE created > ? AND amount > ?) SELECT count(*) FROM recent WHERE status = ?"
+    sql_id: "0x90d794b6202c502a"
+    seeds: ["2026-01-01", "PAID", "100"]
+  - id: 37
+    name: "array literals ARRAY[1,2] and ARRAY['a','b']"
+    pii: true
+    dialect: postgresql
+    input: "select * from t where tags && ARRAY[1,2] and names = ARRAY['kim7','lee8']"
+    normalized: "select * from t where tags && ARRAY[?,?] and names = ARRAY[?,?]"
+    sql_id: "0xdb9893f5f3d70efd"
+    seeds: ["kim7", "lee8"]
+  - id: 38
+    name: "JSON literal with a phone number"
+    pii: true
+    input: "insert into profile (data) values ('{\"phone\":\"010-1234-5678\"}')"
+    normalized: "insert into profile (data) values (?)"
+    sql_id: "0x1b9cc46ea46368ba"
+    seeds: ["010-1234-5678", "phone"]
+  - id: 39
+    name: "LIKE pattern"
+    pii: true
+    input: "select * from member where phone like '%010%'"
+    normalized: "select * from member where phone like ?"
+    sql_id: "0x78b9b6b0391d56de"
+    seeds: ["010"]
+  - id: 40
+    name: "PL/SQL block: only literals replaced"
+    pii: true
+    dialect: oracle
+    input: "BEGIN\n  UPDATE account SET email = 'kim@x.com' WHERE id = 10;\n  INSERT INTO audit VALUES (:1, 'changed');\nEND;"
+    normalized: "BEGIN UPDATE account SET email = ? WHERE id = ?; INSERT INTO audit VALUES (:1, ?); END;"
+    sql_id: "0xc623e34322b05450"
+    seeds: ["kim@x.com", "changed", "10"]
+  - id: 41
+    name: "{call proc('x')}: only literals replaced"
+    pii: true
+    input: "{call update_user(?, 'x7secret', 42)}"
+    normalized: "{call update_user(?, ?, ?)}"
+    sql_id: "0x1b794e533d10139b"
+    seeds: ["x7secret", "42"]
+  - id: 42
+    name: "{? = call f(?)} stays"
+    input: "{? = call get_balance(?)}"
+    normalized: "{? = call get_balance(?)}"
+    sql_id: "0xba8fbe880a797562"
+  - id: 43
+    name: "inline email in a Statement"
+    pii: true
+    input: "SELECT * FROM users WHERE email='a@b.c'"
+    normalized: "SELECT * FROM users WHERE email=?"
+    sql_id: "0x24d4c709910df1ce"
+    seeds: ["a@b.c"]
+  - id: 44
+    name: "MyBatis layout: newlines and indentation"
+    input: "SELECT id, name\n  FROM customer\n WHERE status = ?\n   AND region IN (?, ?, ?)"
+    normalized: "SELECT id, name FROM customer WHERE status = ? AND region IN (?)"
+    sql_id: "0x313abb2f5097850f"
+  - id: 45
+    name: "MyBatis layout: tabs, runs of spaces and a comment give the same id"
+    input: "SELECT id, name FROM customer\tWHERE status = ?   /* region filter */ AND region IN (?)"
+    normalized: "SELECT id, name FROM customer WHERE status = ? AND region IN (?)"
+    sql_id: "0x313abb2f5097850f"
+    same_as: 44
+  - id: 46
+    name: "Oracle alternative quoting q'[...]'"
+    dialect: oracle
+    input: "select * from t where s = q'[it's secret5]'"
+    normalized: "select * from t where s = ?"
+    sql_id: "0xdd4f3df5215bef5a"
+    seeds: ["secret5", "it's"]
+  - id: 47
+    name: "case is kept"
+    input: "Select * From Orders Where Id = 1"
+    normalized: "Select * From Orders Where Id = ?"
+    sql_id: "0xeca8b865f56e5c59"
+  - id: 48
+    name: "an unterminated literal is masked to the end"
+    input: "select * from t where a = 'no end secret6"
+    normalized: "select * from t where a = ?"
+    sql_id: "0xe5c4ceb2be4d6dfa"
+    seeds: ["secret6"]
+  - id: 49
+    name: "a statement over 64 KiB is cut; the cut literal is masked"
+    generate: "truncation"
+    normalized: "select a from t where s = ?"
+    truncated: true
+    sql_id: "0x7194b4b8ee1e2ed1"
+    seeds: ["xxxxxxxx", "and b"]
+  - id: 50
+    name: "failure injection: no budget gives <unparsed>, never the raw text"
+    inject: "budget"
+    input: "select * from t where card = '4111111111111111'"
+    normalized: "<unparsed>"
+    sql_id: "0x8bb03b734b3a7b59"
+    seeds: ["4111111111111111", "card"]

@@ -63,7 +63,8 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
 ./gradlew integrationTest                         # Testcontainers(Docker), 샘플 앱 shop-boot3 스모크 3변형·시드 센티널, 저장소 스키마·생성기·쿼리(실제 ClickHouse). check에 포함되지 않음
 ./gradlew integrationTest -Pqueries.profile=ci    # CI와 같다: 저장소 정합 T-ST-030~033·053을 생성기 1/100 프로파일로(12스레드 개발 머신에서 전체 약 7분)
 ./gradlew :agent:agent-core:integrationTest       # T-ACC-11(tx_id 1,000만 건 충돌 0·tx_id >> 23 ±1ms·두 인스턴스·begin 경로 start_ts 일치)과 N-02 축소판 힙 예산(포크 JVM, 큐·사전 상한, io.argos.agent. ≤ 64MB),
-                                                  # SessionFlowControlIntegrationTest(실제 grpc-netty 스택: isReady 백프레셔·메타데이터·SESSION_REQUIRED 같은 seq 재전송). 약 1.5~2분
+                                                  # SessionFlowControlIntegrationTest(실제 grpc-netty 스택: isReady 백프레셔·메타데이터·SESSION_REQUIRED 같은 seq 재전송),
+                                                  # SqlNormalizerTimingIntegrationTest(@Tag slow, SQL 정규화 1ms 예산 실측: 64KB 최악 입력 8종을 함께 워밍업한 뒤 입력마다 라운드 최솟값의 중앙값, 최대 3회 시도, [sql-timing] 줄에 중앙값·p90도, 조용한 머신에서). 약 1.5~2분
 ./gradlew :agent:agent-testing:integrationTest -Pagent.attach.jdks=8,11,17,21,25 -Pagent.e2e=shop-boot2@8,shop-boot2@11,shop-boot2@17,shop-boot2@21,shop-boot3@17,shop-boot3@21,shop-boot3@25,shop-boot4@21
                                                   # 에이전트 하네스(agent/agent-testing/README.md) 위의 부착(JDK별)·샘플 앱 종단 매트릭스와 FakeCollector
                                                   # (T-AG-005·010·040~045·050·053·060·070, T-BLD-006·010, T-NFR-30a premain 클래스 예산, C-27 플래그, JDK 25는 deny).
@@ -82,6 +83,13 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
                                                   # War*Test 클래스마다 Tomcat을 새로 띄우고 마지막에 종료 포트로 우아하게 끝낸 뒤 Tomcat 로그를 판정한다(TomcatLogCheck: 경고·스택의 에이전트 언급 0,
                                                   # SEVERE·ThreadLocal 누수는 무에이전트 실행 대비). 예: -Pagent.e2e=shop-war-javax@8,shop-war-jakarta@21 --tests '*War*'(약 10분)
                                                   # -Pagent.container=true는 컨테이너 모드 테스트 추가(Docker, JDK 이미지는 다이제스트 고정, -Pagent.container.image.<jdk>=<image>@sha256:<digest>로 교체)
+./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot3@21 --tests '*jdbc*'
+                                                  # JDBC·풀 스위트(WO-13, 패키지 io.argos.agent.testing.jdbc): T-AG-030~033·036·062f/g·032c/d·035a, T-ACC-22a·24, T-SEC-3A 에이전트 측.
+                                                  # 기본은 H2만(기본 integrationTest에도 포함, C-149 (1)). -Pagent.jdbc.containers=true(또는 postgres,mysql처럼 목록)면
+                                                  # MySQL 8.4·MariaDB 11.4·PostgreSQL 16·SQL Server 2022(이미지 다이제스트 고정, 한 번에 1개, 무작위 비밀번호, nightly·수동, C-149 (2)),
+                                                  # -Pagent.jdbc.oracle=true면 gvenzl/oracle-free(4 GiB, FUTC dev-only, C-149 (3)). 사내 Oracle 19c·Tibero·Altibase·CUBRID·DB2는
+                                                  # ARGOS_TEST_<DB>_URL·_USER·_PASSWORD(없으면 사유와 함께 skip, 사람 확인). 이 노트북 H2 약 6분, 컨테이너 + Oracle 약 10분(DB당 컨테이너 ≤ 4 GiB, Oracle 실측 약 3.1 GiB).
+                                                  # 로그 agent/agent-testing/build/reports/agent-e2e/wo13-*, 콘솔 [wo13-table]·[wo13-db]·[wo13-sql-ids] 줄은 결과 XML의 system-out에
 ./gradlew :agent:agent-testing:integrationTest --tests '*transport*' -Pagent.jdk8u252=<JRE> -Pagent.jdk8u242=<JRE>
                                                   # gRPC 전송(WO-11) 대 FakeCollector: T-AG-071·067, T-ACC-02a·06a, T-SEC-06·07a·08c, T-NFR-26a, C-74 증명(T-BLD-004a), C-75, T-BLD-011·011a(실행 시점 프록시 미사용),
                                                   # 세션 반응(ConnectionTransportTest: 백오프당 TCP 접속·DNS 조회 1회, 해석 불가 주소 WARN 분당 1회, 영구 거부·REPLACED 뒤 연결·argos-io 해제, Ack.throttle).
@@ -97,7 +105,7 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
                                                   # -Pargos.ui.skip=true가 없으면 ui/dist를 static/에 넣는다. :server:checkFlywayNames(check 포함)는 db/pg 파일명 규칙(C-28)
 ./gradlew :server:integrationTest                 # 서버 기동 순서·설정·관리 포트·PG/CH 마이그레이션·DB 권한(실제 PostgreSQL 16·ClickHouse 26.8, Testcontainers),
                                                   # WO-21 수집 경로(collector·ingest·e2e: FakeAgent → gRPC → WAL → ClickHouse, T-SV-010은 bootJar 자식 JVM 강제 종료 2회,
-                                                  # T-ACC-13 (c) ClickHouse 3분 중단 2종(ingest 수준·gRPC 종단) 포함, 약 17분. bootJar를 먼저 빌드한다).
+                                                  # T-ACC-13 (c) ClickHouse 3분 중단 2종(ingest 수준·gRPC 종단) 포함, WO-23 조회 API 포함 약 22분. bootJar를 먼저 빌드한다).
                                                   # 실시간 1초를 넘는 테스트는 @Tag("slow")로 integrationTest에 둔다(WAL fsync 1초 → UNAVAILABLE, 기록기 플러시 요청, keepalive 강제)
                                                   # 소요 표 server/build/reports/migration/timings.md. -Pserver.nightly=true면 T-SV-002(V001 + 생성기 1/100 → 다음 버전, 약 2분) 추가, 없으면 SKIPPED.
                                                   # -Pserver.chOutageMinutes=30 --tests '*ClickHouseOutage*'는 30분 중단 변형(03 §3.2, 두 클래스라 약 65분, 조용한 머신에서).
@@ -107,8 +115,36 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
                                                   # 프로토콜 수준 가짜 에이전트(공격 5종 포함)는 server/src/testFixtures의 io.argos.server.testing.fakeagent(FakeAgent, WO-29 재사용).
                                                   # 두 Gradle 실행이 같은 :server:integrationTest를 동시에 돌리면 결과 파일이 깨진다. --tests 부분 실행은 결과 XML을 지워
                                                   # traceabilityReport에서 나머지가 NOT RUN이 된다(전체 실행 뒤에 돌릴 것). :server:securityTest와 한 실행에 주면 병렬로 돈다(org.gradle.parallel)
-./gradlew :server:jibDockerBuild                  # 로컬 이미지 argos-server:<버전>(베이스 다이제스트 고정, user 10001:10001, 포트 8080·9100). Jib은 구성 캐시 미호환.
-                                                  # 로그 /logs/server·WAL /data/wal: 두 볼륨은 uid 10001 소유 0700으로 미리 준비(server/README.md)
+                                                  # WO-23 조회 API(소스 선택·T-ACC-03 정합·C-50 조회 순서·XLog 샘플링·FakeAgent → 적재 → API 종단)도 여기 있다. 공유 조회 데이터
+                                                  # (QueryTestData.shared(), 생성기 tiny, CH 1.5GiB + PG 0.5GiB)를 JVM 끝까지 유지하므로 -Pserver.load·-Pserver.nightly·apiBench는 --tests로 따로 돌린다
+./gradlew :server:generateOpenApi                 # docs/api/openapi.yaml 재생성(생성본, 손 편집 금지, C-28). 컨트롤러·DTO를 바꾸면 돌리고 함께 커밋한다(빌드 버전과 무관, info.version v1).
+                                                  # :server:contractTest(check 포함)가 커밋본 = 생성본, 14 §2.9 린트(JUnit, Spectral 없음, C-151), 저장소 조회 operation의 x-argos-limits,
+                                                  # 커밋본 스펙의 권한 매트릭스(T-API-010), oasdiff 네거티브(T-API-002, Docker)를 검사한다. 서버 jar를 다시 만들 수 있어 서버 통합 실행 중에는 돌리지 않는다.
+                                                  # 같은 record를 요청 본문과 2xx 응답에 함께 쓰면 생성이 실패한다(요청 record를 따로 둘 것). 요청 필드는 @Schema(requiredMode = REQUIRED)를 단 것만 required
+./gradlew :server:integrationTest --tests '*QueryApiBench*' -Pserver.apiBench=true [-Pserver.apiBench.profile=ci|local|full] [-Pserver.apiBench.enforce=true]
+                                                  # 조회 API N-07·N-24 호출 묶음(대시보드 1h·XLog 10만 점 이상 창·상세(±2초 경로, captured)·trace(2건 이상)·서비스·SQL Top N 1일·
+                                                  # user/request 검색 1h, 콜드·웜 3회 중앙값). 표본(SQL 확인)·응답 조건이 미달이면 그 케이스는 FAILED
+                                                  # → server/build/reports/api-bench/report.md. 단독 실행. ci(1/100, 7.2h) 약 5~6분(적재 약 3분), local(1/20, 36h)은 적재가 약 5배.
+                                                  # 이 PC 수치는 참고값(INVALID). enforce는 케이스마다 웜 3회 중앙값 ≤ 목표와 콜드(재기동 뒤 첫 호출) ≤ 목표의 2배를 모두 요구하고(C-180,
+                                                  # 보고서에 두 판정 열), profile=full(생성기 30일, 목표 하드웨어) 전용이며 다른 프로필이면 적재 전에 실패.
+                                                  # 자원: -Pserver.apiBench.serverXmx=<힙>(서버 자식 JVM)·-Pserver.apiBench.chMemory=<크기>(ClickHouse 컨테이너, 예 7.5g). 기본은 enforce면
+                                                  # -Xmx4g·CH 7.5GiB·PG 1.5GiB(13 §7.1), 아니면 -Xmx1g·CH 4GiB·PG 0.5GiB. 플래그가 없으면 SKIPPED
+./gradlew :server:loadQueryTestData -Pquerydata.clickhouse=<url> -Pquerydata.postgres=<jdbc-url> [-Pquerydata.profile=tiny|ci|local|full]
+                                                  # 조회 테스트 데이터(생성기, 시드 42)를 스키마가 있는 실행 중 설치에 적재(개발 전용, WO-30 E2E 시드). 비밀번호는 환경변수
+                                                  # ARGOS_CH_WRITER_PASSWORD·ARGOS_PG_PASSWORD로만. 매니페스트 server/build/query-test-data/query-test-data.json(-Pquerydata.out)
+./gradlew :server:jibDockerBuild                  # 로컬 이미지 argos-server:<버전>(linux/amd64, 베이스 다이제스트 고정, user 10001:10001, HOME=/data, 포트 8080·9100, UI 포함.
+                                                  # -Pargos.ui.skip=true면 UI 없음). Jib은 구성 캐시 미호환. 서버 jar를 다시 만들므로 .gradle/argos-locks/server-it를 잡고 돈다.
+                                                  # /data·/data/tmp·/logs는 이미지에서 10001:10001 0700이라 새 named volume은 준비가 필요 없다(bind mount만 chown, server/README.md)
+bash deploy/compose/test/run-all.sh               # Compose 설치 스크립트 테스트(Docker, 약 50초): env-init을 Ubuntu·Alpine·Debian 컨테이너에서(권한·길이·금지 목록·종료 코드·
+                                                  # RAM 8/16/32GB 스냅샷·--force 거부), argos-compose.sh(미제공 명령 거부·up 사전 검사·token create 입력 상한·SAN 예시),
+                                                  # smoke.sh 판정 로직과 변이(5432 게시·.env 0644 등), compose 파일(다이제스트 = image.properties, 포트 집합, 프록시 XFF·INTERNALPROXIES, .env.example)
+./gradlew :deploy:composeSmoke                    # Compose 종단 스모크(WO-40, Docker, check 미포함, 약 3.5분 + 이미지 빌드): jibDockerBuild → env-init → up --wait → smoke.sh
+                                                  # → token create + 실제 에이전트(shop-boot3, TLS) 적재 → 5개 상한 → ARGOS_MGMT_EXPOSE 변형 → down -v, 마법사·무인 두 모드와 금지 비밀번호 기동 거부.
+                                                  # server-it 잠금을 잡고, 호스트 포트 8080·9100을 쓴다(프로젝트 argos-wo40-smoke, 컨테이너 ≤ 6GiB 상한). -Pcompose.smoke.modes=wizard|unattended,
+                                                  # 진단은 ARGOS_SMOKE_KEEP_ON_FAILURE=1 bash deploy/compose/test/compose-smoke.sh. Linux Docker Engine에서는 root로(비밀값을 uid 10001에 넘김)
+deploy/compose/smoke.sh                           # 설치 상태 검사(운영자용, POSIX sh, 기본 읽기 전용): .env·secrets/ 권한, 게시 포트 {8080, 9100}(+127.0.0.1:8081), ss -ltnp, 이미지 다이제스트,
+                                                  # back internal, uid 10001, health, /actuator 404, 설정 토큰 403. --complete-setup(마법사 API로 관리자 생성, 테스트 설치용),
+                                                  # --check-admin-login(무인 설치 직후 로그인·변경 강제·로그아웃). 설치 절차는 docs/install/compose.md(ko: compose.ko.md)
 test/storage/bench/bench-server.sh start          # 저장소 PoC 벤치용 단독 ClickHouse(127.0.0.1:18123, 비밀번호는 test/storage/bench/build/). 절차는 test/storage/bench/README.md
 ./gradlew :test:storage:generator:storageBench -Pbench.machine-profile=<id> -Pstorage.profile=local -Pstorage.target=url:http://127.0.0.1:18123/ -Pstorage.apply-schema=true
                                                   # 저장소 PoC 벌크 생성·적재(13 §15, 18 §9; profile ci 1/100, local 1/20, full). 리플레이는 storageGenerate -Pstorage.mode=replay
@@ -139,17 +175,35 @@ test/bench/bench-run.sh ... --exporter grpc --collector HOST:PORT --agent-config
 test/bench/bench.sh <load|startup|report|publish> ...   # 벤치 하네스 직접 실행(k6는 test/bench/fetch-k6.sh). 사용법 test/bench/README.md
 ./gradlew traceabilityReport                      # 요구 → 테스트 ID → 테스트 → 마지막 결과 → build/reports/traceability.md·.json(테스트 실행 없음, test/README.md 6장)
 ./gradlew :sample-apps:<app>:sampleSmoke          # 샘플 앱을 에이전트 없이 기동해 엔드포인트 카탈로그 검증(전 변형, check 미포함).
-                                                  # 1개 변형은 sampleSmoke<Variant>, 루트 sampleSmoke는 50변형 전부. -Psample.startupRuns=5는 기동 중앙값
+                                                  # 1개 변형은 sampleSmoke<Variant>, 루트 sampleSmoke는 54변형 전부. -Psample.startupRuns=5는 기동 중앙값.
+                                                  # 스위치(sample-apps/README.md): SAMPLE_DB=h2|postgres|mysql|mariadb|mssql|oracle(mariadb·mssql·oracle 드라이버는 shop-boot3만, WO-13),
+                                                  # SAMPLE_POOL=hikari|tomcat|dbcp2, SAMPLE_ROUTING_DS, SAMPLE_DRIVER_WRAPPER(C-40 위임 래퍼 5번째 층), SAMPLE_SECOND_POOL(풀 2개·재기동)
 ./gradlew :sample-apps:<app>:sampleAppJar         # 실행 jar → sample-apps/<app>/build/sample-app/<app>.jar (WAR 앱은 :war)
 ./gradlew :sample-apps:<app>:sampleImage          # 샘플 앱 Docker 이미지 argos-sample/<app>:dev
 
 pnpm -C ui install --frozen-lockfile
-pnpm -C ui build && pnpm -C ui test               # build = tsc + vite + 번들 라이선스 검사 + 외부 참조 검사
+pnpm -C ui build && pnpm -C ui test               # build = tsc + vite + 번들 라이선스 검사 + 외부 참조 검사 + 번들 크기 보고(bundle:size, 15 §14 대비 gzip 표,
+                                                  # 예산 초과는 경고, 청크 그래프 결함은 실패. 결과 ui/build/bundle-size.json)
 pnpm -C ui lint && pnpm -C ui typecheck && pnpm -C ui format:check            # ESLint, tsc strict, Prettier
 pnpm -C ui check:i18n && pnpm -C ui check:external && pnpm -C ui check:licenses  # i18n 키, 외부 참조, 라이선스
 pnpm -C ui check:licenses:dev                     # 허용 목록 밖 UI 개발 도구가 dev-only.md `npm:` 행에 있는지
+pnpm -C ui gen:api && pnpm -C ui check:api       # docs/api/openapi.yaml → src/api/generated/schema.ts(손 편집 금지, x-argos-untrusted → Untrusted 브랜드).
+                                                  # check:api(= test에도 포함)는 커밋본 스펙으로 재생성한 결과와 diff 0. 스펙이 바뀌면 gen:api 후 함께 커밋
 pnpm -C ui playwright:install                     # Playwright Chromium 설치(머신당 1회, e2e·perf 전제)
-pnpm -C ui e2e                                    # vite build + Playwright E2E(Chromium). test·Gradle check에 포함되지 않음
+pnpm -C ui e2e                                    # vite build + Playwright E2E: preview 프로젝트(WO-04 spec, vite preview) + stack 프로젝트(WO-30 spec 전부,
+                                                  # 이 트리의 서버 bootJar + PostgreSQL·ClickHouse 컨테이너, 127.0.0.1 무작위 포트, 라벨 io.argos.e2e·접두 argos-e2e-, ≤ 5GiB,
+                                                  # 시드: :server:loadQueryTestData tiny(오늘 UTC 앵커, C-170) + 사용자 3 + shop-boot3·에이전트·seed-traffic.sh, 매니페스트
+                                                  # ui/e2e/.stack/seed-manifest.json, WS만 스텁). 전제: Docker, JAVA_HOME JDK 21, Windows는 Git Bash, 그리고 jar 5개
+                                                  # ./gradlew :server:bootJar :agent:agent-dist:agentJar :sample-apps:shop-boot3:sampleAppJar :sample-apps:ext-stub:sampleAppJar :sample-apps:smoke:sampleAppJar
+                                                  # (UI·서버 소스보다 오래된 bootJar는 거부). 재시도 0, 이 노트북 약 3분(스택 기동·시드 약 1분). test·Gradle check에 포함되지 않음.
+                                                  # 실서버 실행은 server-it 락. 서버 CSP 카운터는 Chromium에서 검증 불가(csp-counter-not-verifiable 주석, ui/e2e/README.md CSP 절)
+pnpm -C ui e2e:preview                            # preview 프로젝트만 / pnpm -C ui e2e:stack [--shard=i/n]: stack 프로젝트만
+pnpm -C ui e2e:docker [-- --update-snapshots=missing|all]   # stack 프로젝트를 다이제스트 고정 Linux Playwright 이미지 안에서(컨테이너는 pnpm-lock.yaml에서 만든 package-lock.json을
+                                                  # npm ci로 무결성 검사하며 설치. UI를 바꾼 뒤에는 --update-snapshots=all로 다시 만들고 이미지를 확인. 시각 회귀 기준 이미지 생성·비교는
+                                                  # 여기서만, 그 밖에서는 screenshot-linux-only로 skip). CI pr.yml e2e 잡(4샤드)이 이것을 쓴다. 기준 이미지 갱신은 quiet 락
+pnpm -C ui e2e:stack:up && pnpm -C ui e2e:stack:down   # 시드된 스택을 띄워 두고(ARGOS_E2E_STACK_URL=<URL>로 재사용) / 제거. node e2e/stack/cli.ts restart-server는
+                                                  # DB를 둔 채 새 bootJar로 서버만 재기동. 변수·픽스처·required YAML은 ui/e2e/README.md
+pnpm -C ui perf:initial-load                      # 스택 위 초기 로드(T-NFR-14 골격, Navigation Timing 5회·CPU 부하 기록, 참고값). 같은 jar 전제
 pnpm -C ui perf                                   # vite build + XLog 프레임 시간 spec(T-NFR-14, Chrome tracing). 조용한 머신에서, 약 12~16분
 
 bash test/lint/check-spdx.sh                      # SPDX 헤더 전수(T-BLD-007)

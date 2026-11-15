@@ -1,4 +1,10 @@
 {
   "$comment": "Per-file lint exceptions (SEC-60, docs/15 §11). Each entry lists exact files, the rules switched off and the reason. Inline eslint-disable comments are ignored in src/.",
-  "exceptions": []
+  "exceptions": [
+    {
+      "files": ["src/api/exportCsv.ts"],
+      "rules": ["argos/no-object-url"],
+      "reason": "saveFile() is the one approved download helper (DSN-15-06, docs/15 §11 CSV): it puts the server's CSV export, re-typed as text/csv, on a temporary <a download> under a sanitised file name and revokes the object URL afterwards. No other file may create object URLs."
+    }
+  ]
 }

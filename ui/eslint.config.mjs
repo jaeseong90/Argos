@@ -2,7 +2,9 @@
 //
 // Lint policy for the Argos UI (docs/19 §4·§5.4, docs/15 §11·§12·§15, SEC-60·61, 03 §3.3).
 // Exceptions are granted per file in eslint-allow.json; inline eslint-disable comments are
-// not honoured in src/.
+// not honoured in src/. Project rules (eslint-rules/, each with RuleTester cases, T-SEC-60):
+// argos/spdx-header, argos/untrusted-text (type-aware), argos/no-token-storage, argos/no-raw-href,
+// argos/no-object-url.
 import { createRequire } from 'node:module';
 
 import js from '@eslint/js';
@@ -110,6 +112,19 @@ const RESTRICTED_IMPORTS = [
       'Use the API wrapper in src/api (CSRF, 401 refresh, error envelope), not the generated client.',
     allowedIn: ['src/api/**'],
   },
+  {
+    regex: '^openapi-fetch(/.*)?$',
+    message:
+      'Use the API wrapper in src/api (CSRF, 401 refresh, error envelope) instead of creating an openapi-fetch client.',
+    allowedIn: ['src/api/**'],
+  },
+  {
+    // zod 4 probes `new Function` unless configured jitless first; the server CSP has no
+    // 'unsafe-eval', so a direct import would report a violation on every page (SEC-46).
+    regex: '^zod(/.*)?$',
+    message: "Import z from src/app/zod (jitless, CSP without 'unsafe-eval'), not from 'zod'.",
+    allowedIn: ['src/app/**'],
+  },
 ];
 
 // Network and realtime globals that only one module may use (03 §3.3, DSN-15-10).
@@ -119,8 +134,22 @@ const RESTRICTED_GLOBALS = [
   { name: 'fetch', message: FETCH_MESSAGE, allowedIn: ['src/api/**'] },
   { name: 'XMLHttpRequest', message: FETCH_MESSAGE, allowedIn: ['src/api/**'] },
   { name: 'WebSocket', message: WS_MESSAGE, allowedIn: ['src/realtime/**'] },
+  // A second network channel next to the generated client; no module may open one (empty list).
+  { name: 'EventSource', message: FETCH_MESSAGE, allowedIn: [] },
 ];
 const GLOBAL_OBJECTS = ['window', 'globalThis', 'self'];
+
+// navigator.sendBeacon sends a POST without X-Argos-CSRF, past the one CSRF wrapper (SEC-43):
+// forbidden in every scope, src/api included (member access, computed access, destructuring).
+const NETWORK_SYNTAX = [
+  { selector: "MemberExpression[property.name='sendBeacon']", message: FETCH_MESSAGE },
+  {
+    selector: "MemberExpression[computed=true][property.value='sendBeacon']",
+    message: FETCH_MESSAGE,
+  },
+  { selector: "ObjectPattern > Property[key.name='sendBeacon']", message: FETCH_MESSAGE },
+  { selector: "ObjectPattern > Property[key.value='sendBeacon']", message: FETCH_MESSAGE },
+];
 
 // JSX attributes whose values users read; literal strings there must be i18n keys (docs/15 §12).
 const USER_VISIBLE_ATTRIBUTES = [
@@ -159,9 +188,9 @@ function dynamicImportSyntax(imports) {
 }
 
 /**
- * Builds the restricted import/global/syntax rules for one scope: the XSS sinks always apply;
- * of the restricted modules and globals every entry applies except those whose `allowedIn`
- * contains the scope.
+ * Builds the restricted import/global/syntax rules for one scope: the XSS sinks and sendBeacon
+ * always apply; of the restricted modules and globals every entry applies except those whose
+ * `allowedIn` contains the scope (an empty `allowedIn` applies everywhere).
  *
  * @param {string | null} scope
  */
@@ -173,7 +202,12 @@ function restrictionRules(scope) {
   );
   const globalsList = RESTRICTED_GLOBALS.filter((entry) => !allowed(entry));
   return {
-    'no-restricted-syntax': ['error', ...XSS_SYNTAX, ...dynamicImportSyntax(imports)],
+    'no-restricted-syntax': [
+      'error',
+      ...XSS_SYNTAX,
+      ...NETWORK_SYNTAX,
+      ...dynamicImportSyntax(imports),
+    ],
     'no-restricted-imports': imports.length > 0 ? ['error', { patterns: imports }] : 'off',
     'no-restricted-globals':
       globalsList.length > 0
@@ -286,6 +320,24 @@ export default defineConfig([
       ],
       // no-restricted-syntax (XSS sinks, dynamic imports), -imports, -globals, -properties.
       ...restrictionRules(null),
+      // Browser storage only for argos.ui.* preference keys, no cookie writes (SEC-40, 15 §11).
+      'argos/no-token-storage': 'error',
+      // Link targets: literal internal paths or safeHref() (16 §9.2·§9.3).
+      'argos/no-raw-href': 'error',
+      // No blob: object URLs; downloads only through saveFile() of src/api/exportCsv.ts, the one
+      // exception in eslint-allow.json (16 §9.3, DSN-15-06).
+      'argos/no-object-url': 'error',
+    },
+  },
+
+  {
+    // Type-aware: collected strings (Untrusted brand, gen:api) only through SafeText, SafeLink
+    // and CodeBlock (SEC-60, 15 §6.6). Needs the TypeScript parser, so TypeScript files only;
+    // src/ holds no other script files (scripts/src-extensions.test.mjs).
+    name: 'argos/src-typed',
+    files: [`src/**/*.${TS_EXTENSIONS}`],
+    rules: {
+      'argos/untrusted-text': 'error',
     },
   },
 
@@ -301,6 +353,10 @@ export default defineConfig([
     rules: {
       // Tests assert on rendered text; they do not render user-facing copy themselves.
       'i18next/no-literal-string': 'off',
+      // Tests reset and inspect browser storage (localStorage.clear(), T-SEC-40 checks).
+      'argos/no-token-storage': 'off',
+      // Tests stub URL.createObjectURL to observe downloads.
+      'argos/no-object-url': 'off',
       'import-x/no-extraneous-dependencies': ['error', { devDependencies: true }],
     },
   },

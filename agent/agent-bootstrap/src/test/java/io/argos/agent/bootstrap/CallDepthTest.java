@@ -35,6 +35,31 @@ class CallDepthTest {
   }
 
   @Test
+  @DisplayName(
+      "CallDepth value slots hand a fact up a nested chain; outsideJdbc() is true only with all"
+          + " three JDBC depths at 0 (WO-13)")
+  void valuesAndOutsideJdbc() {
+    assertThat(CallDepth.outsideJdbc()).isTrue();
+    CallDepth.setValue(CallDepth.JDBC_DATASOURCE, 42L);
+    assertThat(CallDepth.value(CallDepth.JDBC_DATASOURCE)).isEqualTo(42L);
+    assertThat(CallDepth.depth(CallDepth.JDBC_DATASOURCE)).as("values are not depths").isZero();
+    CallDepth.setValue(CallDepth.JDBC_DATASOURCE, 0L);
+    for (int key :
+        new int[] {
+          CallDepth.JDBC_STATEMENT, CallDepth.JDBC_CONNECTION, CallDepth.JDBC_DATASOURCE
+        }) {
+      CallDepth.enter(key);
+      assertThat(CallDepth.outsideJdbc()).as("key " + key).isFalse();
+      CallDepth.exit(key);
+    }
+    CallDepth.enter(CallDepth.HTTP_CLIENT);
+    assertThat(CallDepth.outsideJdbc()).isTrue();
+    CallDepth.exit(CallDepth.HTTP_CLIENT);
+    CallDepth.setValue(99, 1L);
+    assertThat(CallDepth.value(-1)).isZero();
+  }
+
+  @Test
   @DisplayName("CallDepth is per thread")
   void perThread() throws InterruptedException {
     CallDepth.enter(CallDepth.SERVLET);

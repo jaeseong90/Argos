@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
+# Jib discovers its Gradle plugin extensions with ServiceLoader; argos.java-server enables this one
+# for the server image (WO-40).
+io.argos.buildlogic.server.ImageOwnershipExtension

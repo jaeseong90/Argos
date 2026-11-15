@@ -11,6 +11,18 @@ decisions C-50 to C-71 of `docs/adr/0007-storage-alignment-decisions.md` take pr
 | `config.d/argos.xml` | Server settings (13 §7.2): memory, merges, default compression ZSTD(1), listeners (HTTP 8123 and native 9000 only), empty `remote_url_allow_hosts` (no outbound URL), a TTL or removal for every system log of the bundled image. |
 | `users.d/argos.xml` | Profiles and the three accounts (13 §7.3, SEC-74, SEC-76, ADR-0007 C-60). |
 
+### Mounting the configuration into the official image
+
+Mount `config.d/argos.xml` and `users.d/argos.xml` as **single files** (read-only) at
+`/etc/clickhouse-server/config.d/argos.xml` and `/etc/clickhouse-server/users.d/argos.xml`, as
+`deploy/compose/compose.yaml` does (ADR-0010 C-195 (2)). Do not mount the `config.d/` or `users.d/`
+directory: it hides the image's own `config.d/docker_related_config.xml`, which makes ClickHouse
+listen on every interface of the container, so ClickHouse listens on 127.0.0.1 only and the server
+cannot reach it (its migrations fail at start; measured in WO-40 with 26.8.34.13). The note in
+`config.d/argos.xml` that `docker_related_config.xml` is merged after this file holds for the
+single-file mount only. The password hashes reach the container as environment variables
+(`env_file`, see "Substitution variables" below).
+
 ## Tables
 
 | Kind | Tables | Partition | Retention (default) |

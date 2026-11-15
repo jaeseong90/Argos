@@ -6,6 +6,7 @@ import io.argos.agent.bootstrap.CaptureConfig;
 import io.argos.agent.bootstrap.DictKind;
 import io.argos.agent.bootstrap.ModuleHealth;
 import io.argos.agent.bootstrap.Scope;
+import io.argos.agent.bootstrap.SqlState;
 import io.argos.agent.bootstrap.StepType;
 import io.argos.agent.bootstrap.TraceContext;
 import io.argos.agent.bootstrap.Tracer;
@@ -14,9 +15,15 @@ import io.argos.agent.core.context.VirtualThreads;
 import io.argos.agent.core.guard.AgentCounters;
 import io.argos.agent.core.log.AgentLogger;
 import io.argos.agent.core.masking.Masker;
+import io.argos.agent.core.metric.PoolRegistry;
+import io.argos.agent.core.metric.TomcatRegistry;
+import io.argos.agent.core.sql.BindParameterCapturer;
+import io.argos.agent.core.sql.DbIdentity;
+import io.argos.agent.core.sql.SqlIds;
 import io.argos.agent.core.sql.SqlNormalizer;
 import io.argos.agent.core.transport.Queues;
 import java.util.SplittableRandom;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * The core's {@link Tracer} (10 §3, §7.1, §8, §9.1, §9.2, §9.5). Every method is non-blocking,
@@ -73,6 +80,10 @@ public final class TracerImpl implements Tracer {
 
   private final Dictionary dictionary;
   private final SqlIds sqlIds;
+
+  /** The JDBC target ids (10 §6.3 DbInfo), created by the first JDBC call (never on premain). */
+  private final AtomicReference<DbIdentity> dbIdentity = new AtomicReference<DbIdentity>();
+
   private final AgentControl control;
   private final TxIdGenerator txIds;
   private final AgentCounters counters;
@@ -97,6 +108,18 @@ public final class TracerImpl implements Tracer {
 
   /** {@code capture.user-id.*} (WO-12, 16 §6.3, ADR-0010 C-125). */
   private final UserIds userIds;
+
+  /**
+   * The pool and Tomcat registries (WO-13, 10 §6.4), created by their first use: an application
+   * thread that registers a pool or connector, or the agent thread that reads them. Never on the
+   * premain thread, so the start path loads none of their classes (ADR-0009 C-79).
+   */
+  private final AtomicReference<PoolRegistry> pools = new AtomicReference<PoolRegistry>();
+
+  private final AtomicReference<TomcatRegistry> connectors = new AtomicReference<TomcatRegistry>();
+
+  /** {@code app.instance} is not configured: the first connector names the instance. */
+  private final boolean instanceNameFromConnector;
 
   /**
    * A tracer for module tests: every ended transaction, with its steps, goes to {@code sink}; no
@@ -128,7 +151,11 @@ public final class TracerImpl implements Tracer {
   private TracerImpl(Builder b) {
     this.counters = b.counters != null ? b.counters : new AgentCounters();
     this.dictionary = b.dictionary != null ? b.dictionary : new Dictionary(counters);
-    this.sqlIds = new SqlIds(dictionary, SqlNormalizer.defaults(), counters);
+    this.sqlIds =
+        new SqlIds(
+            dictionary,
+            b.sqlNormalizer != null ? b.sqlNormalizer : SqlNormalizer.defaults(),
+            counters);
     this.control = b.control;
     this.clock = b.clock != null ? b.clock : TraceClock.SYSTEM;
     this.txIds =
@@ -148,6 +175,13 @@ public final class TracerImpl implements Tracer {
     this.sampler = b.sampler != null ? b.sampler : Sampler.defaults();
     this.threadMeter = b.threadMeter != null ? b.threadMeter : ThreadMeter.NONE;
     this.userIds = new UserIds(counters, b.userIdSalts);
+    this.instanceNameFromConnector = b.instanceNameFromConnector;
+    if (b.pools != null) {
+      this.pools.set(b.pools);
+    }
+    if (b.connectors != null) {
+      this.connectors.set(b.connectors);
+    }
   }
 
   /** A builder of the agent's tracer ({@link TraceRuntime}). */
@@ -572,6 +606,27 @@ public final class TracerImpl implements Tracer {
     }
   }
 
+  /** {@inheritDoc} ({@link StepBuffer#batch}, encoded as {@code ProfileStep.batch_size}) */
+  @Override
+  public void stepBatch(TraceContext ctx, int seq, int batchSize) {
+    if (seq < 0 || batchSize < 1) {
+      return;
+    }
+    try {
+      Transaction tx = open(ctx);
+      if (tx == null) {
+        return;
+      }
+      // Read once: an end() on another thread may detach the steps meanwhile.
+      StepBuffer steps = tx.steps();
+      if (steps != null) {
+        steps.batch(seq, batchSize);
+      }
+    } catch (Throwable t) {
+      AgentLogger.warnOnce("tracer.step", "step batch size failed: {}", t.toString());
+    }
+  }
+
   @Override
   public void stepDetail(TraceContext ctx, int seq, String detail) {
     try {
@@ -785,9 +840,42 @@ public final class TracerImpl implements Tracer {
     }
   }
 
+  /** {@inheritDoc} ({@link DbIdentity}: {@code JdbcUrlParser}, the raw URL is never kept) */
   @Override
   public long dbId(String jdbcUrl) {
-    return jdbcUrl == null ? 0 : dict(DictKind.DB_TARGET, JdbcUrls.withoutCredentials(jdbcUrl));
+    try {
+      return dbIdentity().id(jdbcUrl);
+    } catch (Throwable t) {
+      return 0;
+    }
+  }
+
+  /** {@inheritDoc} ({@link SqlIds} in the dialect {@link DbIdentity} remembers for the target) */
+  @Override
+  public long sqlId(String rawSql, long dbId) {
+    try {
+      return sqlIds.id(rawSql, dbId == 0 ? 0 : dbIdentity().dialectOf(dbId));
+    } catch (Throwable t) {
+      return 0;
+    }
+  }
+
+  /** {@inheritDoc} ({@link BindParameterCapturer}, the installed {@link Masker}) */
+  @Override
+  public void sqlParam(SqlState state, int index, Object value, String setter) {
+    try {
+      BindParameterCapturer.capture(
+          state,
+          index,
+          value,
+          setter,
+          capture(),
+          Masker.current(),
+          sqlIds.normalizer(),
+          state == null || state.dbId == 0 ? 0 : dbIdentity().dialectOf(state.dbId));
+    } catch (Throwable t) {
+      // A value that cannot be rendered is not kept; the application call is unaffected.
+    }
   }
 
   @Override
@@ -872,10 +960,82 @@ public final class TracerImpl implements Tracer {
     counters.incIgnored(reason);
   }
 
-  /** Counts in {@code argos_agent_orphan_steps_total{type}} (D-20). */
+  /**
+   * Counts in {@code argos_agent_orphan_steps_total{type}} (D-20); an SQL execution also in {@code
+   * argos_agent_sql_outside_tx_total} (DSN-10-07, ADR-0010 C-122).
+   */
   @Override
   public void countOrphan(int stepType) {
     counters.incOrphanStep(stepType);
+    if (stepType == StepType.SQL) {
+      counters.incSqlOutsideTx();
+    }
+  }
+
+  /** {@inheritDoc} ({@link PoolRegistry#register}) */
+  @Override
+  public void registerPool(Object pool, int poolKind) {
+    try {
+      pools().register(pool, poolKind);
+    } catch (Throwable t) {
+      // The registry never throws; a failure here (an error while loading it) stays contained.
+    }
+  }
+
+  /**
+   * {@inheritDoc}
+   *
+   * <p>{@link PoolRegistry#nameOf} kept in the {@link DictKind#POOL} dictionary: the DBC step's
+   * {@code name_id} then refers to a text the transport pre-sends ({@code DictionaryEntry}).
+   */
+  @Override
+  public long poolNameId(Object dataSourceOrPool) {
+    if (dataSourceOrPool == null) {
+      return 0;
+    }
+    try {
+      PoolRegistry registry = pools.get();
+      String name = registry == null ? null : registry.nameOf(dataSourceOrPool);
+      return name == null ? 0 : dictionary.id(DictKind.POOL, name);
+    } catch (Throwable t) {
+      return 0;
+    }
+  }
+
+  /** {@inheritDoc} ({@link TomcatRegistry#register}) */
+  @Override
+  public void registerConnector(Object endpoint) {
+    try {
+      connectors().register(endpoint);
+    } catch (Throwable t) {
+      // The registry never throws; a failure here (an error while loading it) stays contained.
+    }
+  }
+
+  /**
+   * The pool registry (10 §6.4), created on first use; the metric collector (WO-16) and the
+   * development self-diagnostics read it.
+   */
+  public PoolRegistry pools() {
+    PoolRegistry current = pools.get();
+    if (current != null) {
+      return current;
+    }
+    PoolRegistry created = new PoolRegistry();
+    return pools.compareAndSet(null, created) ? created : pools.get();
+  }
+
+  /**
+   * The Tomcat connector registry (10 §6.4), created on first use; publishes connector names and
+   * the {@code host:port} instance name through the transport session ({@code AgentSession}).
+   */
+  public TomcatRegistry connectors() {
+    TomcatRegistry current = connectors.get();
+    if (current != null) {
+      return current;
+    }
+    TomcatRegistry created = new TomcatRegistry(instanceNameFromConnector);
+    return connectors.compareAndSet(null, created) ? created : connectors.get();
   }
 
   /**
@@ -953,9 +1113,19 @@ public final class TracerImpl implements Tracer {
     return dictionary;
   }
 
-  /** The SQL id cache behind {@code dict(DictKind.SQL, ..)}. */
+  /** The SQL id cache behind {@code dict(DictKind.SQL, ..)} and {@link #sqlId}. */
   public SqlIds sqlIds() {
     return sqlIds;
+  }
+
+  /** The JDBC target ids behind {@link #dbId} and their SQL dialects (created on first use). */
+  public DbIdentity dbIdentity() {
+    DbIdentity current = dbIdentity.get();
+    if (current != null) {
+      return current;
+    }
+    DbIdentity created = new DbIdentity(dictionary);
+    return dbIdentity.compareAndSet(null, created) ? created : dbIdentity.get();
   }
 
   public AgentCounters counters() {
@@ -1029,8 +1199,42 @@ public final class TracerImpl implements Tracer {
     private UserIds.SaltSource userIdSalts;
     private int maxSteps = 1000;
     private int errorThreshold = 100;
+    private PoolRegistry pools;
+    private TomcatRegistry connectors;
+    private boolean instanceNameFromConnector = true;
+    private SqlNormalizer sqlNormalizer;
 
     Builder() {}
+
+    /**
+     * The SQL normalizer of {@code sql.max-length}, {@code sql.backslash-escape} and {@code
+     * sql.keep-hints} (10 §15); default {@link SqlNormalizer#defaults()}.
+     */
+    public Builder sqlNormalizer(SqlNormalizer value) {
+      this.sqlNormalizer = value;
+      return this;
+    }
+
+    /** The pool registry to use (tests); default: one created on first use. */
+    public Builder pools(PoolRegistry value) {
+      this.pools = value;
+      return this;
+    }
+
+    /** The Tomcat registry to use (tests); default: one created on first use. */
+    public Builder connectors(TomcatRegistry value) {
+      this.connectors = value;
+      return this;
+    }
+
+    /**
+     * Whether the first Tomcat connector names the instance {@code host:port} (10 §15 {@code
+     * app.instance} default); false when {@code app.instance} is configured. Default true.
+     */
+    public Builder instanceNameFromConnector(boolean value) {
+      this.instanceNameFromConnector = value;
+      return this;
+    }
 
     /**
      * The salt of {@code capture.user-id.mode: hashed}; default: the transport session's {@code

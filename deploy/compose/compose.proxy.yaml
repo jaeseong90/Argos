@@ -1,0 +1,85 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Optional reverse proxy in front of the UI and the REST API (docs/17 section 3.10, overview level):
+# nginx terminates TLS on 443 with your certificate and forwards /, /api and the WebSocket /ws to
+# server:8080 with X-Forwarded-Proto. gRPC (9100) does not go through the proxy: agents connect to
+# the server directly, which terminates TLS itself.
+#
+# Use: put the certificate (with its chain) and the unencrypted key in tls/proxy.crt and
+# tls/proxy.key, then set in .env
+#   ARGOS_PROXY=true                          argos-compose.sh adds this file
+#   ARGOS_WEB_PUBLIC_URL=https://<proxy name>  the address in the browser
+#   ARGOS_HTTP_BIND=127.0.0.1                  8080 stays reachable from this host only
+#                                              (required: argos-compose.sh and smoke.sh refuse
+#                                              any other value with ARGOS_PROXY=true)
+# and run ./argos-compose.sh up. The proxy publishes 443 in addition to 8080 and 9100.
+#
+# Status: an example validated with `docker compose config`; its behaviour in front of a real
+# browser is not tested in this version. Automatic certificates (Caddy, ACME) need Internet access
+# and are not part of it.
+
+services:
+  proxy:
+    image: nginx:1.30.6-alpine@sha256:901e593c95dc85f5a729f5765516321366ef4ac401821431d408897e95287d0a
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    ports:
+      - "${ARGOS_PROXY_BIND:-0.0.0.0}:443:443"
+    volumes:
+      - type: bind
+        source: ./config/proxy/nginx.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./tls/proxy.crt
+        target: /etc/nginx/tls/proxy.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./tls/proxy.key
+        target: /etc/nginx/tls/proxy.key
+        read_only: true
+        bind:
+          create_host_path: false
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=0700
+      - /var/cache/nginx:size=64m,mode=0700
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      front:
+        # Fixed address: the only one from which the server accepts X-Forwarded-* headers.
+        ipv4_address: ${ARGOS_PROXY_IP:-172.16.240.254}
+    mem_limit: 128m
+
+  server:
+    environment:
+      # Trust X-Forwarded-* from the proxy only (Tomcat RemoteIpValve): the client address of rate
+      # limits and the audit log, and the https scheme of HSTS and cookies, come from the proxy's
+      # headers. nginx.conf overwrites X-Forwarded-For with the address it sees, so a client cannot
+      # add its own value. internal-proxies is a regular expression that matches the proxy's fixed
+      # address above and nothing else (not the network's gateway, through which connections to the
+      # host's published 8080 arrive). argos-compose.sh derives ARGOS_PROXY_IP_REGEX from
+      # ARGOS_PROXY_IP for every docker compose call: change ARGOS_PROXY_IP (with
+      # ARGOS_PROXY_SUBNET) in .env, never the expression, and run docker compose through
+      # ./argos-compose.sh compose ... The default below is the default address, escaped.
+      SERVER_FORWARD_HEADERS_STRATEGY: native
+      SERVER_TOMCAT_REMOTEIP_INTERNALPROXIES: ${ARGOS_PROXY_IP_REGEX:-172\.16\.240\.254}
+
+networks:
+  # A fixed subnet for the fixed proxy address (compose.yaml lets Docker choose the subnet of front).
+  # The default is outside Docker's own address pools (172.17.0.0/16 to 172.31.0.0/16 and
+  # 192.168.0.0/16) and inside the default ARGOS_METRICS_ALLOW_CIDRS; choose another range in .env
+  # (ARGOS_PROXY_SUBNET, ARGOS_PROXY_IP) when your LAN uses it. Changing it on an existing
+  # installation needs ./argos-compose.sh down (without --volumes) before up: the network is
+  # recreated.
+  front:
+    ipam:
+      config:
+        - subnet: ${ARGOS_PROXY_SUBNET:-172.16.240.0/24}

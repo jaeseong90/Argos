@@ -40,6 +40,8 @@ val instrumentationModules =
     "spring-webmvc",
     "jdbc",
     "pool",
+    // Tomcat connector registry (10 §6.4, WO-13): AbstractEndpoint.start().
+    "tomcat",
     "executor",
     "servlet-async",
     "scheduler",

@@ -13,6 +13,8 @@
 //                    images, C-11 roles, generated passwords); reused by WO-21, WO-23 and WO-24.
 //                    testing.auth (WO-24): ApiTestClient (cookie jar, CSRF, Origin) and TestUsers
 //                    testing.fakeagent (WO-21): protocol-level fake agent (18 §8; reused by WO-29)
+//                    testing.querydata (WO-23): generator data + PostgreSQL seed for the query API
+//                    tests, the bench and the dev task loadQueryTestData (WO-30's E2E seed)
 //   integrationTest  real PostgreSQL and ClickHouse only (Testcontainers), plus the storage
 //                    generator for the 1/100 data of T-ST-052 path 2 and T-SV-002
 // test/storage/* projects are development-only: they appear in testFixtures and test suites, never
@@ -85,6 +87,10 @@ dependencies {
   testFixturesImplementation(platform(libs.netty.bom))
   testFixturesApi(libs.grpc.netty)
   testFixturesApi(libs.grpc.inprocess)
+  // testing.querydata (WO-23): the storage generator's data for the query API tests, the bench and
+  // the development command loadQueryTestData below. A development-only project (never shipped);
+  // no new external artifact.
+  testFixturesApi(project(":test:storage:generator"))
 }
 
 testing {
@@ -151,6 +157,14 @@ tasks.withType<Test>().configureEach {
     .withPropertyName("deployFiles")
 }
 
+tasks.named<Test>("test") {
+  // AuditEventTest reads the audit row of the Compose token command (ADR-0010 C-199 (3)).
+  inputs
+    .file(layout.settingsDirectory.file("deploy/compose/argos-compose.sh"))
+    .withPathSensitivity(PathSensitivity.RELATIVE)
+    .withPropertyName("composeTokenCreateScript")
+}
+
 tasks.named<Test>("integrationTest") {
   // One Docker-heavy class at a time: the machine is shared (each test class starts PostgreSQL and
   // ClickHouse, <= 5 GiB per container).
@@ -191,6 +205,35 @@ tasks.named<Test>("integrationTest") {
     "argos.test.ingestLoadReportDir",
     layout.buildDirectory.dir("reports/ingest-load").get().asFile.absolutePath,
   )
+  // QueryApiBenchIT (WO-23, N-07/N-24 call set, cold and warm) runs only with -Pserver.apiBench=true,
+  // on generator data -Pserver.apiBench.profile=ci (1/100, default), local (1/20) or full (30 days);
+  // its targets are asserted only with -Pserver.apiBench.enforce=true, which requires
+  // -Pserver.apiBench.profile=full (target hardware; any other profile fails). Server heap
+  // -Pserver.apiBench.serverXmx and ClickHouse container memory -Pserver.apiBench.chMemory (e.g.
+  // 7.5g); defaults -Xmx4g / 7.5 GiB with enforce (13 §7.1), else -Xmx1g / 4 GiB. Run it alone
+  // (--tests '*QueryApiBench*'): its containers do not fit next to the shared query data.
+  // Report: build/reports/api-bench/report.md.
+  systemProperty("argos.test.apiBench", providers.gradleProperty("server.apiBench").getOrElse("false"))
+  systemProperty(
+    "argos.test.apiBenchProfile",
+    providers.gradleProperty("server.apiBench.profile").getOrElse("ci"),
+  )
+  systemProperty(
+    "argos.test.apiBenchEnforce",
+    providers.gradleProperty("server.apiBench.enforce").getOrElse("false"),
+  )
+  systemProperty(
+    "argos.test.apiBenchServerXmx",
+    providers.gradleProperty("server.apiBench.serverXmx").getOrElse(""),
+  )
+  systemProperty(
+    "argos.test.apiBenchChMemory",
+    providers.gradleProperty("server.apiBench.chMemory").getOrElse(""),
+  )
+  systemProperty(
+    "argos.test.apiBenchReportDir",
+    layout.buildDirectory.dir("reports/api-bench").get().asFile.absolutePath,
+  )
 }
 
 // T-SEC-11 (GzipBombSecurityTest) measures the resident set of the server started from the boot jar.
@@ -199,6 +242,32 @@ tasks.named<Test>("securityTest") {
   inputs.file(bootJarFile).withPropertyName("serverBootJar").withPathSensitivity(PathSensitivity.NONE)
   jvmArgumentProviders.add(
     CommandLineArgumentProvider { listOf("-Dargos.test.bootJar=" + bootJarFile.get().asFile.absolutePath) }
+  )
+}
+
+// --- Query test data for a running installation (WO-23, development only) -------------------------
+// Loads the generator data of the query API tests (testing.querydata.QueryTestData) into ClickHouse
+// and PostgreSQL of a running server whose schema exists, and writes the manifest
+// query-test-data.json (time range, ids, samples) for WO-30's E2E stack. Passwords come from the
+// environment only (ARGOS_CH_WRITER_PASSWORD, ARGOS_PG_PASSWORD), never from -P properties.
+//   ./gradlew :server:loadQueryTestData -Pquerydata.clickhouse=http://127.0.0.1:8123 \
+//       -Pquerydata.postgres=jdbc:postgresql://127.0.0.1:5432/argos [-Pquerydata.profile=tiny|ci|local|full]
+//       [-Pquerydata.placement=recent|around_midnight] [-Pquerydata.out=DIR]
+tasks.register<JavaExec>("loadQueryTestData") {
+  group = "argos dev"
+  description =
+    "Loads the query test data into a running installation (development only; " +
+      "-Pquerydata.clickhouse, -Pquerydata.postgres, passwords from the environment)."
+  classpath = sourceSets["testFixtures"].runtimeClasspath
+  mainClass = "io.argos.server.testing.querydata.LoadQueryTestData"
+  maxHeapSize = "2g"
+  systemProperty("argos.repositoryRoot", layout.settingsDirectory.asFile.absolutePath)
+  val defaultOut = layout.buildDirectory.dir("query-test-data").get().asFile.absolutePath
+  val keys = listOf("clickhouse", "postgres", "profile", "placement", "database", "prefix")
+  args(
+    keys.mapNotNull { key ->
+      providers.gradleProperty("querydata.$key").orNull?.let { "--$key=$it" }
+    } + "--out=${providers.gradleProperty("querydata.out").getOrElse(defaultOut)}"
   )
 }
 

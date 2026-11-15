@@ -23,6 +23,11 @@ dependencies {
   // argos.java-server (WO-20): boot jar and server image.
   implementation(pluginMarker(libs.plugins.spring.boot))
   implementation(pluginMarker(libs.plugins.jib))
+  // Server image (WO-40): the Jib extension API that ImageOwnershipExtension implements. The same
+  // artifacts and versions jib-gradle-plugin 3.5.4 loads at run time (no new artifact).
+  implementation(libs.jib.extension.api)
+  implementation(libs.jib.extension.common)
+  implementation(libs.jib.build.plan)
 }
 
 // Tests of the build logic itself (part of the root `check`): license policy and checks (TestKit),

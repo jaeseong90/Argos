@@ -44,6 +44,22 @@ dependencies {
   "integrationTestImplementation"(project(":proto"))
   "integrationTestImplementation"(enforcedPlatform(libs.agent.netty.bom))
   "integrationTestImplementation"(libs.grpc.netty)
+  // WO-13 registry tests (core.metric): real pools (HikariCP, Tomcat JDBC, DBCP2) over in-memory H2
+  // and a real Tomcat endpoint. The Spring Boot 2.7 BOM fixes their Java 8 versions (HikariCP 4.0.3,
+  // tomcat-jdbc and tomcat-embed-core 9.0.83, commons-dbcp2 2.9.0, H2 2.1.214) and their
+  // dependencies to versions already verified for the sample apps (it drops DBCP2's
+  // commons-logging, whose API spring-jcl provides as in the apps); Tomcat's annotation API is not
+  // needed. Test classpath only: never shipped (checkForbiddenDependencies looks at
+  // runtimeClasspath; H2 is a dev-only row).
+  testImplementation(platform(libs.sample.boot2.bom))
+  testImplementation(libs.sample.hikari)
+  testImplementation(libs.sample.tomcat.jdbc)
+  testImplementation(libs.sample.dbcp2)
+  testImplementation(libs.sample.h2)
+  testImplementation(libs.sample.tomcat.embed.core) {
+    exclude(group = "org.apache.tomcat", module = "tomcat-annotations-api")
+  }
+  testRuntimeOnly(libs.sample.spring.jcl)
 }
 
 // AgentConfigDocTest compares docs/agent-config.md with the ConfigKeys registry (10 §15): a change

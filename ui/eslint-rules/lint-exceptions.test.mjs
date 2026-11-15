@@ -12,9 +12,12 @@ const VALID = {
 };
 
 describe('parseLintExceptions (SEC-60 file allowlist)', () => {
-  it('accepts the committed eslint-allow.json', () => {
+  it('accepts the committed eslint-allow.json: exactly the approved download helper', () => {
     const data = JSON.parse(readFileSync(new URL('../eslint-allow.json', import.meta.url), 'utf8'));
-    expect(parseLintExceptions(data)).toEqual([]);
+    // Any new exception is a reviewed change of this list (SEC-60).
+    expect(parseLintExceptions(data).map(({ files, rules }) => ({ files, rules }))).toEqual([
+      { files: ['src/api/exportCsv.ts'], rules: ['argos/no-object-url'] },
+    ]);
   });
 
   it('turns entries into config blocks that switch the listed rules off for the listed files', () => {

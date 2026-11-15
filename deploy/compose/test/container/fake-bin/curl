@@ -1,0 +1,132 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+#
+# Test double of curl for the container-side smoke.sh tests (never shipped). It answers the
+# requests of smoke.sh the way the Argos server does (docs/api/openapi.yaml, 16 section 7.6) and
+# reads its behaviour from environment variables:
+#   FAKE_CURL_LOG             file: one line "<method> <path>" per request (the logout line adds
+#                             "csrf=ok" when the X-Argos-CSRF header repeats the argos_csrf cookie)
+#   FAKE_NEEDS_SETUP          needs_setup of GET /api/v1/setup/status (default false)
+#   FAKE_ACTUATOR_ENV_8080    status of /actuator/env on port 8080 (default 404; other paths 404)
+#   FAKE_MGMT=up              something answers on port 8081 (default: connection refused, exit 7)
+#   FAKE_ADMIN_PASSWORD_FILE  POST /api/v1/auth/login accepts only the password in this file
+#                             (default secrets/admin_password of the current directory)
+# Request bodies and passwords are never written to the log.
+
+out=/dev/null
+hdr=
+wfmt=
+method=GET
+url=
+data=
+headers=
+while [ $# -gt 0 ]; do
+  case $1 in
+    -s | -S) shift ;;
+    -o) out=$2; shift 2 ;;
+    -D) hdr=$2; shift 2 ;;
+    -w) wfmt=$2; shift 2 ;;
+    -X) method=$2; shift 2 ;;
+    -H)
+      headers="$headers$2
+"
+      shift 2
+      ;;
+    --max-time) shift 2 ;;
+    --data-binary)
+      data=$2
+      [ "$method" != GET ] || method=POST
+      shift 2
+      ;;
+    --config)
+      headers="$headers$(sed -n 's/^header = "\(.*\)"$/\1/p' "$2")
+"
+      shift 2
+      ;;
+    -*) echo "fake curl: unsupported option $1" >&2; exit 2 ;;
+    *) url=$1; shift ;;
+  esac
+done
+
+rest=${url#*://}
+hostport=${rest%%/*}
+port=${hostport##*:}
+path=/${rest#*/}
+path=${path%%\?*}
+
+header() { printf '%s' "$headers" | sed -n "s/^$1: *//p" | head -n 1; }
+cookie() { header Cookie | tr ';' '\n' | sed -n "s/^ *$1=//p" | head -n 1; }
+
+log_line="$method $path"
+CSRF=fake-csrf-0123456789
+AT=fake-access-token
+
+# respond <status> <body> [header lines...]
+respond() {
+  code=$1
+  body=$2
+  shift 2
+  if [ -n "$hdr" ]; then
+    {
+      printf 'HTTP/1.1 %s\r\n' "$code"
+      for h in "$@"; do
+        printf '%s\r\n' "$h"
+      done
+      printf '\r\n'
+    } >"$hdr"
+  fi
+  printf '%s' "$body" >"$out"
+  if [ -n "${FAKE_CURL_LOG:-}" ]; then
+    printf '%s -> %s\n' "$log_line" "$code" >>"$FAKE_CURL_LOG"
+  fi
+  case $wfmt in
+    *http_code*) printf '%s' "$code" ;;
+  esac
+  exit 0
+}
+error() { respond "$1" "{\"error\":{\"code\":\"$2\",\"message\":\"fake\"}}"; }
+
+if [ "$port" = 8081 ] && [ "${FAKE_MGMT:-}" != up ]; then
+  [ -z "${FAKE_CURL_LOG:-}" ] || printf '%s -> refused\n' "$log_line" >>"$FAKE_CURL_LOG"
+  case $wfmt in *http_code*) printf '000' ;; esac
+  exit 7
+fi
+
+case "$port $method $path" in
+  "8081 GET /actuator/health") respond 200 '{"status":"UP"}' ;;
+  "8081 GET /actuator/prometheus") error 401 unauthenticated ;;
+  "8081 "*) error 404 not_found ;;
+  "8080 GET /actuator/env") respond "${FAKE_ACTUATOR_ENV_8080:-404}" '' ;;
+  "8080 GET /actuator/"*) error 404 not_found ;;
+  "8080 GET /api/v1/setup/status")
+    respond 200 "{\"data\":{\"needs_setup\":${FAKE_NEEDS_SETUP:-false}}}"
+    ;;
+  "8080 POST /api/v1/setup/admin")
+    [ "${FAKE_NEEDS_SETUP:-false}" = true ] || error 404 not_found
+    error 403 forbidden
+    ;;
+  "8080 POST /api/v1/auth/login")
+    pw_file=${FAKE_ADMIN_PASSWORD_FILE:-secrets/admin_password}
+    pw=
+    IFS= read -r pw <"$pw_file" || true
+    if [ -n "$pw" ] && grep -qF "\"password\":\"$pw\"" "${data#@}"; then
+      pw=
+      respond 200 '{"data":{"user":{"username":"admin"},"must_change_password":true}}' \
+        "Set-Cookie: argos_at=$AT; Path=/; Secure; HttpOnly; SameSite=Strict" \
+        "Set-Cookie: argos_rt=fake-refresh-token; Path=/api/v1/auth/refresh; Secure; HttpOnly; SameSite=Strict" \
+        "Set-Cookie: argos_csrf=$CSRF; Path=/; Secure; SameSite=Strict"
+    fi
+    pw=
+    error 401 unauthenticated
+    ;;
+  "8080 POST /api/v1/auth/logout")
+    [ "$(cookie argos_at)" = "$AT" ] || error 401 unauthenticated
+    [ -n "$(header Origin)" ] || error 403 csrf_invalid
+    if [ "$(cookie argos_csrf)" = "$CSRF" ] && [ "$(header X-Argos-CSRF)" = "$CSRF" ]; then
+      log_line="$log_line csrf=ok"
+      respond 204 ''
+    fi
+    error 403 csrf_invalid
+    ;;
+  *) error 404 not_found ;;
+esac

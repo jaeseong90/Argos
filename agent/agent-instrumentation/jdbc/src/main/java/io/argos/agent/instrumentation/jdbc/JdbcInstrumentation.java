@@ -6,7 +6,9 @@ import static net.bytebuddy.matcher.ElementMatchers.isAbstract;
 import static net.bytebuddy.matcher.ElementMatchers.isInterface;
 import static net.bytebuddy.matcher.ElementMatchers.nameStartsWith;
 import static net.bytebuddy.matcher.ElementMatchers.named;
+import static net.bytebuddy.matcher.ElementMatchers.namedOneOf;
 import static net.bytebuddy.matcher.ElementMatchers.not;
+import static net.bytebuddy.matcher.ElementMatchers.returns;
 import static net.bytebuddy.matcher.ElementMatchers.takesArgument;
 import static net.bytebuddy.matcher.ElementMatchers.takesArguments;
 
@@ -18,43 +20,143 @@ import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
 /**
- * The two JDBC type rules of the PoC (10 §6.3): concrete {@code java.sql.Connection}
- * implementations that declare {@code prepareStatement}/{@code prepareCall}, and concrete {@code
- * java.sql.Statement} implementations that declare an {@code execute*} method. The cheap {@code
- * declaresMethod} test runs first, so the hierarchy walk of {@link SafeMatchers} only runs for
- * candidates; JDK proxies ({@code com.sun.proxy}, {@code jdk.proxy*}) are excluded (10 §6.3).
+ * The JDBC type rules of 10 §6.3 (subtype matching is allowed for jdbc, 10 §5.1): concrete
+ * implementations of {@code javax.sql.DataSource}, {@code java.sql.Connection}, {@code
+ * java.sql.Statement} (with {@code PreparedStatement} and {@code CallableStatement}) and {@code
+ * java.sql.ResultSet}. The cheap {@code declaresMethod} test runs first, so the hierarchy walk of
+ * {@link SafeMatchers} only runs for candidates. JDK proxies ({@code com.sun.proxy.*}, {@code
+ * jdk.proxy*}) and Argos classes ({@code io.argos.*}) are never matched (10 §6.3): a proxy hands
+ * the call to a real implementation, which is matched itself.
+ *
+ * <p>Additions to the method list of 10 §6.3 (WO-13 report): {@code Statement.getResultSet()} links
+ * the rows of {@code execute()} (MyBatis reads its results that way) to the SQL step, {@code
+ * clearBatch()} resets the batch count, {@code executeLargeBatch()} is {@code executeBatch()}, and
+ * {@code Connection.setAutoCommit(boolean)} only nests ({@link AutoCommitGuardAdvice}): the {@code
+ * commit()} some drivers (H2, pgjdbc) call from it is not an application COMMIT. Tomcat JDBC's
+ * {@value #TOMCAT_DATA_SOURCE_PROXY} declares {@code getConnection()} without implementing {@code
+ * javax.sql.DataSource} (its subclass {@code org.apache.tomcat.jdbc.pool.DataSource} does), so the
+ * DataSource rule names it.
  */
 final class JdbcInstrumentation implements TypeInstrumentation {
-  private static final String[] EXECUTE = {
-    "execute", "executeQuery", "executeUpdate", "executeLargeUpdate"
+  /**
+   * Declares Tomcat JDBC's {@code getConnection()} but implements only {@code PoolConfiguration};
+   * the objects are {@code org.apache.tomcat.jdbc.pool.DataSource} (a {@code javax.sql.DataSource})
+   * at run time.
+   */
+  static final String TOMCAT_DATA_SOURCE_PROXY = "org.apache.tomcat.jdbc.pool.DataSourceProxy";
+
+  /** The {@code PreparedStatement}/{@code CallableStatement} parameter setters (JDBC 4.3). */
+  static final String[] SETTERS = {
+    "setNull",
+    "setBoolean",
+    "setByte",
+    "setShort",
+    "setInt",
+    "setLong",
+    "setFloat",
+    "setDouble",
+    "setBigDecimal",
+    "setString",
+    "setNString",
+    "setBytes",
+    "setDate",
+    "setTime",
+    "setTimestamp",
+    "setObject",
+    "setAsciiStream",
+    "setUnicodeStream",
+    "setBinaryStream",
+    "setCharacterStream",
+    "setNCharacterStream",
+    "setRef",
+    "setBlob",
+    "setClob",
+    "setNClob",
+    "setArray",
+    "setURL",
+    "setRowId",
+    "setSQLXML"
   };
 
-  private final ElementMatcher<TypeDescription> types;
-  private final boolean connection;
+  private static final int DATA_SOURCE = 0;
+  private static final int CONNECTION = 1;
+  private static final int STATEMENT = 2;
+  private static final int RESULT_SET = 3;
 
-  private JdbcInstrumentation(ElementMatcher<TypeDescription> types, boolean connection) {
+  private final ElementMatcher<TypeDescription> types;
+  private final int rule;
+
+  private JdbcInstrumentation(ElementMatcher<TypeDescription> types, int rule) {
     this.types = types;
-    this.connection = connection;
+    this.rule = rule;
   }
 
-  /** {@code Connection.prepareStatement(String, ..)} and {@code prepareCall(String, ..)}. */
+  /**
+   * {@code DataSource.getConnection()} and {@code getConnection(String, String)}; also Tomcat
+   * JDBC's {@value #TOMCAT_DATA_SOURCE_PROXY}.
+   */
+  static JdbcInstrumentation dataSource() {
+    return new JdbcInstrumentation(
+        declaresMethod(getConnection())
+            .and(not(isInterface()))
+            .and(notExcluded())
+            .and(
+                SafeMatchers.safeImplements(named("javax.sql.DataSource"))
+                    .or(named(TOMCAT_DATA_SOURCE_PROXY))),
+        DATA_SOURCE);
+  }
+
+  /**
+   * {@code Connection.prepareStatement/prepareCall(String, ..)}, {@code commit()}, {@code
+   * rollback()}, {@code setAutoCommit(boolean)} (nesting only).
+   */
   static JdbcInstrumentation connection() {
     return new JdbcInstrumentation(
-        declaresMethod(prepare())
+        declaresMethod(prepare().or(commitOrRollback()))
             .and(not(isInterface()))
-            .and(notProxy())
+            .and(notExcluded())
             .and(SafeMatchers.safeImplements(named("java.sql.Connection"))),
-        true);
+        CONNECTION);
   }
 
-  /** {@code PreparedStatement.execute*()} and {@code Statement.execute*(String, ..)}. */
+  /** {@code Statement}, {@code PreparedStatement} and {@code CallableStatement} methods. */
   static JdbcInstrumentation statement() {
     return new JdbcInstrumentation(
-        declaresMethod(preparedExecute().or(statementExecute()))
+        declaresMethod(
+                preparedExecute()
+                    .or(statementExecute())
+                    .or(addBatchSql())
+                    .or(statementState())
+                    .or(getResultSet())
+                    .or(setParameter()))
             .and(not(isInterface()))
-            .and(notProxy())
+            .and(notExcluded())
             .and(SafeMatchers.safeImplements(named("java.sql.Statement"))),
-        false);
+        STATEMENT);
+  }
+
+  /** {@code ResultSet.next()} and {@code close()}. */
+  static JdbcInstrumentation resultSet() {
+    return new JdbcInstrumentation(
+        declaresMethod(next().or(close()))
+            .and(not(isInterface()))
+            .and(notExcluded())
+            .and(SafeMatchers.safeImplements(named("java.sql.ResultSet"))),
+        RESULT_SET);
+  }
+
+  /** {@code getConnection()} and {@code getConnection(String, String)}, concrete. */
+  static ElementMatcher.Junction<MethodDescription> getConnection() {
+    // takesArgument(i, type) rather than takesArguments(String.class, String.class): the matcher
+    // classes of the latter would load on the premain thread (ADR-0009 C-79 class budget).
+    return named("getConnection")
+        .and(
+            takesArguments(0)
+                .or(
+                    takesArguments(2)
+                        .and(takesArgument(0, String.class))
+                        .and(takesArgument(1, String.class))))
+        .and(not(isAbstract()));
   }
 
   /** {@code prepareStatement(String, ..)}, {@code prepareCall(String, ..)}, concrete. */
@@ -65,26 +167,84 @@ final class JdbcInstrumentation implements TypeInstrumentation {
         .and(not(isAbstract()));
   }
 
-  /** {@code execute()}, {@code executeQuery()}, ... without arguments: PreparedStatement. */
+  /** {@code commit()} and {@code rollback()} without arguments, concrete. */
+  static ElementMatcher.Junction<MethodDescription> commitOrRollback() {
+    return named("commit").or(named("rollback")).and(takesArguments(0)).and(not(isAbstract()));
+  }
+
+  /** {@code setAutoCommit(boolean)}, concrete. */
+  static ElementMatcher.Junction<MethodDescription> setAutoCommit() {
+    return named("setAutoCommit")
+        .and(takesArguments(1))
+        .and(takesArgument(0, boolean.class))
+        .and(not(isAbstract()));
+  }
+
+  /**
+   * {@code execute()}, {@code executeQuery()}, {@code executeUpdate()}, {@code
+   * executeLargeUpdate()}, {@code executeBatch()}, {@code executeLargeBatch()}: no arguments.
+   */
   static ElementMatcher.Junction<MethodDescription> preparedExecute() {
-    return executeNamed().and(takesArguments(0)).and(not(isAbstract()));
+    return namedOneOf(
+            "execute",
+            "executeQuery",
+            "executeUpdate",
+            "executeLargeUpdate",
+            "executeBatch",
+            "executeLargeBatch")
+        .and(takesArguments(0))
+        .and(not(isAbstract()));
   }
 
-  /** {@code execute(String, ..)}, {@code executeQuery(String)}, ...: plain Statement. */
+  /** {@code execute(String, ..)}, {@code executeQuery(String)}, ...: plain {@code Statement}. */
   static ElementMatcher.Junction<MethodDescription> statementExecute() {
-    return executeNamed().and(takesArgument(0, String.class)).and(not(isAbstract()));
+    return namedOneOf("execute", "executeQuery", "executeUpdate", "executeLargeUpdate")
+        .and(takesArgument(0, String.class))
+        .and(not(isAbstract()));
   }
 
-  private static ElementMatcher.Junction<MethodDescription> executeNamed() {
-    ElementMatcher.Junction<MethodDescription> matcher = named(EXECUTE[0]);
-    for (int i = 1; i < EXECUTE.length; i++) {
-      matcher = matcher.or(named(EXECUTE[i]));
-    }
-    return matcher;
+  /** {@code Statement.addBatch(String)}. */
+  static ElementMatcher.Junction<MethodDescription> addBatchSql() {
+    return named("addBatch")
+        .and(takesArguments(1))
+        .and(takesArgument(0, String.class))
+        .and(not(isAbstract()));
   }
 
-  private static ElementMatcher.Junction<TypeDescription> notProxy() {
-    return not(nameStartsWith("com.sun.proxy.")).and(not(nameStartsWith("jdk.proxy")));
+  /** {@code addBatch()}, {@code clearBatch()}, {@code clearParameters()}: no arguments. */
+  static ElementMatcher.Junction<MethodDescription> statementState() {
+    return namedOneOf("addBatch", "clearBatch", "clearParameters")
+        .and(takesArguments(0))
+        .and(not(isAbstract()));
+  }
+
+  /** {@code getResultSet()}. */
+  static ElementMatcher.Junction<MethodDescription> getResultSet() {
+    return named("getResultSet").and(takesArguments(0)).and(not(isAbstract()));
+  }
+
+  /** {@code set*(int, value[, ..])} of {@link #SETTERS}. */
+  static ElementMatcher.Junction<MethodDescription> setParameter() {
+    return namedOneOf(SETTERS)
+        .and(takesArgument(0, int.class))
+        .and(takesArguments(2).or(takesArguments(3)).or(takesArguments(4)))
+        .and(not(isAbstract()));
+  }
+
+  /** {@code ResultSet.next()}. */
+  static ElementMatcher.Junction<MethodDescription> next() {
+    return named("next").and(takesArguments(0)).and(returns(boolean.class)).and(not(isAbstract()));
+  }
+
+  /** {@code ResultSet.close()}. */
+  static ElementMatcher.Junction<MethodDescription> close() {
+    return named("close").and(takesArguments(0)).and(not(isAbstract()));
+  }
+
+  private static ElementMatcher.Junction<TypeDescription> notExcluded() {
+    return not(nameStartsWith("com.sun.proxy."))
+        .and(not(nameStartsWith("jdk.proxy")))
+        .and(not(nameStartsWith("io.argos.")));
   }
 
   @Override
@@ -94,16 +254,41 @@ final class JdbcInstrumentation implements TypeInstrumentation {
 
   @Override
   public void transform(TypeTransformer transformer) {
-    if (connection) {
-      transformer.applyAdvice(prepare(), PrepareStatementAdvice.class.getName());
-    } else {
-      transformer.applyAdvice(preparedExecute(), PreparedStatementExecuteAdvice.class.getName());
-      transformer.applyAdvice(statementExecute(), StatementExecuteAdvice.class.getName());
+    switch (rule) {
+      case DATA_SOURCE:
+        transformer.applyAdvice(getConnection(), DataSourceGetConnectionAdvice.class.getName());
+        break;
+      case CONNECTION:
+        transformer.applyAdvice(prepare(), PrepareStatementAdvice.class.getName());
+        transformer.applyAdvice(commitOrRollback(), CommitRollbackAdvice.class.getName());
+        transformer.applyAdvice(setAutoCommit(), AutoCommitGuardAdvice.class.getName());
+        break;
+      case STATEMENT:
+        transformer.applyAdvice(preparedExecute(), PreparedStatementExecuteAdvice.class.getName());
+        transformer.applyAdvice(statementExecute(), StatementExecuteAdvice.class.getName());
+        transformer.applyAdvice(addBatchSql(), AddBatchSqlAdvice.class.getName());
+        transformer.applyAdvice(statementState(), StatementStateAdvice.class.getName());
+        transformer.applyAdvice(getResultSet(), GetResultSetAdvice.class.getName());
+        transformer.applyAdvice(setParameter(), SetParameterAdvice.class.getName());
+        break;
+      default:
+        transformer.applyAdvice(next(), ResultSetNextAdvice.class.getName());
+        transformer.applyAdvice(close(), ResultSetCloseAdvice.class.getName());
+        break;
     }
   }
 
   @Override
   public String toString() {
-    return connection ? "jdbc(Connection.prepare*)" : "jdbc(Statement.execute*)";
+    switch (rule) {
+      case DATA_SOURCE:
+        return "jdbc(DataSource.getConnection)";
+      case CONNECTION:
+        return "jdbc(Connection.prepare*/commit/rollback/setAutoCommit)";
+      case STATEMENT:
+        return "jdbc(Statement.execute*/batch/set*)";
+      default:
+        return "jdbc(ResultSet.next/close)";
+    }
   }
 }

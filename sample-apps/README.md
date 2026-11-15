@@ -70,11 +70,13 @@ The `sampleSmoke` tasks below do all of this (port, CATALINA_BASE, ext-stub) aut
 
 | Variable | Values | Default | Effect |
 |---|---|---|---|
-| `SAMPLE_DB` | `h2`, `postgres`, `mysql` | `h2` | Database. H2 is in memory (one database per app). |
-| `SAMPLE_DB_URL`, `SAMPLE_DB_USER`, `SAMPLE_DB_PASSWORD` | JDBC URL and account | per database | Testcontainers inject these. |
+| `SAMPLE_DB` | `h2`, `postgres`, `mysql`; `mariadb`, `mssql` (also `sqlserver`), `oracle` in `shop-boot3` only (its drivers, WO-13) | `h2` | Database. H2 is in memory (one database per app). The schema and seed script is per dialect (`schema-<db>.sql` of `sample-apps/common`); default URLs point to `127.0.0.1` with the database `shop` (SQL Server: `databaseName=shop`, Oracle: service `FREEPDB1`). |
+| `SAMPLE_DB_URL`, `SAMPLE_DB_USER`, `SAMPLE_DB_PASSWORD` | JDBC URL and account | per database (user `shop`, SQL Server `sa`) | Testcontainers inject these (the agent-testing `jdbc` suite: a random password per run, never logged). |
 | `SAMPLE_POOL` | `hikari`, `tomcat`, `dbcp2` | `hikari` | Connection pool. |
 | `SAMPLE_POOL_MAX` | 1–200 | 10 | Pool size (`/api/pool/exhaust` takes size + 1). |
-| `SAMPLE_ROUTING_DS` | `true`/`false` | `false` | `AbstractRoutingDataSource → TransactionAwareDataSourceProxy → pool → driver` (D-24 fixture, the four levels of docs/18 §4.4). There is no separate driver wrapper level (P6Spy/log4jdbc style `java.sql.Driver` wrapper). `/api/runtime` reports the chain by walking the objects (`dataSourceChain`) and the connections routed so far (`routingLookups`); every smoke fails when `routingDataSource` is `true` and `routingLookups` is 0. |
+| `SAMPLE_ROUTING_DS` | `true`/`false` | `false` | `AbstractRoutingDataSource → TransactionAwareDataSourceProxy → pool → driver` (D-24 fixture, the four levels of docs/18 §4.4). `/api/runtime` reports the chain by walking the objects (`dataSourceChain`) and the connections routed so far (`routingLookups`); every smoke fails when `routingDataSource` is `true` and `routingLookups` is 0. |
+| `SAMPLE_DRIVER_WRAPPER` | `true`/`false` | `false` | The fifth level of ADR-0004 C-40: the pool connects through `example.jdbcwrapper.WrappingDriver`, a P6Spy/log4jdbc style `java.sql.Driver` that wraps `Connection`, `Statement`, `PreparedStatement` and `CallableStatement` by delegation (package outside `io.argos` on purpose, so the agent instruments it like a third-party wrapper). Combinable with `SAMPLE_ROUTING_DS`; `/api/runtime` reports `driverWrapper` and `driverWrapperConnections`. |
+| `SAMPLE_SECOND_POOL` | `true`/`false` | `false` | A second pool of the `SAMPLE_POOL` kind on the same database that sets up the schema, is closed and is created again under the same name with another size (pool registry fixture of the agent tests, 10 §6.4). HikariCP and Tomcat JDBC pools are named `shop-primary` (the app's) and `shop-secondary`; DBCP2 pools have no name. |
 | `SAMPLE_VT` | `true`/`false` | `false` | Virtual threads (Boot 3.2+ on JDK 21+); `/api/runtime` shows `virtualThreads: true` when the request ran on one. |
 | `SAMPLE_CUSTOM_EXECUTOR` | `true`/`false` | `false` | `ThreadPoolExecutor` subclass with thread names `seed-ARGOS_SEED-N`. |
 | `SAMPLE_EXT_URL` | URL | `http://127.0.0.1:18080` | ext-stub. |

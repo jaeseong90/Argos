@@ -290,6 +290,97 @@ hour) is ended by the agent's watch thread with the status recorded so far (599 
 and the flags `timed_out` and `leaked` (`argos_agent_transactions_leaked_total`). The response flush
 is detected by container class names, Tomcat 9, 10.1 and 11 only; see the known limitations.
 
+## SQL and connection pools
+
+The `jdbc` instrumentation records, inside a transaction:
+
+- One SQL step per statement execution of the application (`execute*`, `executeBatch`), however
+  many pools, routing data sources and driver wrappers are in between: only the outermost JDBC call
+  counts. Its name is the normalized SQL text, its target the database. The execution time and the
+  fetch time are apart: the rows and the time spent in `ResultSet.next()` are added when the result
+  set is closed or the statement runs again. `executeBatch` records the number of batch items.
+- One DBC step per outermost `DataSource.getConnection()`, named after the pool (HikariCP, Tomcat
+  JDBC and Commons DBCP 2 pools by their own pool name, other data sources by their class name),
+  its time also counted in the transaction's connection wait. A lazy connection proxy (Spring's
+  `TransactionAwareDataSourceProxy`, `LazyConnectionDataSourceProxy`) is no DBC step: the pool
+  acquisition at its first use is.
+- COMMIT and ROLLBACK steps for the application's own `commit()` and `rollback()`. The `commit()`
+  that some drivers call inside `setAutoCommit(true)` is not one.
+
+SQL that a pool runs inside `getConnection` (validation and init statements) is not recorded. A
+statement executed outside a transaction gets no step and is counted in
+`argos_agent_sql_outside_tx_total`.
+
+The agent reads the database URL once per connection object (`getMetaData().getURL()`) and keeps
+`<vendor>://<host>:<port>/<db>`: account, password and every URL parameter are removed, a host list
+gives its first host, a URL without a port gives the vendor's default port, and an embedded H2
+database is `h2:mem:<name>` or `h2:file:<last path segment>`. Oracle (thin and TNS descriptors),
+MySQL, MariaDB, PostgreSQL, SQL Server, Tibero, Altibase, CUBRID, DB2 and H2 URLs are parsed; any
+other URL is `<subprotocol>:<last path segment>`. The agent makes no other call on the
+application's connections, apart from `Statement.getConnection()` to find the connection of a plain
+statement (once per statement object): no validation query, no catalog read. Pool and Tomcat
+connector values come from the pools' and connectors' own getters, never from JMX.
+
+### SQL normalization
+
+SQL text is normalized in the application before it is sent: every literal (strings, numbers, hex
+and binary literals, PostgreSQL dollar quotes, Oracle `q'[...]'`) becomes `?`, comments are removed,
+whitespace runs become one space, `IN (?, ?, ...)` becomes `IN (?)` and a multi-row `VALUES` keeps
+its first row. Quoted identifiers, bind markers (`?`, `:name`, `:1`, `$1`, `@p1`) and letter case
+stay. The dialect comes from the database URL and assumes the database's default session settings
+(see [Known limitations](#known-limitations)). For MySQL, MariaDB and an unknown database `"..."`
+is a string literal and `#` starts a comment, also in the middle of a word; for MySQL and MariaDB
+`--` starts a comment only before ASCII whitespace or a control character (DEL included; a
+non-ASCII space such as NBSP does not count). For the others `"..."` is a quoted identifier, except
+that for SQL Server and CUBRID a `"..."` whose content is not shaped like an identifier (an ASCII
+letter or `_` first, then only ASCII letters, digits, `_`, `$` and `#`, at most 128 characters) is
+read as a string literal and becomes `?`, because `QUOTED_IDENTIFIER OFF` and `ansi_quotes=no` make
+`"..."` a string there. In SQL Server `[...]` is an identifier whatever it holds and `$1234.56` is a
+money constant (a literal), not a marker. `sql.backslash-escape` applies to MySQL and MariaDB;
+PostgreSQL `E'...'` strings always use backslash escapes. Only the first `sql.max-length`
+characters are read; a longer statement is cut and flagged as truncated. `sql.keep-hints` keeps
+optimizer hints (`/*+ ... */`), with the literals inside them replaced.
+
+Normalization fails closed. An exception, an unterminated quoted identifier (an unterminated string
+is replaced up to the end), a statement that would need more than its work budget (8 character
+reads per character plus 4,096, which keeps 64 KiB within about 1 ms), or a statement that the
+known readings of its dialect split differently gives the name `<unparsed>` and counts
+`argos_agent_sql_unparsed_total`; the raw text is never sent or logged. The readings checked are
+those of an unknown database (MySQL against ANSI: a backslash before a quote, a `#` comment or a
+`--` comment without ASCII whitespace or a control character (DEL included) after it that holds a
+quote, `$` or `/*`), those of PostgreSQL (`standard_conforming_strings` on and off: a quote after an
+odd number of backslashes inside a string) and those of an unknown, H2, DB2, CUBRID or Altibase
+database (a literal or comment that crosses the `]` of a SQL Server `[...]` identifier; inside
+backticks a quote, a dollar quote such as `$$` or `$tag$`, or a `$` before a number, while
+`` `v$session` `` is kept). For every database but SQL Server a literal that starts inside
+`[name...]` and runs past its `]` is `<unparsed>` as well; one that closes inside the brackets
+(`ARRAY[DATE '2024-01-01']`) is replaced as usual. A quote inside `[name...` when no `]` follows the
+`[` at all is `<unparsed>` for every database. Raw SQL text is held only until it is normalized: the
+cache of about the last 10,000 statements keeps the length and two hashes of each statement's text,
+never the text.
+
+### Bind parameters
+
+`capture.sql-parameters` decides what is sent about the values bound with `set*(index, value)`:
+
+| Mode | Sent |
+|---|---|
+| `masked` (default) | Nothing: no value, no type and no length. The agent does not look at the values. |
+| `partial` | For a position written `<column> = ?` whose column (the last part of a qualified name, any case) is in `capture.sql-parameters.whitelist-columns`: the value after masking. Every other position: its type and length, such as `[String(11)]`. |
+| `full` | Every value after masking. The collector does not store `full` values yet (they need encrypted storage) and drops them. |
+
+Outside `masked`, the values of an execution are sent with its SQL step as one line, such as
+`1='<email>', 2=[String(13)], 3=42, 4=NULL`: text in single quotes, numbers and booleans as they
+are, `NULL` for null. Only `String`, the JDK number classes, `Boolean`, the date and time classes
+of `java.util`, `java.sql` and `java.time`, and `UUID` are rendered; a `byte[]` gives only its
+length (`[byte[](16)]`) and any other object (streams, readers, `Blob`, `Clob`, `Array`,
+application classes) only its type name, such as `<ByteArrayInputStream>`. The agent never calls
+`toString()` on a value and never reads a stream or a large object. The [masking](#masking)
+patterns apply to every rendered value; each value is cut at 256 characters after masking, at most
+the first 64 positions and 4,096 characters of values are kept per execution, and of a batch only
+the first parameter set. The values are dropped after each execution, so a statement executed
+again without new `set*` calls sends none.
+
 ## Effective configuration and configuration hash
 
 The agent keeps, for every key, the value in force and where it came from: `default`, `file`,
@@ -360,8 +451,8 @@ start.
 | `capture.trusted-proxies` | list (<= 64 items) | `[]` | N | Proxy CIDRs whose `X-Forwarded-For` is trusted; empty means the socket address is used. |
 | `capture.user-id.mode` | enum: off, plain, hashed | `off` | N | User id capture. |
 | `capture.user-id.source` | string | - | N | Where the user id comes from: `header:<name>`, `session:<attribute>` or `mdc:<key>`. |
-| `capture.sql-parameters` | enum: masked, partial, full | `masked` | N | Bind parameter capture; `masked` keeps type and length only. |
-| `capture.sql-parameters.whitelist-columns` | list (<= 256 items) | `[]` | N | Columns whose bind values are kept (masked) in `partial` mode. |
+| `capture.sql-parameters` | enum: masked, partial, full | `masked` | N | Bind parameter capture; `masked` sends nothing (no value, type or length), `partial` the masked values of whitelisted columns and the type and length of the others, `full` every masked value. See [Bind parameters](#bind-parameters). |
+| `capture.sql-parameters.whitelist-columns` | list (<= 256 items) | `[]` | N | Column names (any case) whose bind values are sent, after masking, in `partial` mode, for positions written `<column> = ?`. |
 | `capture.mask-patterns` | list (<= 32 items) | `[]` | N | Added masking regular expressions, applied after the built-in set; see [Masking](#masking). |
 | `capture.error-message-max-length` | int [0, 65536] | `1024` | Y | Characters of an exception message kept after masking. |
 | `capture.stack-depth` | int [0, 64] | `30` | Y | Frames of an error stack. |
@@ -429,9 +520,9 @@ start.
 
 | Key | Type | Default | Remote | Description |
 |---|---|---|---|---|
-| `sql.max-length` | int [64, 65536] | `65536` | N | Characters of SQL text that are normalized. |
-| `sql.backslash-escape` | bool | `true` | N | A backslash escapes a quote inside SQL strings (MySQL style). |
-| `sql.keep-hints` | bool | `false` | N | Keeps optimizer hint comments (`/*+ ... */`) in normalized SQL. |
+| `sql.max-length` | int [64, 65536] | `65536` | N | Characters of SQL text that are normalized; a longer statement is cut and flagged as truncated. |
+| `sql.backslash-escape` | bool | `true` | N | A backslash escapes a quote inside SQL strings of MySQL and MariaDB. |
+| `sql.keep-hints` | bool | `false` | N | Keeps optimizer hint comments (`/*+ ... */`) in normalized SQL, their literals replaced. See [SQL normalization](#sql-normalization). |
 
 ### Commands
 
@@ -501,6 +592,24 @@ may change at any time.
   page dispatch that follows a timeout, but one that completes without a dispatch
   (`AsyncContext.complete()`, a timeout without an error page) stays open until
   `transaction.max-duration-ms`.
+- **Databases and pools.** SQL, DBC, COMMIT and ROLLBACK steps are verified against H2, MySQL 8.4
+  (Connector/J 8.0 and 9), MariaDB 11.4, PostgreSQL 16, SQL Server 2022 and Oracle Database Free
+  23, with HikariCP, Tomcat JDBC and Commons DBCP 2 (versions in
+  `agent/agent-instrumentation/pool/README.md`). Tibero, Altibase, CUBRID, DB2 and Oracle releases
+  other than 23 are covered by URL parsing and normalization tests only, not yet against a running
+  database. A pool other than these three that hands out JDK proxy connections gets no DBC steps,
+  because such a connection looks like a lazy connection proxy. The rows and fetch time of a result
+  set that is never closed, and whose statement does not run again, are not reported.
+- **SQL dialect assumes default session settings.** [SQL normalization](#sql-normalization) reads
+  quotes, backslashes and comments as each database does with its default settings. With other
+  settings a literal can survive normalization: MySQL or MariaDB with `NO_BACKSLASH_ESCAPES` (set
+  `sql.backslash-escape: false` to match), and SQL Server with `QUOTED_IDENTIFIER OFF` or CUBRID
+  with `ansi_quotes=no`, where `"..."` is a string: the agent masks a `"..."` that is not shaped
+  like an identifier, but a string that is one identifier-shaped word (`"kim"`, `"ACTIVE"`,
+  `"user_01"`) cannot be told from a quoted identifier and stays in the SQL text. PostgreSQL with
+  `standard_conforming_strings=off` keeps no literal: a statement with a quote after an odd number
+  of backslashes inside a string is `<unparsed>` for every PostgreSQL target, so such statements
+  are grouped under that name even with the default setting.
 - **`dispatch_count`.** Only dispatches that reach an `HttpServlet` are counted; a forward or include
   that a filter answers without a servlet is not. A dispatch counts once even when its servlet hands
   the same request on to another servlet (a JSP: Jasper's `JspServlet` and the page).

@@ -124,6 +124,16 @@ public final class Dictionary {
 
   /** The id of {@code text} (0 for null), keeping the text while its kind and the budget allow. */
   public long id(int kind, String text) {
+    return id(kind, text, false);
+  }
+
+  /**
+   * {@link #id(int, String)} of a text that is itself only the start of a longer input: an SQL
+   * statement the normalizer cut at {@code sql.max-length} (10 §9.4 "절단 + truncated 플래그"). A kept
+   * text then reports {@link #truncated(long)} true (11 {@code DictionaryEntry.truncated}). The
+   * first caller that keeps a text decides the flag.
+   */
+  public long id(int kind, String text, boolean truncatedInput) {
     if (text == null) {
       return 0;
     }
@@ -156,7 +166,7 @@ public final class Dictionary {
       }
       return id;
     }
-    if (texts.putIfAbsent(key, new Entry(kept, kind, cut)) != null) {
+    if (texts.putIfAbsent(key, new Entry(kept, kind, cut || truncatedInput)) != null) {
       release(slot, cost); // another thread kept it first
       return id;
     }

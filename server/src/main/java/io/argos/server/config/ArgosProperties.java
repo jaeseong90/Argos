@@ -43,11 +43,12 @@ import org.springframework.util.unit.DataSize;
  * <p>Additions to 12 §10 (C-96), each with its reason: {@code postgres.owner.*} (C-11, C-97),
  * {@code postgres.password}, {@code clickhouse.*.password} (plain values, warned, 17 §6.1), {@code
  * clickhouse.table-prefix} (DSN-13-11), {@code clickhouse.migrator.*} (C-11), {@code
- * collector.bind} (16 §10.7, 17 §3.8 {@code ARGOS_GRPC_BIND}), {@code collector.limits.*} (the 11
- * {@code Limits} message), {@code alert.smtp.*} (16 §8.5), {@code master-key} (12 §8.2 {@code
- * ARGOS_MASTER_KEY}), {@code metrics.token} (16 §10.6 {@code ARGOS_METRICS_TOKEN}) and {@code
- * testing.*} (18 §15). The management port of 12 §10 ({@code management.server.port} 9101) is 8081
- * on 127.0.0.1 (02 C-7) and stays a Spring key ({@code application.yml}).
+ * collector.bind} (16 §10.7; not fed by {@code ARGOS_GRPC_BIND}, a Compose publish address,
+ * ADR-0010 C-113), {@code collector.limits.*} (the 11 {@code Limits} message), {@code alert.smtp.*}
+ * (16 §8.5), {@code master-key} (12 §8.2 {@code ARGOS_MASTER_KEY}), {@code metrics.token} (16 §10.6
+ * {@code ARGOS_METRICS_TOKEN}) and {@code testing.*} (18 §15). The management port of 12 §10
+ * ({@code management.server.port} 9101) is 8081 on 127.0.0.1 (02 C-7) and stays a Spring key
+ * ({@code application.yml}).
  *
  * <p>WO-24 additions: {@code jwt-key-file}, {@code jwt-key}, {@code jwt-previous-key-file} and
  * {@code jwt-previous-key} (16 §7.1 {@code conf/jwt.key} or {@code ARGOS_JWT_KEY}, the previous key
@@ -386,7 +387,8 @@ public record ArgosProperties(
    * gRPC collector (12 §3.1, §10; WO-21).
    *
    * @param port gRPC port
-   * @param bind listen address of the gRPC port (16 §10.7; 17 §3.8 {@code ARGOS_GRPC_BIND})
+   * @param bind listen address of the gRPC port, every interface by default (16 §10.7; the Compose
+   *     variable {@code ARGOS_GRPC_BIND} is a host-side publish address, ADR-0010 C-113)
    * @param tls TLS of the gRPC listener
    * @param allowPlaintext plaintext gRPC (SEC-08, demo mode only)
    * @param maxMessageBytes maximum message size after decompression, at most {@link

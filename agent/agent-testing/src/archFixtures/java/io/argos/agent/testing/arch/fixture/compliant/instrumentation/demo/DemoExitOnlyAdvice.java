@@ -7,20 +7,23 @@ import net.bytebuddy.asm.Advice;
 import net.bytebuddy.implementation.bytecode.assign.Assigner;
 
 /**
- * Exit-only advice: the guard first, then helper delegation (10 §5.3 A-2). Reads the return value
- * with dynamic typing, the only ByteBuddy implementation type advice may use (Assigner.Typing).
+ * Exit-only advice of constructors (A-7): the guard first, then helper delegation (10 §5.3 A-2).
+ * Without onThrowable: ByteBuddy cannot catch inside a constructor (T-AG-002b exempts constructor
+ * advice, A-7 rejects onThrowable there). Reads the instance with dynamic typing, the only
+ * ByteBuddy implementation type advice may use (Assigner.Typing).
  */
 public final class DemoExitOnlyAdvice {
   private DemoExitOnlyAdvice() {}
 
-  @Advice.OnMethodExit(suppress = Throwable.class, onThrowable = Throwable.class)
+  @Advice.OnMethodExit(suppress = Throwable.class)
   public static void exit(
       @Advice.Enter TraceContext context,
-      @Advice.Return(typing = Assigner.Typing.DYNAMIC) Object result,
-      @Advice.Thrown Throwable error) {
+      @Advice.This(typing = Assigner.Typing.DYNAMIC) Object self) {
     if (Argos.skip(DemoInstrumentation.MODULE_ID)) {
       return;
     }
-    DemoHelper.end(context, result == null ? error : null);
+    if (self != null) {
+      DemoHelper.end(context, null);
+    }
   }
 }

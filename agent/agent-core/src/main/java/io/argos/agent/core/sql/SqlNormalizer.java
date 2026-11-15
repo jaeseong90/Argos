@@ -2,38 +2,41 @@
 package io.argos.agent.core.sql;
 
 /**
- * SQL normalizer (10 §9.4, D-22, SEC-35): replaces every literal with {@code ?}, so that no value
- * of a statement leaves the agent, and gives statements that differ only in literals, comments or
- * whitespace the same text (and so the same dictionary id).
+ * SQL normalizer (10 §9.4, D-22, SEC-35, DSN-10-17): replaces every literal with {@code ?}, so that
+ * no value of a statement leaves the agent, and gives statements that differ only in literals,
+ * comments or whitespace the same text (and so the same dictionary id).
  *
- * <p>One pass over at most {@link #MAX_LENGTH} characters (the rest is cut), no regular
- * expressions, linear time. Token states of 10 §9.4:
+ * <p>Rules ({@link SqlTokenizer} reads the tokens, {@link SqlDialect} the vendor differences):
  *
  * <ul>
- *   <li>String literals {@code '...'} ({@code ''} escape; {@code \'} when {@code backslashEscape},
- *       the MySQL default of {@code sql.backslash-escape}) and prefixed literals {@code N'..'},
- *       {@code E'..'}, {@code X'..'}, {@code B'..'} become {@code ?}; an unterminated literal runs
- *       to the end (masked, never copied).
- *   <li>PostgreSQL dollar quoting {@code $tag$...$tag$} becomes {@code ?}.
- *   <li>Numbers (integer, decimal, exponent, {@code 0x} hex; a sign only after an operator, {@code
- *       (} or {@code ,}) become {@code ?}. Digits inside identifiers ({@code col1}, {@code t_2024})
- *       stay.
- *   <li>Quoted identifiers {@code "..."}, {@code `...`} and {@code [...]} (identifier characters
- *       only) stay as they are.
- *   <li>Comments are removed: line comments ({@code --}, and {@code #} for MySQL, except {@code
- *       #name} and {@code ##name}, SQL Server temporary tables) and block comments (Oracle hints
- *       included, nested comments counted).
+ *   <li>String literals {@code '...'} and the prefixed forms {@code N'..'}, {@code E'..'}, {@code
+ *       X'..'}, {@code B'..'}, Oracle {@code q'[..]'}, PostgreSQL {@code $tag$...$tag$}, and {@code
+ *       "..."} in the MySQL dialects, become {@code ?}; an unterminated literal runs to the end
+ *       (masked, never copied).
+ *   <li>Numbers (integer, decimal, exponent, {@code 0x} hex, {@code 0b} binary; a sign only after
+ *       an operator, {@code (} or {@code ,}) become {@code ?}. Digits inside identifiers ({@code
+ *       col1}, {@code t_2024}) stay.
+ *   <li>Quoted identifiers ({@code "..."} in the ANSI dialects, {@code `...`}, {@code [...]}) stay
+ *       as they are.
+ *   <li>Comments are removed: line comments ({@code --}, {@code #} in the MySQL dialects) and block
+ *       comments (nested ones counted), optimizer hints {@code /*+ ..} included unless {@code
+ *       sql.keep-hints}, which keeps a hint with the literals inside it masked.
  *   <li>Bind markers {@code ?}, {@code ?1}, {@code :name}, {@code :1}, {@code $1}, {@code @p1},
  *       {@code @name} stay.
- *   <li>Runs of whitespace and comments become one space; leading and trailing space is dropped.
+ *   <li>Runs of whitespace and comments become one space; leading and trailing space is dropped;
+ *       case is kept; {@code {call proc(?)}} and PL/SQL {@code BEGIN ... END;} blocks only lose
+ *       their literals.
  *   <li>{@code IN (?, ?, ...)} becomes {@code IN (?)}; {@code VALUES (?, ?), (?, ?)} keeps its
  *       first row.
  * </ul>
  *
- * <p>Any failure yields {@link #UNPARSED} (the raw text is never returned). Case is kept.
- *
- * <p>WO-02 PoC: the 50-case suite of 10 §9.4, the {@code truncated} flag, {@code norm_version} and
- * the {@code sql_unparsed_total} counter arrive with the jdbc module proper (WO-13).
+ * <p>Bounds and fail-safety (DSN-10-17): at most {@code sql.max-length} characters are read (the
+ * rest is cut, {@link #truncated(String)}); the work is bounded by {@value #BUDGET_PER_CHAR}
+ * character reads per character plus {@value #BUDGET_BASE} (no regular expression, no
+ * backtracking), which keeps a 64 KiB statement within the 1 ms budget. Any failure (exception,
+ * budget overrun, an ambiguous or unterminated quote) yields {@link #UNPARSED}; the raw text is
+ * never returned. Normalizer version {@value #NORM_VERSION} ({@code DictionaryEntry.norm_version},
+ * D-22).
  */
 public final class SqlNormalizer {
   /** {@code sql.max-length} default (10 §15): characters read from a statement. */
@@ -42,329 +45,154 @@ public final class SqlNormalizer {
   /** Text of a statement that could not be normalized (10 §9.4 "실패 안전"). */
   public static final String UNPARSED = "<unparsed>";
 
-  private static final SqlNormalizer DEFAULTS = new SqlNormalizer(true, MAX_LENGTH);
+  /** The version of these rules ({@code DictionaryEntry.norm_version}, D-22). */
+  public static final int NORM_VERSION = 1;
 
-  /** Characters before which a sign belongs to the following number (10 §9.4). */
-  private static final String SIGN_CONTEXT = "=<>!(,+-*/%|&^~";
+  /** Character reads allowed per character read from the statement. */
+  static final int BUDGET_PER_CHAR = 8;
+
+  /** Character reads allowed on top of the per-character budget. */
+  static final int BUDGET_BASE = 4096;
+
+  private static final SqlNormalizer DEFAULTS = new SqlNormalizer(true, MAX_LENGTH, false);
 
   private final boolean backslashEscape;
   private final int maxLength;
+  private final boolean keepHints;
+  private final int budgetPerChar;
 
   /**
    * @param backslashEscape {@code sql.backslash-escape}: a backslash escapes the next character in
-   *     a string literal
+   *     a string literal of the MySQL dialects
    * @param maxLength {@code sql.max-length}: characters read, the rest is cut
    */
   public SqlNormalizer(boolean backslashEscape, int maxLength) {
-    this.backslashEscape = backslashEscape;
-    this.maxLength = Math.max(1, maxLength);
+    this(backslashEscape, maxLength, false);
   }
 
-  /** The documented defaults: backslash escapes on, {@value #MAX_LENGTH} characters. */
+  /**
+   * @param backslashEscape {@code sql.backslash-escape}
+   * @param maxLength {@code sql.max-length}
+   * @param keepHints {@code sql.keep-hints}: optimizer hints stay (their literals masked)
+   */
+  public SqlNormalizer(boolean backslashEscape, int maxLength, boolean keepHints) {
+    this(backslashEscape, maxLength, keepHints, BUDGET_PER_CHAR);
+  }
+
+  /** Tests: a different work budget (0 injects a budget failure into every statement). */
+  SqlNormalizer(boolean backslashEscape, int maxLength, boolean keepHints, int budgetPerChar) {
+    this.backslashEscape = backslashEscape;
+    this.maxLength = Math.max(1, Math.min(MAX_LENGTH, maxLength));
+    this.keepHints = keepHints;
+    this.budgetPerChar = Math.max(0, budgetPerChar);
+  }
+
+  /** The documented defaults: backslash escapes on, {@value #MAX_LENGTH} characters, no hints. */
   public static SqlNormalizer defaults() {
     return DEFAULTS;
   }
 
-  /** The normalized text of {@code sql}; null for null, {@link #UNPARSED} on failure. */
+  /** {@code sql.max-length} of this normalizer. */
+  public int maxLength() {
+    return maxLength;
+  }
+
+  /** {@code sql.backslash-escape} of this normalizer. */
+  public boolean backslashEscape() {
+    return backslashEscape;
+  }
+
+  /** {@code sql.keep-hints} of this normalizer. */
+  public boolean keepHints() {
+    return keepHints;
+  }
+
+  /** True when {@code sql} is longer than {@code sql.max-length} (the {@code truncated} flag). */
+  public boolean truncated(String sql) {
+    return sql != null && sql.length() > maxLength;
+  }
+
+  /** The normalized text of {@code sql} in the {@link SqlDialect#UNKNOWN} dialect. */
   public String normalize(String sql) {
+    return normalize(sql, SqlDialect.UNKNOWN);
+  }
+
+  /**
+   * The normalized text of {@code sql} read in {@code dialect} ({@link SqlDialect}); null for null,
+   * {@link #UNPARSED} on any failure.
+   */
+  public String normalize(String sql, int dialect) {
     if (sql == null) {
       return null;
     }
     try {
-      return collapseLists(scan(sql));
-    } catch (RuntimeException e) {
+      int length = Math.min(sql.length(), maxLength);
+      long budget = (long) budgetPerChar * length + (budgetPerChar == 0 ? 0 : BUDGET_BASE);
+      SqlTokenizer tokens =
+          new SqlTokenizer(sql, 0, length, dialect, backslashEscape, keepHints, budget);
+      StringBuilder out = new StringBuilder(Math.min(length, 4096) + 16);
+      emit(sql, tokens, out, dialect, budget);
+      String text = out.toString();
+      // The list pass reads every output character at most three times (10 §9.4 budget).
+      tokens.charge(3L * text.length());
+      return collapseLists(text);
+    } catch (RuntimeException | StackOverflowError e) {
       return UNPARSED;
     }
   }
 
-  private String scan(String input) {
-    int length = Math.min(input.length(), maxLength);
-    StringBuilder out = new StringBuilder(Math.min(length, 4096) + 16);
-    boolean gap = false;
-    int i = 0;
-    while (i < length) {
-      char c = input.charAt(i);
-      char next = i + 1 < length ? input.charAt(i + 1) : 0;
-      if (Character.isWhitespace(c)) {
-        gap = true;
-        i++;
+  /**
+   * Writes the tokens of {@code tokens} to {@code out}: literals as {@code ?}, gaps as one space,
+   * every other token as written. Adjacent kept tokens are copied as one run of the input.
+   */
+  private void emit(String sql, SqlTokenizer tokens, StringBuilder out, int dialect, long budget) {
+    int kind;
+    int runStart = -1;
+    int runEnd = -1;
+    while ((kind = tokens.next()) != SqlTokenizer.END) {
+      boolean gap = tokens.gap();
+      boolean kept =
+          kind != SqlTokenizer.STRING && kind != SqlTokenizer.NUMBER && kind != SqlTokenizer.HINT;
+      if (kept && !gap && runStart >= 0 && tokens.start() == runEnd) {
+        runEnd = tokens.end();
         continue;
       }
-      if (c == '-' && next == '-') {
-        i = endOfLine(input, i + 2, length);
-        gap = true;
-        continue;
-      }
-      if (c == '/' && next == '*') {
-        i = endOfBlockComment(input, i + 2, length);
-        gap = true;
-        continue;
-      }
-      if (c == '#' && !(isIdentifierStart(next) || next == '#')) {
-        i = endOfLine(input, i + 1, length);
-        gap = true;
-        continue;
+      if (runStart >= 0) {
+        out.append(sql, runStart, runEnd);
+        runStart = -1;
       }
       if (gap && out.length() > 0) {
         out.append(' ');
       }
-      gap = false;
-      if (c == '\'') {
-        i = endOfString(input, i + 1, length);
-        out.append('?');
-      } else if (c == '"' || c == '`') {
-        int end = endOfQuotedIdentifier(input, i + 1, length, c);
-        out.append(input, i, end);
-        i = end;
-      } else if (c == '[') {
-        int end = endOfBracketIdentifier(input, i + 1, length);
-        if (end > 0) {
-          out.append(input, i, end);
-          i = end;
-        } else {
-          out.append(c);
-          i++;
+      if (kept) {
+        runStart = tokens.start();
+        runEnd = tokens.end();
+      } else if (kind == SqlTokenizer.HINT) {
+        // sql.keep-hints: the hint stays, read like a statement (its literals masked).
+        SqlTokenizer body =
+            new SqlTokenizer(
+                sql,
+                tokens.hintBodyStart(),
+                tokens.hintBodyEnd(),
+                dialect,
+                backslashEscape,
+                false,
+                Math.max(0, budget - tokens.work()));
+        StringBuilder hint = new StringBuilder();
+        emit(sql, body, hint, dialect, budget);
+        tokens.charge(body.work());
+        out.append("/*+");
+        if (hint.length() > 0) {
+          out.append(' ').append(hint);
         }
-      } else if (c == '$') {
-        i = dollar(input, i, length, out);
-      } else if (c == '?') {
-        // Bind marker, with the digits of a numbered marker (?1).
-        int end = i + 1;
-        while (end < length && isDigit(input.charAt(end))) {
-          end++;
-        }
-        out.append(input, i, end);
-        i = end;
-      } else if ((c == ':' || c == '@') && isIdentifierPart(next)) {
-        // Bind markers :name, :1, @p1, @name (and @@identity): copied with their name.
-        int end = endOfWord(input, i + 1, length);
-        out.append(input, i, end);
-        i = end;
-      } else if (isDigit(c) || (c == '.' && isDigit(next))) {
-        i = endOfNumber(input, i, length);
-        out.append('?');
-      } else if ((c == '-' || c == '+') && startsNumber(input, i + 1, length) && signContext(out)) {
-        i = endOfNumber(input, i + 1, length);
-        out.append('?');
-      } else if (isIdentifierStart(c) || c == '#') {
-        int end = endOfWord(input, i + 1, length);
-        if (end - i == 1 && end < length && input.charAt(end) == '\'' && isLiteralPrefix(c)) {
-          // N'..', E'..', X'..', B'..': the prefix belongs to the literal.
-          i = endOfString(input, end + 1, length);
-          out.append('?');
-        } else {
-          out.append(input, i, end);
-          i = end;
-        }
+        out.append(" */");
       } else {
-        out.append(c);
-        i++;
+        out.append('?');
       }
     }
-    return out.toString();
-  }
-
-  /** {@code $1} bind marker, {@code $tag$...$tag$} literal, or a plain {@code $}. */
-  private static int dollar(String input, int start, int length, StringBuilder out) {
-    int i = start + 1;
-    if (i < length && isDigit(input.charAt(i))) {
-      while (i < length && isDigit(input.charAt(i))) {
-        i++;
-      }
-      out.append(input, start, i);
-      return i;
+    if (runStart >= 0) {
+      out.append(sql, runStart, runEnd);
     }
-    int tagEnd = i;
-    if (tagEnd < length && isIdentifierStart(input.charAt(tagEnd))) {
-      tagEnd++;
-      while (tagEnd < length && isTagPart(input.charAt(tagEnd))) {
-        tagEnd++;
-      }
-    }
-    if (tagEnd < length && input.charAt(tagEnd) == '$') {
-      String delimiter = input.substring(start, tagEnd + 1);
-      int close = input.indexOf(delimiter, tagEnd + 1);
-      out.append('?');
-      return close < 0 || close >= length ? length : Math.min(length, close + delimiter.length());
-    }
-    out.append('$');
-    return start + 1;
-  }
-
-  private int endOfString(String input, int start, int length) {
-    int i = start;
-    while (i < length) {
-      char c = input.charAt(i);
-      if (c == '\\' && backslashEscape) {
-        i += 2;
-        continue;
-      }
-      if (c == '\'') {
-        if (i + 1 < length && input.charAt(i + 1) == '\'') {
-          i += 2;
-          continue;
-        }
-        return i + 1;
-      }
-      i++;
-    }
-    return length;
-  }
-
-  private static int endOfQuotedIdentifier(String input, int start, int length, char quote) {
-    int i = start;
-    while (i < length) {
-      if (input.charAt(i) == quote) {
-        if (i + 1 < length && input.charAt(i + 1) == quote) {
-          i += 2;
-          continue;
-        }
-        return i + 1;
-      }
-      i++;
-    }
-    return length;
-  }
-
-  /**
-   * End of a {@code [name]} identifier (a letter or '_' first, then identifier characters, spaces
-   * and dots), or -1 otherwise: array literals and subscripts ({@code ARRAY['a']}, {@code arr[1]})
-   * are then scanned as tokens and their literals masked.
-   */
-  private static int endOfBracketIdentifier(String input, int start, int length) {
-    if (start >= length || !isIdentifierStart(input.charAt(start))) {
-      return -1;
-    }
-    int i = start + 1;
-    while (i < length) {
-      char c = input.charAt(i);
-      if (c == ']') {
-        return i + 1;
-      }
-      if (!(isIdentifierPart(c) || c == ' ' || c == '.')) {
-        return -1;
-      }
-      i++;
-    }
-    return -1;
-  }
-
-  private static int endOfLine(String input, int start, int length) {
-    int i = start;
-    while (i < length && input.charAt(i) != '\n' && input.charAt(i) != '\r') {
-      i++;
-    }
-    return i;
-  }
-
-  private static int endOfBlockComment(String input, int start, int length) {
-    int depth = 1;
-    int i = start;
-    while (i < length) {
-      char c = input.charAt(i);
-      if (c == '*' && i + 1 < length && input.charAt(i + 1) == '/') {
-        depth--;
-        i += 2;
-        if (depth == 0) {
-          return i;
-        }
-        continue;
-      }
-      if (c == '/' && i + 1 < length && input.charAt(i + 1) == '*') {
-        depth++;
-        i += 2;
-        continue;
-      }
-      i++;
-    }
-    return length;
-  }
-
-  private static int endOfWord(String input, int start, int length) {
-    int i = start;
-    while (i < length && isIdentifierPart(input.charAt(i))) {
-      i++;
-    }
-    return i;
-  }
-
-  private static boolean startsNumber(String input, int i, int length) {
-    if (i >= length) {
-      return false;
-    }
-    char c = input.charAt(i);
-    return isDigit(c) || (c == '.' && i + 1 < length && isDigit(input.charAt(i + 1)));
-  }
-
-  /** End of the number starting at {@code start} (a digit or a '.' before a digit). */
-  private static int endOfNumber(String input, int start, int length) {
-    int i = start;
-    if (input.charAt(i) == '0'
-        && i + 2 < length
-        && (input.charAt(i + 1) == 'x' || input.charAt(i + 1) == 'X')
-        && isHexDigit(input.charAt(i + 2))) {
-      i += 2;
-      while (i < length && isHexDigit(input.charAt(i))) {
-        i++;
-      }
-      return i;
-    }
-    while (i < length && isDigit(input.charAt(i))) {
-      i++;
-    }
-    if (i < length && input.charAt(i) == '.') {
-      i++;
-      while (i < length && isDigit(input.charAt(i))) {
-        i++;
-      }
-    }
-    if (i < length && (input.charAt(i) == 'e' || input.charAt(i) == 'E')) {
-      int exponent = i + 1;
-      if (exponent < length && (input.charAt(exponent) == '+' || input.charAt(exponent) == '-')) {
-        exponent++;
-      }
-      if (exponent < length && isDigit(input.charAt(exponent))) {
-        i = exponent;
-        while (i < length && isDigit(input.charAt(i))) {
-          i++;
-        }
-      }
-    }
-    return i;
-  }
-
-  /** True when a sign at this point is part of a number: after an operator, '(' or ','. */
-  private static boolean signContext(StringBuilder out) {
-    int i = out.length() - 1;
-    while (i >= 0 && out.charAt(i) == ' ') {
-      i--;
-    }
-    return i < 0 || SIGN_CONTEXT.indexOf(out.charAt(i)) >= 0;
-  }
-
-  private static boolean isLiteralPrefix(char c) {
-    return c == 'N' || c == 'n' || c == 'E' || c == 'e' || c == 'X' || c == 'x' || c == 'B'
-        || c == 'b';
-  }
-
-  private static boolean isDigit(char c) {
-    return c >= '0' && c <= '9';
-  }
-
-  private static boolean isHexDigit(char c) {
-    return isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-  }
-
-  private static boolean isIdentifierStart(char c) {
-    return c != 0 && (Character.isLetter(c) || c == '_');
-  }
-
-  private static boolean isIdentifierPart(char c) {
-    return c != 0 && (Character.isLetterOrDigit(c) || c == '_' || c == '$' || c == '#');
-  }
-
-  private static boolean isTagPart(char c) {
-    return Character.isLetterOrDigit(c) || c == '_';
   }
 
   // --- IN lists and multi-row VALUES (on the literal-free text) ---------------------------------
@@ -375,21 +203,24 @@ public final class SqlNormalizer {
     }
     StringBuilder out = new StringBuilder(text.length());
     int i = 0;
+    int copied = 0;
     int length = text.length();
     while (i < length) {
-      if (isWordAt(text, i, "IN")) {
+      char c = text.charAt(i);
+      if ((c == 'i' || c == 'I') && isWordAt(text, i, "IN")) {
         int open = skipSpaces(text, i + 2);
         int close = questionGroupEnd(text, open);
         if (close > 0) {
-          out.append(text, i, i + 2).append(" (?)");
+          out.append(text, copied, i + 2).append(" (?)");
           i = close;
+          copied = i;
           continue;
         }
-      } else if (isWordAt(text, i, "VALUES")) {
+      } else if ((c == 'v' || c == 'V') && isWordAt(text, i, "VALUES")) {
         int open = skipSpaces(text, i + 6);
         int close = questionGroupEnd(text, open);
         if (close > 0) {
-          out.append(text, i, close);
+          out.append(text, copied, close);
           i = close;
           // Drop the following rows that hold bind markers only.
           while (true) {
@@ -404,13 +235,16 @@ public final class SqlNormalizer {
             }
             i = nextClose;
           }
+          copied = i;
           continue;
         }
       }
-      out.append(text.charAt(i));
       i++;
     }
-    return out.toString();
+    if (copied == 0) {
+      return text;
+    }
+    return out.append(text, copied, length).toString();
   }
 
   /** True when the word {@code word} (ASCII, any case) starts at {@code i} on word boundaries. */
@@ -419,10 +253,10 @@ public final class SqlNormalizer {
     if (end > text.length() || !text.regionMatches(true, i, word, 0, word.length())) {
       return false;
     }
-    if (i > 0 && isIdentifierPart(text.charAt(i - 1))) {
+    if (i > 0 && SqlTokenizer.isIdentifierPart(text.charAt(i - 1))) {
       return false;
     }
-    return end == text.length() || !isIdentifierPart(text.charAt(end));
+    return end == text.length() || !SqlTokenizer.isIdentifierPart(text.charAt(end));
   }
 
   private static int skipSpaces(String text, int i) {
@@ -447,7 +281,7 @@ public final class SqlNormalizer {
       char c = text.charAt(i);
       if (c == ' ') {
         i++;
-      } else if (expectMarker && c == '?') {
+      } else if (expectMarker && c == '?' && !(i + 1 < length && isDigitAt(text, i + 1))) {
         expectMarker = false;
         i++;
       } else if (!expectMarker && c == ',') {
@@ -460,5 +294,9 @@ public final class SqlNormalizer {
       }
     }
     return -1;
+  }
+
+  private static boolean isDigitAt(String text, int i) {
+    return SqlTokenizer.isDigit(text.charAt(i));
   }
 }

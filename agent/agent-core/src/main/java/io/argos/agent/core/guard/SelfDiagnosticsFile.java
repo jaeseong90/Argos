@@ -35,6 +35,9 @@ public final class SelfDiagnosticsFile {
   private final SelfDiagnosticsCollector collector;
   private volatile boolean failureLogged;
 
+  /** The last development-only members given to {@link #write(String)}, or null. */
+  private volatile String developmentMembers;
+
   public SelfDiagnosticsFile(File file, SelfDiagnosticsCollector collector) {
     this.file = file;
     this.collector = collector;
@@ -44,10 +47,34 @@ public final class SelfDiagnosticsFile {
     return file;
   }
 
-  /** Writes a fresh snapshot (agent threads: {@code argos-watch}, the shutdown hook). */
+  /**
+   * Writes a fresh snapshot with the development-only members last given to {@link #write(String)}
+   * (the shutdown hook: it does not call application objects, 10 §10.2).
+   */
   public synchronized void write() {
+    writeSnapshot(developmentMembers);
+  }
+
+  /**
+   * Writes a fresh snapshot ({@code argos-watch}) with {@code members}, JSON members without braces
+   * that exist in this development file only, never in the {@code SELF_DIAG} payload: the pool and
+   * connector registries ({@code core.metric.MetricDiagnostics}, WO-13), so that integration tests
+   * see the getter values before WO-16 sends metrics. Null keeps the members of the previous call.
+   */
+  public synchronized void write(String members) {
+    if (members != null) {
+      developmentMembers = members;
+    }
+    writeSnapshot(developmentMembers);
+  }
+
+  private void writeSnapshot(String members) {
     try {
-      replace(file, collector.snapshot().toJson() + "\n");
+      String json = collector.snapshot().toJson();
+      if (members != null && !members.isEmpty() && json.endsWith("}")) {
+        json = json.substring(0, json.length() - 1) + "," + members + "}";
+      }
+      replace(file, json + "\n");
     } catch (Throwable t) {
       failed(t);
     }

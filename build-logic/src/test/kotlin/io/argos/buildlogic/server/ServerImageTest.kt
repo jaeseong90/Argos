@@ -17,20 +17,62 @@ class ServerImageTest {
     assertThat(ServerImage.BASE_IMAGE).matches("eclipse-temurin:21-jre@sha256:[0-9a-f]{64}")
     assertThat(ServerImage.USER).isEqualTo("10001:10001")
     assertThat(ServerImage.PORTS).containsExactly("8080", "9100").doesNotContain("8081")
-    assertThat(ServerImage.ENVIRONMENT).containsEntry("HOME", ServerImage.WORKING_DIRECTORY)
+    assertThat(ServerImage.ENVIRONMENT).containsEntry("HOME", ServerImage.DATA_VOLUME)
+    assertThat(ServerImage.DEFAULT_PLATFORMS).isEqualTo("linux/amd64")
   }
 
   @Test
-  @DisplayName("log and WAL directories on the /logs and /data volumes of 17 §3.2")
+  @DisplayName("log, WAL, setup token and JWT key on the /logs and /data volumes of 17 §3.2")
   fun volumePaths() {
     assertThat(ServerImage.DATA_VOLUME).isEqualTo("/data")
     assertThat(ServerImage.LOGS_VOLUME).isEqualTo("/logs")
     assertThat(ServerImage.ENVIRONMENT)
       .containsEntry("LOGGING_FILE_PATH", "/logs/server")
       .containsEntry("ARGOS_WAL_DIR", "/data/wal")
+      .containsEntry("ARGOS_AUTH_SETUP_TOKEN_FILE", "/data/setup-token")
+      .containsEntry("ARGOS_JWT_KEY_FILE", "/data/jwt.key")
     // Nothing the server writes may default to the root-owned working directory of the image.
-    val written = ServerImage.ENVIRONMENT.filterKeys { it != "HOME" }.values
-    assertThat(written.filter { it.startsWith(ServerImage.WORKING_DIRECTORY) }).isEmpty()
+    val written = ServerImage.ENVIRONMENT.values + ServerImage.JVM_FLAGS
+    assertThat(written.filter { it.contains(ServerImage.WORKING_DIRECTORY) }).isEmpty()
+    // Every path default lies on one of the two volumes.
+    assertThat(ServerImage.ENVIRONMENT.values).allMatch {
+      it == ServerImage.DATA_VOLUME ||
+        it.startsWith("${ServerImage.DATA_VOLUME}/") ||
+        it.startsWith("${ServerImage.LOGS_VOLUME}/")
+    }
+  }
+
+  @Test
+  @DisplayName("writable directories /data, /data/tmp, /logs: owner only (0700), never world-writable")
+  fun writableDirectories() {
+    assertThat(ServerImage.WRITABLE_DIRECTORIES).containsExactly("/data", "/data/tmp", "/logs")
+    assertThat(ServerImage.TMP_DIRECTORY).isEqualTo("/data/tmp")
+    assertThat(ServerImage.DIRECTORY_MODE).isEqualTo("700")
+    // The ownership extension accepts the configured user and every directory path.
+    assertThat(ImageOwnershipExtension.parseOwnership(ServerImage.USER)).isEqualTo("10001:10001")
+    assertThat(ImageOwnershipExtension.parsePaths(ServerImage.WRITABLE_DIRECTORIES.joinToString(",")))
+      .containsExactlyElementsOf(ServerImage.WRITABLE_DIRECTORIES)
+  }
+
+  @Test
+  @DisplayName("JVM flags of 17 §7.2 for a container: no heap size, temporary and home on /data")
+  fun jvmFlags() {
+    assertThat(ServerImage.JVM_FLAGS)
+      .containsExactly(
+        "-XX:+UseG1GC",
+        "-XX:MaxGCPauseMillis=200",
+        "-XX:MaxDirectMemorySize=512m",
+        "-XX:+ExitOnOutOfMemoryError",
+        "-Dfile.encoding=UTF-8",
+        "-Duser.timezone=UTC",
+        "-Djava.io.tmpdir=/data/tmp",
+        "-Duser.home=/data",
+      )
+    // The heap comes from JAVA_TOOL_OPTIONS (17 §7.3 sizing by the installer); a flag in the
+    // entrypoint would win over it.
+    assertThat(ServerImage.JVM_FLAGS).noneMatch { it.startsWith("-Xmx") || it.startsWith("-Xms") }
+    assertThat(ServerImage.JVM_FLAGS.single { it.startsWith("-Djava.io.tmpdir=") })
+      .endsWith(ServerImage.TMP_DIRECTORY)
   }
 
   @Test

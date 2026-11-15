@@ -1,0 +1,277 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Argos APM single-node installation with Docker Compose (docs/17 section 3; ADR-0010 C-171).
+# Three services: the Argos server, ClickHouse and PostgreSQL. Prepare the directory with
+# ./argos-env-init.sh, place tls/server.crt and tls/server.key, then start with
+# ./argos-compose.sh up (README.md, docs/install/compose.md).
+#
+# Rules this file keeps (SEC-73..76, docs/17 DSN-17-03/04):
+#   * Host ports are 8080 (UI/API) and 9100 (agent gRPC, TLS) only. The databases publish nothing and
+#     sit on the internal network "back" only. The management port 8081 is published on
+#     127.0.0.1 only, by compose.mgmt.yaml, which argos-compose.sh adds when ARGOS_MGMT_EXPOSE=true.
+#   * No credential is written here or in .env: secrets are files in secrets/ (0600), mounted under
+#     /run/secrets; ClickHouse gets only SHA-256 hashes (secrets/clickhouse.env).
+#   * Every image is tag@sha256 except the locally built server image (ARGOS_SERVER_IMAGE). The
+#     ClickHouse and PostgreSQL references are copies of deploy/clickhouse/image.properties and
+#     deploy/postgres/image.properties (the single sources; deploy/compose/test checks that they
+#     match). The release workflow pins the server image by digest (WO-44).
+#   * Default values below are what argos-env-init.sh computes for a 16 GiB host (docs/17 section 7):
+#     they apply only when .env does not set a variable.
+#
+# Paths: ../clickhouse and ../postgres are the storage configuration of this repository
+# (deploy/clickhouse, deploy/postgres), mounted read-only, never copied.
+
+name: argos
+
+services:
+  server:
+    image: ${ARGOS_SERVER_IMAGE:-argos-server:0.0.0-SNAPSHOT}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    ports:
+      # Host side addresses (ADR-0010 C-113): the server always listens on every interface inside
+      # the container.
+      - "${ARGOS_HTTP_BIND:-0.0.0.0}:8080:8080"
+      - "${ARGOS_GRPC_BIND:-0.0.0.0}:9100:9100"
+    environment:
+      # The container overlay of the server configuration (config/server/application-compose.yaml).
+      SPRING_CONFIG_ADDITIONAL_LOCATION: file:/conf/server/application-compose.yaml
+      # ADR-0010 C-114: the management port listens on every interface of the container; the host
+      # sees it only through compose.mgmt.yaml (127.0.0.1). The bearer token stays required.
+      MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
+      # External URL: deep links and the Origin check of state-changing requests and WebSockets.
+      ARGOS_WEB_PUBLIC_URL: ${ARGOS_WEB_PUBLIC_URL:-}
+      # PostgreSQL (C-11): Flyway runs as the owner during the start, the runtime pool as argos_app.
+      ARGOS_PG_URL: jdbc:postgresql://postgres:5432/argos
+      ARGOS_PG_USER: argos_app
+      ARGOS_PG_PASSWORD_FILE: /run/secrets/pg_app_password
+      ARGOS_PG_OWNER_USER: argos
+      ARGOS_PG_OWNER_PASSWORD_FILE: /run/secrets/pg_owner_password
+      # ClickHouse (C-11, C-60): batch writer, query API reader, migration runner.
+      ARGOS_CH_URL: http://clickhouse:8123
+      ARGOS_CH_WRITER_PASSWORD_FILE: /run/secrets/ch_writer_password
+      ARGOS_CH_READER_PASSWORD_FILE: /run/secrets/ch_reader_password
+      ARGOS_CH_MIGRATOR_PASSWORD_FILE: /run/secrets/ch_migrator_password
+      ARGOS_MASTER_KEY_FILE: /run/secrets/master_key
+      # Management port: bearer token file and the client ranges (loopback and the Docker bridge
+      # pools, from which the host and containers on the Compose networks connect; C-114).
+      ARGOS_METRICS_TOKEN_FILE: /run/secrets/metrics_token
+      ARGOS_METRICS_ALLOW_CIDRS: ${ARGOS_METRICS_ALLOW_CIDRS:-127.0.0.1/32,::1/128,172.16.0.0/12,192.168.0.0/16}
+      # gRPC TLS (16 section 3): the server refuses to start without these files.
+      ARGOS_TLS_CERT_FILE: /conf/tls/server.crt
+      ARGOS_TLS_KEY_FILE: /conf/tls/server.key
+      ARGOS_LOG_LEVEL: ${ARGOS_LOG_LEVEL:-INFO}
+      ARGOS_TZ_DISPLAY: ${ARGOS_TZ_DISPLAY:-UTC}
+      # Retention in days (13 defaults). RAW_STAT and METRIC must be equal (ADR-0010 C-112).
+      ARGOS_RETENTION_XLOG_DAYS: ${ARGOS_RETENTION_XLOG_DAYS:-30}
+      ARGOS_RETENTION_PROFILE_DAYS: ${ARGOS_RETENTION_PROFILE_DAYS:-7}
+      ARGOS_RETENTION_RAW_STAT_DAYS: ${ARGOS_RETENTION_RAW_STAT_DAYS:-14}
+      ARGOS_RETENTION_METRIC_DAYS: ${ARGOS_RETENTION_METRIC_DAYS:-14}
+      ARGOS_RETENTION_ROLLUP_1M_DAYS: ${ARGOS_RETENTION_ROLLUP_1M_DAYS:-90}
+      ARGOS_RETENTION_ROLLUP_1H_DAYS: ${ARGOS_RETENTION_ROLLUP_1H_DAYS:-365}
+      # Session cookies carry Secure (16 section 7.1). false only for an evaluation over plain HTTP
+      # from another host; the server logs a WARN at every start then.
+      ARGOS_SECURITY_COOKIE_SECURE: ${ARGOS_SECURITY_COOKIE_SECURE:-true}
+      # Heap only: the image adds the other JVM options of docs/17 section 7.2. The JVM prints this
+      # value at start, so it never holds a secret.
+      JAVA_TOOL_OPTIONS: ${ARGOS_SERVER_JAVA_OPTS:--Xms4096m -Xmx4096m}
+    volumes:
+      # WAL, setup token, JWT key, temporary files. A new volume inherits 10001:10001 0700 from the
+      # image.
+      - argos-data:/data
+      - argos-logs:/logs
+      # The directory, not the single file: on Docker Desktop for Windows single-file mounts below
+      # config/ intermittently answered EIO to the non-root server user (WO-40 smoke runs).
+      - type: bind
+        source: ./config/server
+        target: /conf/server
+        read_only: true
+        bind:
+          create_host_path: false
+      # Only the certificate and the key enter the container (not a CA key kept in tls/).
+      - type: bind
+        source: ./tls/server.crt
+        target: /conf/tls/server.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./tls/server.key
+        target: /conf/tls/server.key
+        read_only: true
+        bind:
+          create_host_path: false
+    secrets:
+      - pg_owner_password
+      - pg_app_password
+      - ch_writer_password
+      - ch_reader_password
+      - ch_migrator_password
+      - master_key
+      - metrics_token
+    # The image runs as 10001:10001 (never root). Nothing else of the image is written to.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=0700,uid=10001,gid=10001
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # Inside the container: 127.0.0.1:8081 answers even with MANAGEMENT_SERVER_ADDRESS=0.0.0.0.
+      # DOWN is HTTP 503, which makes wget exit non-zero.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: ${ARGOS_START_PERIOD:-60s}
+    networks:
+      - front
+      - back
+    mem_limit: ${ARGOS_SERVER_MEM:-5120m}
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.8.34.13@sha256:8b28eb09479c36c4533eec7a6268917d04ba3a6fd90e3f4205f70e761b6d7779
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    environment:
+      # No default user: the accounts are argos_writer, argos_reader and argos_migrator of
+      # users.d/argos.xml (SEC-74, SEC-76).
+      CLICKHOUSE_SKIP_USER_SETUP: "1"
+      # from_env variables of config.d/argos.xml and users.d/argos.xml, in bytes (docs/17 section
+      # 7.3; ADR-0010 C-198: max server memory = 0.9 x ARGOS_CH_MEM, the container limit).
+      ARGOS_CH_MAX_SERVER_MEMORY_USAGE: ${ARGOS_CH_MAX_SERVER_MEMORY_USAGE:-7693192396}
+      ARGOS_CH_WRITER_MAX_MEMORY_USAGE: ${ARGOS_CH_WRITER_MAX_MEMORY_USAGE:-2051517972}
+      ARGOS_CH_READER_MAX_MEMORY_USAGE: ${ARGOS_CH_READER_MAX_MEMORY_USAGE:-3077276958}
+    # ARGOS_CH_{WRITER,READER,MIGRATOR}_PASSWORD_SHA256 (ADR-0010 C-171 (2)); never in .env.
+    # Not "required" so that `docker compose config` works before argos-env-init.sh ran;
+    # argos-compose.sh up refuses to start without it, and ClickHouse refuses to start when a
+    # from_env variable of users.d/argos.xml is unset.
+    env_file:
+      - path: ./secrets/clickhouse.env
+        required: false
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      # Single files, not the directories: the image's config.d/docker_related_config.xml (listen on
+      # every interface of the container) must stay visible.
+      - type: bind
+        source: ../clickhouse/config.d/argos.xml
+        target: /etc/clickhouse-server/config.d/argos.xml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../clickhouse/users.d/argos.xml
+        target: /etc/clickhouse-server/users.d/argos.xml
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8123/ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    networks:
+      - back
+    mem_limit: ${ARGOS_CH_MEM:-8152m}
+
+  postgres:
+    image: postgres:16.15@sha256:5db6dac2ef5dcff512f4f00a009c3c332b9f2f28f24277175bf3e4a3d02ef83a
+    restart: unless-stopped
+    # Starts as root like the image's own entrypoint: before the first initialisation it stages the
+    # role passwords, roles.sql and the init script inside the container (private tmpfs), then runs
+    # docker-entrypoint.sh (config/postgres/argos-entrypoint.sh).
+    entrypoint: ["/bin/sh", "/argos/config/argos-entrypoint.sh"]
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${ARGOS_PG_SHARED_BUFFERS:-491MB}
+      - -c
+      - effective_cache_size=${ARGOS_PG_EFFECTIVE_CACHE_SIZE:-982MB}
+      - -c
+      - work_mem=16MB
+      - -c
+      - max_connections=100
+    environment:
+      # Bootstrap superuser of the image; roles.sql creates the non-superuser owner "argos" and the
+      # accounts argos_app, argos_audit and argos_backup (C-11, deploy/postgres/README.md).
+      POSTGRES_USER: postgres
+      POSTGRES_DB: argos
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_superuser_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - type: bind
+        source: ./config/postgres
+        target: /argos/config
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../postgres/roles.sql
+        target: /argos/roles.sql
+        read_only: true
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /run/argos-init:size=64k,mode=0700
+    shm_size: 128m
+    secrets:
+      - pg_superuser_password
+      - pg_owner_password
+      - pg_app_password
+      - pg_audit_password
+      - pg_backup_password
+    healthcheck:
+      # TCP: during the first initialisation the server listens on its socket only, so the check
+      # turns healthy after the roles exist.
+      test: ["CMD", "pg_isready", "-q", "-h", "127.0.0.1", "-U", "postgres", "-d", "argos"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    networks:
+      - back
+    mem_limit: ${ARGOS_PG_MEM:-1473m}
+
+secrets:
+  pg_superuser_password:
+    file: ./secrets/pg_superuser_password
+  pg_owner_password:
+    file: ./secrets/pg_owner_password
+  pg_app_password:
+    file: ./secrets/pg_app_password
+  pg_audit_password:
+    file: ./secrets/pg_audit_password
+  pg_backup_password:
+    file: ./secrets/pg_backup_password
+  ch_writer_password:
+    file: ./secrets/ch_writer_password
+  ch_reader_password:
+    file: ./secrets/ch_reader_password
+  ch_migrator_password:
+    file: ./secrets/ch_migrator_password
+  master_key:
+    file: ./secrets/master_key
+  metrics_token:
+    file: ./secrets/metrics_token
+
+volumes:
+  argos-data: {}
+  argos-logs: {}
+  clickhouse-data: {}
+  postgres-data: {}
+
+networks:
+  # Outbound traffic of the server (alert channels the operator configures) leaves through front.
+  front: {}
+  # No route out: the databases have no egress (docs/17 open item 6, N-17).
+  back:
+    internal: true

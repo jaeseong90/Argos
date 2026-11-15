@@ -52,6 +52,9 @@ public final class NoopTracer implements Tracer {
   public void stepFetch(TraceContext ctx, int seq, long rows, long fetchNanos) {}
 
   @Override
+  public void stepBatch(TraceContext ctx, int seq, int batchSize) {}
+
+  @Override
   public void stepDetail(TraceContext ctx, int seq, String detail) {}
 
   @Override
@@ -105,6 +108,14 @@ public final class NoopTracer implements Tracer {
   }
 
   @Override
+  public long sqlId(String rawSql, long dbId) {
+    return 0;
+  }
+
+  @Override
+  public void sqlParam(SqlState state, int index, Object value, String setter) {}
+
+  @Override
   public String traceparent(TraceContext ctx, long childSpanId) {
     return null;
   }
@@ -137,6 +148,19 @@ public final class NoopTracer implements Tracer {
 
   @Override
   public void countOrphan(int stepType) {}
+
+  /** Nothing is registered before the core starts; a pool created that early has no metrics. */
+  @Override
+  public void registerPool(Object pool, int poolKind) {}
+
+  @Override
+  public long poolNameId(Object dataSourceOrPool) {
+    return 0;
+  }
+
+  /** Nothing is registered before the core starts. */
+  @Override
+  public void registerConnector(Object endpoint) {}
 
   @Override
   public CaptureConfig capture() {

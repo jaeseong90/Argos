@@ -1,41 +1,42 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.server.api;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import io.argos.server.web.RequestIdFilter;
-import org.slf4j.MDC;
+import io.argos.server.api.query.ResponseEnvelope;
 
 /**
  * The response envelope of the REST API (14 §2.5, DSN-14-04): {@code {"data": ..., "meta":
- * {"request_id": ...}}}. Errors have their own body ({@code ErrorBody}). This is the part WO-24
- * needs; the query fields of {@code meta} ({@code source}, {@code shown}, {@code total}, {@code
- * next_cursor}, ...) are added by WO-23.
+ * {"request_id": ..., "generated_at": ...}}}. Errors have their own body ({@code ErrorBody}).
+ *
+ * <p>There is one {@code meta} schema for every response: {@link ResponseEnvelope.Meta} (OpenAPI
+ * name {@code QueryMeta}) with its absent-versus-null rule. This class is the short form for
+ * endpoints without range or list meta (authentication, setup, user administration): it sets only
+ * {@code request_id}, {@code generated_at} and, for a list cut at its upper bound, {@code
+ * truncated}. Query endpoints build their envelope with {@link ResponseEnvelope#builder}.
  *
  * @param data the payload
  * @param meta the metadata
  * @param <T> the type of the payload
  */
-public record Envelope<T>(T data, Meta meta) {
+public record Envelope<T>(T data, ResponseEnvelope.Meta meta) {
 
-  /**
-   * The metadata of a response.
-   *
-   * @param requestId the id of this request, also in the logs and error bodies (14 §2.6)
-   * @param truncated true when a list was cut at its upper bound; absent otherwise
-   */
-  @JsonInclude(JsonInclude.Include.NON_NULL)
-  public record Meta(
-      @JsonProperty("request_id") String requestId, @JsonProperty("truncated") Boolean truncated) {}
-
-  /** {@code data} with the id of the current request. */
+  /** {@code data} with the id of the current request and the generation time. */
   public static <T> Envelope<T> of(T data) {
-    return new Envelope<>(data, new Meta(MDC.get(RequestIdFilter.MDC_KEY), null));
+    return wrap(ResponseEnvelope.of(data));
   }
 
-  /** A list that may have been cut at its upper bound. */
+  /**
+   * A list that may have been cut at its upper bound: {@code truncated} is {@code true} when it was
+   * cut and absent otherwise.
+   */
   public static <T> Envelope<T> of(T data, boolean truncated) {
-    return new Envelope<>(
-        data, new Meta(MDC.get(RequestIdFilter.MDC_KEY), truncated ? true : null));
+    ResponseEnvelope.Builder<T> builder = ResponseEnvelope.builder(data);
+    if (truncated) {
+      builder.truncated(true);
+    }
+    return wrap(builder.build());
+  }
+
+  private static <T> Envelope<T> wrap(ResponseEnvelope<T> envelope) {
+    return new Envelope<>(envelope.data(), envelope.meta());
   }
 }

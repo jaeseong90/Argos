@@ -27,6 +27,14 @@ package io.argos.agent.bootstrap;
  *       which adds {@link CaptureConfig#asyncStep()} for the executor advice (10 §6.6).
  *   <li>{@link TraceContext#markEnded()} replaces the {@code ended} field (10 §7.1 "두 번째 end는 무시");
  *       {@link ArgosThread} is final.
+ *   <li>WO-13 adds {@link #stepBatch} (11 {@code ProfileStep.batch_size}), {@link #registerPool},
+ *       {@link #poolNameId} and {@link #registerConnector} (10 §6.3, §6.4): the pool and Tomcat
+ *       registries and the pool name dictionary live in the core, which helpers cannot reach (B-2).
+ *       The JDBC store values are {@link SqlState}, {@link FetchState} and {@link DbInfo}.
+ *   <li>WO-13 also adds {@link #sqlId(String, long)} (the SQL dialect of the target decides how
+ *       quotes, backslashes and {@code #} are read, so that no literal survives, SEC-35) and {@link
+ *       #sqlParam} (bind values rendered by the core for {@code capture.sql-parameters}, which
+ *       needs the SQL tokenizer and the {@code Masker}, 16 §6.7).
  * </ul>
  *
  * <p>The class loader of the core lives in this package ({@code AgentClassLoader}, WO-02 report
@@ -86,6 +94,14 @@ public interface Tracer {
    * (WO-02 D-2): the fetch happens after {@link #stepEnd} of the statement step.
    */
   void stepFetch(TraceContext ctx, int seq, long rows, long fetchNanos);
+
+  /**
+   * Sets the item count of the {@code executeBatch()} recorded as the SQL step {@code seq} (10 §6.3
+   * "executeBatch는 batchCount", 11 {@code ProfileStep.batch_size}). Addition to 10 §3 (WO-13): the
+   * count is a field of the step, not a detail text. Ignored for -1, a summary step (10 §9.1), an
+   * ended transaction and a count below 1; a later call replaces the count.
+   */
+  void stepBatch(TraceContext ctx, int seq, int batchSize);
 
   /** Attaches a detail text (at most 4 KB; masking is the caller's job) to the step {@code seq}. */
   void stepDetail(TraceContext ctx, int seq, String detail);
@@ -180,9 +196,32 @@ public interface Tracer {
 
   /**
    * The dictionary id of a JDBC target (credentials and parameters are never kept); {@code long}
-   * like every dictionary id (WO-02 D-2, 10 §3 has {@code int}).
+   * like every dictionary id (WO-02 D-2, 10 §3 has {@code int}). The text is {@code
+   * <vendor>://<host>:<port>/<database>} (11 {@code DB_TARGET}, 10 §6.3 {@code JdbcUrlParser}).
    */
   long dbId(String jdbcUrl);
+
+  /**
+   * The {@link DictKind#SQL} id of the raw statement {@code rawSql} executed against the target
+   * {@code dbId} (0: unknown): like {@link #dict(int, String)}, normalized in the core (10 §9.4,
+   * SEC-35), with the quoting rules of the target's dialect (MySQL and MariaDB read {@code "..."}
+   * as a string and {@code #} as a comment; the other vendors keep {@code "..."} identifiers; an
+   * unknown target is read the MySQL way, which masks more). 0 for null. Never throws. Addition to
+   * 10 §3 (WO-13).
+   */
+  long sqlId(String rawSql, long dbId);
+
+  /**
+   * Renders the bind value {@code value} of parameter {@code index} (1-based), set with the JDBC
+   * method {@code setter} ({@code setString}, {@code setNull}, ...), for the current {@code
+   * capture.sql-parameters} mode and keeps it in {@code state} (16 §6.7, SEC-3A, F-A04): nothing in
+   * {@code masked} mode; the type and length ({@code [String(11)]}) in {@code partial} mode for a
+   * position whose column is not whitelisted; else the value after the {@code Masker}, at most 256
+   * characters. Only JDK value types are rendered; any other object (streams, readers, LOBs,
+   * arrays, entities) becomes {@code <type>} without a call on it, {@code byte[]} its length only.
+   * The core never keeps {@code value}. Never throws. Addition to 10 §3 (WO-13).
+   */
+  void sqlParam(SqlState state, int index, Object value, String setter);
 
   /** {@code traceparent} header value for an outgoing call with span {@code childSpanId}. */
   String traceparent(TraceContext ctx, long childSpanId);
@@ -216,6 +255,42 @@ public interface Tracer {
 
   /** Counts a step seen without a transaction (D-20). */
   void countOrphan(int stepType);
+
+  /**
+   * Registers a connection pool for the pool metrics (10 §6.4, F-A10; 10 §11 {@code
+   * jdbc_pool_active/idle/waiting/max{pool}}, sent by WO-16). Called by the pool module's advice
+   * when the pool exists: the exit of the {@code HikariPool} or Tomcat JDBC {@code ConnectionPool}
+   * constructor, the exit of DBCP2's {@code BasicDataSource.createDataSource()}. {@code poolKind}
+   * is a {@link PoolKind}. Addition to 10 §3 (WO-13).
+   *
+   * <p>The core keeps a weak reference only (a collected pool disappears, a re-created pool
+   * registers again), names the pool after its own name or {@code <SimpleName>-<n>} when it has
+   * none, reads values with the pool's public getters only (never JMX: DSN-10-12, Spring Boot's
+   * default {@code spring.jmx.enabled=false} works) and keeps at most 64 pools (the rest is
+   * counted). Never blocks on the pool, never throws, never calls a method with side effects.
+   */
+  void registerPool(Object pool, int poolKind);
+
+  /**
+   * The {@link DictKind#POOL} dictionary id of the name of the pool behind {@code
+   * dataSourceOrPool}: a registered pool itself, or the data source of one (Hikari's {@code
+   * HikariDataSource}, Tomcat JDBC's {@code DataSourceProxy}, DBCP2's {@code BasicDataSource}). The
+   * {@code name_id} of a DBC step (10 §6.3, ADR-0010 C-101, C-143 (4)); 0 when the object is not
+   * known as a pool, in which case the JDBC module names the step after the class. Never creates a
+   * pool or a connection and never throws. Addition to 10 §3 (WO-13).
+   */
+  long poolNameId(Object dataSourceOrPool);
+
+  /**
+   * Registers a started Tomcat connector endpoint ({@code
+   * org.apache.tomcat.util.net.AbstractEndpoint}, exit of {@code start()}) for the Tomcat metrics
+   * (10 §6.4, §11 {@code tomcat_threads_*}, {@code tomcat_connections_*}; sent by WO-16): weak
+   * reference, getters only (never JMX), bounded. Reports the connector names to the server and,
+   * unless {@code app.instance} is configured, the instance name {@code host:port} of the first
+   * connector, through the transport's {@code InstanceUpdate} (10 §10.4, 11 §4.2). Never blocks and
+   * never throws. Addition to 10 §3 (WO-13).
+   */
+  void registerConnector(Object endpoint);
 
   /**
    * The current capture modes: the immutable snapshot the core installed with {@link

@@ -11,6 +11,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.argos.agent.testing.arch.fixture.violating.core.LogsCollectedData;
 import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.ConstructorEnterInstrumentation;
+import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.ConstructorThrowableAdvice;
+import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.ConstructorThrowableInstrumentation;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -89,6 +91,23 @@ class AgentCodeRulesTest {
                   + ConstructorEnterInstrumentation.class.getPackageName()
                   + ".ConstructorEnterAdvice declares @Advice.OnMethodEnter")
           .hasMessageContaining("constructor advice is not named by a class literal");
+    }
+
+    @Test
+    @DisplayName(
+        "T-AG-003g A-7 rejects onThrowable on constructor exit advice (ByteBuddy cannot catch in a"
+            + " constructor) and one advice on constructors and methods")
+    void rejectsOnThrowableOnConstructors() {
+      assertViolation(
+              AgentCodeRules.constructorsGetExitAdviceOnly(VIOLATING),
+              classes(ConstructorThrowableInstrumentation.class, ConstructorThrowableAdvice.class),
+              "constructor advice "
+                  + ConstructorThrowableAdvice.class.getName()
+                  + " declares onThrowable on @Advice.OnMethodExit")
+          .hasMessageContaining(
+              "advice "
+                  + ConstructorThrowableAdvice.class.getName()
+                  + " is applied to constructors and to methods");
     }
 
     @Test

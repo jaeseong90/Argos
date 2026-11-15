@@ -21,6 +21,17 @@ describe('resolveInitialLanguage (O-A05)', () => {
   });
 });
 
+describe('resolveInitialLanguage with a stored choice (docs/15 §12 argos.ui.lang)', () => {
+  it.each([
+    [['en-US'], 'ko', 'ko'],
+    [['ko-KR'], 'en', 'en'],
+    [['ko-KR'], 'fr', 'ko'],
+    [['en-US'], null, 'en'],
+  ] as const)('%j with stored %s -> %s', (preferred, stored, expected) => {
+    expect(resolveInitialLanguage(preferred, stored)).toBe(expected);
+  });
+});
+
 describe('createI18n', () => {
   it('falls back to the English source for keys missing in a translation', () => {
     const i18n = createI18n('ko');

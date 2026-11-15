@@ -52,6 +52,11 @@ shadow = "9.6.1"
 cyclonedx = "3.5.1"
 license-report = "3.1.4"
 jib = "3.5.4"
+# Jib's plugin extension API, at the versions jib-gradle-plugin 3.5.4 itself depends on: build-logic
+# compiles the server image's directory ownership extension against them (WO-40, ServerImage).
+jib-extension-api = "0.4.0"
+jib-extension-common = "0.2.0"
+jib-build-plan = "0.4.0"
 protobuf-plugin = "0.10.0"
 maven-publish = "0.37.0"
 # --- sample apps (sample-apps/, 18 §4, WO-01) ---
@@ -162,6 +167,11 @@ agent-servlet-jakarta-api = { module = "jakarta.servlet:jakarta.servlet-api", ve
 # build tools (resolved by convention plugins, never shipped)
 errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }
 google-java-format = { module = "com.google.googlejavaformat:google-java-format", version.ref = "google-java-format" }
+# Jib plugin extension API (build-logic only, WO-40): the artifacts jib-gradle-plugin brings at run
+# time, on the compile classpath of the image ownership extension (ImageOwnershipExtension).
+jib-extension-api = { module = "com.google.cloud.tools:jib-gradle-plugin-extension-api", version.ref = "jib-extension-api" }
+jib-extension-common = { module = "com.google.cloud.tools:jib-plugins-extension-common", version.ref = "jib-extension-common" }
+jib-build-plan = { module = "com.google.cloud.tools:jib-build-plan", version.ref = "jib-build-plan" }
 # sample apps (dev-only, 18 §4, WO-01). Entries without a version are managed by the Spring Boot BOM
 # that the app imports as a platform (sample-boot2-bom, sample-boot3-bom or sample-boot4-bom).
 sample-boot2-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "sample-boot2" }
@@ -199,8 +209,17 @@ sample-hikari = { module = "com.zaxxer:HikariCP" }
 sample-tomcat-jdbc = { module = "org.apache.tomcat:tomcat-jdbc" }
 sample-dbcp2 = { module = "org.apache.commons:commons-dbcp2" }
 sample-h2 = { module = "com.h2database:h2" }
+# agent-core registry unit tests (WO-13): a real Tomcat endpoint and the commons-logging API that
+# DBCP2 needs (Spring's JCL bridge, as in the apps), versions from sample-boot2-bom
+sample-tomcat-embed-core = { module = "org.apache.tomcat.embed:tomcat-embed-core" }
+sample-spring-jcl = { module = "org.springframework:spring-jcl" }
 sample-postgresql = { module = "org.postgresql:postgresql" }
 sample-mysql = { module = "com.mysql:mysql-connector-j" }
+# JDBC matrix drivers of shop-boot3 (WO-13, 18 §6.3), versions from sample-boot3-bom: MariaDB
+# Connector/J (LGPL-2.1, dev-only row), mssql-jdbc (MIT), ojdbc11 (Oracle FUTC, dev-only row)
+sample-mariadb = { module = "org.mariadb.jdbc:mariadb-java-client" }
+sample-mssql = { module = "com.microsoft.sqlserver:mssql-jdbc" }
+sample-ojdbc11 = { module = "com.oracle.database.jdbc:ojdbc11" }
 sample-tomcat9-dist = { module = "org.apache.tomcat:tomcat", version.ref = "sample-tomcat9" }
 sample-tomcat10-dist = { module = "org.apache.tomcat:tomcat", version.ref = "sample-tomcat10" }
 sample-tomcat11-dist = { module = "org.apache.tomcat:tomcat", version.ref = "sample-tomcat11" }

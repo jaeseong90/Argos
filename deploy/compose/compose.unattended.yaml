@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Unattended setup (docs/17 section 6.4 step 3, DSN-17-06, docs/16 section 7.8, SEC-47):
+# the server creates the first administrator at its first start from secrets/admin_password, who
+# must change the password at the first sign-in. No setup token is issued and the setup wizard
+# answers 404. argos-compose.sh adds this file when ARGOS_UNATTENDED=true in .env, which
+# argos-env-init.sh --unattended writes together with secrets/admin_password.
+
+services:
+  server:
+    environment:
+      ARGOS_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+      ARGOS_ADMIN_USERNAME: ${ARGOS_ADMIN_USERNAME:-admin}
+      # Required: the IP collection mode is an explicit choice (SEC-31); the server refuses to start
+      # without it in unattended mode.
+      ARGOS_IP_MODE: ${ARGOS_IP_MODE:?ARGOS_IP_MODE (masked, full or off) is required for unattended setup}
+    secrets:
+      - admin_password
+
+secrets:
+  admin_password:
+    file: ./secrets/admin_password

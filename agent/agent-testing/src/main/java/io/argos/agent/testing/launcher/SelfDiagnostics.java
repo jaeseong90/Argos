@@ -72,6 +72,41 @@ public final class SelfDiagnostics {
   private final Map<String, Double> values;
   private final Map<String, Long> counters;
   private final List<Module> modules;
+  private final List<Gauges> pools;
+  private final List<Gauges> connectors;
+
+  /**
+   * One entry of the development-only registry members {@code pools} and {@code connectors} (agent
+   * {@code core.metric.MetricDiagnostics}, WO-13): a pool or Tomcat connector by name, with the
+   * values the agent read from its getters. A value the agent could not read is absent (C-4).
+   *
+   * @param name pool or connector name
+   * @param kind {@code hikari}, {@code tomcat-jdbc}, {@code dbcp2} for pools; null for connectors
+   * @param values measured values by member name ({@code active}, {@code threads_busy}, ...)
+   */
+  public record Gauges(String name, String kind, Map<String, Long> values) {
+    public Gauges {
+      values = Map.copyOf(values);
+    }
+
+    /** Whether the agent reported {@code field}. */
+    public boolean has(String field) {
+      return values.containsKey(field);
+    }
+
+    /**
+     * The value of {@code field}.
+     *
+     * @throws NotAvailableException when the agent left it out (missing, never zero)
+     */
+    public long value(String field) {
+      Long value = values.get(field);
+      if (value == null) {
+        throw new NotAvailableException(name + " " + field + ": missing (not measured)");
+      }
+      return value;
+    }
+  }
 
   private SelfDiagnostics(
       boolean available,
@@ -79,11 +114,24 @@ public final class SelfDiagnostics {
       Map<String, Double> values,
       Map<String, Long> counters,
       List<Module> modules) {
+    this(available, reason, values, counters, modules, null, null);
+  }
+
+  private SelfDiagnostics(
+      boolean available,
+      String reason,
+      Map<String, Double> values,
+      Map<String, Long> counters,
+      List<Module> modules,
+      List<Gauges> pools,
+      List<Gauges> connectors) {
     this.available = available;
     this.reason = reason;
     this.values = Map.copyOf(values);
     this.counters = Map.copyOf(counters);
     this.modules = List.copyOf(modules);
+    this.pools = pools == null ? null : List.copyOf(pools);
+    this.connectors = connectors == null ? null : List.copyOf(connectors);
   }
 
   /** No self-diagnostics for the run (see {@link #REASON}). */
@@ -133,6 +181,8 @@ public final class SelfDiagnostics {
     Map<String, Double> values = new LinkedHashMap<>();
     Map<String, Long> counters = new LinkedHashMap<>();
     List<Module> modules = new ArrayList<>();
+    List<Gauges> pools = null;
+    List<Gauges> connectors = null;
     for (Map.Entry<?, ?> entry : map.entrySet()) {
       String key = (String) entry.getKey();
       Object value = entry.getValue();
@@ -152,6 +202,13 @@ public final class SelfDiagnostics {
                   (String) module.get("state"),
                   ((Number) module.get("errors")).longValue()));
         }
+      } else if (key.equals("pools") && value instanceof List<?> list) {
+        pools = gauges(list, true);
+      } else if (key.equals("connectors") && value instanceof List<?> list) {
+        connectors = gauges(list, false);
+      } else if (key.equals("registry_counters") && value instanceof Map<?, ?> counterMap) {
+        counterMap.forEach(
+            (name, count) -> counters.put((String) name, ((Number) count).longValue()));
       } else if (value instanceof Number measured) {
         values.put(key, measured.doubleValue());
       }
@@ -171,7 +228,26 @@ public final class SelfDiagnostics {
     if (anyOrphan) {
       values.put("orphan_steps_total", (double) orphans);
     }
-    return new SelfDiagnostics(true, "", values, counters, modules);
+    return new SelfDiagnostics(true, "", values, counters, modules, pools, connectors);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static List<Gauges> gauges(List<?> list, boolean pool) {
+    List<Gauges> out = new ArrayList<>();
+    for (Object item : list) {
+      Map<String, Object> fields = (Map<String, Object>) item;
+      Map<String, Long> measured = new LinkedHashMap<>();
+      fields.forEach(
+          (name, value) -> {
+            if (value instanceof Number number) {
+              measured.put(name, number.longValue());
+            }
+          });
+      out.add(
+          new Gauges(
+              (String) fields.get("name"), pool ? (String) fields.get("kind") : null, measured));
+    }
+    return out;
   }
 
   public boolean available() {
@@ -235,6 +311,35 @@ public final class SelfDiagnostics {
   /** The module named {@code name}, if the snapshot lists it. */
   public Optional<Module> module(String name) {
     return modules().stream().filter(module -> module.name().equals(name)).findFirst();
+  }
+
+  /**
+   * The connection pools of the agent's pool registry (development builds, WO-13), in registration
+   * order.
+   *
+   * @throws NotAvailableException when the snapshot has no {@code pools} member (no
+   *     self-diagnostics, or an agent without the registries)
+   */
+  public List<Gauges> pools() {
+    requireAvailable("pools");
+    if (pools == null) {
+      throw new NotAvailableException("pools: not reported by the agent");
+    }
+    return pools;
+  }
+
+  /**
+   * The Tomcat connectors of the agent's Tomcat registry (development builds, WO-13), in start
+   * order.
+   *
+   * @throws NotAvailableException when the snapshot has no {@code connectors} member
+   */
+  public List<Gauges> connectors() {
+    requireAvailable("connectors");
+    if (connectors == null) {
+      throw new NotAvailableException("connectors: not reported by the agent");
+    }
+    return connectors;
   }
 
   private void requireAvailable(String what) {

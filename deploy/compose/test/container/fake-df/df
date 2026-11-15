@@ -1,0 +1,6 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+#
+# Test double of df -Pk (never shipped): reports FAKE_DF_AVAIL_KB kilobytes available.
+printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
+printf 'fake 104857600 0 %s 1%% /\n' "${FAKE_DF_AVAIL_KB:-1048576}"

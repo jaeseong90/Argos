@@ -62,6 +62,27 @@ data class TraceabilityModel(
   }
 
   val testIds: Set<String> by lazy { entries.flatMap { it.testIds }.toSortedSet(Traceability.naturalOrder) }
+
+  /**
+   * Catalogue IDs that only partial checks cover (ADR-0010 C-122, C-182): some test carries a
+   * suffixed ID of it (T-SEC-23a, T-SEC-3Aa), and no test that carries the catalogue ID itself has
+   * passed. Catalogue ID -> its partial IDs, both in natural order. The report shows the passed
+   * results of those partial tests as partial, never as a full PASSED of the catalogue ID.
+   */
+  val partiallyCovered: Map<String, List<String>> by lazy {
+    val passedFull =
+      entries.filter { it.result?.status == Status.PASSED }.flatMap { e -> e.testIds.filterNot(TestIds::isPartial) }.toSet()
+    val map = sortedMapOf<String, MutableSet<String>>(Traceability.naturalOrder)
+    for (id in testIds) {
+      val catalog = TestIds.catalogId(id)
+      if (catalog != id && catalog !in passedFull) map.getOrPut(catalog) { sortedSetOf(Traceability.naturalOrder) } += id
+    }
+    map.mapValues { (_, ids) -> ids.toList() }
+  }
+
+  /** The catalogue IDs of [entry]'s partial IDs that only partial checks cover ([partiallyCovered]). */
+  fun partialOf(entry: TestEntry): List<String> =
+    entry.testIds.filter(TestIds::isPartial).map(TestIds::catalogId).filter { it in partiallyCovered }.distinct()
 }
 
 object Traceability {

@@ -1,0 +1,141 @@
+{
+  "documentTitle": "{{screen}} · Argos APM",
+  "skipToContent": "본문으로 건너뛰기",
+  "topbar": {
+    "label": "전역 조작",
+    "home": "Argos APM 처음 화면",
+    "app": {
+      "label": "애플리케이션",
+      "placeholder": "애플리케이션 선택",
+      "globalHint": "전체 현황에서 애플리케이션을 선택하세요"
+    },
+    "env": {
+      "label": "환경",
+      "all": "전체 환경",
+      "otherEnvMissing": "그 환경에는 같은 이름의 애플리케이션이 없습니다."
+    },
+    "search": {
+      "label": "검색",
+      "placeholder": "ID, 서비스, SQL",
+      "hint": "트랜잭션 ID, 트레이스 ID, 서비스, SQL",
+      "shortcut": "Ctrl+K"
+    },
+    "alerts": {
+      "label": "발생 중인 알림",
+      "count_other": "발생 중인 알림 {{count}}건"
+    },
+    "account": {
+      "label": "계정",
+      "role": "역할: {{role}}",
+      "page": "내 계정",
+      "language": "언어",
+      "logout": "로그아웃"
+    }
+  },
+  "role": {
+    "viewer": "조회자",
+    "operator": "운영자",
+    "admin": "관리자",
+    "none": "역할 없음"
+  },
+  "menu": {
+    "label": "주 메뉴",
+    "collapse": "메뉴 접기",
+    "expand": "메뉴 펼치기",
+    "group": {
+      "app": "애플리케이션",
+      "stats": "통계",
+      "global": "전체 애플리케이션",
+      "alerts": "알림",
+      "admin": "관리",
+      "about": "정보"
+    }
+  },
+  "screen": {
+    "overview": "$t(common:term.overview)",
+    "dashboard": "대시보드",
+    "xlog": "$t(common:term.xlog)",
+    "transaction": "트랜잭션",
+    "trace": "트레이스",
+    "active": "$t(common:term.activeTransactions)",
+    "services": "서비스",
+    "serviceDetail": "서비스",
+    "sql": "SQL",
+    "sqlDetail": "SQL 문",
+    "external": "외부 호출",
+    "externalDetail": "외부 호스트",
+    "errors": "에러",
+    "errorDetail": "$t(common:term.errorGroup)",
+    "instances": "인스턴스",
+    "instanceDetail": "인스턴스",
+    "map": "$t(common:term.applicationMap)",
+    "alerts": "알림 이력",
+    "alertRules": "알림 규칙",
+    "alertRule": "알림 규칙",
+    "alertChannels": "알림 채널",
+    "adminApps": "애플리케이션",
+    "adminPending": "승인 대기",
+    "adminInstances": "인스턴스 관리",
+    "adminTokens": "에이전트 토큰",
+    "adminConfig": "설정",
+    "adminUsers": "사용자",
+    "adminAudit": "감사 로그",
+    "adminPrivacy": "개인정보",
+    "licenses": "오픈소스 라이선스",
+    "about": "버전 정보",
+    "search": "검색",
+    "account": "내 계정"
+  },
+  "pending": {
+    "title": "{{screen}} 화면은 아직 없습니다",
+    "description": "이 화면은 이후 버전의 사용자 화면에서 제공됩니다. 메뉴에서 다른 화면을 여세요.",
+    "overview": "전체 현황 열기"
+  },
+  "notice": {
+    "urlRestore": "링크의 일부 조건을 적용하지 못해 기본값으로 열었습니다.",
+    "urlTooLong": "링크는 2KB까지라 이 화면 상태를 주소에 저장하지 못했습니다. 필터 일부를 지우고 다시 시도하세요.",
+    "dismiss": "닫기"
+  },
+  "realtime": {
+    "stale_other": "갱신 중단 {{count}}초",
+    "staleTitle_other": "실시간 갱신이 {{count}}초 동안 없습니다. 화면의 데이터가 최신이 아닐 수 있습니다.",
+    "staleAnnounce": "실시간 갱신이 중단되었습니다. 화면의 데이터가 최신이 아닐 수 있습니다."
+  },
+  "kiosk": {
+    "badge_other": "실시간 · 마지막 갱신 {{count}}초 전",
+    "badgeWaiting": "실시간 · 첫 갱신 대기 중",
+    "expiring_other": "세션이 {{count}}분 뒤 만료됩니다",
+    "expiringAnnounce_other": "이 화면의 세션이 {{count}}분 안에 만료됩니다."
+  },
+  "sessionExpired": {
+    "title": "세션 만료",
+    "description": "이 화면의 세션이 끝났습니다. 계속하려면 다시 로그인하세요.",
+    "action": "다시 로그인"
+  },
+  "transactionLink": {
+    "loading": "트랜잭션을 찾는 중…",
+    "notFoundTitle": "트랜잭션을 찾을 수 없습니다",
+    "notFoundDescription": "ID에 담긴 시각 근처에서 트랜잭션을 찾지 못했습니다. 트랜잭션 목록에서 열거나 링크에 시작 시각(ts)을 넣으세요.",
+    "overview": "전체 현황 열기"
+  },
+  "shortcuts": {
+    "title": "단축키",
+    "close": "닫기",
+    "typingNote": "입력란에 입력하는 동안에는 단축키가 동작하지 않습니다.",
+    "search": "검색창으로 이동",
+    "goOverview": "전체 현황으로 이동",
+    "goDashboard": "대시보드로 이동",
+    "goXlog": "XLog로 이동",
+    "goActive": "액티브 트랜잭션으로 이동",
+    "preset": "프리셋 범위 선택(1 = 최근 5분 … 9 = 어제)",
+    "prev": "이전 시간 범위",
+    "next": "다음 시간 범위",
+    "zoomIn": "확대(범위 절반)",
+    "zoomOut": "축소(범위 2배)",
+    "now": "지금으로",
+    "live": "실시간 켜기·끄기",
+    "escape": "대화 상자 닫기·선택 해제",
+    "list": "목록에서 이동하고 포커스한 행 열기",
+    "help": "이 도움말 보기"
+  }
+}

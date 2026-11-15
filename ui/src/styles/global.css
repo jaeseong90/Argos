@@ -1,15 +1,19 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* Fonts are system fonts until the bundled font set lands (docs/15 §2.1); nothing is
-   loaded from another origin (O-P03). */
-:root {
-  --color-bg: #ffffff;
-  --color-text: #1f2328;
-  --color-text-muted: #6b7280;
-  --color-primary: #2f6feb;
-  --space-2: 8px;
-  --space-4: 16px;
-  --font-sans: system-ui, sans-serif;
+/* Global styles (docs/15 §13). Tokens live in tokens.css; component styles next to their
+   components. Nothing here is loaded from another origin (O-P03) and no rule depends on inline
+   style attributes (CSP style-src without 'unsafe-inline', docs/16 §9.9). */
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
@@ -17,8 +21,119 @@ body {
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  line-height: 1.5;
 }
 
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--font-mono);
+}
+
+a {
+  color: var(--color-primary-text);
+}
+
+/* Placeholders of native fields (global search) in the muted text colour, 5.7:1 on color-bg
+   (docs/15 §13): browser defaults differ (Chromium #757575 is 4.3:1 on color-surface, Firefox
+   lowers the opacity). Ant Design fields use colorTextPlaceholder, the same token (antd-theme.ts). */
+::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+
+/* Visible focus: 2 px primary ring on every keyboard-focused control (docs/15 §13). */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: var(--focus-ring-w) solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* prefers-reduced-motion removes animations and transitions (docs/15 §13); the Ant Design theme
+   turns its motion off too (antd-theme.ts). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Hidden from sight, read by screen readers (chart data tables, extra status text). */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* Shell layout (docs/15 §3, §13): top bar 48 px, side menu 200 px (56 px collapsed), content
+   padding 16 px. The document is the only vertical scroll container of a page; the content column
+   may shrink (min-width: 0) so that 1366 px needs no horizontal scroll. */
+.argos-shell {
+  display: grid;
+  grid-template-columns: var(--layout-menu-w) minmax(0, 1fr);
+  grid-template-rows: var(--layout-topbar-h) auto;
+  grid-template-areas:
+    'topbar topbar'
+    'menu content';
+  min-height: 100vh;
+}
+
+.argos-shell--menu-collapsed {
+  grid-template-columns: var(--layout-menu-w-collapsed) minmax(0, 1fr);
+}
+
+.argos-shell__topbar {
+  grid-area: topbar;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  height: var(--layout-topbar-h);
+  padding: 0 var(--space-4);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.argos-shell__menu {
+  grid-area: menu;
+  position: sticky;
+  top: var(--layout-topbar-h);
+  align-self: start;
+  /* Full viewport height (not max-height): the menu background and border reach the bottom of the
+     window even when the menu content is short. */
+  height: calc(100vh - var(--layout-topbar-h));
+  overflow-y: auto;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+}
+
+.argos-shell__content {
+  grid-area: content;
+  min-width: 0;
+  padding: var(--layout-content-pad);
+}
+
+/* Kiosk mode (F-U21): no top bar or menu, content only. */
+.argos-kiosk {
+  min-height: 100vh;
+  padding: var(--layout-content-pad);
+}
+
+/* Pre-shell start page (src/app/App.tsx) until the shell replaces it. */
 .app {
   padding: var(--space-4);
 }
@@ -31,9 +146,4 @@ body {
 .app__languages {
   display: flex;
   gap: var(--space-2);
-}
-
-button:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
 }

@@ -4,6 +4,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- The server writes a per-request nonce here and into every script tag (docs/16 §9.9,
+         IndexHtmlTemplate); Ant Design's style tags take it from this meta (app/nonce.ts). -->
+    <meta name="csp-nonce" content="" />
     <!-- Inline empty icon: the UI never requests resources from other origins (O-P03). -->
     <link rel="icon" href="data:," />
     <title>Argos APM</title>

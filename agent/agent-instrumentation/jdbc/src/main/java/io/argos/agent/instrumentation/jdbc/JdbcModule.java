@@ -11,27 +11,28 @@ import java.util.List;
 import net.bytebuddy.matcher.ElementMatcher;
 
 /**
- * JDBC statements (10 §6.3, F-A03, D-24, SEC-35), WO-02 PoC scope "prepareStatement and execute":
- * one SQL step per outermost statement execution inside a transaction.
+ * JDBC (10 §6.3, F-A03, F-A04, D-22, D-24, SEC-35, SEC-3A): one SQL step per outermost statement
+ * execution inside a transaction, whatever the drivers, pools and wrappers in between.
  *
  * <ul>
- *   <li>{@code Connection.prepareStatement(String, ..)} / {@code prepareCall(String, ..)} exit
- *       (outermost call, {@code CallDepth.JDBC_CONNECTION}): the statement gets the dictionary id
- *       of its SQL (normalized by the core, literals never kept) and of its database ({@code
- *       getMetaData().getURL()} once per connection object, credentials and parameters removed).
- *   <li>{@code PreparedStatement.execute()/executeQuery()/executeUpdate()/executeLargeUpdate()} and
- *       {@code Statement.execute*(String, ..)} (outermost call, {@code CallDepth.JDBC_STATEMENT},
- *       so a pool proxy and the driver statement under it give one step): SQL step with name = SQL
- *       id, target = database id, status 0, error flag; full statistics through {@code
- *       recordSqlStat}.
+ *   <li>{@code DataSource.getConnection()}: one DBC step per outermost call, named after the pool
+ *       (POOL dictionary, ADR-0010 C-101), its time in {@code dbc_wait_ms}.
+ *   <li>{@code Connection.prepareStatement/prepareCall}: the statement's SQL (by reference,
+ *       normalized at its first execution) and the connection's target ({@code
+ *       getMetaData().getURL()} once per connection object, {@code DB_TARGET}).
+ *   <li>{@code Statement/PreparedStatement.execute*}, {@code executeBatch}: one SQL step (name =
+ *       normalized SQL id, target = DB target, error flag, {@code batch_size}, bind parameter
+ *       detail outside the {@code masked} mode); {@code recordSqlStat}; outside a transaction only
+ *       {@code sql_outside_tx_total}.
+ *   <li>{@code ResultSet.next/close}: fetched rows and fetch time added to the step.
+ *   <li>{@code Connection.commit/rollback}: COMMIT and ROLLBACK steps.
+ *   <li>{@code set*(int, ..)}, {@code addBatch}, {@code clearParameters}, {@code clearBatch}: bind
+ *       values (core-rendered, bounded) and batch counts.
  * </ul>
  *
  * <p>Subtype matching ({@code SafeMatchers}, allowed for jdbc by 10 §5.1) after a cheap {@code
- * declaresMethod} check; JDK proxies are excluded. Outside a transaction nothing is recorded.
- *
- * <p>Not in the PoC (WO-13): {@code DataSource.getConnection} (DBC step), commit/rollback steps,
- * batches, bind parameters, ResultSet fetch time and rows, the vendor-aware URL parser, field
- * injection instead of the weak-map {@code ContextStore}, the orphan counter.
+ * declaresMethod} check; JDK proxies and {@code io.argos.*} are excluded. Nesting is removed with
+ * {@code CallDepth} ({@code JDBC_DATASOURCE}, {@code JDBC_CONNECTION}, {@code JDBC_STATEMENT}).
  */
 public final class JdbcModule implements InstrumentationModule {
   public static final int MODULE_ID = ModuleIds.JDBC;
@@ -55,7 +56,10 @@ public final class JdbcModule implements InstrumentationModule {
   @Override
   public List<TypeInstrumentation> types() {
     return Arrays.<TypeInstrumentation>asList(
-        JdbcInstrumentation.connection(), JdbcInstrumentation.statement());
+        JdbcInstrumentation.dataSource(),
+        JdbcInstrumentation.connection(),
+        JdbcInstrumentation.statement(),
+        JdbcInstrumentation.resultSet());
   }
 
   @Override

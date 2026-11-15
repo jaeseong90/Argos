@@ -8,6 +8,7 @@ import io.argos.proto.v1.AckStatus;
 import io.argos.proto.v1.ActiveTransactionSnapshot;
 import io.argos.proto.v1.BatchHeader;
 import io.argos.proto.v1.CloseReason;
+import io.argos.proto.v1.InstanceUpdate;
 import io.argos.proto.v1.MetricBatch;
 import io.argos.proto.v1.ProfileBatch;
 import io.argos.proto.v1.RejectReason;
@@ -160,6 +161,9 @@ class ContractVectorsIT {
 
     HelloResult hello(JsonNode step) {
       long agentEpoch = step.has("agent_epoch") ? step.get("agent_epoch").asLong() : epoch;
+      if (step.has("instance_name")) {
+        instanceName = step.get("instance_name").asString();
+      }
       FakeAgent a = newAgent(tokenOf(step), agentEpoch);
       HelloResult r =
           step.has("protocol_version")
@@ -393,6 +397,47 @@ class ContractVectorsIT {
             assertThat(closes.get(i).getClose().getReason().name())
                 .isEqualTo(expected.get(i).get("close").get("reason").asString());
           }
+        }
+        default -> throw new IllegalArgumentException(step.toString());
+      }
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "11 §16 vector 'session' #4: InstanceUpdate.instance_name renames the instance and keeps its id;"
+          + " after a restart the new name gets the same id and dedup window, the old name is a new"
+          + " instance (12 §4.3, ADR-0010 C-185 (1))")
+  void session4() throws Exception {
+    JsonNode v = vector("session", 3);
+    Replay replay = new Replay(v.get("name").asString(), tls);
+    for (JsonNode step : v.get("steps")) {
+      switch (step.get("action").asString()) {
+        case "hello" -> replay.checkedHello(step);
+        case "data" -> expectData(replay.data(step), step);
+        case "instance_update" -> {
+          String name = step.get("instance_name").asString();
+          replay.agent.sendInstanceUpdate(
+              InstanceUpdate.newBuilder().setInstanceName(name).build());
+          // Not acknowledged on the wire (see the vectors' interpretation): the session takes the
+          // new name after the store has written it (SessionHandler.instanceUpdate).
+          SessionRegistry registry = tls.bean(SessionRegistry.class);
+          int instance = replay.currentInstance;
+          long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+          while (!registry.find(instance).map(s -> s.instanceName().equals(name)).orElse(false)
+              && System.nanoTime() < deadline) {
+            Thread.sleep(20);
+          }
+          assertThat(registry.find(instance).map(s -> s.instanceName()))
+              .as("%s: the instance renamed (%s)", replay.name, step)
+              .contains(name);
+        }
+        case "restart" -> {
+          replay.agent.close();
+          replay.agent = null;
+          replay.previousInstance = replay.currentInstance;
+          replay.previousSession = replay.currentSession;
+          tls.restart();
         }
         default -> throw new IllegalArgumentException(step.toString());
       }

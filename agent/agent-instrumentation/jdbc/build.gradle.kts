@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// JDBC (10 §6.3, WO-02 PoC scope: prepareStatement and execute). The JDBC API is part of the JDK,
-// so the module has no compileOnly library. Tests apply the real advice with ByteBuddy to generated
-// JDBC classes (pool-proxy-over-driver nesting) and check the steps of the real tracer.
+// JDBC (10 §6.3, WO-13): DataSource, Connection, Statement and ResultSet. The JDBC API is part of
+// the JDK, so the module has no compileOnly library. Tests apply the real advice with ByteBuddy to
+// generated JDBC classes (routing data sources over a pool over a driver wrapper over a driver)
+// and check the steps of the real tracer.
 
 plugins { id("argos.java-agent") }
 

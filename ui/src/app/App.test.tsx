@@ -1,27 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
-import { render, screen, within } from '@testing-library/react';
+//
+// The application root (providers + data router) at the sign-in page, which every visitor sees
+// first: English source strings, the Korean translation, the language switch and the build
+// version rendered as text (T-UI-005: an untrusted interpolated value never becomes markup).
+// Requirements (test/README.md §5): { type: 'req', description: 'F-U13' }, { type: 'req', description: 'SEC-61' }
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { I18nextProvider } from 'react-i18next';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { createI18n, type SupportedLanguage } from '../i18n';
+import { installApiStub, uninstallApiStub } from '../../test/apiStub';
+import {
+  PRELOAD_TIMEOUT_MS,
+  preloadRoutes,
+  renderApp,
+  resetShellState,
+  signedOut,
+} from '../../test/renderApp';
+import type { SupportedLanguage } from '../i18n';
 import en from '../locales/en/common.json';
 import ko from '../locales/ko/common.json';
 
-import { App } from './App';
-
-function renderApp(language: SupportedLanguage, version = '0.0.0-SNAPSHOT') {
-  const i18n = createI18n(language);
-  const view = render(
-    <I18nextProvider i18n={i18n}>
-      <App version={version} />
-    </I18nextProvider>,
-  );
-  return { i18n, ...view };
-}
-
 function versionText(template: string, version: string): string {
   return template.replace('{{version}}', version);
+}
+
+async function renderLogin(language: SupportedLanguage, version = '0.0.0-SNAPSHOT') {
+  const stub = installApiStub();
+  signedOut(stub);
+  const view = renderApp('/login', { language, version });
+  await screen.findByTestId('login-form');
+  return view;
 }
 
 // Payloads from docs/15 §15 and SEC-61; each would set window.__xss if it were parsed as HTML.
@@ -35,9 +43,20 @@ const XSS_PAYLOADS = [
   '{{version}} <b>bold</b> &lt;img&gt;',
 ];
 
+beforeAll(preloadRoutes, PRELOAD_TIMEOUT_MS);
+
+beforeEach(() => {
+  resetShellState();
+});
+
+afterEach(() => {
+  uninstallApiStub();
+  Reflect.deleteProperty(window, '__xss');
+});
+
 describe('App', () => {
-  it('renders the English source strings from locales/en (T-UI-006)', () => {
-    renderApp('en');
+  it('T-UI-006 renders the English source strings from locales/en', async () => {
+    await renderLogin('en');
 
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(en.app.name);
     expect(screen.getByText(en.app.tagline)).toBeInTheDocument();
@@ -46,10 +65,10 @@ describe('App', () => {
     expect(screen.getByRole('navigation', { name: en.language.label })).toBeInTheDocument();
   });
 
-  it('renders the Korean translation from locales/ko', () => {
+  it('T-UI-006 renders the Korean translation from locales/ko', async () => {
     expect(ko.app.tagline).not.toBe(en.app.tagline);
 
-    renderApp('ko');
+    await renderLogin('ko');
 
     expect(screen.getByText(ko.app.tagline)).toBeInTheDocument();
     expect(screen.getByText(ko.app.status.preRelease)).toBeInTheDocument();
@@ -57,9 +76,9 @@ describe('App', () => {
     expect(screen.queryByText(en.app.tagline)).not.toBeInTheDocument();
   });
 
-  it('switches the language with the language buttons', async () => {
+  it('T-UI-006 switches the language with the language buttons and remembers it', async () => {
     const user = userEvent.setup();
-    const { i18n } = renderApp('en');
+    await renderLogin('en');
     const languages = screen.getByRole('navigation', { name: en.language.label });
 
     expect(within(languages).getByRole('button', { name: en.language.en })).toHaveAttribute(
@@ -69,21 +88,23 @@ describe('App', () => {
 
     await user.click(within(languages).getByRole('button', { name: en.language.ko }));
 
-    expect(i18n.resolvedLanguage).toBe('ko');
-    expect(screen.getByText(ko.app.tagline)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(ko.app.tagline)).toBeInTheDocument();
+    });
     expect(screen.getByRole('navigation', { name: ko.language.label })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: ko.language.ko })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
+    expect(localStorage.getItem('argos.ui.lang')).toBe('ko');
   });
 
   it.each(XSS_PAYLOADS)(
-    'renders an untrusted interpolated value as text, never as markup (T-UI-005, SEC-61): %s',
-    (payload) => {
-      const { container } = renderApp('en', payload);
+    'T-UI-005 renders an untrusted interpolated value as text, never as markup: %s',
+    async (payload) => {
+      const { container } = await renderLogin('en', payload);
 
-      const versionLine = container.querySelector('.app__version');
+      const versionLine = container.querySelector('.auth-page__version');
       expect(versionLine).not.toBeNull();
       expect(versionLine?.textContent).toBe(versionText(en.app.version, payload));
       expect(versionLine?.children).toHaveLength(0);

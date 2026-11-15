@@ -4,8 +4,10 @@ package io.argos.sample.common.db;
 import java.util.Locale;
 
 /**
- * Databases selected with SAMPLE_DB (18 §4.1). Further values (mariadb, mssql, oracle and the
- * vendor databases of the JDBC matrix, 18 §6.3) are added with their schema script by WO-13/WO-50.
+ * Databases selected with SAMPLE_DB (18 §4.1, §6.3 JDBC matrix): H2, PostgreSQL, MySQL, MariaDB,
+ * Microsoft SQL Server and Oracle, each with its driver class, default account and URL, schema
+ * script and the few SQL dialect differences of {@link ShopJdbc} (sleep, ping, paging, generated
+ * keys). The vendor databases without containers (Tibero, Altibase, CUBRID, DB2) are WO-50's.
  */
 public enum DbKind {
   /** In-memory H2 (default): no container needed. */
@@ -13,7 +15,13 @@ public enum DbKind {
   /** PostgreSQL (Testcontainers or a local server). */
   POSTGRES("postgres", "org.postgresql.Driver", "shop"),
   /** MySQL 8 (Testcontainers or a local server). */
-  MYSQL("mysql", "com.mysql.cj.jdbc.Driver", "shop");
+  MYSQL("mysql", "com.mysql.cj.jdbc.Driver", "shop"),
+  /** MariaDB 11 with MariaDB Connector/J (Testcontainers or a local server). */
+  MARIADB("mariadb", "org.mariadb.jdbc.Driver", "shop"),
+  /** Microsoft SQL Server 2022 with mssql-jdbc (Testcontainers or a local server). */
+  MSSQL("mssql", "com.microsoft.sqlserver.jdbc.SQLServerDriver", "sa"),
+  /** Oracle Database (19c and later; Oracle Database Free in containers) with ojdbc. */
+  ORACLE("oracle", "oracle.jdbc.OracleDriver", "shop");
 
   private final String id;
   private final String driverClass;
@@ -25,11 +33,17 @@ public enum DbKind {
     this.defaultUser = defaultUser;
   }
 
-  /** Parses SAMPLE_DB; "postgresql" is accepted as an alias of "postgres". */
+  /**
+   * Parses SAMPLE_DB; "postgresql" is accepted as an alias of "postgres", "sqlserver" as an alias
+   * of "mssql".
+   */
   public static DbKind parse(String value) {
     String normalized = value.trim().toLowerCase(Locale.ROOT);
     if (normalized.equals("postgresql")) {
       return POSTGRES;
+    }
+    if (normalized.equals("sqlserver")) {
+      return MSSQL;
     }
     for (DbKind kind : values()) {
       if (kind.id.equals(normalized)) {
@@ -37,7 +51,9 @@ public enum DbKind {
       }
     }
     throw new IllegalArgumentException(
-        "SAMPLE_DB must be one of h2, postgres, mysql, got '" + value + "'");
+        "SAMPLE_DB must be one of h2, postgres, mysql, mariadb, mssql, oracle, got '"
+            + value
+            + "'");
   }
 
   /** The SAMPLE_DB value. */
@@ -62,6 +78,12 @@ public enum DbKind {
         return "jdbc:postgresql://127.0.0.1:5432/shop";
       case MYSQL:
         return "jdbc:mysql://127.0.0.1:3306/shop";
+      case MARIADB:
+        return "jdbc:mariadb://127.0.0.1:3306/shop";
+      case MSSQL:
+        return "jdbc:sqlserver://127.0.0.1:1433;databaseName=shop;encrypt=false";
+      case ORACLE:
+        return "jdbc:oracle:thin:@//127.0.0.1:1521/FREEPDB1";
     }
     throw new AssertionError(this);
   }
@@ -73,7 +95,8 @@ public enum DbKind {
 
   /**
    * SQL that sleeps in the database for the bound number of milliseconds (GET /api/slow?sql=1):
-   * PostgreSQL pg_sleep, MySQL SLEEP, H2 a Java function alias (see {@link H2Functions}).
+   * PostgreSQL pg_sleep, MySQL and MariaDB SLEEP, SQL Server WAITFOR DELAY, an Oracle PL/SQL block
+   * with DBMS_SESSION.SLEEP (18c and later), H2 a Java function alias (see {@link H2Functions}).
    */
   public String sleepSql() {
     switch (this) {
@@ -82,18 +105,50 @@ public enum DbKind {
       case POSTGRES:
         return "SELECT pg_sleep(? / 1000.0)";
       case MYSQL:
+      case MARIADB:
         return "SELECT SLEEP(? / 1000.0)";
+      case MSSQL:
+        return "DECLARE @d DATETIME = DATEADD(MILLISECOND, CAST(? AS INT),"
+            + " CAST('00:00:00' AS DATETIME)); WAITFOR DELAY @d";
+      case ORACLE:
+        return "BEGIN DBMS_SESSION.SLEEP(? / 1000); END;";
     }
     throw new AssertionError(this);
   }
 
-  /** Whether {@code $$...$$} dollar-quoted string literals are valid SQL (18 §4.3 seed). */
-  public boolean supportsDollarQuotes() {
-    return this != MYSQL;
+  /** The cheapest statement that returns one row ({@code SELECT 1}; Oracle needs DUAL). */
+  public String pingSql() {
+    return this == ORACLE ? "SELECT 1 FROM DUAL" : "SELECT 1";
   }
 
-  /** Whether a backslash in a string literal is an escape character (MySQL default mode). */
+  /**
+   * The paging clause after {@code ORDER BY}: {@code LIMIT ? OFFSET ?}, or the SQL:2008 {@code
+   * OFFSET ? ROWS FETCH NEXT ? ROWS ONLY} on SQL Server and Oracle (see {@link #offsetFirst()}).
+   */
+  public String pageClause() {
+    return offsetFirst() ? " OFFSET ? ROWS FETCH NEXT ? ROWS ONLY" : " LIMIT ? OFFSET ?";
+  }
+
+  /** Whether the first parameter of {@link #pageClause()} is the offset (else the limit). */
+  public boolean offsetFirst() {
+    return this == MSSQL || this == ORACLE;
+  }
+
+  /**
+   * Column names to ask for generated keys ({@code prepareStatement(sql, columnNames)}), or null
+   * for {@code Statement.RETURN_GENERATED_KEYS}: Oracle returns the ROWID for the latter.
+   */
+  public String[] generatedKeyColumns() {
+    return this == ORACLE ? new String[] {"ID"} : null;
+  }
+
+  /** Whether {@code $$...$$} dollar-quoted string literals are valid SQL (18 §4.3 seed). */
+  public boolean supportsDollarQuotes() {
+    return this == H2 || this == POSTGRES;
+  }
+
+  /** Whether a backslash in a string literal is an escape character (MySQL, MariaDB defaults). */
   public boolean backslashEscapes() {
-    return this == MYSQL;
+    return this == MYSQL || this == MARIADB;
   }
 }

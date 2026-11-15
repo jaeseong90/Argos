@@ -121,10 +121,22 @@ public final class TraceContext {
    */
   public volatile WeakReference<Object> responseStream;
 
+  /**
+   * SQL executions inside the transaction (11 {@code sql_count}) and their time, execute plus fetch
+   * (11 {@code sql_time_ms}, 13 "exec + fetch 합"); written by the JDBC helper (WO-13).
+   */
   public int sqlCount;
+
   public int extCount;
   public long sqlNanos;
   public long extNanos;
+
+  /**
+   * Connection acquisition wait of the transaction: the sum of its outermost {@code
+   * DataSource.getConnection()} times (11 {@code TransactionRecord.dbc_wait_ms}, F-A03); written by
+   * the JDBC helper. WO-13 addition to 10 §3.
+   */
+  public long dbcNanos;
 
   /** The core's per-transaction state; bootstrap code never reads it. */
   public volatile Object coreRef;

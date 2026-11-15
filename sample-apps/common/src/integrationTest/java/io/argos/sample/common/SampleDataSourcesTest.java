@@ -79,6 +79,85 @@ class SampleDataSourcesTest {
     }
   }
 
+  @ParameterizedTest(name = "SAMPLE_POOL={0} SAMPLE_ROUTING_DS={1} SAMPLE_DRIVER_WRAPPER=true")
+  @CsvSource({
+    "hikari, false, HikariDataSource -> WrappingDriver (java.sql.Driver wrapper) -> org.h2.Driver",
+    "tomcat, false, org.apache.tomcat.jdbc.pool.DataSource -> WrappingDriver (java.sql.Driver"
+        + " wrapper) -> org.h2.Driver",
+    "dbcp2, true, SampleRoutingDataSource (AbstractRoutingDataSource) ->"
+        + " TransactionAwareDataSourceProxy -> BasicDataSource -> WrappingDriver (java.sql.Driver"
+        + " wrapper) -> org.h2.Driver",
+    "hikari, true, SampleRoutingDataSource (AbstractRoutingDataSource) ->"
+        + " TransactionAwareDataSourceProxy -> HikariDataSource -> WrappingDriver (java.sql.Driver"
+        + " wrapper) -> org.h2.Driver",
+  })
+  @DisplayName(
+      "SAMPLE_DRIVER_WRAPPER=true (ADR-0004 C-40): the pool connects through the delegating driver"
+          + " wrapper, alone and as the fifth level under SAMPLE_ROUTING_DS")
+  void driverWrapper(String pool, boolean routing, String chain) throws Exception {
+    Map<String, String> env = env(pool, routing);
+    env.put("SAMPLE_DRIVER_WRAPPER", "true");
+    SampleConfig config =
+        SampleConfig.from(
+            env, new Properties(), new BuildInfo("wrap-" + pool + "-" + routing, "t"));
+    try (SampleDataSource dataSource = SampleDataSources.create(config)) {
+      assertThat(String.join(" -> ", dataSource.chain())).isEqualTo(chain);
+      assertThat(dataSource.driverWrapper()).isTrue();
+      long before = dataSource.driverWrapperConnections();
+      assertThat(before).as("schema and data went through the wrapper").isPositive();
+      ShopJdbc jdbc =
+          new ShopJdbc(JdbcAccess.of(dataSource.dataSource()), config.db(), Clock.systemUTC());
+      assertThat(jdbc.findOrder(1)).isPresent();
+      assertThat(jdbc.listOrders(0)).containsEntry("rows", 100);
+      try (java.sql.Connection connection = dataSource.dataSource().getConnection()) {
+        assertThat(connection.isWrapperFor(example.jdbcwrapper.WrappedConnection.class))
+            .as("pool connection over the wrapper")
+            .isTrue();
+        try (java.sql.PreparedStatement statement =
+            connection.prepareStatement(config.db().pingSql())) {
+          assertThat(statement.isWrapperFor(example.jdbcwrapper.WrappedPreparedStatement.class))
+              .isTrue();
+          assertThat(statement.executeQuery().next()).isTrue();
+        }
+      }
+      if (routing) {
+        assertThat(dataSource.routingLookups()).isPositive();
+      }
+    }
+  }
+
+  @ParameterizedTest(name = "SAMPLE_POOL={0} SAMPLE_SECOND_POOL=true")
+  @CsvSource({"hikari, shop-primary", "tomcat, shop-primary", "dbcp2, ''"})
+  @DisplayName(
+      "SAMPLE_SECOND_POOL=true: the schema comes through the restarted second pool, the app's pool"
+          + " is named shop-primary (Hikari, Tomcat JDBC) and serves the data")
+  void secondPool(String pool, String primaryName) throws Exception {
+    Map<String, String> env = env(pool, false);
+    env.put("SAMPLE_SECOND_POOL", "true");
+    SampleConfig config =
+        SampleConfig.from(env, new Properties(), new BuildInfo("second-" + pool, "t"));
+    try (SampleDataSource dataSource = SampleDataSources.create(config)) {
+      assertThat(dataSource.secondPool()).isTrue();
+      DataSource app = dataSource.pool();
+      if (app instanceof HikariDataSource) {
+        assertThat(((HikariDataSource) app).getPoolName()).isEqualTo(primaryName);
+      } else if (app instanceof org.apache.tomcat.jdbc.pool.DataSource) {
+        assertThat(((org.apache.tomcat.jdbc.pool.DataSource) app).getName()).isEqualTo(primaryName);
+      }
+      ShopJdbc jdbc = new ShopJdbc(JdbcAccess.of(app), config.db(), Clock.systemUTC());
+      assertThat(jdbc.findOrder(1)).as("data set up through the second pool").isPresent();
+      assertThat(jdbc.listOrders(0)).containsEntry("rows", 100);
+    }
+  }
+
+  private static Map<String, String> env(String pool, boolean routing) {
+    Map<String, String> env = new HashMap<>();
+    env.put("SAMPLE_POOL", pool);
+    env.put("SAMPLE_POOL_MAX", "2");
+    env.put("SAMPLE_ROUTING_DS", Boolean.toString(routing));
+    return env;
+  }
+
   private static SampleConfig config(String pool, boolean routing) {
     Map<String, String> env = new HashMap<>();
     env.put("SAMPLE_POOL", pool);

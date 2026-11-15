@@ -234,7 +234,12 @@ class SampleAppAgentTest {
           .containsIgnoringCase("select")
           .contains("?")
           .doesNotContain("'");
-      assertThat(sql.target()).startsWith("jdbc:h2:").doesNotContain(";").doesNotContain("?");
+      // DB_TARGET of WO-13 (10 §6.3, 11 §3): <vendor>://<host>:<port>/<db>, an in-memory H2
+      // database as h2:mem:<name> (the WO-02 PoC sent the JDBC URL without its parameters).
+      assertThat(sql.target())
+          .isEqualTo("h2:mem:" + combo.app())
+          .doesNotContain(";")
+          .doesNotContain("?");
       assertThat(sql.error()).isFalse();
       assertThat(sql.elapsedMs()).isNotNull().isGreaterThanOrEqualTo(0.0);
 

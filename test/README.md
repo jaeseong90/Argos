@@ -121,7 +121,10 @@ Rules:
   `test('T-E2E-040 deep link returns after login', ...)`, `it('T-UI-021 maps x to pixels', ...)`.
   A Kotlin test may use the backtick method name instead (`` fun `T-BLD-007 ...`() ``).
 - Several IDs: `T-BLD-006/T-AG-060 release jar: no temp file, no output`.
-- Finer cases take a letter suffix: `T-AG-031a`, `T-AG-031b` (18 appendix A).
+- Finer cases take a letter suffix: `T-AG-031a`, `T-AG-031b` (18 appendix A). A suffixed ID is a
+  partial check of its catalogue ID, an ID that already ends in a capital letter takes a lower-case
+  one (`T-SEC-3A` -> `T-SEC-3Aa`), and the traceability report shows the passed results of partial
+  checks as partial while no test with the catalogue ID itself has passed (ADR-0010 C-122, C-182).
 - Parameterized tests put the ID in the name template: `@ParameterizedTest(name = "T-BLD-003 rejects a jar without {0}")`.
   Dynamic tests (`@TestFactory`) put it in each `DynamicTest` name.
 - A test without a catalogued behaviour may have no ID; it still states what it checks.

@@ -1,0 +1,388 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* Shell parts (docs/15 §3, §13). The grid (.argos-shell*) is in styles/global.css; this file styles
+   what is inside it. Classes only, no inline style attributes (CSP, docs/16 §9.9). */
+
+.skip-link {
+  position: absolute;
+  left: var(--space-2);
+  top: -40px;
+  z-index: 200;
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-bg);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius);
+}
+
+.skip-link:focus {
+  top: var(--space-2);
+}
+
+/* Top bar: one row at 1366 px; controls shrink before anything wraps. */
+.topbar {
+  gap: var(--space-2);
+  overflow: visible;
+}
+
+.topbar__brand {
+  flex: 0 0 auto;
+  font-weight: 700;
+  color: var(--color-text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/* The selectors keep their own minimum width (controls.css): shrinking their wrapper below it
+   would let the select overlap the next control. The search box gives way first. */
+.topbar .app-select,
+.topbar .env-select {
+  flex: 0 0 auto;
+}
+
+.global-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 140px;
+  min-width: 72px;
+  max-width: 280px;
+}
+
+.global-search__input {
+  width: 100%;
+  height: 28px;
+  padding: 0 52px 0 var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+.global-search__kbd {
+  position: absolute;
+  right: var(--space-2);
+  padding: 0 var(--space-1);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+  pointer-events: none;
+}
+
+.alerts-badge,
+.account-menu__trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.alerts-badge:hover,
+.account-menu__trigger:hover {
+  background: var(--color-hover);
+}
+
+.alerts-badge__count {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--sev-critical);
+  color: var(--color-on-primary);
+  font-size: var(--fs-xs);
+  line-height: 16px;
+  text-align: center;
+}
+
+.account-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.account-menu__panel {
+  min-width: 200px;
+}
+
+.account-menu__role {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-muted);
+}
+
+.account-menu__item {
+  display: block;
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.account-menu__item:hover {
+  background: var(--color-hover);
+}
+
+.account-menu__language {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+}
+
+/* Shrinks with an ellipsis before it pushes other controls (title has the full text). */
+.stale-badge {
+  flex: 0 1 auto;
+  min-width: 48px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+/* Side menu. */
+.side-menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+}
+
+.side-menu__toggle {
+  align-self: flex-end;
+  margin: 0 var(--space-2);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.side-menu__heading {
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.side-menu__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.side-menu__link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  color: var(--color-text);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.side-menu__link:hover {
+  background: var(--color-hover);
+}
+
+.side-menu__link--active {
+  background: var(--color-selected);
+  color: var(--color-primary-text);
+  font-weight: 600;
+}
+
+.side-menu__initial {
+  display: none;
+  width: 24px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.side-menu[data-collapsed='true'] .side-menu__heading,
+.side-menu[data-collapsed='true'] .side-menu__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.side-menu[data-collapsed='true'] .side-menu__initial {
+  display: inline-block;
+}
+
+.side-menu[data-collapsed='true'] .side-menu__toggle {
+  align-self: center;
+}
+
+/* Notices under the top bar. */
+.shell-notices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.shell-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  background: var(--color-info-bg);
+  color: var(--color-info-text);
+}
+
+.shell-notice--warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+}
+
+.shell-notice__dismiss {
+  flex: 0 0 auto;
+  padding: 0 var(--space-2);
+  border: 1px solid currentcolor;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.argos-shell__content .filter-chip-bar {
+  margin-bottom: var(--space-3);
+}
+
+/* Placeholder screens. */
+.route-pending__title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-xl);
+}
+
+/* Kiosk mode (docs/15 §3.4). */
+.kiosk-badge {
+  position: fixed;
+  top: var(--space-2);
+  right: var(--space-3);
+  z-index: 100;
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  font-size: var(--fs-sm);
+}
+
+.kiosk-badge__expiry {
+  color: var(--color-warning-text);
+}
+
+.kiosk-badge__context {
+  font-weight: 600;
+  max-width: 16em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.argos-kiosk__content {
+  min-width: 0;
+}
+
+/* Session end on a kiosk display, the auth gate and the forced password change. */
+.session-expired,
+.auth-gate,
+.forced-change {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  min-height: 100vh;
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.session-expired h1 {
+  margin: 0;
+  font-size: var(--fs-xl);
+}
+
+.session-expired__action {
+  height: 32px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.forced-change__panel {
+  width: 100%;
+  max-width: 480px;
+  text-align: left;
+}
+
+/* Shortcut help dialog. */
+.shortcut-help__note {
+  color: var(--color-text-muted);
+}
+
+.shortcut-help__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.shortcut-help__row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: var(--space-3);
+}
+
+.shortcut-help__row dt {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.shortcut-help__row dd {
+  margin: 0;
+}
+
+.shortcut-help__row kbd {
+  padding: 0 var(--space-1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 4px;
+  background: var(--color-surface);
+  font-size: var(--fs-sm);
+}

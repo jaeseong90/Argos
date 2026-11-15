@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.argos.agent.bootstrap.DictKind;
 import io.argos.agent.core.guard.AgentCounters;
 import io.argos.agent.core.hash.Xxh3;
+import io.argos.agent.core.sql.JdbcUrlParser;
+import io.argos.agent.core.sql.SqlIds;
 import io.argos.agent.core.sql.SqlNormalizer;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -323,19 +325,21 @@ class IdsAndDictionaryTest {
 
   @Test
   @Tag("req:SEC-35")
-  @DisplayName("JDBC URLs lose credentials and parameters before they become dictionary texts")
+  @DisplayName(
+      "JDBC URLs lose credentials and parameters before they become dictionary texts (WO-13:"
+          + " the DB_TARGET form <vendor>://<host>:<port>/<database> of JdbcUrlParser)")
   void jdbcUrlsWithoutCredentials() {
-    assertThat(JdbcUrls.withoutCredentials("jdbc:mysql://scott:tiger@db:3306/shop?useSSL=true"))
-        .isEqualTo("jdbc:mysql://db:3306/shop");
-    assertThat(JdbcUrls.withoutCredentials("jdbc:oracle:thin:scott/tiger@db:1521/ORCL"))
-        .isEqualTo("jdbc:oracle:thin:@db:1521/ORCL");
-    assertThat(JdbcUrls.withoutCredentials("jdbc:oracle:thin:@//db:1521/svc"))
-        .isEqualTo("jdbc:oracle:thin:@//db:1521/svc");
-    assertThat(JdbcUrls.withoutCredentials("jdbc:sqlserver://db:1433;user=sa;password=x"))
-        .isEqualTo("jdbc:sqlserver://db:1433");
-    assertThat(JdbcUrls.withoutCredentials("jdbc:h2:mem:test;DB_CLOSE_DELAY=-1"))
-        .isEqualTo("jdbc:h2:mem:test");
-    assertThat(JdbcUrls.withoutCredentials("jdbc:postgresql://db/shop"))
-        .isEqualTo("jdbc:postgresql://db/shop");
+    assertThat(JdbcUrlParser.targetText("jdbc:mysql://scott:tiger@db:3306/shop?useSSL=true"))
+        .isEqualTo("mysql://db:3306/shop");
+    assertThat(JdbcUrlParser.targetText("jdbc:oracle:thin:scott/tiger@db:1521/ORCL"))
+        .isEqualTo("oracle://db:1521/ORCL");
+    assertThat(JdbcUrlParser.targetText("jdbc:oracle:thin:@//db:1521/svc"))
+        .isEqualTo("oracle://db:1521/svc");
+    assertThat(JdbcUrlParser.targetText("jdbc:sqlserver://db:1433;user=sa;password=x"))
+        .isEqualTo("sqlserver://db:1433/");
+    assertThat(JdbcUrlParser.targetText("jdbc:h2:mem:test;DB_CLOSE_DELAY=-1"))
+        .isEqualTo("h2:mem:test");
+    assertThat(JdbcUrlParser.targetText("jdbc:postgresql://db/shop"))
+        .isEqualTo("postgresql://db:5432/shop");
   }
 }

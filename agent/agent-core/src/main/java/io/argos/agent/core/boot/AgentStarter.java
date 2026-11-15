@@ -17,6 +17,8 @@ import io.argos.agent.core.guard.SelfProtection;
 import io.argos.agent.core.guard.TransformErrorListener;
 import io.argos.agent.core.log.AgentLogger;
 import io.argos.agent.core.masking.Masker;
+import io.argos.agent.core.metric.MetricDiagnostics;
+import io.argos.agent.core.trace.TracerImpl;
 import io.argos.agent.instrumentation.api.InstrumentationModule;
 import io.argos.agent.instrumentation.api.SafeMatchers;
 import java.io.File;
@@ -225,12 +227,13 @@ public final class AgentStarter {
     watch.every(1, recording.maxDurationEnforcer());
     final SelfDiagnosticsFile selfDiagnostics = selfDiagnosticsFile(config, diagnostics);
     if (selfDiagnostics != null) {
+      final TracerImpl tracer = recording.tracerImpl();
       watch.every(
           SELF_DIAGNOSTICS_PERIOD_SECONDS,
           new Runnable() {
             @Override
             public void run() {
-              selfDiagnostics.write();
+              writeSelfDiagnostics(selfDiagnostics, tracer);
             }
           });
       running.selfDiagnostics = selfDiagnostics;
@@ -343,6 +346,16 @@ public final class AgentStarter {
   private static String attribute(Attributes attributes, String name) {
     String value = attributes.getValue(name);
     return value == null || value.trim().isEmpty() ? AgentInfo.UNKNOWN : value.trim();
+  }
+
+  /**
+   * One {@code argos-watch} write of the self-diagnostics file with the pool and connector
+   * registries of {@code tracer} (WO-13, development file only). Their getters run here, on the
+   * agent thread; the registry classes load on the first call, never on the premain thread (C-79).
+   */
+  static void writeSelfDiagnostics(SelfDiagnosticsFile file, TracerImpl tracer) {
+    file.write(
+        tracer == null ? null : MetricDiagnostics.members(tracer.pools(), tracer.connectors()));
   }
 
   /** {@code test.selfdiag-file} (development builds only, C-95), or null. */

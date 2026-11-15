@@ -7,6 +7,7 @@ import io.argos.agent.bootstrap.Tracer;
 import io.argos.agent.core.config.AgentConfig;
 import io.argos.agent.core.config.HttpSettings;
 import io.argos.agent.core.guard.AgentCounters;
+import io.argos.agent.core.sql.SqlNormalizer;
 import io.argos.agent.core.transport.AgentQueue;
 import io.argos.agent.core.transport.QueueItem;
 import io.argos.agent.core.transport.Queues;
@@ -140,10 +141,19 @@ public final class TraceRuntime {
             .errorThreshold(config.instrumentationErrorThreshold())
             .retainSteps(writesTestFile(config))
             .moduleErrors(moduleErrors)
+            .instanceNameFromConnector(!configured(config.appInstance()))
+            .sqlNormalizer(
+                new SqlNormalizer(
+                    config.sqlBackslashEscape(), config.sqlMaxLength(), config.sqlKeepHints()))
             .build();
     tracer.setIgnoreRules(HttpSettings.ignoreRules(config));
     tracer.setServiceNames(HttpSettings.serviceNames(config));
     return new TraceRuntime(tracer, queues, registry, dictionary);
+  }
+
+  /** True for a non-blank configuration value ({@code app.instance}). */
+  static boolean configured(String value) {
+    return value != null && !value.trim().isEmpty();
   }
 
   /**

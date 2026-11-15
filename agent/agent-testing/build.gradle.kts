@@ -244,6 +244,10 @@ dependencies {
   // collector.
   "integrationTestImplementation"(platform(libs.netty.bom))
   "integrationTestImplementation"(libs.grpc.netty)
+  // JDBC suite (package jdbc, WO-13): the database containers (GenericContainer, the same
+  // Testcontainers as the launcher's container mode).
+  "integrationTestImplementation"(platform(libs.testcontainers.bom))
+  "integrationTestImplementation"(libs.testcontainers.core)
 }
 
 // --- Standalone fake collector (bench, development-only, never shipped) --------------------------
@@ -274,6 +278,14 @@ val fakeCollectorJar =
 
 // -Pagent.container=true: ContainerModeTest runs the first -Pagent.e2e app in Docker (18 §5.2).
 val containerMode = providers.gradleProperty("agent.container").map(String::toBoolean).getOrElse(false)
+
+// JDBC suite (package jdbc, WO-13, 18 §6.3, ADR-0010 C-149): H2 always; the database containers
+// (MySQL 8.4, MariaDB 11.4, PostgreSQL 16, SQL Server 2022, digests pinned in JdbcDatabase) only
+// with -Pagent.jdbc.containers=true or a list such as -Pagent.jdbc.containers=postgres,mysql
+// (nightly or by hand, one container at a time); gvenzl/oracle-free only with
+// -Pagent.jdbc.oracle=true. In-house databases come from ARGOS_TEST_<DB>_URL/USER/PASSWORD.
+val jdbcContainers = providers.gradleProperty("agent.jdbc.containers").getOrElse("false")
+val jdbcOracle = providers.gradleProperty("agent.jdbc.oracle").map(String::toBoolean).getOrElse(false)
 
 // -Pagent.container.image.<jdk>=<image@sha256:digest> overrides the pinned JDK image (ContainerApp).
 val containerImages: Map<String, String> =
@@ -392,6 +404,14 @@ tasks.named<Test>("integrationTest") {
   inputs.property("e2eCombos", combos)
   inputs.property("containerMode", containerMode)
   systemProperty("argos.test.container", containerMode.toString())
+  inputs.property("jdbcContainers", jdbcContainers)
+  inputs.property("jdbcOracle", jdbcOracle)
+  systemProperty("argos.test.jdbc.containers", jdbcContainers)
+  systemProperty("argos.test.jdbc.oracle", jdbcOracle.toString())
+  // The in-house databases of a trusted host (human check): their variables change the inputs.
+  listOf("ORACLE", "TIBERO", "ALTIBASE", "CUBRID", "DB2").forEach {
+    inputs.property("jdbc$it", providers.environmentVariable("ARGOS_TEST_${it}_URL").orElse(""))
+  }
   inputs.property("containerImages", containerImages)
   containerImages.forEach { (name, image) -> systemProperty(name, image) }
   // Old JREs below and at the 8u252 TLS line (OldJreTransportTest, docs/poc/agent-poc.md 9.8): not

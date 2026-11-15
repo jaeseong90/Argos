@@ -1,0 +1,227 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* TimeSeriesChart (docs/15 §6.1). uPlot's own stylesheet is imported from the package (bundled CSS
+   file); everything here is class based so no inline style attribute is needed (CSP). */
+.ts-chart {
+  position: relative;
+  min-width: 0;
+  margin: 0;
+}
+
+.ts-chart__plot {
+  width: 100%;
+  min-width: 0;
+}
+
+.ts-chart .u-over {
+  overflow: visible;
+}
+
+.ts-chart__source {
+  margin: 0 0 var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+
+.chart-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 260px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.chart-legend__item[aria-pressed='false'] {
+  color: var(--color-text-muted);
+  text-decoration: line-through;
+}
+
+.chart-legend__suffix,
+.chart-legend__outages {
+  color: var(--color-text-muted);
+}
+
+.chart-legend__outages {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.chart-swatch {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 3px;
+  border-radius: 1px;
+}
+
+.chart-swatch--dashed {
+  height: 0;
+  border-top: 2px dashed;
+  opacity: 0.6;
+}
+
+.chart-swatch--hatch {
+  height: 10px;
+  border: 1px solid var(--outage-hatch);
+  background: repeating-linear-gradient(135deg, var(--outage-hatch) 0 2px, transparent 2px 5px);
+}
+
+.chart-outage {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--outage-hatch) 45%, transparent) 0 2px,
+    color-mix(in srgb, var(--outage-bg) 50%, transparent) 2px 6px
+  );
+  pointer-events: none;
+}
+
+.chart-marker {
+  position: absolute;
+  top: -2px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px;
+  border: 0;
+  border-radius: 3px;
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+  line-height: 1;
+  transform: translateX(-6px);
+  cursor: default;
+}
+
+.chart-marker svg {
+  fill: currentcolor;
+  stroke: currentcolor;
+}
+
+.chart-marker--triangle {
+  color: var(--color-primary);
+}
+
+.chart-marker--warn {
+  color: var(--sev-warn);
+}
+
+.chart-marker--critical {
+  color: var(--sev-critical);
+}
+
+.chart-marker__ring {
+  fill: none;
+  stroke-width: 1.5;
+}
+
+.chart-marker__stroke {
+  fill: none;
+  stroke-width: 1.6;
+}
+
+.chart-marker--emphasized {
+  outline: 2px solid var(--sev-critical);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--sev-critical) 20%, transparent);
+}
+
+.chart-marker__more {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.chart-marker-tip {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chart-marker-tip__time {
+  display: block;
+  opacity: 0.8;
+}
+
+.chart-tooltip {
+  position: absolute;
+  z-index: 4;
+  width: 240px;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 12%);
+  color: var(--color-text);
+  font-size: var(--fs-sm);
+  pointer-events: none;
+}
+
+.chart-tooltip__time {
+  margin-bottom: var(--space-1);
+  color: var(--color-text-muted);
+}
+
+.chart-tooltip__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.chart-tooltip__table td {
+  padding: 1px 0;
+  vertical-align: top;
+}
+
+.chart-tooltip__table td:first-child {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 120px;
+}
+
+.chart-tooltip__value,
+.chart-tooltip__baseline {
+  padding-left: var(--space-2) !important;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.chart-tooltip__diff {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+}
+
+.chart-menu {
+  top: auto;
+  min-width: 200px;
+}
+
+.chart-menu__time {
+  margin: 0 0 var(--space-1);
+  padding: 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}

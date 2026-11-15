@@ -202,16 +202,27 @@ jobs:
         env:
           ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         run: docker run --rm --network none -v "$PWD:/repo:ro" -w /repo "$ACTIONLINT_IMAGE" -color
-      - name: shellcheck CI and build scripts
+      - name: shellcheck CI, build and Compose installation scripts
         env:
           ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        # deploy/compose: the installation scripts, their tests and the test doubles without an
+        # extension (fake docker, curl and df; ADR-0010 C-200 (2)).
         run: |
+          shopt -s globstar
           docker run --rm --network none -v "$PWD:/repo:ro" -w /repo --entrypoint shellcheck "$ACTIONLINT_IMAGE" \
-            -x .github/scripts/*.sh .github/scripts/test/*.sh test/agent/*.sh test/lint/*.sh
+            -x .github/scripts/*.sh .github/scripts/test/*.sh test/agent/*.sh test/lint/*.sh \
+            deploy/compose/**/*.sh deploy/compose/test/container/fake-bin/* deploy/compose/test/container/fake-df/*
       - name: CI script tests
         env:
           REQUIRE_DOCKER: "1"
         run: bash .github/scripts/test/run-all.sh
+      - name: Compose installation script tests
+        # env-init, smoke.sh, argos-compose.sh and the Compose files in pinned Linux containers
+        # without network (about 1 minute). The end-to-end :deploy:composeSmoke is not run here
+        # (ADR-0010 C-200 (2): a nightly candidate, WO-50/WO-52).
+        env:
+          REQUIRE_DOCKER: "1"
+        run: bash deploy/compose/test/run-all.sh
 
   license:
     name: license
@@ -328,6 +339,89 @@ jobs:
           path: |
             **/build/reports/
             **/build/test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  e2e:
+    # UI end-to-end suite (docs/18 section 13, docs/19 section 6.2, WO-30): the Playwright specs against
+    # the server boot jar of this commit with seeded PostgreSQL and ClickHouse containers (ui/e2e/stack,
+    # 127.0.0.1 only). The stack project runs inside the Linux Playwright image pinned by digest
+    # (e2e:docker), where the visual-regression baselines are compared (ADR-0010 C-169). Each shard
+    # starts and removes its own stack; shard 1 also runs the WO-04 preview project once. Not yet a
+    # required check: a maintainer adds the four shard checks to branch protection after the first
+    # green run.
+    name: e2e (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+      - name: Register JDK toolchains
+        run: |
+          mkdir -p "$HOME/.gradle"
+          echo "org.gradle.java.installations.fromEnv=${GRADLE_TOOLCHAINS_FROM_ENV}" >>"$HOME/.gradle/gradle.properties"
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ui/.nvmrc
+          package-manager-cache: false
+      - name: Enable pnpm (Corepack)
+        id: pnpm
+        # `pnpm -C ui ...` runs from the repository root, which has no package.json; make the
+        # Corepack default the version pinned by ui/package.json#packageManager.
+        run: |
+          corepack enable
+          corepack install -g "$(node -p "require('./ui/package.json').packageManager")"
+          echo "store=$(pnpm store path --silent)" >>"$GITHUB_OUTPUT"
+      - name: Cache pnpm store
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm.outputs.store }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+      - name: Install UI dependencies
+        run: pnpm -C ui install --frozen-lockfile
+      - name: Build the jars of the E2E stack (server with the UI bundle, agent, sample apps)
+        run: >-
+          ./gradlew :server:bootJar :agent:agent-dist:agentJar :sample-apps:shop-boot3:sampleAppJar
+          :sample-apps:ext-stub:sampleAppJar :sample-apps:smoke:sampleAppJar
+      - name: Install Playwright Chromium (preview project)
+        if: matrix.shard == 1
+        run: pnpm -C ui exec playwright install --with-deps chromium
+      - name: Preview project (XLog PoC and global-hook positive controls)
+        if: matrix.shard == 1
+        run: pnpm -C ui e2e:preview
+      - name: Stack project (real server and databases, pinned Linux Playwright image)
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: pnpm -C ui e2e:docker -- "--shard=${SHARD}/4"
+      - name: Upload Playwright traces and reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-reports-${{ matrix.shard }}
+          path: |
+            ui/test-results/
+            ui/blob-report/
+            ui/playwright-report/
+            ui/e2e/.stack/**/*.log
           retention-days: 14
           if-no-files-found: ignore
 

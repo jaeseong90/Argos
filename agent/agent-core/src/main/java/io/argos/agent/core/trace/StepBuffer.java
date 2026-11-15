@@ -77,12 +77,15 @@ public final class StepBuffer {
   /**
    * Estimated bytes of one slot in the arrays every chunk has (10 elements and the two lazily
    * created reference arrays, see {@link Chunk}); rows and fetch time add {@value #LAZY_LONG_BYTES}
-   * bytes per slot each once a step of the chunk has them.
+   * bytes per slot each, batch sizes {@value #LAZY_INT_BYTES}, once a step of the chunk has them.
    */
   static final int SLOT_BYTES = 58;
 
   /** Bytes per slot of a lazily created {@code long} array (rows, fetch time). */
   static final int LAZY_LONG_BYTES = 8;
+
+  /** Bytes per slot of the lazily created {@code int} array of batch sizes (WO-13). */
+  static final int LAZY_INT_BYTES = 4;
 
   private static final int FREE = 0;
   private static final int OPEN = 1;
@@ -194,6 +197,21 @@ public final class StepBuffer {
       chunk.rows().addAndGet(i, rowCount);
     }
     chunk.state.set(i, CLOSED);
+  }
+
+  /**
+   * Sets the {@code executeBatch} item count of a recorded step (10 §6.3, 11 {@code
+   * ProfileStep.batch_size}); counts below 1, summary handles and unknown steps are ignored. Like
+   * {@link #fetch}, a fixed-size field: it still applies after sealing.
+   */
+  public void batch(int seq, int batchSize) {
+    if (batchSize < 1) {
+      return;
+    }
+    Chunk chunk = recorded(seq);
+    if (chunk != null) {
+      chunk.batch().set(seq - chunk.start, batchSize);
+    }
   }
 
   /** Adds fetched rows and fetch time to a recorded step (JDBC ResultSet, 10 §6.3). */
@@ -471,6 +489,10 @@ public final class StepBuffer {
     final AtomicReference<AtomicLongArray> rows = new AtomicReference<AtomicLongArray>();
 
     final AtomicReference<AtomicLongArray> fetch = new AtomicReference<AtomicLongArray>();
+
+    /** {@code executeBatch} item counts, created by the first batch step of the chunk (WO-13). */
+    final AtomicReference<AtomicIntegerArray> batch = new AtomicReference<AtomicIntegerArray>();
+
     final AtomicReference<AtomicReferenceArray<String>> details =
         new AtomicReference<AtomicReferenceArray<String>>();
     final AtomicReference<AtomicReferenceArray<long[]>> stacks =
@@ -500,6 +522,15 @@ public final class StepBuffer {
 
     AtomicLongArray fetch() {
       return longs(fetch);
+    }
+
+    AtomicIntegerArray batch() {
+      AtomicIntegerArray current = batch.get();
+      if (current != null) {
+        return current;
+      }
+      AtomicIntegerArray created = new AtomicIntegerArray(length());
+      return batch.compareAndSet(null, created) ? created : batch.get();
     }
 
     private AtomicLongArray longs(AtomicReference<AtomicLongArray> holder) {
@@ -615,6 +646,13 @@ public final class StepBuffer {
     return fetch == null ? 0 : fetch.get(seq - chunk.start);
   }
 
+  /** The {@code executeBatch} item count of the step ({@link #batch}), 0 when none was set. */
+  public int batchSize(int seq) {
+    Chunk chunk = readChunk(seq);
+    AtomicIntegerArray batch = chunk == null ? null : chunk.batch.get();
+    return batch == null ? 0 : batch.get(seq - chunk.start);
+  }
+
   public String detail(int seq) {
     Chunk chunk = readChunk(seq);
     AtomicReferenceArray<String> details = chunk == null ? null : chunk.details.get();
@@ -727,6 +765,9 @@ public final class StepBuffer {
       }
       if (chunk.fetch.get() != null) {
         bytes += 32L + (long) length * LAZY_LONG_BYTES;
+      }
+      if (chunk.batch.get() != null) {
+        bytes += 32L + (long) length * LAZY_INT_BYTES;
       }
       AtomicReferenceArray<String> details = chunk.details.get();
       if (details != null) {

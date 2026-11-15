@@ -58,7 +58,7 @@
 | WO-36 | 통계 4종(서비스·SQL·외부 호출·에러) | 1 | C | WO-30, WO-27 | TODO |
 | WO-37 | 인스턴스 상세·스레드 덤프 뷰어 | 1 | C | WO-30, WO-26 | TODO |
 | WO-38 | 알림 화면(규칙·채널·이력) | 1 | C | WO-30, WO-25 | TODO |
-| WO-39 | 관리·검색·설치 마법사·내 계정 | 1 | C | WO-30, WO-26, WO-28 | TODO |
+| WO-39 | 관리·검색 | 1 | C | WO-30, WO-26, WO-28 | TODO |
 | WO-40 | Docker Compose·env-init·smoke·설치 가이드 | 1 | D | WO-20 | TODO |
 | WO-41 | 데모 프로파일(이미지·부하·60초) | 1 | D | WO-40, WO-01 | TODO |
 | WO-42 | 도그푸딩 배포·운영 체크리스트 | 1 | D | WO-19, WO-29, WO-39, WO-40 | TODO |
@@ -481,11 +481,38 @@
 
 ### Epic C: UI (15 문서)
 
-**WO-30 UI 골격**
-- 목표: 15 §2(스택·폴더), §3(라우트 트리 전부·Shell·AppLayout·GlobalLayout·KioskLayout·상단 바·좌측 메뉴), §4(URL 스키마 zod·1KB·복원 실패 기본값·딥링크 5항 구현), §5(시간 범위 모델·단축키), §6 공통 컴포넌트 전부(TimeSeriesChart uPlot 래퍼 + 플러그인 markers/gapShading/baseline/clickMenu/cursorSync, StatTile, DataTable 가상 스크롤·값 클릭 필터·변화율·CSV 요청, StatusBadge 4색, TimeRangePicker, FilterChipBar, KindFilter, EnvSelect, AppSelect, SafeText/SafeLink/CodeBlock, EmptyState/ErrorState 문구 규칙), §10 WsManager(단일 연결·멀티플렉스·백오프·visibilitychange·"갱신 중단 N초"·세션 만료), §11(쿠키 세션·CSRF 헤더·401 → `?next=` 복귀·역할별 노출·`Untrusted<string>` 브랜드·린트), §12 i18n(en 원본·ko·부록 B 용어표·포맷), §13 토큰·레이아웃·접근성, 생성 API 클라이언트(`api/generated/` diff 0), 로그인·설치 마법사·내 계정(§9.11), E2E 프레임(18 §13: fixtures auth/seedData/ws, `required/<screen>.yaml` 데이터 주도, XSS·CSP·콘솔 훅, 샤딩, 스크린샷 정책).
-- 입력: 15 §2~§6·§10~§13·§15, 05 §2.0, 14 §6(딥링크 매핑)·§4(WS), 16 §9(렌더링·CSP), 18 §13, 06 SEC-40·43·44·46·60·61·64, 01 F-U13·U14·U16.
-- 수락 기준: T-UI-002(시간 범위 리듀서), T-UI-003(URL 직렬화·검증·1KB), T-UI-004(표 공통), T-UI-005(XSS → 텍스트), T-UI-006(하드코딩 0·en 누락 0·ko 용어표), T-UI-007(결측 표시), T-UI-008(상태 색·알림 라벨 ko), T-E2E 로그인·딥링크 5항·시간 범위 전역·표 필터 칩·끊김 배지·로그아웃 WS 종료·en/ko 전환·1366 가로 스크롤 없음, T-SEC-40~44 브라우저 부분, T-SEC-46 CSP 위반 0, T-SEC-60·61·64, `check-no-external` 0, Lighthouse 초기 로드 ≤ 2초 골격(T-NFR-14).
-- 확인 작업: 15 §18 미결 10건(AntD `csp.nonce` `style-src` 커버리지 등).
+**WO-30 UI 골격(라우팅·URL 상태·시간 범위·인증·i18n·클라이언트·WS·공통 컴포넌트·E2E 프레임)**
+
+- **목표**: 15 §2~§6·§10~§13의 골격을 만들어 화면 WO(WO-31~39)가 `features/<screen>`만 더하면 되게 한다. 생성 클라이언트·쿠키 세션·CSRF·URL 상태·전역 시간 범위·WS 클라이언트·공통 컴포넌트·i18n·디자인 토큰, 그리고 **실제 서버 + ClickHouse + PostgreSQL에 시드를 적재해 도는 E2E 프레임**(18 §13)을 갖춘다.
+- **선행**: WO-23(조회 API, 커밋된 `docs/api/openapi.yaml`), WO-24(로그인·세션·CSRF·설정 토큰·`index.html` nonce 주입), WO-04(캔버스·Playwright 하네스). E2E 시드는 WO-10~13(에이전트)·WO-20·WO-21(수집) 산출물을 쓴다. WO-40과 동시 진행.
+- **입력**: 15 §2~§6·§10~§13·§15·§18, 05 §2.0, 14 §2.2·§2.5·§2.6·§4.1·§5·§6·§7.1~7.2, 16 §7.1·§7.6~7.8·§9, 18 §3·§13·§15, 19 §4·§6.2, 06 SEC-40~47·60~64, 01 F-U13·U14·U16·U21·부록 B, 정합 결정 C-5(`outages`)·C-8(상태 수치)·C-13, ADR-0010 C-132·C-160·C-163·C-166~C-170, DSN-15-01·02·05~10·13. Gate 0 이관: WO-04 보고 B-3(E2E 정리 단계 플레이크 관찰)·B-5(E2E CI 연결)·C-9(팔레트·색각)·C-11(E2E 구조)·C-12(시각 회귀·axe·키보드), 15 §18 #1·#6.
+- **산출물**
+  - `ui/src/`: `app`(Provider: TanStack Query·AntD `ConfigProvider csp={{nonce}}`(`<meta name="csp-nonce">`)·i18n·Auth, 전역 단축키·`?` 도움말), `routes`(15 §3.1 라우트 트리 전부·로더 URL 검증·`Shell`·`AppLayout`·`GlobalLayout`·`KioskLayout`·미구현 화면 자리), `state`(urlState zod·파서·직렬화·`useUrlState`, timeRange 리듀서, uiStore(Zustand, 토큰 없음)), `api`(생성 클라이언트 래퍼: `credentials: include`·`X-Argos-CSRF`·401 → refresh 1회(공유) → `/login?next=`·봉투 언래핑·ErrorBody·쿼리 키·`Untrusted<string>`), `api/generated/`(openapi-typescript, 수정 금지), `realtime`(WsManager: 14 §5 프레임 zod·참조 카운트·백오프 1→30초·visibilitychange·ping/pong·4401·연결 상태 스토어), `features/auth`(`/login`·`/setup` 5단계·`/account`, PM 결정 5), `components`(DataTable·StatTile·StatusBadge·TimeRangePicker·FilterChipBar·KindFilter·EnvSelect·AppSelect·SafeText·SafeLink·CodeBlock·EmptyState·ErrorState·LoadingState·부분 결과 띠), `charts`(TimeSeriesChart + markers·gapShading·baseline·clickMenu·cursorSync, 대체 표), `styles`(tokens.css·antd-theme.ts), `utils`(format·ids·shortcuts), `security/untrusted.md`(16 §9.1)
+  - 도구: `scripts/gen-api.mjs`(`gen:api`·`check:api`, `x-argos-untrusted` → 브랜드 타입), ESLint 자체 규칙 `argos/untrusted-text`·`argos/no-token-storage`·`argos/no-raw-href` + 음성 테스트, 번들 크기 보고(15 §14)
+  - E2E 프레임: `ui/e2e/stack/`(PG(`deploy/postgres/image.properties`·`roles.sql`, WO-20)·CH(`deploy/clickhouse/image.properties`)·서버 bootJar 컨테이너, 127.0.0.1 무작위 포트, 항상 정리), `ui/e2e/fixtures/`(auth 3역할·seedData 매니페스트·ws(`page.routeWebSocket` 14 §5 스텁·끊김)·전역 훅), `ui/e2e/required/<screen>.yaml` + 엔진(`T-E2E-<screen>-<n>`), specs(auth·shell·deeplink·timerange·realtime·i18n·layout·security), 시각 회귀(1366×768, 0.1%, 고정 Linux Playwright 이미지에서 기준 생성), axe-core 훅, `ui/perf/initial-load.spec.ts`(T-NFR-14 초기 로드 골격), `pr.yml` `e2e` 잡(샤딩 4)
+  - 시드: 저장소 생성기 tiny(1/1000) → 서버 ClickHouse + PG 메타데이터(WO-23 적재 도구 재사용, 없으면 E2E 전용 로더), shop-boot3 + 에이전트 jar + `test/seed/seed-traffic.sh`(XSS·PII 센티널, 실제 gRPC 수집 경로). 범위는 생성기 기준일(오늘 UTC) 앵커, 매니페스트가 절대 범위·대표 id를 준다(18 §13 고정일 대체, PM 결정 9)
+  - 문서: `ui/README.md`(구조·E2E 실행·`data-testid` 규약), `docs/licenses/dev-only.md`(개발 전용 npm 행), CHANGELOG, CLAUDE.md 명령, docs/README 상태
+- **수락 기준**
+  - 자동: T-UI-002(시간 범위 리듀서), T-UI-003(URL 직렬화·검증·값 1KB·변조 복원), T-UI-004(정렬·열 필터·값 클릭 포함/제외·열 선택·CSV는 서버 내보내기 호출만), T-UI-005(XSS 페이로드 → 텍스트, C-45 합집합), T-UI-006(하드코딩 0·en 누락 0·ko 부록 B 용어표), T-UI-007(결측 `—`/"측정 불가" ≠ 0), T-UI-008(상태 4색·C-8 툴팁·알림 상태 ko 라벨)
+  - 자동: `check:api` 재생성 diff 0, 생성 클라이언트 밖 `fetch`·`WebSocket` 0(린트), `check:i18n --release`·`check:external`·`check:licenses`(·`:dev`) 통과, T-SEC-60(린트 규칙 음성 테스트), T-SEC-61(컴포넌트), T-SEC-64(단위 + E2E 변조 URL), T-SEC-40~44 브라우저 부분(`document.cookie`·localStorage·sessionStorage 토큰 0, 모든 상태 변경 요청에 `X-Argos-CSRF`, 401 → refresh → `next` 복귀, 4401 재접속 금지, 로그아웃 시 WS 클라이언트 종료), T-SEC-46(실서버 CSP nonce 아래 E2E 전 실행 위반 0)
+  - 자동(E2E, 실서버·실DB·시드): 로그인·`next` 복귀(딥링크 1), 딥링크 2·3(절대 범위 → 실시간 꺼짐, `f=` → 필터 칩·개별 제거), 시간 범위 전역(선택기·단축키 → URL → 화면 전환 유지), 끊김 배지·재접속(WS 스텁), 로그아웃, en/ko 전환, WO-30 전 라우트 1366×768 `scrollWidth ≤ clientWidth`, 시각 회귀(로그인·셸·빈·에러·로딩), axe Critical 0, `required/common.yaml` 전수, 연속 2회 재시도 0 통과. 기존 Vitest·xlog-poc E2E·`./gradlew build` 회귀 0
+  - 자동(참고값): 초기 로드 ≤ 2초(Navigation Timing), 번들 크기(셸 ≤ 350KB·전체 ≤ 2.5MB gzip)
+  - 수동(사람 확인): 키보드만으로 로그인 → 시간 이동 → 화면 전환 → 로그아웃, 저사양 노트북 초기 로드 2초, PR `e2e` 잡 첫 GitHub 실행 녹색과 필수 검사 지정
+- **05 §2.0 체크표**(리뷰어가 항목별로 구현·컴포넌트 수준·이관 WO를 표시, `required/common.yaml`과 1:1)
+  - [ ] 2.0-1 시간 범위는 전역 상태 하나(선택기·차트 드래그·XLog 드래그·딥링크), 앱·화면 전환 시 유지
+  - [ ] 2.0-2 실시간 중 과거 선택 → 실시간 해제 + "실시간 재개" 버튼, 재개 시 REST 보충(재동기 콜백)
+  - [ ] 2.0-3 이전·다음·확대(1/2)·축소(2배)·지금 단축키, 프리셋 5m·15m·1h·6h·24h·7d·30d·오늘·어제
+  - [ ] 2.0-4 표 셀 값 → 이 값으로 필터/제외, 상단 칩·개별 제거, URL 포함(화면 E2E는 WO-33, PM 결정 4)
+  - [ ] 2.0-5 시계열 점 클릭 → ±(범위/60, 최소 1분) 메뉴, 이벤트 마커(배포·기동·종료·설정 변경·알림 전이), 수집 중단 음영(`outages`, C-5)
+  - [ ] 2.0-6 종류 필터 전역·기본 "요청"(D-20), 환경 필터 전역
+  - [ ] 2.0-7 딥링크 5항: 1 로그인 복귀, 2 고정 범위·실시간 아님, 3 대상 필터, 4 마커, 5 보존 기간 내 동일 데이터(4·5 화면 E2E는 WO-33·WO-32)
+  - [ ] 2.0-8 로딩·빈·에러 문구에 "다음 행동", 제외 N건 링크(D-19)
+  - [ ] 2.0-9 브라우저 시간대 표시, 절대 시각 툴팁에 UTC 오프셋(알림 메시지 시간대는 서버 몫)
+  - [ ] 2.0-10 수집 데이터는 텍스트 노드로만(SEC-60)
+- **확인 작업**: 15 §18 미결 10건 답(#1 AntD nonce 적용 범위, #6 TanStack Virtual·AntD 중첩 스크롤, #7 kiosk 만료 UX(`/auth/me.session_expires_at`), #8 브라우저, #10 폰트; #2~#5는 WO-04·33·34 답 인용), WO-23·WO-24 산출물 확인(설정 토큰·사용자 관리 API 유무, CSRF 쿠키·에러 코드, 생성기 데이터 PG 적재 경로, 서버가 UI 번들을 `static/`으로 포함하는지(19 §3.5))
+- **범위 밖**: 각 화면 내용(WO-31~39), XLog 정식 화면(WO-33), 상세·트레이스(WO-34), WS 서버·실서버 WS 시나리오(T-SEC-44 서버 1초 종료·T-SV-020, WO-22), XSS 페이로드 전 화면 순회·`securityTest` 연결(WO-46), 추적성 보고서의 Vitest·Playwright 결과(WO-53), Compose(WO-40), 데모(WO-41), `/admin/*`·`/search` 결과 화면(WO-39), 다크 모드(1.x)
+- **보안 체크**: SEC-40(토큰 JS 저장 0, `argos/no-token-storage`), SEC-43(CSRF 래퍼 한 곳), SEC-44 클라이언트(구독 ≤ 20, 4401), SEC-46(nonce 1차, `style-src 'unsafe-inline'` 타협 시 `docs/security/csp.md` 사유), SEC-60~62, SEC-64, O-P03(번들 외부 참조 0), 시드는 테스트 전용 센티널만
+- **보고 특이사항**: 05 §2.0 체크표, 새 npm 의존성 표(버전·라이선스·번들 포함 여부·dev-only 행), 번들 크기(15 §14 대비), E2E 소요(스택 기동·시드·spec별, 18 §2.1 E2E 10분 예산), AntD nonce 결과와 최종 CSP `style-src`, 15 §18 답, 화면 WO가 쓸 공통 API(컴포넌트 props·훅·`data-testid` 규약) 목록
 
 **WO-31 전체 현황** — 15 §9.1·05 §2.10 필수 요소 전부(환경·그룹 필터, 카드/표, 앱 행 항목 11종, 정렬·이상 앱 고정, 전 앱 FIRING 패널, 서버 자기 상태, 클릭 → 대시보드 시간 유지, 1366에서 30개 스크롤 없음). 입력: 14 `/overview`, 12 DSN-12-14. 수락: T-E2E overview(1366·30개), 필수 요소 체크표 전수, T-ACPT-16 자동 부분.
 
@@ -503,11 +530,32 @@
 
 **WO-38 알림 화면** — 15 §9.9·05 §2.4·§2.9 전부(규칙 편집 필드 전부·7일 미리보기·템플릿에서 만들기·차이 표시·복제·비활성·이력, 채널 설정 목적지 검증 결과·마스킹·테스트 전송, 이력 상단 고정 FIRING/ACKED·채널 상태·열 10종·필터·행 동작 4종(딥링크·편집·ACK·일시 중지)·알림 통계, 전 앱 보기). 입력: 14 알림 API, 12 §5. 수락: T-E2E alerts(규칙 → 발화 → 이력 → ACK), 필수 요소 전수, T-ACPT-15·17 자동 부분.
 
-**WO-39 관리·검색·설치 마법사·내 계정** — 15 §9.10~9.12·05 §2.11 전부(앱 목록 8열, 인스턴스 목록 9열·보관, 승인 대기, 토큰 발급 1회 표시·폐기·회전·만료 경고, 설정 변경 사유·diff·대상·인스턴스별 결과·이력·되돌리기, 킬 스위치 확인 대화상자, 설치 안내 복사 스니펫·카나리 체크리스트, 수집 상태 순위, 개인정보 설정 현황·삭제 요청 실행·상태, 사용자·역할, 감사 로그 조회·내보내기, 오픈소스 라이선스·버전 정보; `/search` ID 조회·텍스트; `/setup` 설정 토큰·IP 모드 강제·관리자 생성; `/account`). 입력: 14 관리·인증 API, 16 권한 매트릭스. 수락: T-E2E admin(토큰 1회·diff·되돌리기·킬 스위치·승인), T-E2E search, T-SEC-47 UI 부분, 역할별 메뉴 노출 매트릭스 E2E, 필수 요소 전수, T-ACPT-07·12·18 자동 부분.
+**WO-39 관리·검색** — 15 §9.10~9.12·05 §2.11 전부(앱 목록 8열, 인스턴스 목록 9열·보관, 승인 대기, 토큰 발급 1회 표시·폐기·회전·만료 경고, 설정 변경 사유·diff·대상·인스턴스별 결과·이력·되돌리기, 킬 스위치 확인 대화상자, 설치 안내 복사 스니펫·카나리 체크리스트, 수집 상태 순위, 개인정보 설정 현황·삭제 요청 실행·상태, 사용자·역할, 감사 로그 조회·내보내기, 오픈소스 라이선스·버전 정보; `/search` ID 조회·텍스트). `/login`·`/setup`·`/account` 화면은 WO-30이 만든다(ADR-0010 C-168 (2)). 설치 마법사의 첫 앱 등록 단계와 `/account`의 내 세션 목록은 그 서버 API를 만드는 WO-26·WO-28 때 더한다. 입력: 14 관리·인증 API, 16 권한 매트릭스. 수락: T-E2E admin(토큰 1회·diff·되돌리기·킬 스위치·승인), T-E2E search, T-SEC-47 UI 부분, 역할별 메뉴 노출 매트릭스 E2E, 필수 요소 전수, T-ACPT-07·12·18 자동 부분.
 
 ### Epic D: 배포·운영 (17 문서)
 
-**WO-40 Docker Compose·env-init·smoke·설치 가이드** — 17 §3 전부(`compose.yaml` 3서비스·네트워크 internal/front·DB 포트 비노출·볼륨·healthcheck·기동 순서·이미지 다이제스트·multi-arch, `.env.example` 값 비움, `argos-env-init.sh` CSPRNG 자격증명·마스터 키·0600·금지 목록, `argos-compose.sh` 래퍼, `config/*` 템플릿(13 config.d/users.d RAM 치환·PG init·demo 에이전트 yml), `smoke.sh`(포트 집합 {8080, 9100}·`.env` 권한·health·설정 토큰 접근 제어), 리버스 프록시 오버레이 개요), 설치 가이드(en 초안 + ko), 설정 토큰 운영 절차. 수락: T-SEC-74·75(`.env`·금지 비밀번호·포트 집합), T-SEC-47 설치 시나리오, `smoke.sh` 통과, 수동: 비참여자 30분 설치(N-11, T-NFR-12 전 단계), 17 미결 2·3·6·12 확인.
+**WO-40 Docker Compose·env-init·smoke·설치 가이드**
+
+- **목표**: 17 §3의 Docker Compose 단일 노드 설치(server·ClickHouse·PostgreSQL)를 기본 자격증명 없이, 호스트 노출 포트 {8080, 9100}만으로, 문서만 보고 30분 안에 끝낼 수 있게 한다(N-11). 설치 직후 상태는 `smoke.sh`가 자동 검증한다(03 §3.4, SEC-47·74·75).
+- **선행**: WO-20(서버 골격·`argos.*` 설정·`*_FILE`·짧은 별칭·마이그레이션·관리 포트 8081 C-7·Jib 기본 설정·`deploy/postgres/{roles.sql,image.properties}`), WO-24(설정 토큰·`ARGOS_ADMIN_PASSWORD_FILE` 무인 설치), WO-21(gRPC 9100 리스너), WO-03/03F(`deploy/clickhouse` 스키마·설정·계정). WO-30과 동시 진행.
+- **입력**: 17 §1(DSN-17-01·03·04·05·06·07·13)·§2.3·§3.1~3.8·§3.10·§6.1·§6.4·§7.1~7.3·§14·§16 #2·#3·#6·#12, 13 §7.2·§7.3(`deploy/clickhouse/config.d`·`users.d`, `from_env` 변수), 16 §7.8·§3.5(자체 CA 개요), 19 §3.5(Jib 이미지), 06 SEC-47·55·73~76, 01 N-11·N-18, 정합 결정 C-7·C-11(DB 계정 6종)·C-38·C-51·C-60, ADR-0010 C-112~C-114·C-119·C-155·C-157 (5)·C-171~C-173(`argos-compose.sh token create`), ADR-0003 지정(Temurin 21 JRE 기본 root → uid 10001·HOME·데이터 디렉터리), WO-00 보고 U-3, WO-03 보고 E(해시 전 비밀번호 검사, `mem_limit` ↔ `max_server_memory_usage`), WO-03F 보고 E.
+- **산출물**
+  - 서버 이미지(PM 결정 1): WO-20의 Jib 설정(베이스 `eclipse-temurin:21-jre@sha256`, `container.user=10001:10001`, OCI 라벨)을 확인하고 컨테이너 운영 요소를 보완한다. `jibDockerBuild` → 로컬 `argos-server:<version>`(amd64), HOME·`/data`·`/data/tmp`·`/logs` 소유 10001·0700, JVM 기본 옵션 17 §7.2, 재현 가능한 `creationTime`, healthcheck 도구. 새 빌드 의존성이 생기면 잠금·`gradle/verification-metadata.xml` 갱신(빈 캐시 Linux 컨테이너, dev-setup §7)
+  - `deploy/compose/`: `compose.yaml`(서비스 3개, `front`·`back(internal)` 네트워크, DB 호스트 포트 없음, 볼륨 4종, healthcheck + `service_healthy` 기동 순서, 이미지 `태그@sha256`, `mem_limit` 변수, secrets: PG 계정(C-11)·CH writer/reader/migrator·`master_key`·`admin_password`(무인 설치만)), `.env.example`(이름·설명만, 값 비움), `argos-env-init.sh`(17 §3.7 1~7단계: 사전 검사 종료 코드 2, RAM 비율 §7.3, `secrets/` 0700·파일 0600, 32바이트 CSPRNG, 금지 목록을 **해시 전에** 검사 종료 코드 3, 기존 파일 보존·`--force`, `--unattended`), `argos-compose.sh`(up·down·status·logs + 사전 검사, upgrade·backup·diag는 WO-43 전까지 명확히 거부), `config/server/application-compose.yaml`(짧은 별칭 → `argos.*`, 17 §6.1), `config/postgres/init/`(WO-20의 `deploy/postgres/roles.sql`을 secret 파일 비밀번호로 실행, C-11 계정·권한; PostgreSQL 이미지는 `deploy/postgres/image.properties` 단일 원본), ClickHouse 설정은 `deploy/clickhouse` 단일 원본을 읽기 전용 마운트(값은 `from_env`, PM 결정 2), `smoke.sh`, `compose.proxy.yaml`(17 §3.10 개요 수준), `README.md`, `.gitignore`(`.env`·`secrets/`·`tls/`)
+  - 에이전트 토큰 발급(ADR-0010 C-173): `argos-compose.sh token create --app <name> --env <env> [--expires-days N]`. PG 소유자 계정 한 트랜잭션(앱 생성, 16 §2.1 형식 토큰을 서버와 같은 해시·접두사로 저장, 감사 행, 앱당 활성 5개 상한), 원문은 터미널에 1회만 출력.
+  - 테스트: `deploy/compose/test/`(Linux 컨테이너에서 `argos-env-init.sh` 검사: 권한·길이·금지 목록·종료 코드·RAM 8/16/32GB 산출 스냅샷), `:deploy:composeSmoke`(이미지 빌드 → env-init → `up --wait` → `smoke.sh` → `down -v`, 마법사 모드·무인 모드, `check` 미포함)
+  - 문서: `docs/install/compose.md`(en: 요구 사항·설치·설정 토큰 운영 절차(17 §6.4)·무인 설치·TLS 인증서 배치(16 §3.5 개요)·리버스 프록시 개요·제거·문제 해결·단일 노드 비복제 구성 명시(C-51, 복제 전환 런북은 17 문서 몫)) + `docs/install/compose.ko.md`, `deploy/compose/README.md`
+- **수락 기준**
+  - 자동: T-SEC-74(`.env` 0600·`secrets/` 0700·파일 0600, 비밀값 32바이트 CSPRNG이며 `.env`에 없음, 금지 비밀번호 env-init 종료 코드 3, 금지 비밀번호 주입 시 서버 기동 거부(T-SV-049 연동), `.env.example` 값 비움, gitleaks 0)
+  - 자동: T-SEC-75(`docker compose ps --format json` 게시 포트 집합 = {8080, 9100}, `ARGOS_MGMT_EXPOSE=true`면 + `127.0.0.1:8081`, 5432·8123·9000 미게시, `back` 네트워크 internal)
+  - 자동: T-SEC-47 설치 시나리오(설정 토큰 없이 마법사 API 403, 잘못된 토큰 403, 관리자 생성 뒤 재사용 403·`/setup` 404, 무인 설치면 404, `setup-token` 파일 0600·uid 10001), `/actuator/env` 404·관리 포트 미노출(SEC-55)
+  - 자동: `smoke.sh` 통과(마법사·무인 두 모드), 서버 컨테이너 비루트(uid 10001)·`/data` 쓰기 가능, ClickHouse·PostgreSQL 이미지 = `deploy/clickhouse/image.properties`·`deploy/postgres/image.properties` 다이제스트, 17 §14 자원 산출 스냅샷(8/16/32GB), `docker compose -f compose.yaml -f compose.proxy.yaml config` 통과, `smoke.sh`가 위반을 실제로 잡음(5432 게시·`.env` 0644 변이에서 실패)
+  - 자동: `token create`로 만든 토큰으로 에이전트(샘플 앱)가 실제로 접속해 데이터가 ClickHouse에 적재된다(smoke). 원문이 파일·로그·컨테이너 로그에 남지 않는다. 6번째 활성 토큰은 거부, 감사 행 1건.
+  - 수동(사람 확인): 비참여자 30분 설치(N-11, 깨끗한 Ubuntu 22.04·RHEL 9 VM, 가이드만, 시간 기록), Linux 호스트에서 `smoke.sh`의 `ss -ltn`·파일 권한 검사(이 PC는 Windows·NTFS), arm64 이미지(WO-44)
+- **확인 작업**: 17 미결 2(users.d `password_sha256_hex` 전달: 구현은 `from_env`), 3(Temurin 21 JRE 비루트·HOME·healthcheck 도구 유무), 6(`back` internal에서 DB 컨테이너 egress 0, 서버는 `front`로만 아웃바운드), 12(POSIX sh + `openssl`·`curl`·`tar`), WO-03 E(`sha256('')` 수용 → 해시 전 검사, CH 메모리 상한 = 컨테이너 상한 × 0.9 관계), 데이터 볼륨 소유권 처리 방식, 첫 설치에서 TLS 인증서가 없을 때 gRPC 9100 동작(WO-21 구현, PM 결정 8)
+- **범위 밖**: 데모 프로파일·데모 이미지·`--demo`(WO-41), `upgrade`·`backup`·`restore`·`diag`(WO-43), tar + systemd·`:deploy:tarDist`·`:deploy:airgapBundle`(WO-76), multi-arch 빌드·GHCR 푸시·서명·`compose.yaml` 다이제스트 자동 갱신(WO-44), 리버스 프록시 실제 동작 검증(Gate 1.5, 17 미결 7), Compose `test` 프로파일(toxiproxy·채널 Mock, WO-46·WO-52), DB 이름 변경 설치의 writer GRANT 렌더·migrator `system.mutations` 행 정책(WO-03F E 제안), 서버 설정 코드·`deploy/postgres/**`·`deploy/clickhouse/**` 변경(WO-20·저장소 소유: 빠진 별칭은 `application-compose.yaml` 오버레이로만, 나머지는 제안)
+- **보안 체크**: SEC-74(기본 자격증명 0, 해시 전 금지 목록), SEC-75(포트 집합), SEC-47(설정 토큰), SEC-55(8081 비노출), SEC-73(모든 이미지 다이제스트 고정), SEC-76(전용 계정·최소 권한, 서버 PG 계정 비슈퍼유저, CH `default` 사용자 없음), 비밀값은 파일 참조만(프로세스 인자·로그·`.env`에 평문 0), `back` 네트워크 egress 차단
+- **보고 특이사항**: 이미지 다이제스트 표(서버 베이스·ClickHouse·PostgreSQL·프록시), 이 PC 설치 소요(env-init·이미지 빌드·`up`→healthy·smoke), 컨테이너 메모리 실측(`docker stats`), 17 미결 답, 통합 담당이 가이드를 문서대로 그대로 따라 한 리허설 기록(사람 30분 테스트 전 단계)
 
 **WO-41 데모 프로파일** — 17 §3.9·O-A01(sample-app-a/b 에이전트 부착·load-generator·60초 내 XLog·데모 트래픽 느림·에러·N+1·분산·배치·데모 배너), 데모 이미지 2종(jib), 60초 측정 스크립트. 수락: T-NFR-16 스크립트(60초), 수동: 비참여자 2인 README만 보고 5분(기록은 Gate 1.5).
 

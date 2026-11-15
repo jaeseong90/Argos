@@ -80,6 +80,7 @@ io.argos.agent.core.log.LogPipeline
 io.argos.agent.core.log.LogPipeline$1
 io.argos.agent.core.log.LogSink
 io.argos.agent.core.log.RollingFileSink
+io.argos.agent.core.sql.SqlIds
 io.argos.agent.core.sql.SqlNormalizer
 io.argos.agent.core.trace.ActiveRegistry
 io.argos.agent.core.trace.Dictionary
@@ -89,7 +90,6 @@ io.argos.agent.core.trace.Sampler
 io.argos.agent.core.trace.Sampler$RandomSource
 io.argos.agent.core.trace.Sampler$ThreadLocalSource
 io.argos.agent.core.trace.ServiceNames
-io.argos.agent.core.trace.SqlIds
 io.argos.agent.core.trace.ThreadMeter
 io.argos.agent.core.trace.ThreadMeter$Jvm
 io.argos.agent.core.trace.ThreadMeter$None
@@ -130,6 +130,8 @@ io.argos.agent.instrumentation.httpclient.jdk.HttpClientJdkModule
 io.argos.agent.instrumentation.httpclient.jdk.HttpClientJdkModule$1
 io.argos.agent.instrumentation.jdbc.JdbcInstrumentation
 io.argos.agent.instrumentation.jdbc.JdbcModule
+io.argos.agent.instrumentation.pool.PoolInstrumentation
+io.argos.agent.instrumentation.pool.PoolModule
 io.argos.agent.instrumentation.servlet.ContainerResponseInstrumentation
 io.argos.agent.instrumentation.servlet.JakartaFilterAdvice
 io.argos.agent.instrumentation.servlet.JakartaServletAdvice
@@ -144,6 +146,8 @@ io.argos.agent.instrumentation.servletasync.JavaxStartAsyncAdvice
 io.argos.agent.instrumentation.servletasync.ServletAsyncModule
 io.argos.agent.instrumentation.springwebmvc.SpringWebMvcModule
 io.argos.agent.instrumentation.springwebmvc.SpringWebMvcModule$HandlerAdapterInstrumentation
+io.argos.agent.instrumentation.tomcat.TomcatModule
+io.argos.agent.instrumentation.tomcat.TomcatModule$1
 io.argos.agent.shaded.net.bytebuddy.ByteBuddy
 io.argos.agent.shaded.net.bytebuddy.ClassFileVersion
 io.argos.agent.shaded.net.bytebuddy.ClassFileVersion$VersionLocator

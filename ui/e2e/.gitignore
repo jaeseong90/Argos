@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: Apache-2.0
+# E2E stack state, seed manifest, per-run secrets and logs (e2e/stack/paths.ts). Never committed.
+.stack/

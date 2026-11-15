@@ -68,13 +68,15 @@ import java.util.function.Supplier;
  * <ul>
  *   <li>11 §5 session: {@code AgentHello} → {@code ServerHello} with an instance id ({@link
  *       Builder#firstInstanceId}, reused for the same {@code (app_name, env, instance_name)} in
- *       every session, also after {@link FaultInjector#serverRestart()}, 11 §5 "재기동 연속성"), a new
- *       UUID {@code session_id}, {@code server_time_ms}, the 11 §4.2 {@code Limits} defaults
- *       ({@code ProtocolLimits.defaults()}), {@code heartbeat_interval_s} ({@link
- *       Builder#heartbeatIntervalS}) and {@code config}. An instance has one session (12 §4.1): a
- *       new hello sends the open session of that instance {@code SessionClose{REPLACED}} and ends
- *       its stream (11 §5 check 7), and the old session id is refused from then on, also when its
- *       stream had already ended.
+ *       every session, also after {@link FaultInjector#serverRestart()}, 11 §5 "재기동 연속성"; an {@code
+ *       InstanceUpdate.instance_name} of a session renames the instance and keeps its id, 12 §4.3
+ *       name priority, so a later hello with the new name such as {@code host:port} gets the same
+ *       id, {@link #onInstanceName}), a new UUID {@code session_id}, {@code server_time_ms}, the 11
+ *       §4.2 {@code Limits} defaults ({@code ProtocolLimits.defaults()}), {@code
+ *       heartbeat_interval_s} ({@link Builder#heartbeatIntervalS}) and {@code config}. An instance
+ *       has one session (12 §4.1): a new hello sends the open session of that instance {@code
+ *       SessionClose{REPLACED}} and ends its stream (11 §5 check 7), and the old session id is
+ *       refused from then on, also when its stream had already ended.
  *   <li>11 §2, §3 data calls need {@code authorization: Bearer argos_<base64url>}, {@code
  *       argos-instance-id} and {@code argos-session-id} of an accepted session; otherwise {@code
  *       UNAUTHENTICATED} or {@code FAILED_PRECONDITION} ({@code SESSION_REQUIRED}). A session stays
@@ -163,7 +165,14 @@ public final class FakeCollector implements AutoCloseable {
       String sessionId,
       long instanceId,
       ReceivedToken token,
-      CollectorProtocol.SessionChannel channel) {}
+      CollectorProtocol.SessionChannel channel,
+      String appName,
+      String env) {}
+
+  /** The {@link #instanceIds} key of an instance name of one app and environment (11 §5). */
+  private static String instanceKey(String appName, String env, String instanceName) {
+    return appName + '\u0000' + env + '\u0000' + instanceName;
+  }
 
   private FakeCollector(Builder builder) {
     this.protocol = builder.protocol != null ? builder.protocol : new V1Protocol();
@@ -970,9 +979,16 @@ public final class FakeCollector implements AutoCloseable {
     synchronized (registry) {
       long instanceId =
           instanceIds.computeIfAbsent(
-              fields.appName() + '\u0000' + fields.env() + '\u0000' + fields.instanceName(),
+              instanceKey(fields.appName(), fields.env(), fields.instanceName()),
               key -> nextInstanceId.getAndIncrement());
-      live = new LiveSession(UUID.randomUUID().toString(), instanceId, metadata.token(), channel);
+      live =
+          new LiveSession(
+              UUID.randomUUID().toString(),
+              instanceId,
+              metadata.token(),
+              channel,
+              fields.appName(),
+              fields.env());
       for (Map.Entry<CollectorProtocol.SessionChannel, LiveSession> open :
           new ArrayList<>(openSessions.entrySet())) {
         LiveSession old = open.getValue();
@@ -1190,6 +1206,38 @@ public final class FakeCollector implements AutoCloseable {
   /** Any other session message (instance update, event). */
   public void onSessionMessage(Message message) {
     sessionMessages.add(message);
+  }
+
+  /**
+   * {@code InstanceUpdate.instance_name} on a session stream (11 §4: {@code host:port} once the
+   * connector port is known): the instance takes the new name and keeps its id (12 §4.3 "이름만 갱신"),
+   * so the hello of a reconnect, which carries the new name, gets the same instance id and dedup
+   * window (11 §5 "재기동 연속성"). It is a rename: the old name no longer points to the instance, and a
+   * later hello with it is a new instance. A name another instance of the app already holds is left
+   * with that instance and the update changes nothing (merging is WO-22, ADR-0010 C-158 (2)).
+   * Unknown or ended streams change nothing.
+   */
+  public void onInstanceName(CollectorProtocol.SessionChannel channel, String instanceName) {
+    if (instanceName == null || instanceName.isBlank()) {
+      return;
+    }
+    synchronized (registry) {
+      LiveSession live = openSessions.get(channel);
+      if (live == null) {
+        return;
+      }
+      long instanceId = live.instanceId();
+      String key = instanceKey(live.appName(), live.env(), instanceName.strip());
+      Long holder = instanceIds.get(key);
+      if (holder != null && holder != instanceId) {
+        return;
+      }
+      String prefix = instanceKey(live.appName(), live.env(), "");
+      instanceIds
+          .entrySet()
+          .removeIf(e -> e.getValue() == instanceId && e.getKey().startsWith(prefix));
+      instanceIds.put(key, instanceId);
+    }
   }
 
   /** A {@code Session} stream started. */

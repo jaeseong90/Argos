@@ -1,0 +1,207 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+#
+# Test double of the docker CLI for the container-side script tests (never shipped). It answers the
+# calls of argos-env-init.sh, argos-compose.sh and smoke.sh from environment variables:
+#   FAKE_DOCKER_LOG             file: every call is appended to it as one line (its arguments)
+#   FAKE_DOCKER_DOWN=1          'docker version' and 'docker info' fail (daemon not reachable)
+#   FAKE_DOCKER_VERSION         server version (default 29.2.1)
+#   FAKE_DOCKER_OS              docker info OperatingSystem (default "Docker Desktop")
+#   FAKE_DOCKER_MEM             docker info MemTotal in bytes (default 16 GiB)
+#   FAKE_DOCKER_ROOT            docker info DockerRootDir (default /nonexistent)
+#   FAKE_DOCKER_SECURITY        docker info SecurityOptions as JSON
+#   FAKE_NO_COMPOSE=1           'docker compose' is not installed
+#   FAKE_COMPOSE_VERSION        compose version (default 2.29.7)
+#   FAKE_PS_JSON                file printed by 'docker compose ps --format json'
+#   FAKE_PS_EMPTY=1             'docker compose ps -q' prints no container
+#   FAKE_UP_EXIT                exit code of 'docker compose up' (default 0)
+#   FAKE_IMAGE_MISSING=1        'docker image inspect' fails (not in the local image store)
+#   FAKE_VOLUMES                'docker volume ls -q' output (names separated by spaces) for the
+#                               Compose project FAKE_VOLUME_PROJECT (default argos)
+#   FAKE_HEALTH                 health of every container (default healthy)
+#   FAKE_PROJECT                com.docker.compose.project label of the containers (default argos)
+#   FAKE_IMAGE_CLICKHOUSE, FAKE_IMAGE_POSTGRES, FAKE_IMAGE_SERVER
+#                               .Config.Image of the containers
+#   FAKE_BACK_INTERNAL          .Internal of the network <project>_back (default true)
+#   FAKE_NETS_CLICKHOUSE, FAKE_NETS_POSTGRES, FAKE_NETS_SERVER
+#                               networks of the containers (default: back; the server back and front)
+#   FAKE_SERVER_UID             uid and gid of the server process (default 10001)
+#   FAKE_DATA_WRITABLE=0        the server cannot write /data
+#   FAKE_DATA_STAT              'stat -c "%u:%g %a" /data' in the server (default "10001:10001 700")
+#   FAKE_SETUP_TOKEN_FILE=1     /data/setup-token exists in the server
+#   FAKE_PSQL_INPUT             file: the standard input of 'compose exec -T postgres psql' is saved
+#   FAKE_PSQL_RESULT            what that psql prints (default "42|true|never")
+#   FAKE_SIGNAL                 INT or TERM: 'compose ps --format json' and psql send it to the
+#                               outermost process whose arguments contain FAKE_SIGNAL_TARGET (for
+#                               example ./smoke.sh), then answer as usual
+
+if [ -n "${FAKE_DOCKER_LOG:-}" ]; then
+  printf '%s\n' "$*" >>"$FAKE_DOCKER_LOG"
+fi
+
+send_signal() {
+  [ -n "${FAKE_SIGNAL:-}" ] || return 0
+  target=${FAKE_SIGNAL_TARGET:?FAKE_SIGNAL_TARGET is not set}
+  pid=$$
+  found=
+  while [ "$pid" -gt 1 ]; do
+    pid=$(sed -n 's/^PPid:[[:space:]]*//p' "/proc/$pid/status" 2>/dev/null)
+    [ -n "$pid" ] || break
+    if tr '\0' '\n' <"/proc/$pid/cmdline" 2>/dev/null | grep -qxF -- "$target"; then
+      found=$pid
+    fi
+  done
+  [ -n "$found" ] || { echo "fake docker: no process runs $target" >&2; exit 1; }
+  kill -s "$FAKE_SIGNAL" "$found"
+}
+
+service_of() { # service_of <container id>: the fake ids are fake-<service>
+  printf '%s' "${1#fake-}"
+}
+
+uid=${FAKE_SERVER_UID:-10001}
+project=${FAKE_PROJECT:-argos}
+
+case ${1:-} in
+  version)
+    [ -z "${FAKE_DOCKER_DOWN:-}" ] || exit 1
+    printf '%s\n' "${FAKE_DOCKER_VERSION:-29.2.1}"
+    ;;
+  info)
+    [ -z "${FAKE_DOCKER_DOWN:-}" ] || exit 1
+    case "$*" in
+      *MemTotal*)
+        printf '%s|%s|%s|%s\n' "${FAKE_DOCKER_OS:-Docker Desktop}" "${FAKE_DOCKER_MEM:-17179869184}" \
+          "${FAKE_DOCKER_ROOT:-/nonexistent}" "${FAKE_DOCKER_SECURITY:-[\"name=seccomp,profile=builtin\"]}"
+        ;;
+      *OperatingSystem*) printf '%s\n' "${FAKE_DOCKER_OS:-Docker Desktop}" ;;
+      *) echo "fake docker info" ;;
+    esac
+    ;;
+  image)
+    [ "${2:-}" = inspect ] || { echo "fake docker: unsupported: $*" >&2; exit 1; }
+    [ -z "${FAKE_IMAGE_MISSING:-}" ] || { echo "Error: No such image: ${3:-}" >&2; exit 1; }
+    echo '[{"Id":"sha256:fake"}]'
+    ;;
+  volume)
+    [ "${2:-}" = ls ] || { echo "fake docker: unsupported: $*" >&2; exit 1; }
+    case "$*" in
+      *"label=com.docker.compose.project=${FAKE_VOLUME_PROJECT:-argos}") ;;
+      *) exit 0 ;;
+    esac
+    for v in ${FAKE_VOLUMES:-}; do
+      printf '%s\n' "$v"
+    done
+    ;;
+  network)
+    [ "${2:-}" = inspect ] || { echo "fake docker: unsupported: $*" >&2; exit 1; }
+    eval "name=\${$#}"
+    [ "$name" = "${project}_back" ] || { echo "Error: network $name not found" >&2; exit 1; }
+    printf '%s\n' "${FAKE_BACK_INTERNAL:-true}"
+    ;;
+  inspect)
+    [ "${2:-}" = --format ] || { echo "fake docker: unsupported: $*" >&2; exit 1; }
+    format=$3
+    svc=$(service_of "$4")
+    case $format in
+      *State.Health*) printf '%s\n' "${FAKE_HEALTH:-healthy}" ;;
+      *Config.Image*)
+        case $svc in
+          clickhouse) printf '%s\n' "${FAKE_IMAGE_CLICKHOUSE:-}" ;;
+          postgres) printf '%s\n' "${FAKE_IMAGE_POSTGRES:-}" ;;
+          server) printf '%s\n' "${FAKE_IMAGE_SERVER:-}" ;;
+          *) exit 1 ;;
+        esac
+        ;;
+      *com.docker.compose.project*) printf '%s\n' "$project" ;;
+      *NetworkSettings.Networks*)
+        case $svc in
+          clickhouse) printf '%s\n' "${FAKE_NETS_CLICKHOUSE:-${project}_back }" ;;
+          postgres) printf '%s\n' "${FAKE_NETS_POSTGRES:-${project}_back }" ;;
+          server) printf '%s\n' "${FAKE_NETS_SERVER:-${project}_back ${project}_front }" ;;
+          *) exit 1 ;;
+        esac
+        ;;
+      *) echo "fake docker inspect: unsupported format: $format" >&2; exit 1 ;;
+    esac
+    ;;
+  compose)
+    shift
+    if [ -n "${FAKE_NO_COMPOSE:-}" ]; then
+      echo "docker: 'compose' is not a docker command." >&2
+      exit 1
+    fi
+    while [ $# -gt 0 ]; do
+      case $1 in
+        -f | -p) shift 2 ;;
+        *) break ;;
+      esac
+    done
+    case ${1:-} in
+      version) printf '%s\n' "${FAKE_COMPOSE_VERSION:-2.29.7}" ;;
+      ps)
+        case "$*" in
+          *json*)
+            send_signal
+            cat "${FAKE_PS_JSON:?FAKE_PS_JSON is not set}"
+            ;;
+          *-q*)
+            [ -z "${FAKE_PS_EMPTY:-}" ] || exit 0
+            eval "last=\${$#}"
+            # shellcheck disable=SC2154 # assigned by the eval above (the last argument; POSIX sh has no ${@: -1})
+            case $last in
+              -q) echo fake-all ;;
+              *) printf 'fake-%s\n' "$last" ;;
+            esac
+            ;;
+          *) echo "NAME SERVICE STATUS" ;;
+        esac
+        ;;
+      up) exit "${FAKE_UP_EXIT:-0}" ;;
+      down | logs) ;;
+      exec)
+        shift
+        [ "${1:-}" = -T ] && shift
+        svc=${1:-}
+        shift
+        case "$svc $*" in
+          "postgres psql"*)
+            if [ -n "${FAKE_PSQL_INPUT:-}" ]; then
+              cat >"$FAKE_PSQL_INPUT"
+            else
+              cat >/dev/null
+            fi
+            send_signal
+            printf '%s\n' "${FAKE_PSQL_RESULT:-42|true|never}"
+            ;;
+          "server sh -c "*/proc/1/status*)
+            printf 'Uid:\t%s\t%s\t%s\t%s\nGid:\t%s\t%s\t%s\t%s\n' "$uid" "$uid" "$uid" "$uid" "$uid" "$uid" "$uid" "$uid"
+            ;;
+          "server sh -c "*/data/.argos-smoke*)
+            [ "${FAKE_DATA_WRITABLE:-1}" != 0 ] || { echo "sh: can't create /data/.argos-smoke: Permission denied" >&2; exit 1; }
+            ;;
+          "server stat -c %u:%g %a /data") printf '%s\n' "${FAKE_DATA_STAT:-10001:10001 700}" ;;
+          "server stat -c %a %u:%g /data/setup-token")
+            [ "${FAKE_SETUP_TOKEN_FILE:-0}" = 1 ] || exit 1
+            echo "600 10001:10001"
+            ;;
+          "server test ! -e /data/setup-token") [ "${FAKE_SETUP_TOKEN_FILE:-0}" != 1 ] ;;
+          "server test -f /data/setup-token") [ "${FAKE_SETUP_TOKEN_FILE:-0}" = 1 ] ;;
+          "server wget "*) echo '{"status":"UP"}' ;;
+          *)
+            echo "fake docker compose exec: unsupported: $svc $*" >&2
+            exit 1
+            ;;
+        esac
+        ;;
+      *)
+        echo "fake docker compose: unsupported: $*" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  *)
+    echo "fake docker: unsupported: $*" >&2
+    exit 1
+    ;;
+esac

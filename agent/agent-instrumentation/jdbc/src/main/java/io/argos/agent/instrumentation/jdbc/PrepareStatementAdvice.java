@@ -9,8 +9,9 @@ import net.bytebuddy.asm.Advice;
 /**
  * Inlined into {@code Connection.prepareStatement(String, ..)} and {@code prepareCall(String, ..)}
  * implementations (10 §6.3). Inside a transaction, the outermost call (pool proxy over driver
- * connection: one level per wrapper, {@code CallDepth.JDBC_CONNECTION}) attaches the SQL and
- * database ids to the returned statement through {@link JdbcHelper#prepared}.
+ * connection: one level per wrapper, {@code CallDepth.JDBC_CONNECTION}) gives the returned
+ * statement its {@code SqlState}: the raw SQL by reference (normalized at the first execution) and
+ * the target of the connection ({@link JdbcHelper#prepared}).
  */
 public final class PrepareStatementAdvice {
   private PrepareStatementAdvice() {}
@@ -40,7 +41,7 @@ public final class PrepareStatementAdvice {
     }
     // Depth 0 after leaving: this was the outermost call (the statement the application holds).
     if (CallDepth.exit(CallDepth.JDBC_CONNECTION) == 0 && error == null) {
-      JdbcHelper.prepared(connection, statement, sql);
+      JdbcHelper.prepared(context, connection, statement, sql);
     }
   }
 }

@@ -14,7 +14,47 @@
   },
   "term": {
     "xlog": "XLog",
-    "xlogDescription": "Response time scatter plot"
+    "xlogDescription": "Response time scatter plot",
+    "applicationMap": "Application map",
+    "pointNormal": "Normal",
+    "pointSlow": "Slow",
+    "pointError": "Error",
+    "errorGroup": "Error fingerprint",
+    "mute": "Mute",
+    "alertState": {
+      "ok": "OK",
+      "pending": "Pending",
+      "firing": "Firing",
+      "acked": "Acknowledged",
+      "resolved": "Resolved",
+      "noData": "No data"
+    },
+    "recoveryThreshold": "Recovery threshold",
+    "drop": "Drop",
+    "clockSkew": "Clock skew",
+    "statTile": "Stat tile",
+    "waterfall": "Waterfall",
+    "callTree": "Call tree",
+    "profileStep": "Profile step",
+    "remoteCommand": "Remote command",
+    "envDump": "Environment dump",
+    "rollup": "Rollup",
+    "rollup1m": "Rollup (1 minute)",
+    "rollup1h": "Rollup (1 hour)",
+    "eventMarker": "Deploy marker / automatic event",
+    "deepLink": "Deep link",
+    "collectionQuality": "Collection quality",
+    "activeTransactions": "Active transactions",
+    "apdex": "Apdex",
+    "apdexDescription": "Share of satisfied requests: within the threshold T counts fully, within 4T half",
+    "kind": {
+      "http": "HTTP",
+      "batch": "Batch",
+      "message": "Message",
+      "all": "All kinds"
+    },
+    "dbcStep": "DBC step",
+    "overview": "Overview"
   },
   "route": {
     "loading": "Loading…",
@@ -22,6 +62,239 @@
       "title": "Page not found",
       "description": "The address does not match any page. Check the link or go to the start page.",
       "home": "Go to the start page"
+    }
+  },
+  "component": {
+    "common": {
+      "apply": "Apply",
+      "cancel": "Cancel"
+    },
+    "missing": {
+      "noData": "No data",
+      "notMeasurable": "Not measurable"
+    },
+    "safeLink": {
+      "newTab": "(opens in a new tab)",
+      "blocked": "(link disabled: unsupported address)"
+    },
+    "codeBlock": {
+      "language": {
+        "sql": "SQL",
+        "stack": "Stack trace",
+        "config": "Configuration",
+        "text": "Text"
+      },
+      "copy": "Copy",
+      "copied": "Copied",
+      "copyFailed": "Copy failed",
+      "showAll": "Show all {{count, number}} lines",
+      "collapse": "Show less"
+    },
+    "status": {
+      "up": "UP",
+      "stale": "STALE",
+      "down": "DOWN",
+      "warn": "WARN",
+      "unknown": "Unknown",
+      "tooltip": {
+        "up": "The agent is connected and sends heartbeats.",
+        "stale": "No heartbeat for 60 s or more.",
+        "down": "No heartbeat for 180 s or more, or 5 minutes since the agent shut down.",
+        "warn": "Running with warnings:",
+        "unknown": "The status is not known."
+      },
+      "warnReason": {
+        "clockSkew": "$t(term.clockSkew)",
+        "drops": "$t(term.drop)",
+        "outdatedAgent": "Outdated agent",
+        "moduleDisabled": "Module disabled",
+        "other": "Other"
+      }
+    },
+    "alertState": {
+      "ok": "$t(term.alertState.ok)",
+      "pending": "$t(term.alertState.pending)",
+      "firing": "$t(term.alertState.firing)",
+      "acked": "$t(term.alertState.acked)",
+      "resolved": "$t(term.alertState.resolved)",
+      "noData": "$t(term.alertState.noData)"
+    },
+    "severity": {
+      "warn": "Warning",
+      "critical": "Critical"
+    },
+    "delta": {
+      "noBasis": "No comparison data",
+      "better": "(better)",
+      "worse": "(worse)",
+      "unchanged": "(unchanged)"
+    },
+    "statTile": {
+      "basis": {
+        "prev": "vs previous period",
+        "sevenDays": "vs 7 days ago"
+      }
+    },
+    "empty": {
+      "title": "No data in the selected range.",
+      "description": "Widen the time range or check the filters and the kind.",
+      "widenRange": "Widen range",
+      "clearFilters": "Clear filters",
+      "excluded_one": "{{count, number}} request was excluded in this range",
+      "excluded_other": "{{count, number}} requests were excluded in this range"
+    },
+    "error": {
+      "network": "Cannot reach the server. Check the connection and try again.",
+      "forbidden": "You do not have permission to view this. Ask an administrator for a role.",
+      "notFound": "Not found. It may be outside the retention period, or the link may be wrong.",
+      "rateLimited": "Too many requests. Try again in {{seconds}} s.",
+      "rateLimitedNow": "Too many requests. You can try again now.",
+      "timeout": "The query took too long. Narrow the time range and try again.",
+      "unavailable": "Storage is temporarily unavailable. Try again in a moment.",
+      "starting": "The server is starting. Try again in a moment.",
+      "rangeInvalid": "The time range is not valid. Choose another range.",
+      "limitExceeded": "The result exceeds a limit. Narrow the time range or add filters.",
+      "filterInvalid": "A filter cannot be applied. Check or clear the filters.",
+      "unsupportedSort": "This sort order is not supported. Sort by another column.",
+      "badRequest": "The request was not valid. Check the time range and the filters.",
+      "server": "The server could not complete the request. Try again; if it keeps failing, report the request ID.",
+      "status": "Status {{status}}",
+      "requestId": "Request ID {{id}}",
+      "narrowRange": "Narrow range",
+      "retry": "Retry",
+      "retryIn": "Retry in {{seconds}} s"
+    },
+    "loading": {
+      "label": "Loading",
+      "slow": "Still loading… Narrow the time range to make it faster."
+    },
+    "partial": {
+      "sampling": "Showing {{shown}} of {{total}}",
+      "samplingNoCount": "Showing a sample of the data",
+      "truncated": "Only the first {{shown}} results are shown. Narrow the range or add filters.",
+      "truncatedNoCount": "The result was cut at the limit. Narrow the range or add filters.",
+      "source1m": "1-minute aggregates",
+      "source1h": "1-hour aggregates",
+      "sourceMixed": "Raw data and 1-minute aggregates",
+      "retentionExceeded": "Raw data retention period exceeded: aggregated data is shown.",
+      "profileSampledOut": "Profile not captured (sampling policy)",
+      "profileLost": "Profile lost (dropped)"
+    },
+    "filterChips": {
+      "label": "Applied filters",
+      "remove": "Remove filter {{field}}",
+      "clear": "Clear all",
+      "edit": "Edit filter {{field}}",
+      "operator": "Operator",
+      "value": "Value",
+      "tooLong": "The value is too long. Filter values can have at most 1,024 bytes (UTF-8).",
+      "op": {
+        "contains": "contains",
+        "in": "in"
+      }
+    },
+    "kind": {
+      "label": "Transaction kind",
+      "http": "$t(term.kind.http)",
+      "batch": "$t(term.kind.batch)",
+      "message": "$t(term.kind.message)",
+      "all": "$t(term.kind.all)",
+      "batchUnavailable": "This application has no batch transactions."
+    },
+    "timeRange": {
+      "label": "Time range",
+      "presets": "Presets",
+      "absolute": "Absolute range",
+      "absoluteValue": "{{from}} – {{to}}",
+      "from": "From",
+      "to": "To",
+      "timeZone": "Times are in your browser time zone ({{offset}}).",
+      "invalid": "The start must be before the end.",
+      "prev": "Previous range",
+      "next": "Next range",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "now": "Now",
+      "live": "Live",
+      "liveUnavailable": "This page has no live mode.",
+      "liveResume": "Resume live",
+      "preset": {
+        "m5": "Last 5 minutes",
+        "m15": "Last 15 minutes",
+        "h1": "Last 1 hour",
+        "h6": "Last 6 hours",
+        "h24": "Last 24 hours",
+        "d7": "Last 7 days",
+        "d30": "Last 30 days",
+        "today": "Today",
+        "yesterday": "Yesterday"
+      }
+    },
+    "appSelect": {
+      "label": "Application",
+      "placeholder": "Select an application",
+      "recent": "Recent",
+      "empty": "No matching application"
+    },
+    "envSelect": {
+      "label": "Environment",
+      "placeholder": "Select an environment",
+      "all": "All environments",
+      "recent": "Recent",
+      "environments": "Environments"
+    },
+    "dataTable": {
+      "columns": "Columns",
+      "csv": "CSV",
+      "csvBusy": "Exporting…",
+      "rowCount_one": "{{count, number}} row",
+      "rowCount_other": "{{count, number}} rows",
+      "filterColumn": "Filter {{column}}",
+      "resize": "Resize column {{column}}",
+      "include": "Filter by this value",
+      "exclude": "Exclude this value",
+      "cellMenu": "Value actions",
+      "cellFocus": "Value column: {{column}}. Left and Right arrows change it, Shift+F10 opens the value actions.",
+      "valueTooLongForFilter": "This value is longer than 1,024 bytes (UTF-8) and cannot be used as a filter.",
+      "filter": {
+        "contains": "Contains",
+        "min": "Minimum",
+        "max": "Maximum",
+        "value": "Value",
+        "any": "Any",
+        "clear": "Clear",
+        "rangeInvalid": "Enter numbers with the minimum not above the maximum.",
+        "tooLong": "The text is too long. Filter values can have at most 1,024 bytes (UTF-8)."
+      }
+    },
+    "chart": {
+      "legend": "Legend",
+      "legendHint": "Click to show or hide. Shift+click to show only this series.",
+      "baseline": {
+        "oneDay": "1 day ago",
+        "sevenDays": "7 days ago"
+      },
+      "vsBaseline": "{{diff}} vs {{offset}}",
+      "source1h": "1-hour aggregates",
+      "source1m": "1-minute aggregates",
+      "outages_one": "{{count, number}} collection gap",
+      "outages_other": "{{count, number}} collection gaps",
+      "menu": "Point actions",
+      "openXLog": "Open XLog at this time",
+      "related": "Related list",
+      "moreMarkers": "+{{count}}",
+      "tableCaption": "Data of {{title}}",
+      "time": "Time",
+      "marker": {
+        "deploy": "Deploy",
+        "start": "Start",
+        "stop": "Stop",
+        "config": "Configuration change",
+        "alert": "Alert transition",
+        "state": "Status change",
+        "apdex": "Apdex change",
+        "custom": "Event"
+      }
     }
   }
 }

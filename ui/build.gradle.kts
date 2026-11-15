@@ -3,7 +3,9 @@
 // Gradle wrapper around the pnpm build of the UI (19 §2, §4). Gradle only calls the pnpm scripts
 // defined in ui/package.json; all UI tooling lives there.
 //   :ui:pnpmInstall  pnpm install --frozen-lockfile
-//   :ui:pnpmBuild    pnpm run build        (part of assemble, so of :ui:build)
+//   :ui:pnpmBuild    pnpm run build        (part of assemble, so of :ui:build; ends with the
+//                                          bundle size report, scripts/bundle-size.mjs, which
+//                                          writes build/bundle-size.json)
 //   :ui:test         pnpm run test         (part of check)
 //   :ui:lint         pnpm run lint         (part of check)
 //   :ui:typecheck    pnpm run typecheck    (part of check)
@@ -90,6 +92,20 @@ uiTest {
   inputs
     .file(layout.settingsDirectory.file("docs/licenses/dev-only.md"))
     .withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
+// The committed OpenAPI contract (docs/api/openapi.yaml, written by :server:generateOpenApi) is the
+// source of src/api/generated/schema.ts: scripts/gen-api.test.mjs (check:api) regenerates it and
+// fails on a difference, and the build, lint and type check see the types derived from it. It is
+// outside ui/ and so not in projectInputs; without this input a contract change would leave these
+// tasks UP-TO-DATE.
+listOf(pnpmBuild, uiTest, uiLint, uiTypecheck).forEach { task ->
+  task {
+    inputs
+      .file(layout.settingsDirectory.file("docs/api/openapi.yaml"))
+      .withPropertyName("openApiContract")
+      .withPathSensitivity(PathSensitivity.RELATIVE)
+  }
 }
 
 // tsc, ESLint (typed rules) and Vitest each start a TypeScript program; running them at the same

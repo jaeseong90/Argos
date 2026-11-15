@@ -704,8 +704,13 @@ class TracerImplTest {
     assertThat(tracer.counters().ignored("path")).isEqualTo(2);
     assertThat(tracer.counters().ignored(AgentCounters.OTHER)).isEqualTo(1);
     assertThat(tracer.counters().orphanSteps(StepType.SQL)).isEqualTo(1);
+    // WO-13: an SQL execution outside a transaction also counts sql_outside_tx_total (DSN-10-07).
+    assertThat(tracer.counters().sqlOutsideTx()).isEqualTo(1);
+    tracer.countOrphan(StepType.HTTP);
+    assertThat(tracer.counters().sqlOutsideTx()).isEqualTo(1);
     long id = tracer.dbId("jdbc:mysql://scott:tiger@db:3306/shop?password=x");
-    assertThat(tracer.dictionary().text(id)).isEqualTo("jdbc:mysql://db:3306/shop");
+    // WO-13: the DB_TARGET text of JdbcUrlParser (10 §6.3, 11 "vendor://host:port/db").
+    assertThat(tracer.dictionary().text(id)).isEqualTo("mysql://db:3306/shop");
   }
 
   @Test

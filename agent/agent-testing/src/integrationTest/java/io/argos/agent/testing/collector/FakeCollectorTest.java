@@ -24,6 +24,7 @@ import io.argos.proto.v1.DictionaryEntry;
 import io.argos.proto.v1.DictionaryKind;
 import io.argos.proto.v1.HeartbeatAck;
 import io.argos.proto.v1.InstanceState;
+import io.argos.proto.v1.InstanceUpdate;
 import io.argos.proto.v1.RejectCode;
 import io.argos.proto.v1.RejectReason;
 import io.argos.proto.v1.RejectedKey;
@@ -525,6 +526,46 @@ class FakeCollectorTest {
         .containsExactly(ReceivedBatch.ACKED, ReceivedBatch.SESSION_REQUIRED, ReceivedBatch.ACKED);
     assertThatThrownBy(() -> collector.faults().serverRestart(-1))
         .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  @DisplayName(
+      "InstanceUpdate.instance_name renames the instance and keeps its id (12 §4.3, WO-13 connector"
+          + " host:port): after serverRestart() the hello with the new name gets the same instance"
+          + " id and dedup window (11 §5); the old name and another name are new instances")
+  void instanceNameUpdateKeepsInstanceId() throws Exception {
+    Connected c = connected(collector(FakeCollector.start()));
+    FakeCollector collector = c.collector;
+    assertThat(c.hello.getInstanceId()).isEqualTo(1);
+    assertThat(c.send(9).getStatus()).isEqualTo(AckStatus.ACK_OK);
+    c.session.send(
+        AgentMessage.newBuilder()
+            .setInstanceUpdate(
+                InstanceUpdate.newBuilder()
+                    .setInstanceName("host:8080")
+                    .addConnectors("http-nio-127.0.0.1-8080"))
+            .build());
+    awaitTrue(
+        () ->
+            collector.sessionMessages().stream()
+                .anyMatch(m -> m instanceof AgentMessage a && a.hasInstanceUpdate()),
+        "the InstanceUpdate");
+    collector.faults().serverRestart();
+    assertThat(c.session.awaitEnd().status().isOk()).isFalse();
+    ManagedChannel channel = agent.plaintext(collector);
+    Session renamed = new Session(channel, collector.token());
+    renamed.hello("shop", "test", "host:8080", 3, 1, System.currentTimeMillis());
+    ServerHello hello = renamed.next().getHello();
+    assertThat(hello.getAccepted()).as("%s", hello).isTrue();
+    assertThat(hello.getInstanceId()).as("the instance under its new name").isEqualTo(1);
+    Ack duplicate = ScriptedAgent.send(channel, collector.token(), hello, 3, 9);
+    assertThat(duplicate.getStatus()).isEqualTo(AckStatus.ACK_DUPLICATE);
+    Session oldName = new Session(channel, collector.token());
+    oldName.hello("shop", "test", "host:1", 3, 1, System.currentTimeMillis());
+    assertThat(oldName.next().getHello().getInstanceId()).as("the old name, renamed").isEqualTo(2);
+    Session other = new Session(channel, collector.token());
+    other.hello("shop", "test", "host:8081", 3, 1, System.currentTimeMillis());
+    assertThat(other.next().getHello().getInstanceId()).isEqualTo(3);
   }
 
   /** How a stream ends after {@code SessionClose{reason}} and what a data call gets afterwards. */

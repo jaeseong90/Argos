@@ -1,0 +1,121 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* Design tokens (docs/15 §13). styles/tokens.ts holds the same values for canvas drawing and the
+   Ant Design theme; tokens.test.ts fails when the two files differ and checks WCAG contrast.
+   No font is bundled (C-169): system UI fonts only, nothing loaded from another origin (O-P03).
+   Dark mode is 1.x (DSN-15-15): it will redefine these properties under :root[data-theme='dark']. */
+:root {
+  /* Surfaces and text */
+  --color-bg: #ffffff;
+  --color-surface: #f7f8fa;
+  --color-border: #e2e5ea;
+  /* control boundaries: >= 3:1 on --color-bg and --color-surface (WCAG 1.4.11, ADR-0010 C-192) */
+  --color-border-strong: #878e99;
+  --color-text: #1f2328;
+  --color-text-muted: #5f6774;
+  --color-primary: #2f6feb;
+  --color-primary-text: #1f5bd1;
+  --color-on-primary: #ffffff;
+  --color-focus: #2f6feb;
+  --color-hover: #eef2f7;
+  --color-selected: #e6eefc;
+
+  /* Notices */
+  --color-info-bg: #eef4ff;
+  --color-info-text: #1f4fae;
+  --color-warning-bg: #fff8e1;
+  --color-warning-text: #6f5400;
+  --color-error-bg: #fdecea;
+  --color-error-text: #a61b1b;
+
+  /* Instance status (docs/15 §6.4, C-8): dot = base colour, label = -text colour */
+  --status-up: #1a7f37;
+  --status-up-text: #1a7f37;
+  --status-stale: #b58900;
+  --status-stale-text: #6f5400;
+  --status-down: #c62828;
+  --status-down-text: #c62828;
+  --status-warn: #e65100;
+  --status-warn-text: #a33a00;
+  --status-unknown: #6b7280;
+  --status-unknown-text: #4b5563;
+
+  /* XLog points */
+  --point-normal: #3b82f6;
+  --point-slow: #f59e0b;
+  --point-error: #dc2626;
+
+  /* Alert severity */
+  --sev-warn: #d97706;
+  --sev-warn-text: #9c4a00;
+  --sev-critical: #b91c1c;
+  --sev-critical-text: #b91c1c;
+
+  /* Profile step types */
+  --step-sql: #2563eb;
+  --step-dbc: #0ea5e9;
+  --step-http: #7c3aed;
+  --step-method: #64748b;
+  --step-async: #0d9488;
+  --step-error: #dc2626;
+
+  /* Deltas (always with arrow and sign) */
+  --delta-good: #1a7f37;
+  --delta-bad: #c62828;
+  --delta-neutral: #4b5563;
+
+  /* Collection outages (C-5, D-18) */
+  --outage-hatch: #8b929c;
+  --outage-bg: #f1f2f4;
+
+  /* Chart series (legend always names the series) */
+  --series-1: #2f6feb;
+  --series-2: #c2410c;
+  --series-3: #15803d;
+  --series-4: #7c3aed;
+  --series-5: #0e7490;
+  --series-6: #be185d;
+  --series-7: #a16207;
+  --series-8: #475569;
+  --chart-grid: #eceef1;
+  --chart-axis: #5f6774;
+
+  /* Code highlighting (CodeBlock) */
+  --code-keyword: #7239c9;
+  --code-string: #0a6e31;
+  --code-number: #9a4209;
+  --code-error: #a61b1b;
+  --code-key: #1f4fae;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+
+  /* Type */
+  --font-sans:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans KR', 'Apple SD Gothic Neo',
+    'Malgun Gothic', sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'D2Coding', monospace;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 20px;
+
+  /* Shape */
+  --radius: 6px;
+  --row-h: 28px;
+  --row-h-dense: 20px;
+
+  /* Layout (docs/15 §13) */
+  --layout-topbar-h: 48px;
+  --layout-menu-w: 200px;
+  --layout-menu-w-collapsed: 56px;
+  --layout-content-pad: 16px;
+  --layout-min-w: 1366px;
+  --focus-ring-w: 2px;
+}

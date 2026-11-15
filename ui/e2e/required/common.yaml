@@ -1,0 +1,152 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# docs/05 §2.0 "모든 화면 공통" as data-driven E2E tests (docs/18 §13, DSN-18-10): one entry per item
+# of the WO-30 checklist (docs/04 WO-30 "05 §2.0 체크표"), in checklist order. Entries owned by a later
+# work order run as test.fixme naming it, with the place where the item is proven until then
+# (ADR-0010 C-168 (1): table value click and deep links 4 and 5 are completed on the first data
+# screens). Variables in braces come from the seed manifest (e2e/required/variables.ts).
+screen: common
+title: Common elements of every screen
+source: docs/05 §2.0
+items:
+  - id: 2.0-1
+    title: the time range is one global state, kept when the screen and the application change
+    req: [F-U14, F-U16]
+    route: /apps/{primary_app_id}/dashboard?from={mid15_from}&to={mid15_to}&kind=BATCH
+    assert:
+      - visible: time-range-picker
+      - check: timeRangeKeptAcrossNavigation
+
+  - id: 2.0-1
+    title: chart drag and XLog drag set the same global range
+    req: [F-U16]
+    owner: WO-32
+    coverage: component T-UI-002 (src/state/timeRange.test.ts chartDrag, xlogDrag); screen drag sources come with WO-32 (charts) and WO-33 (XLog)
+
+  - id: 2.0-2
+    title: leaving now turns live off, the live toggle turns it on again with a range ending now
+    req: [F-U16]
+    route: /apps/{primary_app_id}/dashboard?from=now-15m&live=1
+    assert:
+      - visible: live-toggle
+      - check: liveOffWhenLeavingNow
+
+  - id: 2.0-2
+    title: dragging the past while live offers "resume live", which refills the gap through REST
+    req: [F-U16]
+    owner: WO-33
+    coverage: component T-UI-002 (src/state/timeRange.test.ts resume) and the WsManager resync callback tests (src/realtime); the drag sources are WO-32 and WO-33 screens
+
+  - id: 2.0-3
+    title: presets 5m 15m 1h 6h 24h 7d 30d today yesterday, previous next zoom now by buttons and shortcuts
+    req: [F-U16]
+    route: /apps/{primary_app_id}/dashboard?from={mid15_from}&to={mid15_to}
+    assert:
+      - visible: time-range-picker
+      - check: presetsAndShortcuts
+
+  - id: 2.0-4
+    title: table cell value to include or exclude filter, chips, individual removal, filters in the URL
+    req: [F-U16, SEC-64]
+    owner: WO-33
+    coverage: component T-UI-004 (src/components DataTable value menu cell-filter-include and cell-filter-exclude, FilterChipBar) and URL level T-UI-003; deep link 3 below proves chips and removal on the stack
+
+  - id: 2.0-5
+    title: time series point click menu, event markers and collection outage shading
+    req: [F-U16]
+    owner: WO-32
+    coverage: component tests of src/charts TimeSeriesChart (click menu of range/60 at least 1 minute, markers, outages shading C-5, alternative table)
+
+  - id: 2.0-6
+    title: the kind filter is global with requests as default, the environment filter is global
+    req: [F-U16]
+    route: /apps/{primary_app_id}/dashboard?from={mid15_from}&to={mid15_to}
+    assert:
+      - visible: kind-filter
+      - visible: env-select
+      - check: kindAndEnvGlobal
+
+  - id: 2.0-7
+    title: deep link 1, an anonymous visit returns to the same URL after the login
+    req: [F-U14, SEC-42]
+    role: anonymous
+    route: /apps/{primary_app_id}/xlog?from={mid15_from}&to={mid15_to}
+    assert:
+      - visible: login-form
+      - check: loginReturnsToDeepLink
+
+  - id: 2.0-7
+    title: deep link 2, an absolute range is fixed and not live
+    req: [F-U14]
+    route: /apps/{primary_app_id}/dashboard?from={mid15_from}&to={mid15_to}
+    assert:
+      - visible: time-range-picker
+      - urlParam:
+          name: live
+          equals: null
+      - check: fixedRangeNotLive
+
+  - id: 2.0-7
+    title: deep link 3, the target filters show as chips and each one can be removed
+    req: [F-U14, F-U16]
+    route: /apps/{primary_app_id}/xlog?from={mid15_from}&to={mid15_to}&f.instance={primary_instance_id}&f.status=!200
+    assert:
+      - visible: filter-chip-bar
+      - check: filtersAreChips
+
+  - id: 2.0-7
+    title: deep link 4, the alert event and its state transitions are chart markers
+    req: [F-U14]
+    owner: WO-33
+    coverage: URL level T-UI-003 (alert key, live off) and the TimeSeriesChart marker component tests; alerts exist from WO-25
+
+  - id: 2.0-7
+    title: deep link 5, the same data within the retention a week later
+    req: [F-U14]
+    owner: WO-33
+    coverage: URL level T-UI-003 (absolute ranges stay absolute); the data comparison needs the XLog screen
+
+  - id: 2.0-8
+    title: an error answer of the server names the next action and the request id
+    req: [F-U16]
+    # A transaction id above 2^64 - 1: the real server answers 400 invalid_request (WO-23 Ids).
+    route: /tx/99999999999999999999
+    assert:
+      - check: statesNextAction
+
+  - id: 2.0-8
+    title: an unknown application is an empty state with the way back to the overview
+    req: [F-U16]
+    route: /apps/999999/dashboard
+    assert:
+      - visible: app-not-found
+      - check: emptyStateNextAction
+
+  - id: 2.0-8
+    title: the empty state links the excluded transactions ("excluded N")
+    req: [F-U16]
+    owner: WO-33
+    coverage: component tests of src/components EmptyState (empty-state-excluded, D-19)
+
+  - id: 2.0-9
+    title: timestamps in the browser time zone, absolute times name the UTC offset
+    req: [F-U16]
+    timezone: Asia/Seoul
+    route: /apps/{primary_app_id}/dashboard?from={mid15_from}&to={mid15_to}
+    assert:
+      - visible: time-range-preset
+      - check: browserTimeZone
+
+  - id: 2.0-10
+    title: strings from a link render as text only, every XSS seed payload, nothing runs
+    req: [SEC-60, SEC-62, SEC-64]
+    route: /apps/{primary_app_id}/xlog?{xss_filter_query}
+    assert:
+      - visible: filter-chip-bar
+      - check: collectedTextOnly
+
+  - id: 2.0-10
+    title: collected data of every screen renders as text nodes only
+    req: [SEC-60, SEC-62]
+    owner: WO-46
+    coverage: component T-UI-005 (SafeText, SafeLink, CodeBlock with the C-45 payloads) and the page hook of every E2E test (window.__xss, dialogs); the walk over all screens is WO-46

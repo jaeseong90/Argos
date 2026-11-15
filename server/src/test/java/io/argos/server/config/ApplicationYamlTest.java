@@ -85,7 +85,6 @@ class ApplicationYamlTest {
     env.put("ARGOS_RETENTION_RAW_STAT_DAYS", "21");
     env.put("ARGOS_TZ_DISPLAY", "UTC");
     env.put("ARGOS_IP_MODE", "full");
-    env.put("ARGOS_GRPC_BIND", "127.0.0.1");
     env.put("ARGOS_CH_URL", "http://ch-short:8123");
     env.put("ARGOS_CLICKHOUSE_URL", "http://ch-canonical:8123");
     ConfigurableEnvironment environment = environment(true, env);
@@ -97,7 +96,6 @@ class ApplicationYamlTest {
     assertThat(p.retention().stat()).isEqualTo(Duration.ofDays(21));
     assertThat(p.server().timezone().getId()).isEqualTo("UTC");
     assertThat(p.privacy().defaultIpMode()).isEqualTo(ArgosProperties.Privacy.IpMode.FULL);
-    assertThat(p.collector().bind()).isEqualTo("127.0.0.1");
     assertThat(p.clickhouse().url()).isEqualTo("http://ch-canonical:8123");
     // Unset short names leave Spring's defaults: root level INFO, all interfaces.
     assertThat(environment.getProperty("logging.level.root")).isNull();
@@ -105,12 +103,26 @@ class ApplicationYamlTest {
   }
 
   @Test
-  @DisplayName("ARGOS_LOG_LEVEL and ARGOS_HTTP_BIND map onto Spring keys")
+  @DisplayName("ARGOS_LOG_LEVEL maps onto a Spring key")
   void springAliases() {
-    ConfigurableEnvironment environment =
-        environment(true, Map.of("ARGOS_LOG_LEVEL", "DEBUG", "ARGOS_HTTP_BIND", "127.0.0.1"));
+    ConfigurableEnvironment environment = environment(true, Map.of("ARGOS_LOG_LEVEL", "DEBUG"));
     assertThat(environment.getProperty("logging.level.root")).isEqualTo("DEBUG");
-    assertThat(environment.getProperty("server.address")).isEqualTo("127.0.0.1");
+  }
+
+  @Test
+  @DisplayName(
+      "C-113 ARGOS_HTTP_BIND and ARGOS_GRPC_BIND are Compose publish addresses: the server ignores"
+          + " them and listens on every interface")
+  void bindVariablesAreNotServerSettings() {
+    ConfigurableEnvironment environment =
+        environment(true, Map.of("ARGOS_HTTP_BIND", "127.0.0.1", "ARGOS_GRPC_BIND", "127.0.0.1"));
+    ArgosProperties p = bind(environment);
+    assertThat(environment.getProperty("server.address")).isNull();
+    assertThat(p.collector().bind()).isEqualTo("0.0.0.0");
+    assertThat(EnvironmentAliases.ALIASES).doesNotContainKeys("ARGOS_HTTP_BIND", "ARGOS_GRPC_BIND");
+    // Documented installation variables: never reported as unknown settings.
+    assertThat(EnvironmentAliases.isDocumented("ARGOS_HTTP_BIND")).isTrue();
+    assertThat(EnvironmentAliases.isDocumented("ARGOS_GRPC_BIND")).isTrue();
   }
 
   @Test

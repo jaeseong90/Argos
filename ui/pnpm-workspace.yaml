@@ -23,3 +23,8 @@ peerDependencyRules:
     # Its rules used here (react/no-danger etc.) are verified on eslint 10 by
     # eslint-rules/eslint-config.test.mjs, which fails if the rules stop reporting.
     eslint-plugin-react>eslint: '10'
+    # openapi-typescript 7.13.0 is the latest release and still declares typescript ^5.x. gen:api
+    # (scripts/gen-api.mjs) uses only its schema transform and the TypeScript factory/printer,
+    # which TypeScript 6 keeps; scripts/gen-api.test.mjs regenerates src/api/generated/schema.ts
+    # and fails if the generation breaks or its output changes.
+    openapi-typescript>typescript: '6'

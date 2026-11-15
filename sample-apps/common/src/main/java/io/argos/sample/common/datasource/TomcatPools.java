@@ -10,14 +10,21 @@ final class TomcatPools {
 
   private TomcatPools() {}
 
-  static SampleDataSources.PoolHandle create(SampleConfig config) {
+  /**
+   * A pool of {@code maxSize} connections, named {@code name} (null: Tomcat's own "Tomcat
+   * Connection Pool[n-hash]").
+   */
+  static SampleDataSources.PoolHandle create(SampleConfig config, String name, int maxSize) {
     PoolProperties properties = new PoolProperties();
-    properties.setUrl(config.dbUrl());
-    properties.setDriverClassName(config.db().driverClass());
+    properties.setUrl(config.poolUrl());
+    properties.setDriverClassName(config.poolDriverClass());
     properties.setUsername(config.dbUser());
     properties.setPassword(config.dbPassword());
-    properties.setMaxActive(config.poolMaxSize());
-    properties.setMaxIdle(config.poolMaxSize());
+    properties.setMaxActive(maxSize);
+    properties.setMaxIdle(maxSize);
+    if (name != null) {
+      properties.setName(name);
+    }
     properties.setInitialSize(0);
     properties.setMinIdle(0);
     properties.setMaxWait(30_000);

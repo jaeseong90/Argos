@@ -1,0 +1,173 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* EmptyState, ErrorState, LoadingState, PartialBanner (docs/15 §6.7). */
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-4);
+  color: var(--color-text);
+  text-align: center;
+}
+
+.state--compact {
+  padding: var(--space-3);
+}
+
+.state__icon {
+  color: var(--color-text-muted);
+  font-size: 28px;
+  line-height: 1;
+}
+
+.state--error .state__icon {
+  color: var(--status-down);
+}
+
+.state__title {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.state__description,
+.state__meta,
+.state__hint {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.state__meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-3);
+  font-size: var(--fs-sm);
+}
+
+.state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.state__button {
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.state__button:hover:not(:disabled) {
+  background: var(--color-hover);
+}
+
+.state__button--primary {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.state__button--primary:hover:not(:disabled) {
+  background: var(--color-primary-text);
+}
+
+.state__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.state__link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-primary-text);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.state--loading {
+  align-items: stretch;
+  padding: var(--space-3) 0;
+}
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skeleton__bar,
+.skeleton__tile,
+.skeleton--chart,
+.skeleton--block {
+  display: block;
+  border-radius: var(--radius);
+  background: linear-gradient(
+    90deg,
+    var(--color-surface) 0%,
+    var(--color-hover) 50%,
+    var(--color-surface) 100%
+  );
+  background-size: 200% 100%;
+  animation: argos-skeleton 1.4s ease-in-out infinite;
+}
+
+.skeleton__bar {
+  height: var(--row-h);
+}
+
+.skeleton--chart {
+  height: 200px;
+}
+
+.skeleton--block {
+  height: 96px;
+}
+
+.skeleton--tiles {
+  flex-direction: row;
+}
+
+.skeleton__tile {
+  flex: 1;
+  height: 88px;
+}
+
+@keyframes argos-skeleton {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: -100% 0;
+  }
+}
+
+.partial-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-info-bg);
+  color: var(--color-info-text);
+}
+
+.partial-banner__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

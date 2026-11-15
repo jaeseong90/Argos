@@ -8,7 +8,6 @@ import io.argos.agent.bootstrap.Kind;
 import io.argos.agent.bootstrap.TraceContext;
 import io.argos.agent.core.config.AgentConfig;
 import io.argos.agent.core.config.HttpSettings;
-import io.argos.agent.core.sql.SqlNormalizer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -17,7 +16,10 @@ import java.util.Map;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-/** dict(SQL, raw) normalizes before hashing; the raw-text cache stays bounded. */
+/**
+ * dict(SQL, raw) normalizes before hashing. The raw-text cache moved to {@code core.sql.SqlIds}
+ * with WO-13; its bounds are tested in {@code io.argos.agent.core.sql.SqlIdsTest}.
+ */
 @Tag("req:SEC-35")
 class SqlIdsTest {
   @Test
@@ -46,36 +48,6 @@ class SqlIdsTest {
     int seq = tracer.stepStart(ctx, 1, a, 0L, System.nanoTime());
     assertThat(seq).isZero();
     tracer.end(ctx, 200, null, null, null, System.nanoTime());
-  }
-
-  @Test
-  void cacheIsBounded() {
-    SqlIds ids = new SqlIds(new Dictionary(), SqlNormalizer.defaults());
-    for (int i = 0; i < SqlIds.MAX_ENTRIES + 500; i++) {
-      ids.id("select " + i + " from t where c" + i + " = 1");
-    }
-    assertThat(ids.cachedEntries()).isLessThanOrEqualTo(SqlIds.MAX_ENTRIES);
-    assertThat(ids.clears()).isGreaterThanOrEqualTo(1);
-    // Long statements are normalized but not cached.
-    StringBuilder longSql = new StringBuilder("select ");
-    for (int i = 0; i < 2000; i++) {
-      longSql.append("c").append(i).append(", ");
-    }
-    longSql.append("1 from t");
-    int before = ids.cachedEntries();
-    long id = ids.id(longSql.toString());
-    assertThat(id).isNotZero();
-    assertThat(ids.cachedEntries()).isEqualTo(before);
-    assertThat(ids.id(null)).isZero();
-  }
-
-  @Test
-  void cachedAndUncachedIdsAgree() {
-    SqlIds ids = new SqlIds(new Dictionary(), SqlNormalizer.defaults());
-    long first = ids.id("select 1");
-    long second = ids.id("select 1");
-    long other = ids.id("select 2");
-    assertThat(first).isEqualTo(second).isEqualTo(other);
   }
 
   @Test

@@ -169,7 +169,7 @@ public class AdminUsersController {
     return out;
   }
 
-  private static UserAdministration.Kiosk kiosk(AuthDtos.KioskSession value) {
+  private static UserAdministration.Kiosk kiosk(AuthDtos.KioskSessionPatch value) {
     if (value == null) {
       return null;
     }

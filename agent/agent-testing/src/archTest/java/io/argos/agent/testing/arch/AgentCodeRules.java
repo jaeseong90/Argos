@@ -668,6 +668,27 @@ final class AgentCodeRules {
       AgentLayout layout, JavaClass item, String transformer) {
     List<String> violations = new ArrayList<>();
     ClassNode node = AdviceBytecode.read(item);
+    AdviceUse use = adviceUse(layout, item);
+    for (String advice : use.constructors()) {
+      // ByteBuddy rejects exception handling in a constructor ("Cannot catch exception during
+      // constructor call"): the transformation would fail at load time (WO-13).
+      if (hasOnThrowableExit(layout, advice)) {
+        violations.add(
+            item.getName()
+                + ": constructor advice "
+                + advice
+                + " declares onThrowable on @Advice.OnMethodExit (ByteBuddy cannot catch inside a"
+                + " constructor)");
+      }
+      if (use.methods().contains(advice)) {
+        violations.add(
+            item.getName()
+                + ": advice "
+                + advice
+                + " is applied to constructors and to methods (constructor exit advice has no"
+                + " onThrowable, method exit advice needs it)");
+      }
+    }
     for (MethodNode method : node.methods) {
       Flow flow = new Flow(method);
       int line = -1;
@@ -696,6 +717,87 @@ final class AgentCodeRules {
       }
     }
     return violations;
+  }
+
+  /**
+   * The advice classes {@code item} applies ({@code TypeTransformer.applyAdvice} calls whose advice
+   * is a class literal or constant): those applied to constructor matchers and those applied to
+   * other matchers.
+   */
+  record AdviceUse(Set<String> constructors, Set<String> methods) {}
+
+  static AdviceUse adviceUse(AgentLayout layout, JavaClass item) {
+    String transformer = layout.instrumentationApi().replace('.', '/') + "/TypeTransformer";
+    Set<String> constructors = new LinkedHashSet<>();
+    Set<String> methods = new LinkedHashSet<>();
+    ClassNode node = AdviceBytecode.read(item);
+    for (MethodNode method : node.methods) {
+      Flow flow = new Flow(method);
+      for (AbstractInsnNode insn : method.instructions) {
+        if (!(insn instanceof MethodInsnNode call)
+            || !call.owner.equals(transformer)
+            || !call.name.equals("applyAdvice")) {
+          continue;
+        }
+        boolean constructor = matchesConstructors(node, flow, flow.valueOf(call, 1), 0);
+        for (AbstractInsnNode origin : flow.valueOf(call, 0)) {
+          adviceClassName(flow, origin)
+              .ifPresent(name -> (constructor ? constructors : methods).add(name));
+        }
+      }
+    }
+    return new AdviceUse(constructors, methods);
+  }
+
+  /**
+   * The advice classes applied to constructors only by the instrumentation classes of {@code
+   * advice}'s package (T-AG-002b: their exit advice has no {@code onThrowable}, A-7).
+   */
+  static Set<String> constructorOnlyAdvice(AgentLayout layout, JavaClass advice) {
+    Set<String> constructors = new LinkedHashSet<>();
+    Set<String> methods = new LinkedHashSet<>();
+    for (JavaClass sibling : advice.getPackage().getClasses()) {
+      if (!layout.moduleOf(sibling.getName()).isPresent()) {
+        continue;
+      }
+      AdviceUse use = adviceUse(layout, sibling);
+      constructors.addAll(use.constructors());
+      methods.addAll(use.methods());
+    }
+    constructors.removeAll(methods);
+    return constructors;
+  }
+
+  /** True when an {@code @Advice.OnMethodExit} of {@code className} sets {@code onThrowable}. */
+  static boolean hasOnThrowableExit(AgentLayout layout, String className) {
+    Optional<Class<?>> type = load(className.replace('.', '/'));
+    ClassNode node = type.map(AgentCodeRules::readClass).orElse(null);
+    if (node == null) {
+      return false;
+    }
+    for (MethodNode method : node.methods) {
+      List<AnnotationNode> annotations = new ArrayList<>();
+      if (method.visibleAnnotations != null) {
+        annotations.addAll(method.visibleAnnotations);
+      }
+      if (method.invisibleAnnotations != null) {
+        annotations.addAll(method.invisibleAnnotations);
+      }
+      for (AnnotationNode annotation : annotations) {
+        if (!layout
+                .adviceMemberName(Type.getType(annotation.desc).getClassName())
+                .equals(Optional.of(AgentPredicates.ON_METHOD_EXIT))
+            || annotation.values == null) {
+          continue;
+        }
+        for (int i = 0; i + 1 < annotation.values.size(); i += 2) {
+          if ("onThrowable".equals(annotation.values.get(i))) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   /** True when one of {@code origins} builds a constructor matcher (followed through calls). */

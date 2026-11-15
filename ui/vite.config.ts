@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 
 import react from '@vitejs/plugin-react';
+import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
 
 // SemVer 2.0.0 (DSN-19-10: one version for agent, server and UI).
@@ -52,8 +54,74 @@ const PREVIEW_CSP = [
   "frame-ancestors 'none'",
 ].join('; ');
 
+/** Chunk graph of the last build: build/, outside dist/ (dist/ ships in the server jar). */
+const BUNDLE_GRAPH_FILE = 'build/bundle-graph.json';
+
+/**
+ * Records the chunk graph of a production build for the bundle size report
+ * (scripts/bundle-size.mjs, docs/15 §14): per chunk its file, entry kind, static and dynamic
+ * imports, the CSS Vite loads with it and the project source modules it contains (to find the
+ * chunks of the initial path). Written after the bundle is on disk; never part of dist/.
+ */
+function bundleGraph(): Plugin {
+  let root = process.cwd();
+  /** A module id as a project path (`src/routes/Shell.tsx`), or null for dependencies. */
+  const projectPath = (id: string): string | null => {
+    if (id.startsWith('\0') || !isAbsolute(id)) {
+      return null;
+    }
+    const path = relative(root, id.replace(/[?#].*$/, ''))
+      .split(sep)
+      .join('/');
+    return path.startsWith('..') || path.includes('node_modules/') ? null : path;
+  };
+  return {
+    name: 'argos:bundle-graph',
+    apply: 'build',
+    enforce: 'post',
+    configResolved(config) {
+      root = config.root;
+    },
+    writeBundle(options, bundle) {
+      const chunks = [];
+      const assets = [];
+      for (const output of Object.values(bundle)) {
+        if (output.type === 'chunk') {
+          chunks.push({
+            fileName: output.fileName,
+            name: output.name,
+            isEntry: output.isEntry,
+            isDynamicEntry: output.isDynamicEntry,
+            facadeModule:
+              output.facadeModuleId === null ? null : projectPath(output.facadeModuleId),
+            modules: output.moduleIds
+              .map(projectPath)
+              .filter((path): path is string => path !== null)
+              .sort(),
+            imports: [...output.imports].sort(),
+            dynamicImports: [...output.dynamicImports].sort(),
+            importedCss: [...(output.viteMetadata?.importedCss ?? [])].sort(),
+          });
+        } else {
+          assets.push({ fileName: output.fileName });
+        }
+      }
+      const outDir = options.dir ?? resolve(root, 'dist');
+      const graph = {
+        version: 1,
+        outDir: relative(root, outDir).split(sep).join('/'),
+        chunks: chunks.sort((a, b) => a.fileName.localeCompare(b.fileName)),
+        assets: assets.sort((a, b) => a.fileName.localeCompare(b.fileName)),
+      };
+      const target = resolve(root, BUNDLE_GRAPH_FILE);
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, `${JSON.stringify(graph, null, 2)}\n`);
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), bundleGraph()],
   define: {
     __ARGOS_VERSION__: JSON.stringify(packageVersion()),
   },

@@ -158,7 +158,7 @@
 | remote_ip | 개인정보 가능 | 설치 시 선택 강제 | `full`/`masked`(권장 기본)/`off`, trusted-proxies가 있을 때만 XFF(마지막 32줄, 오른쪽 2,048자를 항목 경계로 절단, 오른쪽 32홉까지) | xlog 30일 | 삭제 API(IP 기준) |
 | user_id | 개인정보 가능 | 수집 안 함 | `off`(기본)/`plain`/`hashed`(base64url(HMAC-SHA256(앱 솔트, 정규화 id)) 앞 16자, 솔트가 없으면 보내지 않음, ADR-0010 C-163). 정규화: ISO 제어문자 제거, 128자 절단, trim, UTF-8 | xlog 30일 | 삭제 API(user_id 기준) |
 | SQL 정규화문 | 내부 | 수집 | 리터럴 → `?`, 실패 시 원문 미전송(`<unparsed>`) | 사전 | 사전 관리자 삭제 |
-| SQL 바인드 파라미터 | 개인정보 가능 | 타입·길이만 | `masked`(기본)/`partial`(화이트리스트+정규식)/`full`(관리자 열람·감사) | profile 7일 | 삭제 API |
+| SQL 바인드 파라미터 | 개인정보 가능 | 수집 안 함(`masked` 기본: 값·타입·길이 모두 보내지 않음, ADR-0010 C-181) | `masked`(기본)/`partial`(`capture.sql-parameters.whitelist-columns` ≤256개의 `<column> = ?` 위치만 Masker 뒤 값, 나머지 위치는 `[String(11)]`처럼 타입·길이)/`full`(전 값 Masker 뒤, 서버는 WO-71 전까지 저장 안 함 C-148, 관리자 열람·감사). detail 형식 `1='<email>', 2=[String(13)], 3=42, 4=NULL`, JDK 값 타입만 렌더(byte[]는 길이, 그 밖의 객체는 타입명, toString 금지, LOB·스트림 안 읽음), 값 256자·위치 64·실행당 4,096자·배치는 첫 세트, 실행 뒤 폐기 | profile 7일 | 삭제 API |
 | 예외 메시지 | 개인정보 가능 | 수집(마스킹 후) | 1KB 상한, 정규식 마스킹(이메일·전화·주민번호·카드(Luhn 검사)·IP), 사용자 패턴 평가가 실패하면 메시지 전체 `<masked>`(fail closed) | xlog·profile | 삭제 API |
 | 스택 트레이스 | 내부 | 수집 | 프레임 사전 id, 깊이 30/64 | profile 7일, 대표 스택은 error_groups | - |
 | 스레드 덤프 본문 | 개인정보 가능(비밀값 가능) | 명령 시만 | 서버 마스터 키 봉투 암호화 저장, 운영자 이상 열람(감사) | 30일 | 자동 만료 |
@@ -198,10 +198,16 @@
 | 레이트 리밋 버킷 키(IP·세션 id·사용자 id) | 내부 | 요청 때 | 메모리만, 상한 있음 | 전체 리필 시간의 2배 | 자동 폐기 |
 | CSP 위반 리포트 | 내부 | 브라우저 보고 때 | 저장 안 함, 로그에 directive·차단 origin·disposition만 | 로그 보존 | - |
 | DB 커넥션 풀 이름(`DictionaryKind.POOL` 사전, DBC step `name_id`) | 내부 | 수집(WO-13부터) | 사전 상한 | 사전 90일 미참조 정리 | 사전 관리자 삭제 |
+| DB 대상(`DictionaryKind.DB_TARGET`, SQL·COMMIT·ROLLBACK·DBC step `target_id`, WO-13) | 내부 | 수집 | `<vendor>://<host>:<port>/<db>`, 계정·비밀번호·매개변수 제거, 첫 호스트만, 안전하게 못 읽으면 벤더만. H2는 `h2:mem:<name>`, 파일 DB는 마지막 경로 조각 | 사전 90일 미참조 정리(상한 C-120 비례) | 사전 관리자 삭제 |
+| Tomcat 커넥터 이름(`InstanceUpdate.connectors`, 메트릭 라벨 `connector`, WO-13) | 내부 | 수집 | 프로토콜·포트 꼴 운영 식별자 | 인스턴스 메타데이터와 같음 | 인스턴스 삭제 |
+| 인스턴스 이름 기본값 `host:port`(`app.instance` 미설정 시 rename, WO-13) | 내부 | 수집 | 호스트명·포트만 | 인스턴스 메타데이터와 같음 | 인스턴스 삭제 |
+| SQL step 부가 필드(SQL_TEXT truncated 플래그, `TransactionRecord.dbc_wait_ms`, ProfileStep `batch_size`·`fetch_us`·`rows`, WO-13) | 내부 | 수집 | 수치·플래그만 | xlog 30일, profile 7일 | 삭제 API(tx 범위) |
 | SQL·외부 호출 전수 통계(`SqlStat`·`ExtStat`: count·error·sum·max·`buckets[15]`·`sum_exec/fetch`) | 내부 | 수집(WO-16부터) | - | `sql_stat_raw`·`ext_stat_raw` 원본 14일, 롤업 정책 | - |
 | 평문 접속 선언(`AgentHello.plaintext`) | 내부 | 수집 | - | 인스턴스 보관 정책 | 인스턴스 삭제 |
 | 프로파일 트랜잭션 종류(`TransactionProfile.kind`, C-138) | 내부 | 수집 | - | profile 7일 | 삭제 API |
 | 요청 ID(`request_id`, `capture.request-id-header`, C-124) | 내부(헤더 값에 사용자 값이 들어가면 개인정보 가능) | 수집 안 함(설정한 경우만) | 헤더 1개, 값 128B 절단, 원격 설정 불가(10 §12 기본 불허) | xlog 30일 | 삭제 API(tx 범위) |
+| ClickHouse `system.query_log` 조회 문(바인딩된 검색 값 `user_id`·`request_id`·`trace_id` 포함, WO-23) | 개인정보 가능 | 기록(ClickHouse 기본 동작) | 조회 API로 노출하지 않는다. `argos_reader`와 운영자의 DB 직접 접근만. hashed 모드의 user_id는 해시 값만 남는다 | 7일(config.d TTL) | TTL 만료. 개인정보 삭제 요청 안내에 '조회 기록은 7일 안에 자연 삭제'를 적는다(WO-28 문서) |
+| 브라우저 localStorage UI 선호 키 `argos.ui.{live,sidebar,lang,refreshAt,recentApps,cols}`(WO-30) | 내부(UI 선호, 개인정보·비밀값 아님) | 수집 안 함(서버로 보내지 않음) | `refreshAt`은 탭 간 single-flight용 epoch ms(토큰 아님), `recentApps`는 앱 id ≤ 5, `cols`는 표 50·열 64 상한 | 브라우저 | 브라우저 저장소 삭제 |
 
 ## 6. 데이터 흐름
 

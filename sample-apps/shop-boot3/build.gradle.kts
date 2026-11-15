@@ -42,6 +42,25 @@ sampleApp {
           " -> HikariDataSource -> org.h2.Driver",
       )
     }
+    // SAMPLE_DRIVER_WRAPPER (ADR-0004 C-40): the delegating driver wrapper alone, and as the fifth
+    // level under the routing chain (the D-24 nesting fixture of T-AG-031).
+    variant("driver-wrapper") {
+      env("SAMPLE_DRIVER_WRAPPER", "true")
+      expectRuntime("driverWrapper", "true")
+      expectRuntime("dataSourceChain", "HikariDataSource -> WrappingDriver (java.sql.Driver wrapper) -> org.h2.Driver")
+    }
+    variant("routing-wrapper") {
+      env("SAMPLE_ROUTING_DS", "true")
+      env("SAMPLE_DRIVER_WRAPPER", "true")
+      env("SAMPLE_POOL", "dbcp2")
+      expectRuntime("routingDataSource", "true")
+      expectRuntime("driverWrapper", "true")
+      expectRuntime(
+        "dataSourceChain",
+        "SampleRoutingDataSource (AbstractRoutingDataSource) -> TransactionAwareDataSourceProxy" +
+          " -> BasicDataSource -> WrappingDriver (java.sql.Driver wrapper) -> org.h2.Driver",
+      )
+    }
     variant("pool-tomcat") {
       env("SAMPLE_POOL", "tomcat")
       expectRuntime("pool", "tomcat")
@@ -49,6 +68,11 @@ sampleApp {
     variant("pool-dbcp2") {
       env("SAMPLE_POOL", "dbcp2")
       expectRuntime("pool", "dbcp2")
+    }
+    // SAMPLE_SECOND_POOL (WO-13 pool registry fixture): a second, restarted pool next to the app's.
+    variant("second-pool") {
+      env("SAMPLE_SECOND_POOL", "true")
+      expectRuntime("secondPool", "true")
     }
     // Thread-name seed (custom executor) and the secret-looking environment seeds (18 §4.3, §4.4).
     variant("seeds") {
@@ -82,4 +106,19 @@ dependencies {
   runtimeOnly(libs.sample.h2)
   runtimeOnly(libs.sample.postgresql)
   runtimeOnly(libs.sample.mysql)
+}
+
+// JDBC matrix drivers (WO-13, 18 §6.3: SAMPLE_DB=mariadb, mssql, oracle; the agent-testing jdbc
+// suite runs them against containers). On this app's own runtime class path only (boot jar, smoke,
+// agent tests): runtimeOnly would also reach shop-heavy and shop-war-jakarta, which build on this
+// project. MariaDB Connector/J and ojdbc11 are dev-only rows (docs/licenses/dev-only.md).
+val jdbcMatrixDrivers = configurations.dependencyScope("jdbcMatrixDrivers")
+
+configurations.runtimeClasspath { extendsFrom(jdbcMatrixDrivers.get()) }
+
+dependencies {
+  jdbcMatrixDrivers(platform(libs.sample.boot3.bom))
+  jdbcMatrixDrivers(libs.sample.mariadb)
+  jdbcMatrixDrivers(libs.sample.mssql)
+  jdbcMatrixDrivers(libs.sample.ojdbc11)
 }

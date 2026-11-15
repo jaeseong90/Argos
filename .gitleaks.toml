@@ -32,3 +32,11 @@ regexes = ['''^argos_[a-z0-9_]+$''']
 [[allowlists]]
 description = "generated license reports (build/reports/argos-licenses), module coordinates"
 paths = ['''(^|/)build/reports/argos-licenses/[^/]+\.properties$''']
+
+# E2E stack run state (ADR-0010 C-187): ui/e2e/stack/secrets.ts writes per-run throwaway secrets
+# (passwords, tokens, keys; generated per run, deleted at teardown) under the git-ignored
+# ui/e2e/.stack/<run>/ while a run is active; "run-gitleaks.sh dir" reads ignored files too. Path
+# allowlist for that directory only, no global regex or stopword allowlist.
+[[allowlists]]
+description = "E2E stack run state (per-run throwaway secrets, git-ignored), ADR-0010 C-187"
+paths = ['''(^|/)ui/e2e/\.stack/''']

@@ -88,6 +88,10 @@ try (RunningApp app =
 - Stop: `close()`/`gracefulStop()` send SIGTERM on Linux and macOS (shutdown hooks and the agent's
   shutdown flush run). On Windows both terminate without shutdown hooks, so tests wait for what the
   agent writes periodically (JSONL about every 100 ms, transform list and log about every 2 s).
+  On Windows `close()` also waits (at most 10 s) until no other process holds a file of the run
+  directory open: right after the app exits, a virus scanner can keep its jar and logs open for a
+  moment and the `@TempDir` cleanup would fail although the test passed (`ProcessAppReleaseTest`,
+  a slow `integrationTest` since it holds a file for about a second, ADR-0010 C-186 (4)).
 - Main-class apps (`SampleApp.mainClass`, the trivial app) run with `runToExit(timeout)` and give an
   `ExitedApp` (exit code, outputs, every temp directory event and leftover, agent-like entries in
   the harness's own temp directory with `watchSystemTemp(true)`). `ExitedApp.agentLog()` fails
@@ -162,6 +166,10 @@ try (RunningApp app =
   objects (a connection's database id, per-class-loader state), so it is not 0 after GC and is
   checked for growth instead (`LoadLeakE2eTest`). Narrowing `weakmap_size` this way awaits a PM
   decision (WO-10 report).
+  The development-only registry members of WO-13 read as `SelfDiagnostics.pools()` and
+  `connectors()` (`Gauges`: name, pool kind, the values the agent read from the getters; a value
+  the agent could not read is absent and `value(field)` throws `NotAvailableException`), and
+  `registry_counters` join `counters()`.
   `ExitedApp.selfDiagnostics()` reads the snapshot the agent wrote at shutdown and
   `ExitedApp.premainClasses()` the sorted list `<file>.premain-classes` (the classes the agent class
   loader defined on the premain thread, C-79). WO-17 adds the `SELF_DIAGNOSTICS` command as a second
@@ -181,6 +189,68 @@ and a `ForwardServlet` (`/forward/*` forwards to `/plain/exact`), declared in `w
 `build/servlet-fixture/servlet-fixture-{jakarta,javax}.war`; an integration run with a WAR app gets
 their paths as `argos.test.servletFixtureWar.{jakarta,javax}`, and the WO-12 WAR runs deploy them
 as `/servlet-fixture` next to the sample app (`AppLauncher.webapp`). Test-only, never shipped.
+
+## JDBC suite (package `jdbc`, WO-13, 18 §6.3, ADR-0010 C-149)
+
+`io.argos.agent.testing.jdbc` runs the shop jar apps of `-Pagent.e2e` (shop-boot2, shop-boot3,
+shop-boot4) with the release agent jar over gRPC to a TLS FakeCollector against real databases
+(`JdbcRuns`, `JdbcDatabase`):
+
+```
+./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot3@21 --tests '*jdbc*'
+    # H2 only (the default integrationTest: one real driver through the sample apps' DB path, C-149 (1))
+... -Pagent.jdbc.containers=true          # + MySQL 8.4, MariaDB 11.4, PostgreSQL 16, SQL Server 2022
+... -Pagent.jdbc.containers=postgres,mysql # a subset
+... -Pagent.jdbc.oracle=true               # + gvenzl/oracle-free (Oracle Database Free)
+ARGOS_TEST_ORACLE_URL=... ARGOS_TEST_ORACLE_USER=... ARGOS_TEST_ORACLE_PASSWORD=...  # in-house Oracle 19c
+```
+
+- Databases (`JdbcDatabase`): Testcontainers `GenericContainer`s with the image pinned by digest,
+  one at a time (the next database stops the previous one and every app on it), a memory limit
+  (1 GiB; SQL Server and Oracle 4 GiB), the name `argos-wo13-jdbc-<db>-<n>-<pid>` and the label
+  `argos.wo=WO-13`, a random password per run passed to the app as `SAMPLE_DB_PASSWORD` (never
+  logged or printed); SQL Server gets `CREATE DATABASE shop` through the image's `sqlcmd` with
+  its own `MSSQL_SA_PASSWORD`. The JDBC URLs carry no credentials. The container flags are the
+  nightly or manual commands of C-149 (2); Oracle has its own flag (C-149 (3)); in-house Oracle
+  19c, Tibero, Altibase, CUBRID and DB2 (`ARGOS_TEST_<DB>_URL/USER/PASSWORD`) are human checks and
+  skip with the reason when unset (`VendorDatabaseTest`; Tibero, Altibase, CUBRID and DB2 also need
+  a `SAMPLE_DB` value and their driver jar, WO-50).
+- Runs (`JdbcRuns.Profile`): `DEFAULT` (bind parameters `masked`), `PARTIAL`
+  (`capture.sql-parameters=partial`, whitelisted column `email`), `PARTIAL_OTHER_COLUMN`, `FULL`,
+  `NESTED` (`SAMPLE_ROUTING_DS=true` + `SAMPLE_DRIVER_WRAPPER=true`, five JDBC levels, ADR-0004
+  C-40), `POOL_TOMCAT`, `POOL_DBCP2`, `SECOND_POOL` and `SECOND_POOL_TOMCAT`
+  (`SAMPLE_SECOND_POOL=true`: pools `shop-primary` and a restarted `shop-secondary`, sample-apps
+  `SampleDataSources`); every run has `sampling.profile.normal-rate=1.0`. At most 4
+  runs are alive; their agent log and console are kept as `build/reports/agent-e2e/wo13-<run>-*`.
+  The console prints `[wo13-db]` lines (container start time, `docker stats` memory before stop)
+  and `[wo13-table]`/`[wo13-sql-ids]` lines (the per-database result table of the report).
+- Tests: `JdbcStepsTest` (per database and app: T-AG-030 one SQL step and `sql_count` 1, page
+  rows and fetch time; T-AG-032 DBC step named by the pool, COMMIT, ROLLBACK, batch step;
+  T-AG-035a `DB_TARGET` = `<vendor>://<host>:<port>/<db>`; T-SEC-3Aa (the agent-side partial
+  check of T-SEC-3A, ADR-0010 C-182; `masked`) no `ARGOS_SEED`/`ARGOSSEED` in anything the collector received or the agent log after the SQL seed
+  endpoints; T-ACC-24 and T-AG-031 one SQL step and `sql_count` 1 through the five-level nesting;
+  T-AG-032c one DBC step named by the pool through the same five levels; then T-ACC-22a the same
+  `sql_id` on every database),
+  `JdbcParameterModesTest` (T-AG-033 masked/partial/full details), `JdbcOutsideTransactionTest`
+  (T-AG-036 startup SQL counted in `argos_agent_sql_outside_tx_total`, never recorded),
+  `PoolRegistryE2eTest` (T-AG-062f pool and connector registry values from
+  `SelfDiagnostics.pools()`/`connectors()`, `InstanceUpdate` with `host:port`; T-AG-062g two
+  pools of one app told apart by name and the restarted one re-registered with its new maximum;
+  T-AG-032d the DBC step named after the pool the request borrowed from, per pool library;
+  PostgreSQL with the container flag, else H2), `VendorDatabaseTest`.
+- Two jdbc module gaps these tests found are fixed in the jdbc module (WO-13 integration): through
+  the routing chain Spring's `TransactionAwareDataSourceProxy` hands out a lazy JDK proxy and takes
+  the pool connection at its first use, so the lazy handle is no DBC step and the later pool
+  acquisition is the one DBC step (T-AG-032c); Tomcat JDBC's `DataSource` inherits
+  `getConnection()` from `DataSourceProxy`, which does not implement `javax.sql.DataSource`, so the
+  DataSource rule names `DataSourceProxy` (T-AG-032d). The empty `commit()` that H2 and pgJDBC call
+  from `setAutoCommit(true)` after a rollback is no COMMIT step any more (`AutoCommitGuardAdvice`),
+  and T-AG-032 asserts no COMMIT step in the rolled back transaction on every database.
+- Times on this laptop (shared, reference only): H2 with shop-boot2@8 and shop-boot3@21 about
+  5 minutes with the build; with `-Pagent.jdbc.containers=true -Pagent.jdbc.oracle=true` about
+  9.5 minutes (container starts: MySQL 21 s, MariaDB 11 s, PostgreSQL 2 s, SQL Server 13 s, Oracle
+  Free 27 s; `docker stats` memory before stop: MySQL 0.5 GiB, MariaDB 0.13 GiB, PostgreSQL 0.04
+  GiB, SQL Server 1.1 GiB, Oracle Free 3.4 GiB of its 4 GiB limit).
 
 ## FakeCollector (`collector`, 18 §5.3)
 
@@ -211,7 +281,9 @@ try (FakeCollector collector = FakeCollector.builder().tls(true).heartbeatInterv
   `FaultInjector`; `contract.ProtocolContractTest` replays the vectors below):
   - 11 §5 session: `AgentHello` → `ServerHello` with an instance id (from `firstInstanceId`, reused
     for the same `(app_name, env, instance_name)` in every session, also after `serverRestart()`,
-    11 §5 "재기동 연속성"), a new UUID `session_id`,
+    11 §5 "재기동 연속성"; an `InstanceUpdate.instance_name` such as the connector's `host:port`
+    renames the instance and keeps its id, 12 §4.3, so the next hello with that name gets the
+    same id), a new UUID `session_id`,
     `server_time_ms`, the 11 §4.2 `Limits` defaults (`ProtocolLimits.defaults()`),
     `heartbeat_interval_s` (`heartbeatIntervalS(n)`, default 30), `config(...)`, `user_id_salt`
     (`userIdSalt(...)`, over TLS only). Hello checks in the order of the 11 §5 table: 1 token, 2
@@ -601,7 +673,7 @@ its `@DisplayName`, so a factory skipped by its assumption (no shop jar or WAR a
 ./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-war-javax@8,shop-war-jakarta@21 --tests '*War*'
 ```
 | `BytecodeVerificationFlagTest` | T-AG-006: the test JVM and the preset on every attach JDK |
-| `collector.FakeCollectorTest` | DSN-18-04: recording and acks, `ServerHello` contents and instance reuse, `latency`, `failNext` (retry-after trailer), `hang`, `rejectAuth`, `requireToken` (masked tokens), session round trips (config, command, dictionary request, throttle), `closeStream`, `serverRestart` (`SESSION_REQUIRED`; instance id and dedup window kept, or a new id with `serverRestart(id)`), `sessionClose` (per reason) and the revoked token (`TOKEN_REVOKED` on data calls and hellos, `clear()` lifts it), `plaintextRejected`, `rejectHello` and the §5 check order, `clockOffset` (T-ACC-02 collector side), `partialDrop`, `walFull`, `pauseSessionReads`, `throttle`, duplicates, concurrency high-water mark, `AgentBye` and flush, `REPLACED`, large batch, gzip, TLS modes |
+| `collector.FakeCollectorTest` | DSN-18-04: recording and acks, `ServerHello` contents and instance reuse, `latency`, `failNext` (retry-after trailer), `hang`, `rejectAuth`, `requireToken` (masked tokens), session round trips (config, command, dictionary request, throttle), `closeStream`, `serverRestart` (`SESSION_REQUIRED`; instance id and dedup window kept, or a new id with `serverRestart(id)`), `InstanceUpdate.instance_name` keeps the instance id under the new name (WO-13), `sessionClose` (per reason) and the revoked token (`TOKEN_REVOKED` on data calls and hellos, `clear()` lifts it), `plaintextRejected`, `rejectHello` and the §5 check order, `clockOffset` (T-ACC-02 collector side), `partialDrop`, `walFull`, `pauseSessionReads`, `throttle`, duplicates, concurrency high-water mark, `AgentBye` and flush, `REPLACED`, large batch, gzip, TLS modes |
 | `collector.StandaloneCollectorTest` | DSN-18-04: `fake-collector.jar` as a process (TLS, token file, report, summary); `--report-every 0` sleeps, wildcard `--bind` |
 | `collector.CollectorWiringTest` | DSN-18-04, SEC-06: `collector(c)` settings, token file and CA copy, no token on the command line or in the agent's output; end to end over gRPC, with the JSONL view of the same request as the reference (process; container with `-Pagent.container=true`) when the release jar has the gRPC exporter, else skipped |
 | `contract.ProtocolContractTest` | DSN-11-01, DSN-11-02: the contract vectors over gRPC (11 §3/§5 session order, §6 dedup and acks, §9 clock, §5/§10 codes and trailers) |

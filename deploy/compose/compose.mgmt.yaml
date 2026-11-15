@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Publishes the management port (health, Prometheus, info) on 127.0.0.1:8081 of the host only
+# (docs/17 section 3.3, DSN-17-13, ADR-0010 C-114, SEC-55). argos-compose.sh adds this file when
+# ARGOS_MGMT_EXPOSE=true in .env; Compose has no conditional ports.
+#
+# /actuator/prometheus and /actuator/info still need the bearer token of secrets/metrics_token
+# (Authorization: Bearer ...) and a client inside ARGOS_METRICS_ALLOW_CIDRS; /actuator/health is
+# open and shows no details. Never publish this port on another address: scrape it from the host
+# or from a container on the "front" network.
+
+services:
+  server:
+    ports:
+      - "127.0.0.1:8081:8081"

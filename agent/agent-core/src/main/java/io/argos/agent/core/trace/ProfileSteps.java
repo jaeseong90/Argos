@@ -10,8 +10,9 @@ package io.argos.agent.core.trace;
  * {@code n} and {@code n+1}) are folded into one when they have the same type, name id, target id,
  * parent, thread, status, error flag and detail, have no stack, are both closed and have no child
  * steps (an N+1 query loop). The folded step keeps the first one's start offset and the sums of
- * elapsed time, rows and fetch time; {@link #repeatCount(int)} says how many steps it stands for (1
- * for a single step). Steps with children are never folded, so parents always map.
+ * elapsed time, rows, fetch time and {@code executeBatch} items ({@link #batchSize(int)}, 11 {@code
+ * batch_size}); {@link #repeatCount(int)} says how many steps it stands for (1 for a single step).
+ * Steps with children are never folded, so parents always map.
  *
  * <p><b>Numbering</b>: steps are numbered 0 .. {@link #size()}-1 in start order and {@link
  * #parent(int)} is the parent's index or -1 (the protocol encoder adds 1: 11 {@code seq >= 1}, root
@@ -32,6 +33,7 @@ public final class ProfileSteps {
   private final long[] elapsed;
   private final long[] rows;
   private final long[] fetch;
+  private final int[] batch;
   private final int[] status;
   private final boolean[] error;
   private final String[] detail;
@@ -73,6 +75,7 @@ public final class ProfileSteps {
     elapsed = new long[n];
     rows = new long[n];
     fetch = new long[n];
+    batch = new int[n];
     status = new int[n];
     error = new boolean[n];
     detail = new String[n];
@@ -93,6 +96,7 @@ public final class ProfileSteps {
         elapsed[run] += buffer.elapsedNanos(s);
         rows[run] += buffer.rows(s);
         fetch[run] += buffer.fetchNanos(s);
+        batch[run] = (int) Math.min(Integer.MAX_VALUE, (long) batch[run] + buffer.batchSize(s));
         map[s] = run;
         last = s;
         continue;
@@ -107,6 +111,7 @@ public final class ProfileSteps {
       elapsed[index] = buffer.elapsedNanos(s);
       rows[index] = buffer.rows(s);
       fetch[index] = buffer.fetchNanos(s);
+      batch[index] = buffer.batchSize(s);
       status[index] = buffer.status(s);
       error[index] = buffer.error(s);
       detail[index] = buffer.detail(s);
@@ -225,6 +230,15 @@ public final class ProfileSteps {
   public long fetchNanos(int index) {
     check(index);
     return fetch[index];
+  }
+
+  /**
+   * {@code executeBatch} items of the step (11 {@code batch_size}), the sum over folded steps; 0
+   * when the step is not a batch execution.
+   */
+  public int batchSize(int index) {
+    check(index);
+    return batch[index];
   }
 
   public int status(int index) {

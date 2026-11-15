@@ -40,6 +40,10 @@ public final class EnvironmentAliases {
           "ARGOS_PG_MEM",
           "ARGOS_SERVER_JAVA_OPTS",
           "ARGOS_START_PERIOD",
+          // host-side publish addresses of the Compose ports (17 §3.8, ADR-0010 C-113): the server
+          // listens on every interface (server.address, argos.collector.bind)
+          "ARGOS_HTTP_BIND",
+          "ARGOS_GRPC_BIND",
           // read by later work orders (demo mode WO-40, unattended setup WO-24/WO-40, JWT key
           // WO-24)
           "ARGOS_DEMO_MODE",
@@ -52,8 +56,6 @@ public final class EnvironmentAliases {
 
   private static Map<String, String> aliases() {
     Map<String, String> m = new LinkedHashMap<>();
-    m.put("ARGOS_HTTP_BIND", "server.address");
-    m.put("ARGOS_GRPC_BIND", "argos.collector.bind");
     m.put("ARGOS_LOG_LEVEL", "logging.level.root");
     m.put("ARGOS_TZ_DISPLAY", "argos.server.timezone");
     m.put("ARGOS_IP_MODE", "argos.privacy.default-ip-mode");

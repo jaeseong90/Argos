@@ -10,13 +10,17 @@ final class HikariPools {
 
   private HikariPools() {}
 
-  static SampleDataSources.PoolHandle create(SampleConfig config) {
+  /** A pool of {@code maxSize} connections, named {@code name} (null: Hikari's HikariPool-n). */
+  static SampleDataSources.PoolHandle create(SampleConfig config, String name, int maxSize) {
     HikariConfig hikari = new HikariConfig();
-    hikari.setJdbcUrl(config.dbUrl());
-    hikari.setDriverClassName(config.db().driverClass());
+    hikari.setJdbcUrl(config.poolUrl());
+    hikari.setDriverClassName(config.poolDriverClass());
     hikari.setUsername(config.dbUser());
     hikari.setPassword(config.dbPassword());
-    hikari.setMaximumPoolSize(config.poolMaxSize());
+    hikari.setMaximumPoolSize(maxSize);
+    if (name != null) {
+      hikari.setPoolName(name);
+    }
     hikari.setConnectionTimeout(30_000);
     HikariDataSource dataSource = new HikariDataSource(hikari);
     return new SampleDataSources.PoolHandle(

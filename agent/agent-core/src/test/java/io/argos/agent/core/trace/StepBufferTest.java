@@ -75,6 +75,40 @@ class StepBufferTest {
   }
 
   @Test
+  @Tag("req:F-A03")
+  @DisplayName(
+      "T-AG-032a WO-13 batch size: an int column created by the first batch step and counted from"
+          + " then on; counts below 1, summary handles and unknown steps are ignored")
+  void lazyBatchSize() {
+    StepBuffer steps = new StepBuffer(0, 2);
+    int plain = steps.start(StepType.SQL, 1, 0, 0, StepBuffer.NO_PARENT, ME);
+    steps.end(plain, 0, false, 0, 10);
+    long without = steps.estimatedBytes();
+    steps.batch(plain, 0);
+    steps.batch(plain, -5);
+    steps.batch(7, 3);
+    steps.batch(-1, 3);
+    assertThat(steps.estimatedBytes()).isEqualTo(without);
+    assertThat(steps.batchSize(plain)).isZero();
+
+    int batch = steps.start(StepType.SQL, 2, 0, 20, StepBuffer.NO_PARENT, ME);
+    steps.batch(batch, 500);
+    steps.end(batch, 0, false, 0, 30);
+    // max-steps 2: two chunk slots, so the column costs 32 + 2 * 4 bytes.
+    assertThat(steps.estimatedBytes()).isEqualTo(without + 32L + 2L * StepBuffer.LAZY_INT_BYTES);
+    assertThat(steps.batchSize(batch)).isEqualTo(500);
+    assertThat(steps.batchSize(plain)).isZero();
+    steps.batch(batch, 600);
+    assertThat(steps.batchSize(batch)).as("a later call replaces the count").isEqualTo(600);
+
+    int summary = steps.start(StepType.SQL, 3, 0, 40, StepBuffer.NO_PARENT, ME);
+    assertThat(summary).isGreaterThanOrEqualTo(StepBuffer.SUMMARY_SEQ_BASE);
+    steps.batch(summary, 9);
+    steps.end(summary, 0, false, 0, 50);
+    assertThat(steps.batchSize(batch)).isEqualTo(600);
+  }
+
+  @Test
   @DisplayName("ignores unknown, closed and negative sequence numbers; a later parent is ignored")
   void ignoresInvalidHandles() {
     StepBuffer steps = new StepBuffer(0, 10);

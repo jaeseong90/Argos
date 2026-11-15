@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Tests for .gitleaks.toml through .github/scripts/run-gitleaks.sh: a generated Argos token and a
-# generated GitHub token (default rule set) must be detected; metric names and masked tokens must
-# not. Fake secrets are generated at run time, so none is stored in the repository.
+# generated GitHub token (default rule set) must be detected; metric names, masked tokens and files
+# under the E2E stack state ui/e2e/.stack/ (ADR-0010 C-187) must not. Fake secrets are generated at
+# run time, so none is stored in the repository.
 # Requires Docker; the test is skipped (reported) when Docker is not available, unless
 # REQUIRE_DOCKER=1 (as in CI), in which case a missing Docker daemon fails the test.
 set -euo pipefail
@@ -46,6 +47,14 @@ expect_output "argos-token" "the finding names the argos-token rule" bash "$scri
 
 printf 'GITHUB_TOKEN=ghp_%s\n' "$(random_chars 'A-Za-z0-9' 36)" >"$work/github-token/ci.env"
 expect_exit 1 "a generated GitHub token is reported by the default rules" bash "$script" dir "$work/github-token"
+
+# ADR-0010 C-187: the git-ignored E2E stack state ui/e2e/.stack/ (per-run throwaway secrets) is
+# path-allowlisted; the same token anywhere else under ui/e2e/ is still reported (narrow allowlist).
+mkdir -p "$work/e2e-stack/ui/e2e/.stack/run-1" "$work/e2e-other/ui/e2e/other"
+printf 'token: argos_%s\n' "$(random_chars 'A-Za-z0-9_-' 43)" >"$work/e2e-stack/ui/e2e/.stack/run-1/x.txt"
+cp "$work/e2e-stack/ui/e2e/.stack/run-1/x.txt" "$work/e2e-other/ui/e2e/other/x.txt"
+expect_exit 0 "a token under ui/e2e/.stack/ is not reported (C-187 path allowlist)" bash "$script" dir "$work/e2e-stack"
+expect_exit 1 "the same token elsewhere under ui/e2e/ is reported" bash "$script" dir "$work/e2e-other"
 
 # A secret that only a merge commit adds is in no commit diff that a range scan reads, but it is in
 # the checked-out tree; the tree (dir) scan of secrets-scan.yml must report it.

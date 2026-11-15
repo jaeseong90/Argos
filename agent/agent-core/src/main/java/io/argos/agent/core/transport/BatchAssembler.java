@@ -50,9 +50,10 @@ import io.argos.proto.v1.TransactionRecord;
  *
  * <p>Not filled yet (no producer before the work order named): {@code headers}, {@code request_id},
  * {@code sql_ids}, {@code dbc_wait_ms}, {@code dispatch_count}, {@code timed_out}, {@code
- * error_top_frame_id}, {@code caller_app_id} (WO-12/13/14/19), {@code ProfileStep.failure} and
- * {@code batch_size} (WO-13/14), {@code app_version_id} (0: the instance's {@code
- * AgentHello.app_version}).
+ * error_top_frame_id}, {@code caller_app_id} (WO-12/13/14/19), {@code ProfileStep.failure} (WO-14),
+ * {@code app_version_id} (0: the instance's {@code AgentHello.app_version}). {@code
+ * ProfileStep.batch_size} is the step's {@code executeBatch} item count ({@code Tracer.stepBatch},
+ * WO-13), absent when not set.
  */
 final class BatchAssembler {
   private final Dictionary dictionary;
@@ -136,6 +137,8 @@ final class BatchAssembler {
             .setSqlTimeMs(u32(ctx.sqlNanos / 1_000_000L))
             .setExtCount(Math.max(0, ctx.extCount))
             .setExtTimeMs(u32(ctx.extNanos / 1_000_000L))
+            // WO-13: outermost DataSource.getConnection() time of the transaction (F-A03).
+            .setDbcWaitMs(u32(Math.max(0L, ctx.dbcNanos) / 1_000_000L))
             .setVirtualThread(ctx.virtualThread)
             .setProfileCaptured(tx.profileCaptured())
             .setStreaming(ctx.streaming)
@@ -218,18 +221,26 @@ final class BatchAssembler {
         break;
       }
       int type = steps.type(i);
+      long fetchNanos = Math.max(0L, steps.fetchNanos(i));
+      // 11 ProfileStep.elapsed_us of an SQL step is exec + fetch (the server stores exec_ms as
+      // elapsed - fetch); the step buffer keeps the execution time and the fetch time apart.
+      long elapsedNanos = Math.max(0L, steps.elapsedNanos(i)) + fetchNanos;
       ProfileStep.Builder step =
           ProfileStep.newBuilder()
               .setSeq(i + 1)
               .setParentSeq(Math.max(0, steps.parent(i) + 1))
               .setTypeValue(type)
               .setStartOffsetUs(u32(Math.max(0L, steps.startOffsetNanos(i)) / 1000L))
-              .setElapsedUs(u32(Math.max(0L, steps.elapsedNanos(i)) / 1000L))
-              .setFetchUs(u32(Math.max(0L, steps.fetchNanos(i)) / 1000L))
+              .setElapsedUs(u32(elapsedNanos / 1000L))
+              .setFetchUs(u32(fetchNanos / 1000L))
               .setRows(u32(Math.max(0L, steps.rows(i))))
               .setStatus(Math.max(0, steps.status(i)))
               .setError(steps.error(i))
               .setRepeatCount(Math.max(1, steps.repeatCount(i)));
+      int batchSize = steps.batchSize(i);
+      if (batchSize > 0) {
+        step.setBatchSize(batchSize);
+      }
       long nameId = steps.nameId(i);
       step.setNameId(nameId);
       dictionaryCache.reference(nameKind(type), nameId);

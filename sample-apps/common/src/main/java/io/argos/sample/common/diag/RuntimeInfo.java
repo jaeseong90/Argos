@@ -62,6 +62,10 @@ public final class RuntimeInfo {
     info.put("routingDataSource", dataSource.routing());
     // Connections routed so far: > 0 shows that requests really went through the routing level.
     info.put("routingLookups", dataSource.routingLookups());
+    info.put("driverWrapper", dataSource.driverWrapper());
+    // Connections opened through the wrapper: more than 0 shows that the pool really uses it.
+    info.put("driverWrapperConnections", dataSource.driverWrapperConnections());
+    info.put("secondPool", dataSource.secondPool());
     info.put("dataSourceChain", String.join(" -> ", dataSource.chain()));
     info.put("customExecutor", customExecutorActive);
     info.put("fixedClock", config.fixedClock() == null ? null : config.fixedClock().toString());

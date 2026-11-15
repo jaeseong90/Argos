@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Container overlay of the Argos server configuration for the Docker Compose installation
+# (docs/17 section 3.1 and 6.1). compose.yaml mounts its directory read-only at /conf/server and
+# loads /conf/server/application-compose.yaml with SPRING_CONFIG_ADDITIONAL_LOCATION, on top of the
+# packaged application.yml of the server. It holds no secret: every secret is a file under
+# /run/secrets, named by a *-file key.
+#
+# Container paths: /data (volume argos-data: WAL, setup token, JWT key, temporary files),
+# /logs (volume argos-logs: server log files), /conf (this file and tls/), /run/secrets (Compose
+# secrets from ./secrets).
+#
+# Variables that compose.yaml passes to the server and the key each one sets. Spring resolves the
+# placeholders below; a variable missing here is either a short name of the packaged
+# application.yml or the relaxed environment name of the key (Spring binds ARGOS_X_Y to argos.x-y
+# directly; environment variables win over this file):
+#
+#   ARGOS_PG_URL, ARGOS_PG_USER, ARGOS_PG_PASSWORD_FILE    argos.postgres.url, .user, .password-file
+#   ARGOS_PG_OWNER_USER, ARGOS_PG_OWNER_PASSWORD_FILE      argos.postgres.owner.user, .password-file
+#   ARGOS_CH_URL                                           argos.clickhouse.url
+#   ARGOS_CH_{WRITER,READER,MIGRATOR}_PASSWORD_FILE        argos.clickhouse.<account>.password-file
+#   ARGOS_IP_MODE (unattended only)                        argos.privacy.default-ip-mode
+#   ARGOS_LOG_LEVEL                                        logging.level.root
+#   ARGOS_TZ_DISPLAY                                       argos.server.timezone
+#   ARGOS_RETENTION_<X>_DAYS                               argos.retention.<x> (days)
+#                                                          (all short names of the packaged
+#                                                          application.yml, 17 section 3.8)
+#   ARGOS_TLS_CERT_FILE, ARGOS_TLS_KEY_FILE                argos.collector.tls.cert-file, .key-file
+#   ARGOS_MASTER_KEY_FILE                                  argos.master-key-file
+#   ARGOS_ADMIN_PASSWORD_FILE (unattended only)            argos.admin-password-file
+#   ARGOS_ADMIN_USERNAME (unattended only)                 argos.admin-username (relaxed name)
+#   ARGOS_WEB_PUBLIC_URL                                   argos.web.public-url
+#   ARGOS_METRICS_TOKEN_FILE                               argos.metrics.token-file
+#   ARGOS_METRICS_ALLOW_CIDRS                              argos.metrics.allow-cidrs (relaxed name)
+#   ARGOS_SECURITY_COOKIE_SECURE                           argos.security.cookie.secure (relaxed name)
+#   MANAGEMENT_SERVER_ADDRESS                              management.server.address (ADR-0010 C-114)
+#   JAVA_TOOL_OPTIONS                                      JVM heap (not a Spring setting)
+#
+# ARGOS_HTTP_BIND and ARGOS_GRPC_BIND are host-side publish addresses of compose.yaml and are never
+# passed to the server (ADR-0010 C-113). ARGOS_IP_MODE is deliberately not mapped here: an
+# unattended setup must name the mode explicitly (SEC-31), so a default in this file would hide a
+# missing choice.
+
+argos:
+  web:
+    # Required by the server: the origin that may send state-changing requests and open
+    # WebSockets, and the base of deep links (14 section 12, 16 section 7.6).
+    public-url: ${ARGOS_WEB_PUBLIC_URL:}
+  # Secret files (17 section 6.1): never values.
+  master-key-file: ${ARGOS_MASTER_KEY_FILE:/run/secrets/master_key}
+  # Empty: setup token wizard. Set by compose.unattended.yaml: unattended administrator.
+  admin-password-file: ${ARGOS_ADMIN_PASSWORD_FILE:}
+  jwt-key-file: /data/jwt.key
+  auth:
+    setup-token-file: /data/setup-token
+  metrics:
+    token-file: ${ARGOS_METRICS_TOKEN_FILE:/run/secrets/metrics_token}
+  collector:
+    tls:
+      cert-file: ${ARGOS_TLS_CERT_FILE:/conf/tls/server.crt}
+      key-file: ${ARGOS_TLS_KEY_FILE:/conf/tls/server.key}
+  wal:
+    dir: /data/wal
+
+logging:
+  file:
+    path: /logs/server

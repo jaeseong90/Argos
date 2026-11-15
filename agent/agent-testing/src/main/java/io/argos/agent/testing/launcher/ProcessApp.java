@@ -17,9 +17,11 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
 
 /** A {@link RunningApp} that is a local process (the default of {@link AppLauncher}). */
 public final class ProcessApp implements RunningApp {
@@ -319,7 +321,55 @@ public final class ProcessApp implements RunningApp {
     if (process.isAlive()) {
       gracefulStop();
     }
+    awaitRunDirectoryReleased();
   }
+
+  /**
+   * On Windows, waits at most {@value #RELEASE_WAIT_SECONDS} s until no process holds a file of the
+   * run directory open any more. Right after the app has exited, another process (on the shared
+   * development laptop most likely the virus scanner reading the files the app just closed) can
+   * keep the agent jar, the logs and the outputs open for a moment; JUnit's {@code @TempDir}
+   * cleanup then failed with "used by another process" although every assertion had passed. A
+   * directory cannot be renamed while a file in it is open, so renaming the run directory and
+   * renaming it back is the probe. When the wait runs out, nothing changes (the cleanup reports it
+   * as before). Elsewhere an open file can be deleted, and nothing is done.
+   */
+  private void awaitRunDirectoryReleased() {
+    if (!WINDOWS || process.isAlive() || !Files.isDirectory(dir)) {
+      return;
+    }
+    Path probe = dir.resolveSibling(dir.getFileName() + ".released");
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(RELEASE_WAIT_SECONDS);
+    while (true) {
+      try {
+        Files.move(dir, probe);
+        break;
+      } catch (IOException e) {
+        if (System.nanoTime() - deadline > 0) {
+          return;
+        }
+        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(100));
+      }
+    }
+    long undoDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(RELEASE_WAIT_SECONDS);
+    while (true) {
+      try {
+        Files.move(probe, dir);
+        return;
+      } catch (IOException e) {
+        if (System.nanoTime() - undoDeadline > 0) {
+          throw new UncheckedIOException("run directory not moved back from " + probe, e);
+        }
+        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(100));
+      }
+    }
+  }
+
+  /** Upper bound of {@link #awaitRunDirectoryReleased()}, per step. */
+  static final int RELEASE_WAIT_SECONDS = 10;
+
+  private static final boolean WINDOWS =
+      System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
 
   /** HTTP helpers shared by the process and container apps. */
   static final class Http {

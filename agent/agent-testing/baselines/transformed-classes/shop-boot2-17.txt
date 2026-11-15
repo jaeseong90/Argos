@@ -1,21 +1,32 @@
 # Transformed-class baseline (18 §5.6, DSN-18-05, T-AG-005): <class> <modules> <loader>
 # shop-boot2 on JDK 17. Re-record: ./gradlew :agent:agent-testing:integrationTest -Pagent.baseline.record=true; review the diff in the PR.
+com.zaxxer.hikari.HikariDataSource jdbc org.springframework.boot.loader.LaunchedURLClassLoader
+com.zaxxer.hikari.pool.HikariPool pool org.springframework.boot.loader.LaunchedURLClassLoader
 com.zaxxer.hikari.pool.HikariProxyConnection jdbc org.springframework.boot.loader.LaunchedURLClassLoader
 com.zaxxer.hikari.pool.HikariProxyPreparedStatement jdbc org.springframework.boot.loader.LaunchedURLClassLoader
+com.zaxxer.hikari.pool.HikariProxyResultSet jdbc org.springframework.boot.loader.LaunchedURLClassLoader
 com.zaxxer.hikari.pool.HikariProxyStatement jdbc org.springframework.boot.loader.LaunchedURLClassLoader
 com.zaxxer.hikari.pool.ProxyConnection jdbc org.springframework.boot.loader.LaunchedURLClassLoader
 com.zaxxer.hikari.pool.ProxyPreparedStatement jdbc org.springframework.boot.loader.LaunchedURLClassLoader
 com.zaxxer.hikari.pool.ProxyStatement jdbc org.springframework.boot.loader.LaunchedURLClassLoader
+com.zaxxer.hikari.util.DriverDataSource jdbc org.springframework.boot.loader.LaunchedURLClassLoader
 java.util.concurrent.ThreadPoolExecutor executor bootstrap
 javax.servlet.http.HttpServlet servlet org.springframework.boot.loader.LaunchedURLClassLoader
 org.apache.catalina.connector.CoyoteOutputStream servlet org.springframework.boot.loader.LaunchedURLClassLoader
 org.apache.catalina.connector.CoyoteWriter servlet org.springframework.boot.loader.LaunchedURLClassLoader
 org.apache.catalina.connector.Request servlet-async org.springframework.boot.loader.LaunchedURLClassLoader
 org.apache.catalina.connector.ResponseFacade servlet org.springframework.boot.loader.LaunchedURLClassLoader
+org.apache.commons.dbcp2.BasicDataSource jdbc,pool org.springframework.boot.loader.LaunchedURLClassLoader
+org.apache.tomcat.jdbc.pool.DataSourceProxy jdbc org.springframework.boot.loader.LaunchedURLClassLoader
+org.apache.tomcat.util.net.AbstractEndpoint tomcat org.springframework.boot.loader.LaunchedURLClassLoader
 org.apache.tomcat.websocket.server.WsFilter servlet org.springframework.boot.loader.LaunchedURLClassLoader
 org.h2.jdbc.JdbcConnection jdbc org.springframework.boot.loader.LaunchedURLClassLoader
 org.h2.jdbc.JdbcPreparedStatement jdbc org.springframework.boot.loader.LaunchedURLClassLoader
+org.h2.jdbc.JdbcResultSet jdbc org.springframework.boot.loader.LaunchedURLClassLoader
 org.h2.jdbc.JdbcStatement jdbc org.springframework.boot.loader.LaunchedURLClassLoader
+org.springframework.jdbc.datasource.DelegatingDataSource jdbc org.springframework.boot.loader.LaunchedURLClassLoader
+org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy jdbc org.springframework.boot.loader.LaunchedURLClassLoader
+org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource jdbc org.springframework.boot.loader.LaunchedURLClassLoader
 org.springframework.web.filter.OncePerRequestFilter servlet org.springframework.boot.loader.LaunchedURLClassLoader
 org.springframework.web.servlet.function.support.HandlerFunctionAdapter spring-webmvc org.springframework.boot.loader.LaunchedURLClassLoader
 org.springframework.web.servlet.mvc.HttpRequestHandlerAdapter spring-webmvc org.springframework.boot.loader.LaunchedURLClassLoader

@@ -234,6 +234,41 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   fixture web application without Spring (`/servlet-fixture`, Tomcat 9 and 10.1), and a Tomcat log
   check after a graceful shutdown of standalone Tomcat (no agent mention in a warning or in its
   stack trace; SEVERE records and ThreadLocal leak warnings beyond a run without the agent fail).
+- Agent JDBC instrumentation: one SQL step per statement execution of the application whatever the
+  pools, routing data sources and driver wrappers in between, with the execution time apart from
+  the fetch time and rows, batch sizes, DBC steps named after the pool (their time counted as the
+  transaction's connection wait; a lazy connection proxy is not one), COMMIT and ROLLBACK steps,
+  and statements outside a transaction counted in `argos_agent_sql_outside_tx_total` instead of
+  recorded. The database target is read once per connection (`getMetaData().getURL()`) and kept as
+  `<vendor>://<host>:<port>/<db>` without account, password or parameters (Oracle thin and TNS,
+  MySQL, MariaDB, PostgreSQL, SQL Server, Tibero, Altibase, CUBRID, DB2, H2). Bind parameters
+  follow `capture.sql-parameters`: `masked` (default) sends nothing, `partial` the masked values of
+  whitelisted `<column> = ?` positions and the type and length of the others, `full` every masked
+  value; only JDK value types are rendered, never a stream, a large object or `toString()`, and
+  each value is masked before it is cut at 256 characters. An Oracle or Tibero account or password
+  in the URL, quoted or not, is removed too, and a URL that cannot be read safely (for example a
+  `user:password@host` password holding `?` or `;` before `=`) keeps only the vendor.
+- Agent SQL normalizer: literals become `?`, comments and whitespace collapse, `IN` lists and
+  multi-row `VALUES` fold, with the string, comment and identifier rules of the database taken from
+  its URL (MySQL and MariaDB `"..."` strings and `#` comments, SQL Server `[...]` identifiers and
+  `$` money constants), assuming its default session settings; `sql.max-length`,
+  `sql.backslash-escape` and `sql.keep-hints` apply. A statement that fails, is ambiguous or
+  exceeds its work budget (about 1 ms for 64 KiB) is named `<unparsed>` and counted in
+  `argos_agent_sql_unparsed_total`; the raw text is never sent or logged, and the statement cache
+  keeps only lengths and hashes, never the text.
+- Agent SQL normalizer fail-safe rules for non-default session settings: a PostgreSQL statement with a quote after an odd number of backslashes in a string is `<unparsed>`, SQL Server and CUBRID mask a `"..."` that is not shaped like an identifier, and a quote inside an unclosed `[name` is `<unparsed>`; an Oracle URL without a leading `@` whose `?` parameters could hold the `@` keeps only the vendor.
+- Agent connection pool and Tomcat registries (new modules `pool` and `tomcat`): HikariCP, Tomcat
+  JDBC and Commons DBCP 2 pools and Tomcat connectors register when they are created or started,
+  read only through their own getters (never JMX), held weakly and bounded without pinning the
+  application's class loader across a redeploy; the connector names and
+  the first port reach the collector as an instance update. Sending the 5-second pool and connector
+  metrics comes later.
+- Sample application switches for the JDBC tests: `SAMPLE_DB` `mariadb`, `mssql` and `oracle` in
+  `shop-boot3` (schema scripts per database), `SAMPLE_DRIVER_WRAPPER` (a delegating JDBC driver
+  wrapper as the fifth connection level) and `SAMPLE_SECOND_POOL` (two pools, one restarted). The
+  agent test harness runs the JDBC suite on H2 by default and on MySQL 8.4, MariaDB 11.4,
+  PostgreSQL 16, SQL Server 2022 (`-Pagent.jdbc.containers=true`) and Oracle Database Free
+  (`-Pagent.jdbc.oracle=true`) in containers pinned by digest, one at a time.
 - Agent data ingestion in the collector server over gRPC (port 9100): agent sessions (hello checks,
   automatic registration of new instances, clock offset from heartbeats) and the five batch calls.
   An agent token writes only to its own application and to at most 8 environment variants
@@ -274,9 +309,118 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   (`server/src/testFixtures`, package `io.argos.server.testing.fakeagent`), end-to-end tests from a
   fake agent through the boot jar to ClickHouse (process kills, ClickHouse outage, broken
   materialized view, duplicates), and a 1,000 TPS ingest lag run (`-Pserver.load=true`).
+- Query REST API under `/api/v1` (read-only; viewer role unless noted): overview, applications and
+  instances, the application dashboard (percentiles, 1-day and 7-day baselines, events, collection
+  counters, outages), instance comparison, service, SQL, outgoing-call and error statistics with
+  their details, instance metrics, events, collection health, server health, storage health
+  (operator), XLog (columnar JSON, gzip, deterministic sampling that keeps every error and slow
+  point), the drag summary, transaction search, transaction detail with baseline and export, traces,
+  active transactions and global search. Automatic source selection reads raw rows, 1-minute or
+  1-hour rollups with the last 2 minutes and partial minutes from raw rows, and flags
+  `retention_exceeded`. Every response has the `data`/`meta` envelope (request id, range, source,
+  truncation); limits (range, rows, buckets, string and array sizes, timeout) answer 400 or 504
+  with the standard error body; lists use tamper-checked keyset cursors. List endpoints export CSV
+  (`format=csv`, formula-safe cells, at most 10,000 rows, audited, heavy rate-limit bucket).
+  Collected strings are returned unescaped, with control characters replaced and length caps.
+  ClickHouse is read only through the read-only account, with request values as query parameters
+  and execution, row and memory limits on every statement. A transaction is found by its id within
+  2 seconds of its id time, then within two days; beyond that the API answers 404 with
+  `clock_skew_possible` and the transaction opens from a list or with `?ts`.
+- OpenAPI specification `docs/api/openapi.yaml`, generated from the server by
+  `./gradlew :server:generateOpenApi`, with the `x-argos-role`, `x-argos-audit`, `x-argos-pii`,
+  `x-argos-csv`, `x-argos-limits`, `x-argos-source` and `x-argos-untrusted` extensions. Contract
+  tests fail when the committed file differs from the code, lint it (role, audit, success schemas,
+  operation ids, collected strings, JSON and CSV media types only, required properties on every
+  response object; nullable properties are declared as such; request body schemas list only the
+  fields the server requires and are never shared with responses) and run the role permission matrix
+  from it; the pull request check rejects breaking changes (`oasdiff`) unless the pull request has
+  the `breaking-change` label.
+- Development-only query tools: `:server:loadQueryTestData` loads generator data into a running
+  installation (for end-to-end UI tests), and the query API bench runs the N-07 and N-24 calls
+  cold and warm on generator data (`-Pserver.apiBench=true`, profiles `ci`, `local` and the
+  30-day `full`; the targets are enforced only on `full` data with
+  `-Pserver.apiBench.enforce=true`).
+- Web UI skeleton: the route tree of every screen (placeholders until each screen is built), the
+  shell with application, environment and transaction kind selectors, global search box, alerts
+  badge, account menu, side menu and kiosk mode; sign-in with return to the requested link, the
+  first-run setup wizard (setup token, administrator, IP display mode, then a pointer to
+  `argos-compose.sh token create` for the first agent token) and the account page with password
+  change; one global time range (presets, absolute range in the browser time zone with its UTC
+  offset, previous, next, zoom, now, live mode and "resume live", keyboard shortcuts with a `?`
+  help); the URL as the state of every screen in the `docs/14` grammar (the `docs/15` spelling is
+  still read), validated on load with defaults restored and a notice, and refused above 2 KB;
+  English and Korean.
+- UI client and safety rails: the TypeScript API types are generated from `docs/api/openapi.yaml`
+  (`pnpm -C ui gen:api`, checked by `pnpm -C ui check:api`), with collected strings typed as
+  untrusted; one API wrapper sends the session cookies and the CSRF header, refreshes the session
+  once across tabs and returns to the sign-in page with the current link when it ends; the
+  WebSocket client validates the `docs/14` frames, shares subscriptions, reconnects with backoff
+  and stops after a session end. ESLint rules keep collected strings out of anything but text
+  components, raw link targets out of `href` and tokens out of browser storage. zod runs without
+  its JIT so that the server's nonce CSP reports no violation.
+- Shared UI components: data table (server sort, column filters, include and exclude a cell value,
+  column chooser, CSV through the server export), stat tile, status badge, time range picker, filter
+  chips, kind and environment and application selectors, safe text, link and code block, empty,
+  error, loading and partial result states, and a time series chart (uPlot) with event markers,
+  collection outage shading, comparison baseline, click menu, cursor sync and an accessible table;
+  design tokens with checked contrast and an Ant Design 6 theme.
+- UI end-to-end suite against the real server: `pnpm -C ui e2e` builds a seeded stack (PostgreSQL,
+  ClickHouse and the server boot jar in Docker on random local ports, generator data, users and
+  agent traffic from the sample app), runs the specs for sign-in, deep links, time range, realtime
+  (WebSocket stub until the server endpoint exists), i18n, layout at 1366x768, CSP, XSS seeds,
+  accessibility (axe, no critical finding) and the common required elements, and removes the stack;
+  `pnpm -C ui e2e:docker` runs them in the pinned Linux Playwright image, where the
+  visual-regression baselines are compared; `pnpm -C ui perf:initial-load` records the initial load.
+  The pull request workflow runs it in four shards (`e2e` job).
+- UI keyboard and accessibility: a table cell value can be included or excluded from the keyboard
+  (arrow keys pick the cell, Shift+F10 or the context menu key opens its menu); `t` then `1`-`9`
+  picks a time range preset; every screen sets the page title; status changes of the realtime and
+  kiosk badges are announced once instead of every second; placeholder and icon colours meet the
+  contrast minimum. The session cache is dropped at sign-in and when the session ends. Live mode
+  can be switched on only on screens that support it. Filter values are limited to 1,024 UTF-8
+  bytes, as on the server: a longer table cell value cannot be included or excluded (the actions
+  are disabled with an explanation) rather than being cut. `pnpm -C ui build` ends with a bundle
+  size report against the budgets
+  of `docs/15`. `e2e:docker` installs its packages with `npm ci` from a lock derived from
+  `pnpm-lock.yaml` (integrity checked).
+- Docker Compose installation (`deploy/compose/`): the server, ClickHouse and PostgreSQL with no
+  default credentials and only ports 8080 (UI and API) and 9100 (agent gRPC, TLS) published. The
+  databases sit on an internal network without a route out, every image reference except the
+  locally built server image is pinned by digest, and the server runs as uid 10001 with a read-only
+  root file system. `argos-env-init.sh` checks the prerequisites, plans the container memory from
+  the host memory and generates every password and key from a cryptographically secure random
+  generator into `secrets/` (directory 0700, files 0600; ClickHouse receives SHA-256 hashes only),
+  refusing empty, short or default secrets before anything is hashed; `.env` holds settings only.
+  `argos-compose.sh` starts, stops and inspects the stack and issues agent tokens (`token create`:
+  printed once, at most 5 active tokens per application, recorded in the audit log). `smoke.sh`
+  checks the installed state: file modes, published ports, images, networks, the server user,
+  health, Actuator and the setup token. Overlays publish the management port on 127.0.0.1:8081,
+  switch to the unattended setup, or add an example nginx reverse proxy on 443. Installation
+  guide: `docs/install/compose.md` (Korean: `docs/install/compose.ko.md`).
+- Server container image: `/data`, `/data/tmp` and `/logs` belong to uid 10001 in the image, so new
+  volumes need no preparation; `HOME=/data`; the JVM options of the deployment design with the
+  heap from `JAVA_TOOL_OPTIONS`; a reproducible creation time.
+- Docker Compose installation checks: `argos-compose.sh up` refuses to start when the containers
+  cannot read their configuration files (a checkout under umask 027 or 077), and with the reverse
+  proxy unless port 8080 is published on 127.0.0.1 only. The example proxy overwrites
+  `X-Forwarded-For`, and the server trusts forwarded headers from the proxy's fixed address only.
+  `argos-env-init.sh --force` refuses to replace the secrets while volumes of the installation
+  exist. `token create` prints the agent configuration with the server address taken from the gRPC
+  certificate. `smoke.sh` signs in only with `--check-admin-login` (unattended setup, right after
+  the installation).
 
 ### Changed
 
+- `ARGOS_HTTP_BIND` and `ARGOS_GRPC_BIND` are host-side publish addresses of the Compose
+  installation and no longer server settings: the server listens on every interface unless
+  `server.address` or `argos.collector.bind` sets another address.
+- Docker Compose installation: `argos-env-init.sh` budgets the container limits (server +
+  PostgreSQL + ClickHouse at most 0.9 x RAM, ClickHouse `max_server_memory_usage` = 0.9 x its
+  container), uses a minimum-spec tier with a warning on 8 GB hosts (7168 to 7964 MiB visible to
+  Docker: ClickHouse down to 2.5 GiB, then the heap down to 1.5 GiB), refuses hosts below 7168 MiB,
+  and warns when a plain-HTTP public URL on a host other than localhost will make signing in fail;
+  the sign-in page and the last setup step then say that the browser did not keep the session
+  cookie; the server knows the audit event `TOKEN_ISSUED`.
 - Agent service names: the Spring MVC handler pattern is read on the REQUEST dispatch only and keeps
   the request's method; a handler method without a pattern gives `Controller#method`, the Servlet 4
   `HttpServletMapping` pattern names requests without a Spring handler, and otherwise the path is
@@ -314,6 +458,18 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   the JDK's own `socket_<n>` temporary file on Windows with JDK 16 or later, the warnings of plaintext
   and skipped verification, the reaction to a refused session and the meaning of
   `direct_memory_bytes`.
+- Query API and OpenAPI document: unsigned 64-bit keys (transaction ids, dictionary and error group
+  keys) are declared as decimal strings with the pattern `^[0-9]{1,20}$` and linted, request schemas
+  mark the fields the server always requires, instance comparison outliers are judged against the
+  other instances (from 3 instances on), and the enforced query API bench also requires each cold
+  call within twice its target.
+- Web UI delivery: the server gzips the UI's HTML, CSS, JavaScript and SVG of 2 KB or more (API JSON
+  stays uncompressed) and lets browsers cache the hashed `/assets/` files for a year, while the page
+  and the API stay `no-store`; the OpenAPI document lists the values of `ip_mode`, `roles`,
+  `permissions` and the CSV `format` parameter and marks user names as untrusted; input and select
+  borders now have 3:1 contrast; a table column with a `filterValue` key offers no include/exclude
+  for a row without a key; and every end-to-end test fails on any browser CSP violation, also in
+  another tab or before a navigation.
 
 ### Removed
 

@@ -171,9 +171,11 @@ object TraceabilityRenderer {
         listOf("PASSED", "FAILED", "SKIPPED", "NOT RUN").joinToString(", ") { "$it ${counts[it] ?: 0}" } + " |"
     )
     sb.appendLine("| Quarantined tests (`@Tag(\"quarantine\")`, limit $QUARANTINE_LIMIT, DSN-18-13) | ${quarantined.size} |")
+    sb.appendLine("| Catalogue test IDs covered only by partial checks (suffixed IDs, C-182) | ${model.partiallyCovered.size} |")
     if (model.unreadableResultFiles.isNotEmpty()) {
       sb.appendLine("| Unreadable result files | ${model.unreadableResultFiles.size} |")
     }
+    fun row(first: List<String>, entry: TestEntry) = row(first, entry, model.partialOf(entry))
     sb.appendLine()
     sb.appendLine("## Requirement to tests")
     sb.appendLine()
@@ -188,6 +190,19 @@ object TraceabilityRenderer {
     sb.appendLine("| Test ID | Test | Suite | Last result |")
     sb.appendLine("|---|---|---|---|")
     for (entry in model.withoutRequirement) sb.appendLine(row(emptyList(), entry))
+    if (model.partiallyCovered.isNotEmpty()) {
+      sb.appendLine()
+      sb.appendLine("## Catalogue test IDs covered only by partial checks")
+      sb.appendLine()
+      sb.appendLine(
+        "A suffixed ID checks part of its catalogue ID (ADR-0010 C-122, C-182). No test with the catalogue ID " +
+          "itself has passed, so the passed results of these partial tests read \"partial of <ID>\" above."
+      )
+      sb.appendLine()
+      sb.appendLine("| Catalogue test ID | Partial test IDs |")
+      sb.appendLine("|---|---|")
+      for ((id, partial) in model.partiallyCovered) sb.appendLine("| $id | ${partial.joinToString(", ")} |")
+    }
     if (quarantined.isNotEmpty()) {
       sb.appendLine()
       sb.appendLine("## Quarantined tests")
@@ -214,14 +229,16 @@ object TraceabilityRenderer {
     return sb.toString()
   }
 
-  private fun row(first: List<String>, entry: TestEntry): String {
+  /** One table row; [partialOf]: the catalogue IDs only partial checks cover (C-182). */
+  private fun row(first: List<String>, entry: TestEntry, partialOf: List<String>): String {
     val cells =
       first +
         listOf(
           entry.testIds.joinToString(", ").ifEmpty { "-" },
           "`${shortName(entry.className)}` ${entry.name} ([${entry.file}:${entry.line}](${entry.file}))",
           entry.result?.suites?.joinToString(", ") ?: entry.suite,
-          result(entry.result),
+          result(entry.result) +
+            if (entry.result?.status == Status.PASSED && partialOf.isNotEmpty()) ", partial of ${partialOf.joinToString(", ")}" else "",
         )
     return "| " + cells.joinToString(" | ") { escape(it) } + " |"
   }
@@ -239,21 +256,26 @@ object TraceabilityRenderer {
   private fun escape(cell: String): String = cell.replace("|", "\\|").replace("\r", " ").replace("\n", " ")
 
   fun json(model: TraceabilityModel, generatedAt: String): String {
-    fun entry(e: TestEntry): Map<String, Any?> =
-      linkedMapOf(
-        "testIds" to e.testIds,
-        "requirements" to e.requirements,
-        "tags" to e.tags,
-        "class" to e.className,
-        "name" to e.name,
-        "file" to e.file,
-        "line" to e.line,
-        "suite" to e.suite,
-        "result" to
-          e.result?.let {
-            linkedMapOf("status" to it.status.name, "runs" to it.runs, "lastRun" to it.lastRun, "suites" to it.suites)
-          },
-      )
+    fun entry(e: TestEntry): Map<String, Any?> {
+      val map: MutableMap<String, Any?> =
+        linkedMapOf(
+          "testIds" to e.testIds,
+          "requirements" to e.requirements,
+          "tags" to e.tags,
+          "class" to e.className,
+          "name" to e.name,
+          "file" to e.file,
+          "line" to e.line,
+          "suite" to e.suite,
+          "result" to
+            e.result?.let {
+              linkedMapOf("status" to it.status.name, "runs" to it.runs, "lastRun" to it.lastRun, "suites" to it.suites)
+            },
+        )
+      // C-182: the catalogue IDs this test checks only partly and no full test has passed.
+      model.partialOf(e).takeIf { it.isNotEmpty() }?.let { map["partialOf"] = it }
+      return map
+    }
     val root =
       linkedMapOf(
         "generatedAt" to generatedAt,
@@ -268,9 +290,11 @@ object TraceabilityRenderer {
             "testsWithoutIdOrRequirement" to model.testsWithoutId,
             "quarantined" to model.entries.count { it.quarantined },
             "quarantineLimit" to QUARANTINE_LIMIT,
+            "partiallyCoveredTestIds" to model.partiallyCovered.size,
           ),
         "requirements" to model.byRequirement.map { (req, list) -> linkedMapOf("id" to req, "tests" to list.map(::entry)) },
         "testIdsWithoutRequirement" to model.withoutRequirement.map(::entry),
+        "partiallyCoveredTestIds" to model.partiallyCovered.map { (id, partial) -> linkedMapOf("id" to id, "partialIds" to partial) },
         "quarantined" to model.entries.filter { it.quarantined }.sortedWith(Traceability.entryOrder).map(::entry),
         "unreadableResultFiles" to model.unreadableResultFiles,
       )

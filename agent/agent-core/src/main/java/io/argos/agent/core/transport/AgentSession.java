@@ -99,6 +99,15 @@ public final class AgentSession {
     return session.instanceId();
   }
 
+  /**
+   * The host name of the hello ({@code AgentHello.host}, from the environment, never a name
+   * lookup): the host part of the {@code host:port} instance name once Tomcat knows its port
+   * (WO-13). Any thread, no blocking.
+   */
+  public String host() {
+    return identity.host();
+  }
+
   /** A copy of the app's {@code user_id} salt (empty unless the server sent one). Any thread. */
   public byte[] userIdSalt() {
     return userIdSalt.clone();

@@ -288,7 +288,10 @@ public final class Manifest {
     } else if (txSamples.size() < 200) {
       txSamples.add(s);
     }
-    if (traceSamples.size() < 100) {
+    // Trace samples describe whole traces from their root: a callee (callerAppId != 0) shares the
+    // root's trace id but would report its own app, start and subtree size. Callees have no
+    // callees of their own (TransactionFactory.child), so 1 + children is the trace size.
+    if (tx.callerAppId == 0 && traceSamples.size() < 100) {
       Map<String, Object> t = new LinkedHashMap<>();
       t.put("trace_id", HexFormat.of().formatHex(tx.traceId));
       t.put("app_id", tx.instance.app.id);

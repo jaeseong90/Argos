@@ -26,7 +26,8 @@
     "§5 check 1 (ADR-0010 C-140 (1)): every TOKEN_* rejection of a hello carries retry_after_s 300 and argos-retry-after-ms 300000; the agent ignores the value and retries after a fixed 5 minutes (C-102). A data call refused for its token carries no retry advice.",
     "§5 restart continuity: a server restart forgets the sessions, not the instances. The next hello of the same (app, instance_name) gets the same instance_id, and the dedup windows of that instance survive (12 §3.4: rebuilt from the WAL), so a seq written before the restart is ACK_DUPLICATE after it (D-13).",
     "§10 SessionClose TOKEN_REVOKED_CLOSE revokes the token (12 §4.1 closeByToken after the token cache is invalidated at once) and 12 §3.1 checks the token (TokenAuthInterceptor) before the session: a later data call with that token is UNAUTHENTICATED with argos-reject-reason TOKEN_REVOKED, a hello gets ServerHello{rejected, TOKEN_REVOKED, retry_after_s 300} and UNAUTHENTICATED (§5 check 1).",
-    "12 §3.9: a server shutting down sends SessionClose SERVER_SHUTDOWN and then drains (gRPC shutdown), so a new call is UNAVAILABLE. The FakeCollector does not imitate the drain, so the 'session server shutdown' entry names no expected_data_after."
+    "12 §3.9: a server shutting down sends SessionClose SERVER_SHUTDOWN and then drains (gRPC shutdown), so a new call is UNAVAILABLE. The FakeCollector does not imitate the drain, so the 'session server shutdown' entry names no expected_data_after.",
+    "12 §4.3 (ADR-0010 C-185 (1)): InstanceUpdate.instance_name (host:port once the connector port is known) renames the instance: the instance_id and the open session stay, later data continues under that id, and after a restart a hello with the new name gets that id and its dedup window; the old name is free again, so a hello with it is a new instance. An instance_update step is sent on the stream of the current session and is not acknowledged on the wire: a replay waits until the collector has applied it before the next step. A hello step without instance_name uses the replay's own instance name."
   ],
   "clock": [
     {
@@ -161,6 +162,21 @@
         {"action": "expect_stream", "stream": "c", "expected_messages": [], "expected_code": "OK"},
         {"action": "data", "token": "valid", "session": "previous", "seq": 3, "expected_code": "FAILED_PRECONDITION", "expected_description": "SESSION_REQUIRED"},
         {"action": "data", "token": "valid", "session": "current", "seq": 3, "expected_code": "OK", "expected_status": "ACK_OK", "expected_last_seq": 3}
+      ]
+    },
+    {
+      "name": "InstanceUpdate.instance_name renames the instance and keeps its id: data after the rename continues the session, after a restart the new name gets the same instance id and dedup window, the old name is a new instance",
+      "clause": "11 §4.2, §5, 12 §4.3, ADR-0010 C-185 (1)",
+      "steps": [
+        {"action": "hello", "token": "valid", "instance_name": "host:4242", "expected_accepted": true, "expected_instance_id": 1},
+        {"action": "data", "token": "valid", "session": "current", "seq": 1, "expected_code": "OK", "expected_status": "ACK_OK", "expected_last_seq": 1},
+        {"action": "instance_update", "instance_name": "host:8080"},
+        {"action": "data", "token": "valid", "session": "current", "seq": 2, "expected_code": "OK", "expected_status": "ACK_OK", "expected_last_seq": 2},
+        {"action": "restart"},
+        {"action": "hello", "token": "valid", "instance_name": "host:8080", "expected_accepted": true, "expected_instance_id": 1},
+        {"action": "data", "token": "valid", "session": "current", "seq": 2, "expected_code": "OK", "expected_status": "ACK_DUPLICATE", "expected_last_seq": 2},
+        {"action": "data", "token": "valid", "session": "current", "seq": 3, "expected_code": "OK", "expected_status": "ACK_OK", "expected_last_seq": 3},
+        {"action": "hello", "token": "valid", "instance_name": "host:4242", "expected_accepted": true, "expected_instance_id": 2}
       ]
     }
   ],

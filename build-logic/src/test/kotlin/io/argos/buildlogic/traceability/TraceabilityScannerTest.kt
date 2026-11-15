@@ -157,6 +157,84 @@ class TraceabilityScannerTest {
   }
 
   @Test
+  @DisplayName(
+    // No other test ID in the name: the report would read it as a test of that ID.
+    "T-BLD-014 test IDs ending in a letter (ADR-0010 C-182): [0-9]+[A-Z]?[a-z]?, a trailing lower-case letter " +
+      "resolves to the catalogue ID, the NFR IDs of N-10a..d are catalogue IDs themselves"
+  )
+  fun letterEndedTestIds() {
+    assertThat(TestIds.find("T-SEC-3Aa masked default; T-SEC-3A, T-AG-031a, T-SEC-3Ab"))
+      .containsExactly("T-SEC-3Aa", "T-SEC-3A", "T-AG-031a", "T-SEC-3Ab")
+    assertThat(TestIds.find("T-SEC-3aA T-SEC-3AB T-AG-01ab T-SEC-3Aab")).isEmpty()
+    assertThat(TestIds.catalogId("T-SEC-3Aa")).isEqualTo("T-SEC-3A")
+    assertThat(TestIds.catalogId("T-AG-031a")).isEqualTo("T-AG-031")
+    assertThat(TestIds.catalogId("T-SEC-3A")).isEqualTo("T-SEC-3A")
+    assertThat(TestIds.catalogId("T-AG-031")).isEqualTo("T-AG-031")
+    assertThat(TestIds.catalogId("T-NFR-10a")).isEqualTo("T-NFR-10a")
+    assertThat(TestIds.isPartial("T-SEC-23a")).isTrue()
+    assertThat(TestIds.isPartial("T-SEC-3A")).isFalse()
+    assertThat(TestIds.isPartial("T-NFR-10b")).isFalse()
+  }
+
+  @Test
+  @DisplayName(
+    "T-BLD-014 report (ADR-0010 C-182): a catalogue ID that only suffixed IDs passed is shown as partial, not as a " +
+      "full PASSED; a passed full ID keeps its partial checks plain"
+  )
+  fun partialCoverage() {
+    val source =
+      """
+      package p;
+      @Tag("req:SEC-23")
+      class PartialTest {
+        @Test @DisplayName("T-SEC-23a gate unit") void gate() {}
+        @Test @Tag("req:SEC-3A") @DisplayName("T-SEC-3Aa agent side, masked") void agentSide() {}
+        @Test @Tag("req:SEC-35") @DisplayName("T-SEC-35 normalizer") void full() {}
+        @Test @Tag("req:SEC-35") @DisplayName("T-SEC-35a brackets") void brackets() {}
+        @Test @Tag("req:N-10a") @DisplayName("T-NFR-10a checklist") void asvs() {}
+        @Test @Tag("req:SEC-26") @DisplayName("T-SEC-26a not run yet") void notRun() {}
+      }
+      """
+        .trimIndent()
+    val scan = JavaKotlinTestScanner.scan("p/src/test/java/p/PartialTest.java", source, "p", "test")
+    fun passed(name: String) =
+      "p" to JUnitXmlResults.Case("p.PartialTest", name, Status.PASSED, 0.1, "2026-11-14T00:00:00Z", "test", File("p/x.xml"))
+    val results =
+      listOf("T-SEC-23a gate unit", "T-SEC-3Aa agent side, masked", "T-SEC-35 normalizer", "T-SEC-35a brackets", "T-NFR-10a checklist")
+        .map(::passed)
+    val model = Traceability.build(scan.classes, scan.tests, results, sourceFiles = 1, resultFiles = 1)
+    assertThat(model.partiallyCovered)
+      .containsExactly(
+        org.assertj.core.api.Assertions.entry("T-SEC-3A", listOf("T-SEC-3Aa")),
+        org.assertj.core.api.Assertions.entry("T-SEC-23", listOf("T-SEC-23a")),
+        org.assertj.core.api.Assertions.entry("T-SEC-26", listOf("T-SEC-26a")),
+      )
+    val md = TraceabilityRenderer.markdown(model, "now")
+    assertThat(md)
+      .contains("| Catalogue test IDs covered only by partial checks (suffixed IDs, C-182) | 3 |")
+      .contains("| SEC-23 | T-SEC-23a | `PartialTest` T-SEC-23a gate unit ")
+      .contains("| test | PASSED (2026-11-14T00:00:00Z), partial of T-SEC-23 |")
+      .contains("T-SEC-3Aa agent side, masked ([p/src/test/java/p/PartialTest.java:5](p/src/test/java/p/PartialTest.java)) | test | PASSED (2026-11-14T00:00:00Z), partial of T-SEC-3A |")
+      .contains("T-SEC-35a brackets ([p/src/test/java/p/PartialTest.java:7](p/src/test/java/p/PartialTest.java)) | test | PASSED (2026-11-14T00:00:00Z) |")
+      .contains("T-NFR-10a checklist ([p/src/test/java/p/PartialTest.java:8](p/src/test/java/p/PartialTest.java)) | test | PASSED (2026-11-14T00:00:00Z) |")
+      .contains("T-SEC-26a not run yet ([p/src/test/java/p/PartialTest.java:9](p/src/test/java/p/PartialTest.java)) | test | NOT RUN |")
+      .contains("## Catalogue test IDs covered only by partial checks")
+      .contains("| T-SEC-23 | T-SEC-23a |")
+    @Suppress("UNCHECKED_CAST")
+    val json = JsonSlurper().parseText(TraceabilityRenderer.json(model, "now")) as Map<String, Any?>
+    @Suppress("UNCHECKED_CAST")
+    val tests = (json["requirements"] as List<Map<String, Any?>>).flatMap { it["tests"] as List<Map<String, Any?>> }
+    assertThat(tests.filter { it.containsKey("partialOf") }.map { it["name"] to it["partialOf"] }.distinct())
+      .containsExactlyInAnyOrder(
+        "T-SEC-23a gate unit" to listOf("T-SEC-23"),
+        "T-SEC-3Aa agent side, masked" to listOf("T-SEC-3A"),
+        "T-SEC-26a not run yet" to listOf("T-SEC-26"),
+      )
+    @Suppress("UNCHECKED_CAST")
+    assertThat((json["summary"] as Map<String, Any?>)["partiallyCoveredTestIds"]).isEqualTo(3)
+  }
+
+  @Test
   @DisplayName("T-BLD-014 Vitest and Playwright titles with IDs and file-level req annotations")
   fun scriptScanner() {
     val ts =

@@ -79,6 +79,13 @@ public enum ErrorCode {
   TEMPLATE_VARIABLE_FORBIDDEN(422, "The template uses a variable that is not allowed"),
   /** A remote configuration key is outside the allow list (SEC-23). */
   REMOTE_KEY_NOT_ALLOWED(422, "The configuration key is not allowed"),
+  /**
+   * A well-formed filter that cannot be applied to the data, e.g. a {@code user_id} filter on an
+   * application in hashed mode before its salt exists (ADR-0010 C-152, detail {@code
+   * user_id_hash_unavailable}). The wire code is {@code filter_invalid} like the 400 one; the
+   * status 422 says that the request is valid but not answerable.
+   */
+  FILTER_UNPROCESSABLE(422, "filter_invalid", "The filter cannot be applied to this data"),
 
   /** The account is locked after repeated login failures (16 §7.9). */
   ACCOUNT_LOCKED(423, "The account is locked"),
@@ -104,6 +111,13 @@ public enum ErrorCode {
     this.status = status;
     this.defaultMessage = defaultMessage;
     this.code = name().toLowerCase(Locale.ROOT);
+  }
+
+  /** A code whose wire name differs from the constant (two statuses of one wire code). */
+  ErrorCode(int status, String code, String defaultMessage) {
+    this.status = status;
+    this.defaultMessage = defaultMessage;
+    this.code = code;
   }
 
   /** The wire code, e.g. {@code csrf_invalid}. */

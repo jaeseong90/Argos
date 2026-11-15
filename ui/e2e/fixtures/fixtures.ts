@@ -17,7 +17,22 @@
 // console error, so without the exemption the control would fail on the console check even if the
 // CSP violation check were gone. Every exempted message is listed in an `ignored-console-error`
 // annotation of the test.
-import { test as base, expect, type Page, type TestInfo } from '@playwright/test';
+//
+// The E2E stack (WO-30, e2e/fixtures/stack.ts) uses the same hooks against the real server with
+// three more options: `requireCsp` (the server's nonce CSP must be on every document, T-SEC-46),
+// `consoleFilter` (Chrome's "Failed to load resource" line of an expected 4xx API answer, e.g. 401
+// before login, is annotated instead of counted; 5xx and everything else still fail) and
+// `checkTokenStorage` (T-SEC-40: neither document.cookie nor localStorage nor sessionStorage holds a
+// session token). WebSocket connections must go to the page's own origin as well (the stack's
+// routed /ws stub emits no `websocket` event; e2e/fixtures/stack.ts checks its connections with the
+// same rule). e2e/specs/stack-hooks.spec.ts holds the positive controls of these stack options.
+import {
+  test as base,
+  expect,
+  type ConsoleMessage,
+  type Page,
+  type TestInfo,
+} from '@playwright/test';
 
 import { uiTarget } from './uiServer';
 
@@ -45,6 +60,36 @@ export interface PageHookOptions {
    * positive controls that provoke a known console error; ordinary tests leave it empty.
    */
   readonly ignoredConsoleErrors?: readonly RegExp[];
+  /** Every main-frame document must carry a CSP header (default: when the suite serves dist/). */
+  readonly requireCsp?: boolean;
+  /**
+   * Returns why a console error is expected (annotated, not counted), or null to count it. For the
+   * stack: Chrome's resource-load line of an expected 4xx answer of the API.
+   */
+  readonly consoleFilter?: (message: ConsoleMessage) => string | null;
+  /** T-SEC-40: no session token in document.cookie, localStorage or sessionStorage. */
+  readonly checkTokenStorage?: boolean;
+}
+
+/** Names of the httpOnly session cookies (WO-24 SessionCookies): never readable by the page. */
+export const SESSION_TOKEN_COOKIES: readonly string[] = ['argos_at', 'argos_rt'];
+
+/** A JWT-shaped string (header.payload of a base64url JSON object). */
+const JWT_SHAPE = /eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}/;
+
+/** The WebSocket origin (ws: / wss:) that belongs to an http(s) origin. */
+export function webSocketOrigin(origin: string): string {
+  return origin.replace(/^http(s?):/, 'ws$1:');
+}
+
+/**
+ * Whether a WebSocket URL goes to the page's own origin (ws: for http:, wss: for https:, same host
+ * and port). Used by the page hook below and by the stack's WebSocket stub (e2e/fixtures/stack.ts):
+ * a socket answered by page.routeWebSocket emits no `websocket` event, so the stub checks its own
+ * connections with the same rule.
+ */
+export function isOwnWebSocket(url: string, pageOrigin: string | null): boolean {
+  return pageOrigin !== null && new URL(url).origin === webSocketOrigin(pageOrigin);
 }
 
 interface DocumentResponse {
@@ -65,6 +110,7 @@ export async function installPageHooks(
   options: PageHookOptions = {},
 ): Promise<PageHooks> {
   const ignoredPatterns = options.ignoredConsoleErrors ?? [];
+  const requireCsp = options.requireCsp ?? SERVES_OWN_PREVIEW;
   const problems: string[] = [];
   const ignored: string[] = [];
   const documents: Promise<DocumentResponse>[] = [];
@@ -81,9 +127,12 @@ export async function installPageHooks(
       return;
     }
     const text = message.text();
+    const expected = options.consoleFilter?.(message) ?? null;
     // String#search ignores the g and y flags and leaves lastIndex alone, unlike RegExp#test.
     if (ignoredPatterns.some((pattern) => text.search(pattern) !== -1)) {
       ignored.push(text);
+    } else if (expected !== null) {
+      ignored.push(`${text} (${expected})`);
     } else {
       problems.push(`console error: ${text}`);
     }
@@ -92,6 +141,11 @@ export async function installPageHooks(
     const url = new URL(request.url());
     if (url.protocol !== 'data:' && url.protocol !== 'blob:' && url.origin !== origin) {
       problems.push(`request to another origin: ${request.url()}`);
+    }
+  });
+  page.on('websocket', (socket) => {
+    if (!isOwnWebSocket(socket.url(), origin)) {
+      problems.push(`WebSocket to another origin: ${socket.url()}`);
     }
   });
   page.on('response', (response) => {
@@ -116,12 +170,16 @@ export async function installPageHooks(
 
   return {
     async verify(testInfo: TestInfo): Promise<void> {
+      // A skipped test (e.g. a screenshot test outside its Linux image) opened no page.
+      if (testInfo.status === 'skipped') {
+        return;
+      }
       // Each exempted message is annotated once, also when verify runs more than once.
       for (const text of ignored.splice(0)) {
         testInfo.annotations.push({ type: IGNORED_CONSOLE_ERROR, description: text });
       }
       const responses = await Promise.all(documents);
-      if (SERVES_OWN_PREVIEW) {
+      if (requireCsp) {
         expect(
           responses.length,
           'main-frame documents loaded (every E2E test opens the UI)',
@@ -143,6 +201,41 @@ export async function installPageHooks(
         }));
         expect(state.xss, 'window.__xss must stay undefined (an XSS payload ran)').toBeNull();
         expect(state.csp, 'CSP violations').toEqual([]);
+        if (options.checkTokenStorage === true) {
+          const tokens = (await page.context().cookies())
+            .filter((c) => SESSION_TOKEN_COOKIES.includes(c.name))
+            .map((c) => c.value)
+            .filter((v) => v.length >= 8);
+          const leaks = await page.evaluate(
+            ({ names, values, jwt }) => {
+              const found: string[] = [];
+              const shape = new RegExp(jwt);
+              for (const name of names) {
+                if (document.cookie.split(';').some((c) => c.trim().startsWith(`${name}=`))) {
+                  found.push(`document.cookie holds ${name}`);
+                }
+              }
+              for (const [label, storage] of [
+                ['localStorage', window.localStorage],
+                ['sessionStorage', window.sessionStorage],
+              ] as const) {
+                for (let i = 0; i < storage.length; i += 1) {
+                  const key = storage.key(i) ?? '';
+                  const value = storage.getItem(key) ?? '';
+                  if (
+                    values.some((v) => value.includes(v) || key.includes(v)) ||
+                    shape.test(value)
+                  ) {
+                    found.push(`${label}[${key}] holds a session token`);
+                  }
+                }
+              }
+              return found;
+            },
+            { names: [...SESSION_TOKEN_COOKIES], values: tokens, jwt: JWT_SHAPE.source },
+          );
+          expect(leaks, 'T-SEC-40: session tokens readable by the page').toEqual([]);
+        }
       }
       expect(problems, 'dialogs, page errors, console errors, foreign requests').toEqual([]);
     },

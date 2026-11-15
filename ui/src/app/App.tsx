@@ -1,47 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useTranslation } from 'react-i18next';
-
-import { supportedLanguages, type SupportedLanguage } from '../i18n';
-
-const languageLabelKeys = {
-  en: 'language.en',
-  ko: 'language.ko',
-} as const satisfies Record<SupportedLanguage, string>;
+//
+// Root of the UI (docs/15 §2.2 app/): i18n, the TanStack Query cache and the data router. The Ant
+// Design ConfigProvider (with the CSP nonce) sits inside the router (app/AntdRoot.tsx) so that the
+// WO-04 PoC route stays without it.
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
+import type { i18n as I18n } from 'i18next';
+import { I18nextProvider } from 'react-i18next';
+import type { createBrowserRouter } from 'react-router';
+import { RouterProvider } from 'react-router/dom';
 
 export interface AppProps {
-  /** Build version (DSN-19-10). Rendered as text only. */
-  readonly version: string;
+  readonly i18n: I18n;
+  readonly queryClient: QueryClient;
+  readonly router: ReturnType<typeof createBrowserRouter>;
 }
 
-export function App({ version }: AppProps) {
-  const { t, i18n } = useTranslation();
-  const current = i18n.resolvedLanguage;
-
+export function App({ i18n, queryClient, router }: AppProps) {
   return (
-    <main className="app">
-      <header>
-        <h1>{t('app.name')}</h1>
-        <p>{t('app.tagline')}</p>
-      </header>
-      <p className="app__notice">{t('app.status.preRelease')}</p>
-      <nav aria-label={t('language.label')} className="app__languages">
-        {supportedLanguages.map((language) => (
-          <button
-            key={language}
-            type="button"
-            lang={language}
-            aria-pressed={current === language}
-            onClick={() => {
-              void i18n.changeLanguage(language);
-            }}
-          >
-            {t(languageLabelKeys[language])}
-          </button>
-        ))}
-      </nav>
-      <footer>
-        <p className="app__version">{t('app.version', { version })}</p>
-      </footer>
-    </main>
+    <I18nextProvider i18n={i18n}>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </I18nextProvider>
   );
 }

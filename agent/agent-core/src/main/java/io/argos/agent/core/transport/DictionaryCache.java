@@ -3,6 +3,7 @@ package io.argos.agent.core.transport;
 
 import com.google.protobuf.CodedOutputStream;
 import io.argos.agent.bootstrap.DictKind;
+import io.argos.agent.core.sql.SqlNormalizer;
 import io.argos.agent.core.trace.Dictionary;
 import io.argos.proto.ProtocolLimits;
 import io.argos.proto.v1.DictionaryEntries;
@@ -56,7 +57,7 @@ import java.util.function.IntSupplier;
  */
 final class DictionaryCache {
   /** {@code DictionaryEntry.norm_version} of {@code SQL_TEXT} (D-22). */
-  static final int NORM_VERSION = 1;
+  static final int NORM_VERSION = SqlNormalizer.NORM_VERSION;
 
   /** Field number of {@code DictionaryEntries.entries}. */
   static final int ENTRIES_FIELD = DictionaryEntries.ENTRIES_FIELD_NUMBER;

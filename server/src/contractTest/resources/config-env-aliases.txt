@@ -18,8 +18,6 @@ ARGOS_CH_READER_USER	argos.clickhouse.reader.user
 ARGOS_CH_URL	argos.clickhouse.url
 ARGOS_CH_WRITER_PASSWORD_FILE	argos.clickhouse.writer.password-file
 ARGOS_CH_WRITER_USER	argos.clickhouse.writer.user
-ARGOS_GRPC_BIND	argos.collector.bind
-ARGOS_HTTP_BIND	server.address
 ARGOS_IP_MODE	argos.privacy.default-ip-mode
 ARGOS_LOG_LEVEL	logging.level.root
 ARGOS_PG_OWNER_PASSWORD_FILE	argos.postgres.owner.password-file

@@ -35,6 +35,14 @@ public enum AuditEvent {
   /** A request was refused because the password must be changed first (16 §7.9). */
   MUST_CHANGE_ENFORCED,
 
+  // Tokens (16 §11.1 group 토큰): app, token prefix
+  /**
+   * An agent token was issued (prefix, expiry). Written today by {@code argos-compose.sh token
+   * create} of the Compose installation (ADR-0010 C-173, C-199 (3)) with actor {@code system} /
+   * {@code argos-compose}; the token API of WO-26 emits it too.
+   */
+  TOKEN_ISSUED,
+
   // Users and roles (16 §11.1 group 사용자·역할): target user
   /** A user was created (administration API, setup wizard or unattended setup). */
   USER_CREATED,
@@ -44,6 +52,17 @@ public enum AuditEvent {
   USER_DISABLED,
   /** A user's role changed; before and after are recorded. */
   ROLE_CHANGED,
+
+  // Sensitive views (16 §11.1 group 민감 열람; WO-23): type, tx_id
+  /**
+   * Sensitive data was shown: {@code type = sql_params_full} for bind parameters in {@code full}
+   * mode (16 §6.7, 14 §7.3); WO-26 adds the command result types.
+   */
+  SENSITIVE_VIEW,
+
+  // Exports (16 §11.1 group 내보내기; WO-23): view, filters, rows
+  /** A list was exported (14 §4.17, SEC-63): the view, the filter names and the row count. */
+  EXPORT_CSV,
 
   // System (16 §11.1 group 시스템)
   /** The first administrator was created through the setup token or unattended setup (SEC-47). */

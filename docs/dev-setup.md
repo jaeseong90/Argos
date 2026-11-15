@@ -146,11 +146,12 @@ Every pull request runs `.github/workflows/pr.yml`. The jobs map to these comman
 |---|---|
 | `build-java` | `./gradlew build -x integrationTest` |
 | `build-ui` | `pnpm -C ui install --frozen-lockfile`, `pnpm -C ui build`, `pnpm -C ui test`, `pnpm -C ui check:external` |
-| `lint` | `bash .github/scripts/check-file-modes.sh`, `./gradlew spotlessCheck`, `bash test/lint/check-spdx.sh`, `pnpm -C ui lint`, `pnpm -C ui typecheck`, `pnpm -C ui format:check`, `pnpm -C ui check:i18n`, `bash .github/scripts/check-workflows.sh`, actionlint and shellcheck (below), `bash .github/scripts/test/run-all.sh` |
+| `lint` | `bash .github/scripts/check-file-modes.sh`, `./gradlew spotlessCheck`, `bash test/lint/check-spdx.sh`, `pnpm -C ui lint`, `pnpm -C ui typecheck`, `pnpm -C ui format:check`, `pnpm -C ui check:i18n`, `bash .github/scripts/check-workflows.sh`, actionlint and shellcheck (below), `bash .github/scripts/test/run-all.sh`, `REQUIRE_DOCKER=1 bash deploy/compose/test/run-all.sh` |
 | `license` | `./gradlew checkLicenses checkDevOnlyLicenses`, `pnpm -C ui check:licenses`, `pnpm -C ui check:licenses:dev` |
 | `agent-dist-checks` | `./gradlew :agent:agent-dist:check verifyAgentJar` |
 | `integration` | `./gradlew integrationTest` |
 | `security-light` | `./gradlew securityTest` |
+| `e2e` (4 shards, not yet required) | `./gradlew :server:bootJar :agent:agent-dist:agentJar :sample-apps:shop-boot3:sampleAppJar :sample-apps:ext-stub:sampleAppJar :sample-apps:smoke:sampleAppJar`, then `pnpm -C ui e2e:docker -- --shard=<i>/4` (stack project in the pinned Linux Playwright image, screenshots compared there); shard 1 also `pnpm -C ui exec playwright install --with-deps chromium` and `pnpm -C ui e2e:preview`. Locally `cd ui && corepack pnpm e2e` (preview + stack on the host, needs Docker, JDK 21 and, on Windows, Git Bash); details in [ui/e2e/README.md](../ui/e2e/README.md) |
 | `openapi-diff` | `bash .github/scripts/check-openapi-diff.sh origin/main` |
 | `changelog` | `bash .github/scripts/check-changelog.sh origin/main HEAD` |
 | `dco` | `bash .github/scripts/check-dco.sh origin/main HEAD` |
@@ -160,9 +161,11 @@ Workflow linting uses the same pinned image as CI:
 ```sh
 docker run --rm -v "$PWD:/repo:ro" -w /repo \
   rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -color
+shopt -s globstar
 docker run --rm -v "$PWD:/repo:ro" -w /repo --entrypoint shellcheck \
   rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
-  -x .github/scripts/*.sh .github/scripts/test/*.sh test/agent/*.sh test/lint/*.sh
+  -x .github/scripts/*.sh .github/scripts/test/*.sh test/agent/*.sh test/lint/*.sh \
+  deploy/compose/**/*.sh deploy/compose/test/container/fake-bin/* deploy/compose/test/container/fake-df/*
 ```
 
 Secret scanning (also run by `.github/workflows/secrets-scan.yml`):
@@ -178,10 +181,25 @@ path for the volume (for example `-v "$(cygpath -w "$PWD"):/repo:ro"`); the scri
 
 ## 6. Running Argos locally
 
-Not available yet. The Docker Compose setup (`docker compose -f deploy/compose/compose.yaml --profile
-demo up`), running the server with `./gradlew :server:bootRun` against local ClickHouse and PostgreSQL
-containers, and running a sample application with the agent attached are added in later work and will
-be documented here.
+The single-node Docker Compose installation is in `deploy/compose/`; the operator guide is
+[install/compose.md](install/compose.md). From this tree:
+
+```sh
+./gradlew :server:jibDockerBuild    # local image argos-server:<version>; -Pargos.ui.skip=true leaves the UI out
+cd deploy/compose
+# place tls/server.crt and tls/server.key first (guide section 4; option B creates an evaluation CA)
+./argos-env-init.sh --public-url http://localhost:8080   # with sudo on a Linux Docker Engine
+./argos-compose.sh up
+./smoke.sh
+./argos-compose.sh down --volumes   # deletes all data of the installation
+```
+
+Tests of the installation: `bash deploy/compose/test/run-all.sh` (Docker, about 40 seconds) and
+`./gradlew :deploy:composeSmoke` (end to end with a real agent, about 4 minutes plus the image
+build; it uses host ports 8080 and 9100 and up to about 6 GB of Docker memory, and is not part of
+`check`). The demo profile, running the server with `./gradlew :server:bootRun` against local
+databases, and a sample application with the agent attached outside the tests are added in later
+work.
 
 ## 7. Dependency changes
 

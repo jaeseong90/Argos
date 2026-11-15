@@ -94,10 +94,12 @@ class PermissionMatrixSessionSecurityTest {
           "Permission matrix (real sessions, security suite)");
 
       assertThat(result.failures()).isEmpty();
-      assertThat(result.rows()).isNotEmpty();
+      assertThat(result.rows())
+          .as("one row per operation of the served document")
+          .hasSameSizeAs(spec.operations());
       assertThat(result.rows().stream().map(PermissionMatrix.Row::role).distinct())
-          .as("the current API has public, viewer and admin operations")
-          .contains("public", "viewer", "admin");
+          .as("the current API has public, viewer, operator and admin operations")
+          .contains("public", "viewer", "operator", "admin");
     }
   }
 

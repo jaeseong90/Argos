@@ -14,7 +14,47 @@
   },
   "term": {
     "xlog": "XLog",
-    "xlogDescription": "응답시간 분포도"
+    "xlogDescription": "응답시간 분포도",
+    "applicationMap": "애플리케이션 맵",
+    "pointNormal": "정상",
+    "pointSlow": "지연",
+    "pointError": "에러",
+    "errorGroup": "에러 그룹",
+    "mute": "알림 일시 중지(점검)",
+    "alertState": {
+      "ok": "정상",
+      "pending": "대기",
+      "firing": "발생",
+      "acked": "확인",
+      "resolved": "해제",
+      "noData": "데이터 없음"
+    },
+    "recoveryThreshold": "해제 기준",
+    "drop": "유실",
+    "clockSkew": "시간 오차",
+    "statTile": "요약 지표",
+    "waterfall": "타임라인",
+    "callTree": "호출 트리",
+    "profileStep": "프로파일 구간",
+    "remoteCommand": "에이전트 명령",
+    "envDump": "환경 정보",
+    "rollup": "집계(1분·1시간)",
+    "rollup1m": "집계(1분)",
+    "rollup1h": "집계(1시간)",
+    "eventMarker": "이벤트 표시(배포·재기동·설정 변경)",
+    "deepLink": "링크 복사",
+    "collectionQuality": "수집 상태",
+    "activeTransactions": "액티브 트랜잭션",
+    "apdex": "Apdex",
+    "apdexDescription": "만족 요청 비율: 임계치 T 이내는 만족, 4T 이내는 절반으로 셉니다",
+    "kind": {
+      "http": "요청",
+      "batch": "배치",
+      "message": "메시지",
+      "all": "전체 종류"
+    },
+    "dbcStep": "커넥션 대기",
+    "overview": "전체 현황"
   },
   "route": {
     "loading": "불러오는 중…",
@@ -22,6 +62,236 @@
       "title": "페이지를 찾을 수 없습니다",
       "description": "주소에 맞는 화면이 없습니다. 링크를 확인하거나 시작 화면으로 이동하세요.",
       "home": "시작 화면으로 이동"
+    }
+  },
+  "component": {
+    "common": {
+      "apply": "적용",
+      "cancel": "취소"
+    },
+    "missing": {
+      "noData": "데이터 없음",
+      "notMeasurable": "측정 불가"
+    },
+    "safeLink": {
+      "newTab": "(새 탭에서 열림)",
+      "blocked": "(링크 비활성: 지원하지 않는 주소)"
+    },
+    "codeBlock": {
+      "language": {
+        "sql": "SQL",
+        "stack": "스택 트레이스",
+        "config": "설정",
+        "text": "텍스트"
+      },
+      "copy": "복사",
+      "copied": "복사됨",
+      "copyFailed": "복사 실패",
+      "showAll": "전체 {{count, number}}줄 보기",
+      "collapse": "접기"
+    },
+    "status": {
+      "up": "UP",
+      "stale": "STALE",
+      "down": "DOWN",
+      "warn": "WARN",
+      "unknown": "알 수 없음",
+      "tooltip": {
+        "up": "에이전트가 연결되어 heartbeat를 보내고 있습니다.",
+        "stale": "heartbeat를 60초 이상 받지 못했습니다.",
+        "down": "heartbeat를 180초 이상 받지 못했거나 에이전트 종료 후 5분이 지났습니다.",
+        "warn": "경고와 함께 동작 중:",
+        "unknown": "상태를 알 수 없습니다."
+      },
+      "warnReason": {
+        "clockSkew": "$t(term.clockSkew)",
+        "drops": "$t(term.drop)",
+        "outdatedAgent": "구버전 에이전트",
+        "moduleDisabled": "모듈 비활성",
+        "other": "기타"
+      }
+    },
+    "alertState": {
+      "ok": "$t(term.alertState.ok)",
+      "pending": "$t(term.alertState.pending)",
+      "firing": "$t(term.alertState.firing)",
+      "acked": "$t(term.alertState.acked)",
+      "resolved": "$t(term.alertState.resolved)",
+      "noData": "$t(term.alertState.noData)"
+    },
+    "severity": {
+      "warn": "경고",
+      "critical": "심각"
+    },
+    "delta": {
+      "noBasis": "비교 데이터 없음",
+      "better": "(개선)",
+      "worse": "(악화)",
+      "unchanged": "(변화 없음)"
+    },
+    "statTile": {
+      "basis": {
+        "prev": "직전 구간 대비",
+        "sevenDays": "7일 전 대비"
+      }
+    },
+    "empty": {
+      "title": "선택 기간에 데이터가 없습니다.",
+      "description": "기간을 넓히거나 필터·종류를 확인하세요.",
+      "widenRange": "기간 넓히기",
+      "clearFilters": "필터 지우기",
+      "excluded_other": "이 기간에 제외된 요청 {{count, number}}건"
+    },
+    "error": {
+      "network": "서버에 연결할 수 없습니다. 연결을 확인하고 다시 시도하세요.",
+      "forbidden": "권한이 없습니다. 관리자에게 역할을 요청하세요.",
+      "notFound": "찾을 수 없습니다. 보존 기간이 지났거나 링크가 잘못되었을 수 있습니다.",
+      "rateLimited": "요청이 너무 많습니다. {{seconds}}초 뒤에 다시 시도하세요.",
+      "rateLimitedNow": "요청이 너무 많았습니다. 이제 다시 시도할 수 있습니다.",
+      "timeout": "조회 시간이 너무 깁니다. 기간을 좁혀 다시 시도하세요.",
+      "unavailable": "저장소를 일시적으로 사용할 수 없습니다. 잠시 뒤 다시 시도하세요.",
+      "starting": "서버가 시작 중입니다. 잠시 뒤 다시 시도하세요.",
+      "rangeInvalid": "기간이 올바르지 않습니다. 다른 기간을 선택하세요.",
+      "limitExceeded": "결과가 상한을 넘었습니다. 기간을 좁히거나 필터를 추가하세요.",
+      "filterInvalid": "적용할 수 없는 필터가 있습니다. 필터를 확인하거나 지우세요.",
+      "unsupportedSort": "지원하지 않는 정렬입니다. 다른 열로 정렬하세요.",
+      "badRequest": "요청이 올바르지 않습니다. 기간과 필터를 확인하세요.",
+      "server": "서버가 요청을 처리하지 못했습니다. 다시 시도하고, 계속 실패하면 요청 ID를 알려 주세요.",
+      "status": "상태 {{status}}",
+      "requestId": "요청 ID {{id}}",
+      "narrowRange": "기간 좁히기",
+      "retry": "다시 시도",
+      "retryIn": "{{seconds}}초 뒤 다시 시도"
+    },
+    "loading": {
+      "label": "불러오는 중",
+      "slow": "조회 중… 기간을 좁히면 빨라집니다."
+    },
+    "partial": {
+      "sampling": "표시 {{shown}} / 전체 {{total}}",
+      "samplingNoCount": "데이터 일부(샘플)를 표시합니다",
+      "truncated": "처음 {{shown}}건만 표시합니다. 기간을 좁히거나 필터를 추가하세요.",
+      "truncatedNoCount": "결과가 상한에서 잘렸습니다. 기간을 좁히거나 필터를 추가하세요.",
+      "source1m": "1분 집계 데이터",
+      "source1h": "1시간 집계 데이터",
+      "sourceMixed": "원본과 1분 집계 데이터",
+      "retentionExceeded": "원본 보존 기간이 지나 집계 데이터를 표시합니다.",
+      "profileSampledOut": "프로파일 미수집(샘플링 정책)",
+      "profileLost": "프로파일 유실(드롭)"
+    },
+    "filterChips": {
+      "label": "적용된 필터",
+      "remove": "필터 {{field}} 제거",
+      "clear": "모두 지우기",
+      "edit": "필터 {{field}} 편집",
+      "operator": "조건",
+      "value": "값",
+      "tooLong": "값이 너무 깁니다. 필터 값은 최대 1,024바이트(UTF-8)까지 입력할 수 있습니다.",
+      "op": {
+        "contains": "포함",
+        "in": "다음 중"
+      }
+    },
+    "kind": {
+      "label": "트랜잭션 종류",
+      "http": "$t(term.kind.http)",
+      "batch": "$t(term.kind.batch)",
+      "message": "$t(term.kind.message)",
+      "all": "$t(term.kind.all)",
+      "batchUnavailable": "이 앱에는 배치 트랜잭션이 없습니다."
+    },
+    "timeRange": {
+      "label": "시간 범위",
+      "presets": "프리셋",
+      "absolute": "절대 범위",
+      "absoluteValue": "{{from}} – {{to}}",
+      "from": "시작",
+      "to": "끝",
+      "timeZone": "시각은 브라우저 시간대({{offset}}) 기준입니다.",
+      "invalid": "시작이 끝보다 앞서야 합니다.",
+      "prev": "이전 범위",
+      "next": "다음 범위",
+      "zoomIn": "확대",
+      "zoomOut": "축소",
+      "now": "지금",
+      "live": "실시간",
+      "liveUnavailable": "이 화면에는 실시간 모드가 없습니다.",
+      "liveResume": "실시간 재개",
+      "preset": {
+        "m5": "최근 5분",
+        "m15": "최근 15분",
+        "h1": "최근 1시간",
+        "h6": "최근 6시간",
+        "h24": "최근 24시간",
+        "d7": "최근 7일",
+        "d30": "최근 30일",
+        "today": "오늘",
+        "yesterday": "어제"
+      }
+    },
+    "appSelect": {
+      "label": "애플리케이션",
+      "placeholder": "애플리케이션 선택",
+      "recent": "최근 사용",
+      "empty": "일치하는 애플리케이션이 없습니다"
+    },
+    "envSelect": {
+      "label": "환경",
+      "placeholder": "환경 선택",
+      "all": "모든 환경",
+      "recent": "최근 사용",
+      "environments": "환경"
+    },
+    "dataTable": {
+      "columns": "열",
+      "csv": "CSV",
+      "csvBusy": "내보내는 중…",
+      "rowCount_other": "{{count, number}}행",
+      "filterColumn": "{{column}} 필터",
+      "resize": "{{column}} 열 너비 조절",
+      "include": "이 값으로 필터",
+      "exclude": "이 값 제외",
+      "cellMenu": "값 동작",
+      "cellFocus": "값 열: {{column}}. 왼쪽·오른쪽 화살표로 바꾸고 Shift+F10으로 값 동작을 엽니다.",
+      "valueTooLongForFilter": "이 값은 1,024바이트(UTF-8)보다 길어 필터로 쓸 수 없습니다.",
+      "filter": {
+        "contains": "포함",
+        "min": "최솟값",
+        "max": "최댓값",
+        "value": "값",
+        "any": "전체",
+        "clear": "지우기",
+        "rangeInvalid": "숫자를 입력하고 최솟값이 최댓값보다 크지 않게 하세요.",
+        "tooLong": "텍스트가 너무 깁니다. 필터 값은 최대 1,024바이트(UTF-8)까지 입력할 수 있습니다."
+      }
+    },
+    "chart": {
+      "legend": "범례",
+      "legendHint": "클릭하면 표시·숨김, Shift+클릭하면 이 시리즈만 표시합니다.",
+      "baseline": {
+        "oneDay": "1일 전",
+        "sevenDays": "7일 전"
+      },
+      "vsBaseline": "{{offset}} 대비 {{diff}}",
+      "source1h": "1시간 집계",
+      "source1m": "1분 집계",
+      "outages_other": "수집 중단 {{count, number}}건",
+      "menu": "지점 동작",
+      "openXLog": "이 시각 XLog 보기",
+      "related": "관련 목록",
+      "moreMarkers": "+{{count}}",
+      "tableCaption": "{{title}} 데이터",
+      "time": "시각",
+      "marker": {
+        "deploy": "배포",
+        "start": "기동",
+        "stop": "종료",
+        "config": "설정 변경",
+        "alert": "알림 전이",
+        "state": "상태 변경",
+        "apdex": "Apdex 변화",
+        "custom": "이벤트"
+      }
     }
   }
 }

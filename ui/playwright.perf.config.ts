@@ -14,6 +14,9 @@ const settings = perfSettings(process.env);
 export default defineConfig({
   testDir: './perf',
   testMatch: '**/*.spec.ts',
+  // perf/initial-load.spec.ts runs against the E2E stack (playwright.config.ts, project
+  // initial-load: `corepack pnpm perf:initial-load`), not against the preview server.
+  testIgnore: '**/initial-load.spec.ts',
   outputDir: './test-results/perf',
   fullyParallel: false,
   workers: 1,

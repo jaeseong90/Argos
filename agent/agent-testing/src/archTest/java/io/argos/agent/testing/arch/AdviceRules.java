@@ -212,7 +212,12 @@ public final class AdviceRules {
         .because("advice must never skip, repeat or delegate the application method (A-4)");
   }
 
-  /** T-AG-002b [ADV-02, A-1]: suppress = Throwable.class, and onThrowable on exit advice. */
+  /**
+   * T-AG-002b [ADV-02, A-1]: suppress = Throwable.class, and onThrowable on exit advice of methods.
+   * Exit advice that its module applies to constructors only (A-7) has suppress only: ByteBuddy
+   * cannot catch an exception inside a constructor and rejects such advice at transform time
+   * (WO-13; {@link AgentCodeRules#constructorsGetExitAdviceOnly} rejects onThrowable there).
+   */
   public static ArchRule suppressThrowable(AgentLayout layout) {
     return methods()
         .that(adviceMethods(layout))
@@ -226,8 +231,14 @@ public final class AdviceRules {
                   if (annotation.isEmpty()) {
                     continue;
                   }
-                  List<String> required =
+                  // Constructor exit advice (A-7) cannot catch: ByteBuddy rejects onThrowable in a
+                  // constructor, so it needs suppress only (A-7 rejects onThrowable there).
+                  boolean constructorOnly =
                       type.equals(ON_METHOD_EXIT)
+                          && AgentCodeRules.constructorOnlyAdvice(layout, method.getOwner())
+                              .contains(method.getOwner().getName());
+                  List<String> required =
+                      type.equals(ON_METHOD_EXIT) && !constructorOnly
                           ? List.of("suppress", "onThrowable")
                           : List.of("suppress");
                   for (String attribute : required) {

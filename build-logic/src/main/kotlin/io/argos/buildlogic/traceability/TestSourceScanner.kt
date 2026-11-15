@@ -6,9 +6,15 @@ object TestIds {
   val PREFIXES: List<String> =
     listOf("AG", "SV", "ST", "API", "UI", "E2E", "ACC", "NFR", "SEC", "MX", "CH", "SOAK", "BLD", "ACPT")
 
-  /** T-<prefix>-<number>, with the optional one-letter suffix of 18 appendix A (T-AG-031a, T-SEC-3A). */
+  /**
+   * T-<prefix>-<number>, an optional capital letter of the catalogue ID (T-SEC-3A) and an optional
+   * lower-case letter of a partial check (T-AG-031a, T-SEC-3Aa; 18 appendix A, ADR-0010 C-122, C-182).
+   */
   private val pattern =
-    Regex("""(?<![A-Za-z0-9-])T-(?:${PREFIXES.joinToString("|")})-[0-9]+[A-Za-z]?(?![A-Za-z0-9])""")
+    Regex("""(?<![A-Za-z0-9-])T-(?:${PREFIXES.joinToString("|")})-[0-9]+[A-Z]?[a-z]?(?![A-Za-z0-9])""")
+
+  /** Catalogue IDs that end in a lower-case letter themselves (18 §3: N-10a..d -> T-NFR-10a..d). */
+  private val CATALOG_IDS_ENDING_IN_LOWER_CASE: Set<String> = setOf("T-NFR-10a", "T-NFR-10b", "T-NFR-10c", "T-NFR-10d")
 
   /** Requirement tag prefix: `@Tag("req:D-24")` (18 §3). */
   const val REQUIREMENT_TAG_PREFIX: String = "req:"
@@ -16,6 +22,21 @@ object TestIds {
   /** Distinct test IDs in [text], in order of appearance. */
   fun find(text: String?): List<String> =
     if (text == null) emptyList() else pattern.findAll(text).map { it.value }.distinct().toList()
+
+  /**
+   * The catalogue ID that [id] checks: [id] without its trailing lower-case letter (T-AG-031a ->
+   * T-AG-031, T-SEC-3Aa -> T-SEC-3A, ADR-0010 C-182), [id] itself when it has none or is a catalogue
+   * ID that ends in one (T-NFR-10a).
+   */
+  fun catalogId(id: String): String =
+    if (id.length > 1 && id.last() in 'a'..'z' && id[id.length - 2].let { it in '0'..'9' || it in 'A'..'Z' } &&
+      id !in CATALOG_IDS_ENDING_IN_LOWER_CASE
+    )
+      id.dropLast(1)
+    else id
+
+  /** True when [id] is a partial check of another catalogue ID (C-122, C-182). */
+  fun isPartial(id: String): Boolean = catalogId(id) != id
 }
 
 /** A test class of a Java or Kotlin source: its tags apply to every test inside. */

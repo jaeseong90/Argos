@@ -20,6 +20,14 @@ const PROBE = '__argosCspProbe';
 const SKIP_REASON = 'needs the preview CSP of vite.config.ts; ARGOS_UI_BASE_URL is set';
 
 /**
+ * The page the controls open: it runs under the preview CSP without the server (no API call, no
+ * component-library styles; e2e/specs/xlog-poc.spec.ts holds it to zero violations). The shell
+ * routes need the real server, whose per-request nonce the preview has not (WO-30: `/` opens the
+ * sign-in page, tested by the stack project).
+ */
+const CONTROL_PAGE = '/xlog-poc';
+
+/**
  * Chrome's console error for the injected inline script blocked by `script-src 'self'` (wording of
  * the Chromium that Playwright 1.64 installs). If a Chromium update changes it, the unit-level
  * control below fails with "Chrome logs the blocked script" and shows the new text.
@@ -52,7 +60,7 @@ base.describe('E2E page hooks, positive control (unit level)', () => {
     'records an inline script blocked by the preview CSP, and the hook check rejects it',
     async ({ page, baseURL }, testInfo) => {
       const hooks = await installPageHooks(page, baseURL);
-      await page.goto('/');
+      await page.goto(CONTROL_PAGE);
       await injectInlineScript(page);
       await expect.poll(() => violations(page)).toEqual(['script-src-elem']);
       expect(
@@ -69,7 +77,7 @@ base.describe('E2E page hooks, positive control (unit level)', () => {
       const hooks = await installPageHooks(page, baseURL, {
         ignoredConsoleErrors: [CSP_INLINE_SCRIPT_CONSOLE_ERROR],
       });
-      await page.goto('/');
+      await page.goto(CONTROL_PAGE);
       const consoleError = nextConsoleError(page);
       await injectInlineScript(page);
       expect(await consoleError, 'Chrome logs the blocked script').toMatch(
@@ -92,7 +100,7 @@ base.describe('E2E page hooks, positive control (unit level)', () => {
       const hooks = await installPageHooks(page, baseURL, {
         ignoredConsoleErrors: [CSP_INLINE_SCRIPT_CONSOLE_ERROR],
       });
-      await page.goto('/');
+      await page.goto(CONTROL_PAGE);
       const consoleError = nextConsoleError(page);
       await page.evaluate(() => {
         console.error('argos positive control: an unrelated console error');
@@ -115,7 +123,7 @@ base.describe('E2E page hooks, positive control (unit level)', () => {
         delete headers['content-security-policy'];
         await route.fulfill({ response, headers });
       });
-      await page.goto('/');
+      await page.goto(CONTROL_PAGE);
       await expect(hooks.verify(testInfo)).rejects.toThrow(
         /without a Content-Security-Policy header/,
       );
@@ -132,7 +140,7 @@ test.describe('E2E page hooks, positive control (fixture)', () => {
     // Expected failure: the fixture's "CSP violations" check after the test must fail it. If the
     // fixture stopped checking, this test would pass and Playwright reports that as a failure.
     test.fail(true, 'positive control: the page fixture must fail this test');
-    await page.goto('/');
+    await page.goto(CONTROL_PAGE);
     await injectInlineScript(page);
     await expect.poll(() => violations(page)).toEqual(['script-src-elem']);
   });

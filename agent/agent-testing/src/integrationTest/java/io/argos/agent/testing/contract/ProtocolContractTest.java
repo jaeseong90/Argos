@@ -13,7 +13,9 @@ import io.argos.agent.testing.collector.ScriptedAgent.Session;
 import io.argos.agent.testing.collector.v1.V1Protocol;
 import io.argos.proto.ProtocolVersion;
 import io.argos.proto.v1.Ack;
+import io.argos.proto.v1.AgentMessage;
 import io.argos.proto.v1.HeartbeatAck;
+import io.argos.proto.v1.InstanceUpdate;
 import io.argos.proto.v1.ServerHello;
 import io.argos.proto.v1.ServerMessage;
 import io.grpc.ManagedChannel;
@@ -30,6 +32,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -224,8 +227,8 @@ class ProtocolContractTest {
   @DisplayName(
       "11 §2/§3/§5 over gRPC: SESSION_REQUIRED before a hello and after a restart, token and"
           + " session metadata checks, hello checks in order (token, plaintext, protocol version),"
-          + " instance reuse (also across a restart, with its dedup window) and SessionClose"
-          + " REPLACED")
+          + " instance reuse (also across a restart, with its dedup window), SessionClose REPLACED"
+          + " and the InstanceUpdate rename that keeps the instance id (12 §4.3)")
   void session() throws Exception {
     for (Map<String, Object> scenario : section("session")) {
       new SessionScript(ContractVectors.string(scenario, "name"))
@@ -241,6 +244,7 @@ class ProtocolContractTest {
     private final Map<String, Session> streams = new LinkedHashMap<>();
     private ServerHello current;
     private ServerHello previous;
+    private Session currentStream;
 
     SessionScript(String name) {
       this.name = name;
@@ -266,6 +270,7 @@ class ProtocolContractTest {
             assertThat(stream.awaitEnd().status().isOk()).as(what).isTrue();
           }
           case "expect_stream" -> expectStream(step, what);
+          case "instance_update" -> instanceUpdate(step, what);
           default -> throw new IllegalArgumentException("unknown action in " + what);
         }
       }
@@ -318,13 +323,18 @@ class ProtocolContractTest {
           step.containsKey("protocol_version")
               ? (int) ContractVectors.number(step, "protocol_version")
               : ProtocolVersion.CURRENT;
-      session.hello("shop", "test", "host:1", epoch, version, System.currentTimeMillis());
+      String instanceName =
+          step.containsKey("instance_name")
+              ? ContractVectors.string(step, "instance_name")
+              : "host:1";
+      session.hello("shop", "test", instanceName, epoch, version, System.currentTimeMillis());
       ServerHello hello = session.next().getHello();
       boolean accepted = Boolean.TRUE.equals(step.get("expected_accepted"));
       assertThat(hello.getAccepted()).as(what).isEqualTo(accepted);
       if (accepted) {
         previous = current;
         current = hello;
+        currentStream = session;
         if (step.containsKey("expected_instance_id")) {
           assertThat((long) hello.getInstanceId())
               .as(what)
@@ -343,6 +353,32 @@ class ProtocolContractTest {
       Ended ended = session.awaitEnd();
       assertThat(ended.status().getCode()).as(what).isEqualTo(code(step, "expected_code"));
       expectTrailers(step, what, ended.trailers());
+    }
+
+    /**
+     * {@code InstanceUpdate.instance_name} on the current session's stream (12 §4.3, ADR-0010 C-185
+     * (1)); it is not acknowledged on the wire, so the step ends when the collector has recorded
+     * it, which it does after applying the rename.
+     */
+    private void instanceUpdate(Map<String, Object> step, String what) throws InterruptedException {
+      long before = instanceUpdates();
+      currentStream.send(
+          AgentMessage.newBuilder()
+              .setInstanceUpdate(
+                  InstanceUpdate.newBuilder()
+                      .setInstanceName(ContractVectors.string(step, "instance_name")))
+              .build());
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+      while (instanceUpdates() == before && System.nanoTime() < deadline) {
+        Thread.sleep(10);
+      }
+      assertThat(instanceUpdates()).as(what + ": the InstanceUpdate applied").isGreaterThan(before);
+    }
+
+    private long instanceUpdates() {
+      return collector.sessionMessages().stream()
+          .filter(m -> m instanceof AgentMessage a && a.hasInstanceUpdate())
+          .count();
     }
 
     private void fault(Map<String, Object> step) {

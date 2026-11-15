@@ -44,6 +44,19 @@ sampleApp {
           " -> HikariDataSource -> org.h2.Driver",
       )
     }
+    // SAMPLE_DRIVER_WRAPPER (ADR-0004 C-40) with the routing chain: the five-level D-24 fixture on
+    // Boot 2.7 and Java 8 (T-AG-031).
+    variant("routing-wrapper") {
+      env("SAMPLE_ROUTING_DS", "true")
+      env("SAMPLE_DRIVER_WRAPPER", "true")
+      expectRuntime("routingDataSource", "true")
+      expectRuntime("driverWrapper", "true")
+      expectRuntime(
+        "dataSourceChain",
+        "SampleRoutingDataSource (AbstractRoutingDataSource) -> TransactionAwareDataSourceProxy" +
+          " -> HikariDataSource -> WrappingDriver (java.sql.Driver wrapper) -> org.h2.Driver",
+      )
+    }
     variant("pool-tomcat") {
       env("SAMPLE_POOL", "tomcat")
       expectRuntime("pool", "tomcat")
