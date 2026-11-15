@@ -52,11 +52,18 @@ public final class Dictionary {
   /** Characters of one kept text. */
   public static final int MAX_TEXT_CHARS = 65_536;
 
-  /** Estimated fixed bytes of one kept entry: two map nodes, a boxed id, the String header. */
-  static final long ENTRY_BYTES = 136L;
+  /**
+   * Estimated fixed bytes of one kept entry: two map nodes, a boxed id, the String header and the
+   * {@link Entry} that remembers the kind (the transport pre-sends and answers {@code
+   * DictionaryEntry{kind, hash, text}}, 11 §7).
+   */
+  static final long ENTRY_BYTES = 160L;
 
-  /** Text cache size per kind (10 §10.4 {@code DictionaryCache}). */
-  static int capacity(int kind) {
+  /**
+   * Text cache size per kind (10 §10.4 {@code DictionaryCache}, ADR-0010 C-105); the transport's
+   * pre-send memory uses the same sizes.
+   */
+  public static int capacity(int kind) {
     switch (kind) {
       case DictKind.SERVICE:
       case DictKind.SQL:
@@ -79,18 +86,22 @@ public final class Dictionary {
     }
   }
 
-  /** A kept text that was cut to {@link #MAX_TEXT_CHARS}. */
-  private static final class Truncated {
+  /** A kept text, its {@link DictKind} and whether it was cut to {@link #MAX_TEXT_CHARS}. */
+  private static final class Entry {
     final String text;
+    final int kind;
+    final boolean truncated;
 
-    Truncated(String text) {
+    Entry(String text, int kind, boolean truncated) {
       this.text = text;
+      this.kind = kind;
+      this.truncated = truncated;
     }
   }
 
   private final AgentCounters counters;
   private final ConcurrentHashMap<String, Long> ids = new ConcurrentHashMap<String, Long>();
-  private final ConcurrentHashMap<Long, Object> texts = new ConcurrentHashMap<Long, Object>();
+  private final ConcurrentHashMap<Long, Entry> texts = new ConcurrentHashMap<Long, Entry>();
   private final AtomicIntegerArray sizes = new AtomicIntegerArray(DictKind.COUNT);
   private final AtomicLongArray overflows = new AtomicLongArray(DictKind.COUNT);
   private final AtomicLong bytes = new AtomicLong();
@@ -132,7 +143,7 @@ public final class Dictionary {
     if (isPlaceholder(text)) {
       // The three placeholders are what a full name cap maps to: they are always kept (outside
       // the per-kind counts, three entries at most), so they stay resolvable.
-      if (texts.putIfAbsent(key, text) == null) {
+      if (texts.putIfAbsent(key, new Entry(text, kind, false)) == null) {
         bytes.addAndGet(cost);
         ids.put(text, key);
       }
@@ -145,7 +156,7 @@ public final class Dictionary {
       }
       return id;
     }
-    if (texts.putIfAbsent(key, cut ? new Truncated(kept) : kept) != null) {
+    if (texts.putIfAbsent(key, new Entry(kept, kind, cut)) != null) {
       release(slot, cost); // another thread kept it first
       return id;
     }
@@ -193,16 +204,24 @@ public final class Dictionary {
     if (id == 0) {
       return null;
     }
-    Object value = texts.get(Long.valueOf(id));
-    if (value instanceof Truncated) {
-      return ((Truncated) value).text;
-    }
-    return (String) value;
+    Entry entry = texts.get(Long.valueOf(id));
+    return entry == null ? null : entry.text;
   }
 
   /** True when the kept text of {@code id} is only the start of the text that was hashed. */
   public boolean truncated(long id) {
-    return id != 0 && texts.get(Long.valueOf(id)) instanceof Truncated;
+    Entry entry = id == 0 ? null : texts.get(Long.valueOf(id));
+    return entry != null && entry.truncated;
+  }
+
+  /**
+   * The {@link DictKind} the text of {@code id} was first kept for (11 {@code
+   * DictionaryEntry.kind}, C-16), or 0 when no text is kept. The same text has the same id whatever
+   * its kind; the first kind wins.
+   */
+  public int kind(long id) {
+    Entry entry = id == 0 ? null : texts.get(Long.valueOf(id));
+    return entry == null ? 0 : entry.kind;
   }
 
   /** Ids whose text was not kept because the kind or the byte budget was full. */

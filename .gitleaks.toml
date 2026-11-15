@@ -24,3 +24,11 @@ keywords = ["argos_"]
 description = "lowercase snake_case identifiers (metric names, keys), not random tokens"
 regexTarget = "secret"
 regexes = ['''^argos_[a-z0-9_]+$''']
+
+# Generated license reports of the license check (build outputs, git-ignored; CI scans commits
+# only, "run-gitleaks.sh dir" also reads build/): module coordinates such as
+# "jakarta.activation:jakarta.activation-api:2.1.4=BSD-3-Clause" match the default generic-api-key
+# rule (WO-24 brought jakarta.activation-api onto the server runtime classpath).
+[[allowlists]]
+description = "generated license reports (build/reports/argos-licenses), module coordinates"
+paths = ['''(^|/)build/reports/argos-licenses/[^/]+\.properties$''']

@@ -313,11 +313,26 @@ class CheckShadingScriptTest {
       )
     entries["inst/io/argos/agent/core/Reflective.classdata"] =
       classFile("io/argos/agent/core/Reflective", strings = listOf("sun.misc.Unsafe"))
+    // An explicit empty allow-list: the repository list holds C-74 entries since WO-11 (ADR-0009),
+    // and this case is about classes that no list names.
+    val empty = File(dir, "empty-allow.txt").apply { writeText("# no entries\n") }
     assertFails(
-      check(entries),
+      check(entries, env = mapOf("ARGOS_UNSAFE_ALLOWLIST" to empty.invariantSeparatorsPath)),
       "unsafe",
       "io.argos.agent.shaded.io.netty.util.internal.PlatformDependent0",
       "io.argos.agent.core.Reflective",
+    )
+    // With the repository allow-list (the default), a shaded class it does not name still fails.
+    val unlisted = compliantEntries()
+    unlisted["inst/io/argos/agent/shaded/io/netty/util/internal/UnlistedUnsafeUser.classdata"] =
+      classFile(
+        "io/argos/agent/shaded/io/netty/util/internal/UnlistedUnsafeUser",
+        classRefs = listOf("sun/misc/Unsafe"),
+      )
+    assertFails(
+      check(unlisted),
+      "unsafe",
+      "io.argos.agent.shaded.io.netty.util.internal.UnlistedUnsafeUser",
     )
   }
 

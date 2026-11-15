@@ -11,7 +11,8 @@ import org.junit.jupiter.api.Test;
 /**
  * T-BLD-004 (18 §5.10, F-A35) with the harness's {@link UnsafeScanner} on the release agent jar,
  * against the same allow-list as {@code test/agent/check-shading.sh} ({@code
- * test/agent/unsafe-allowlist.txt}, empty).
+ * test/agent/unsafe-allowlist.txt}). Its lines are the Netty classes of ADR-0009 C-74, each proven
+ * by {@code transport.UnsafeProofTransportTest}; nothing else may be listed.
  */
 @Tag("req:F-A35")
 class AgentJarScanTest {
@@ -21,7 +22,9 @@ class AgentJarScanTest {
   void releaseJarHasNoUnsafeReference() {
     Path jar = Path.of(System.getProperty("argos.test.releaseAgentJar"));
     Path allowlist = Path.of(System.getProperty("argos.test.unsafeAllowlist"));
-    assertThat(UnsafeScanner.readAllowlist(allowlist)).isEmpty();
+    assertThat(UnsafeScanner.readAllowlist(allowlist))
+        .as("C-74: only the transport's Netty classes, with their proof")
+        .allMatch(name -> name.startsWith("io.argos.agent.shaded.io.netty."));
     assertThat(UnsafeScanner.violations(jar, allowlist)).isEmpty();
     // The scanner reads the jar's classes (bootstrap at the root, the rest as inst/**.classdata).
     assertThat(AgentJars.version(jar)).endsWith("-SNAPSHOT");

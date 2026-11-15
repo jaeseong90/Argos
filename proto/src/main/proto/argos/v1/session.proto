@@ -1,0 +1,396 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// argos.v1 session and control messages (docs/11-protocol-design.md §4.2, §5, §7, §8, §9).
+// They travel on the AgentService.Session bidirectional stream (one per connection).
+//
+// Differences from 11 §4.2 (each one is listed with its decision in proto/README.md):
+//   - AgentHello.plaintext = 25 (optional) and ServerHello.user_id_salt = 18 are additive fields
+//     of ADR-0010 C-101 (16 §3.4, 16 §6.3). There is no ServerHello.default_ip_mode (C-101).
+//
+// Caps: the comment of each field gives its cap (11 §4, §4.4; the server checks them again,
+// SEC-11). Shared constants: io.argos.proto.ProtocolLimits.
+// Secrets: no message carries a token or password (11 §4.4, §11). The token travels only in the
+// gRPC metadata "authorization: Bearer argos_<base64url>".
+
+syntax = "proto3";
+
+package argos.v1;
+
+import "argos/v1/common.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "SessionProto";
+option java_package = "io.argos.proto.v1";
+
+// Agent -> server message on the session stream.
+message AgentMessage {
+  oneof body {
+    AgentHello hello = 1;
+    Heartbeat heartbeat = 2;
+    // Pre-sent new hashes, or the answer to a DictionaryRequest (11 §7).
+    DictionaryEntries dictionary_entries = 3;
+    ConfigApplyResult config_apply_result = 4;
+    CommandResult command_result = 5;
+    InstanceUpdate instance_update = 6;
+    AgentBye bye = 7;
+    // Module auto-disable, kill switch, ...
+    AgentEvent event = 8;
+  }
+}
+
+// Server -> agent message on the session stream.
+message ServerMessage {
+  oneof body {
+    ServerHello hello = 1;
+    HeartbeatAck heartbeat_ack = 2;
+    DictionaryRequest dictionary_request = 3;
+    ConfigPush config_push = 4;
+    Command command = 5;
+    SessionClose close = 6;
+    Throttle throttle = 7;
+  }
+}
+
+// First message of every session (11 §5). The server closes the stream with PROTOCOL_ERROR when it
+// does not arrive within 10 s of the connection.
+message AgentHello {
+  // SemVer "1.2.0".
+  string agent_version = 1;
+  // io.argos.proto.ProtocolVersion.CURRENT (currently 1).
+  uint32 protocol_version = 2;
+  // <= 128 B.
+  string app_name = 3;
+  // <= 32 B. Empty: the server default "default".
+  string env = 4;
+  // Configured name or "host:pid" until the port is known; then InstanceUpdate. <= 2 KiB.
+  string instance_name = 5;
+  // <= 2 KiB.
+  string host = 6;
+  uint32 pid = 7;
+  // <= 2 KiB each.
+  string jvm_version = 8;
+  string jvm_vendor = 9;
+  string os = 10;
+  string arch = 11;
+  // Detected at start-up; changes travel as InstanceUpdate.
+  bool virtual_threads = 12;
+  // "v1" | "v2" | "none".
+  string cgroup = 13;
+  // Effective configuration hash (computed with the token masked).
+  string config_hash = 14;
+  // The agent's local remote-config allow list (SEC-23): the server never pushes other keys.
+  // Each <= 2 KiB.
+  repeated string remote_config_allow = 15;
+  IpMode ip_mode = 16;
+  UserIdMode user_id_mode = 17;
+  QueryStringMode query_string_mode = 18;
+  SqlParamMode sql_param_mode = 19;
+  // F-A21. Empty: unknown. <= 2 KiB.
+  string app_version = 20;
+  // Agent wall clock (first clock-offset estimate, 11 §9).
+  int64 sent_at_ms = 21;
+  // Random 64-bit value created once per process; part of the batch deduplication key (C-3).
+  uint64 agent_epoch = 22;
+  // Process start (start-up grace, F-S25).
+  int64 process_start_ms = 23;
+  // Names of the active instrumentation modules. Each <= 2 KiB.
+  repeated string instrumentation_modules = 24;
+  // Additive optional (ADR-0010 C-101, 11 §12, 16 §3.4): true when the agent connects without TLS
+  // (server.tls: false). This agent always sets it (false over TLS); absent means an agent that
+  // does not report it. The server also decides from the connection itself (11 §5 check 3).
+  optional bool plaintext = 25;
+}
+
+// Answer to AgentHello (11 §5).
+message ServerHello {
+  bool accepted = 1;
+  // Set when accepted = false.
+  RejectReason reject_reason = 2;
+  // Human-readable reason (English). Never contains a token value.
+  string reject_message = 3;
+  // Retry advice when rejected. 0 = do not retry, for rejections other than TOKEN_* (version
+  // mismatch, PLAINTEXT_NOT_ALLOWED, ...). TOKEN_* rejections and UNAUTHENTICATED follow ADR-0010
+  // C-102 whatever this says: the agent retries every 5 minutes (the server sends 300; C-140).
+  uint32 retry_after_s = 4;
+  uint32 app_id = 5;
+  uint32 instance_id = 6;
+  // UUID; sent in the "argos-session-id" metadata of every data RPC.
+  string session_id = 7;
+  string server_version = 8;
+  uint32 protocol_version = 9;
+  string min_agent_version = 10;
+  string max_agent_version = 11;
+  // First clock-offset estimate (11 §9).
+  int64 server_time_ms = 12;
+  // Pushed configuration the server holds for this app (keys inside remote_config_allow only).
+  map<string, string> config = 13;
+  // Default 30.
+  uint32 heartbeat_interval_s = 14;
+  // Default 5.
+  uint32 active_snapshot_interval_s = 15;
+  // Default 10.
+  uint32 stat_window_s = 16;
+  // Caps the agent applies when it builds batches (DSN-11-07).
+  Limits limits = 17;
+  // Additive (ADR-0010 C-101, 16 §6.3): the app's 32-byte user_id salt for
+  // capture.user-id.mode: hashed. Sent over TLS only; the agent keeps it in memory only and never
+  // logs it. Empty when the mode is not hashed.
+  bytes user_id_salt = 18;
+}
+
+enum RejectReason {
+  REJECT_REASON_UNSPECIFIED = 0;
+  TOKEN_INVALID = 1;
+  TOKEN_EXPIRED = 2;
+  TOKEN_REVOKED = 3;
+  // The token's app differs from hello.app_name.
+  APP_MISMATCH = 4;
+  // auto-register off: registered as pending approval.
+  APP_NOT_REGISTERED = 5;
+  AGENT_VERSION_TOO_NEW = 6;
+  AGENT_VERSION_TOO_OLD = 7;
+  PROTOCOL_UNSUPPORTED = 8;
+  PLAINTEXT_NOT_ALLOWED = 9;
+  INSTANCE_LIMIT = 10;
+  RATE_LIMITED = 11;
+  SERVER_SHUTTING_DOWN = 12;
+}
+
+// Caps the agent applies when it builds batches (11 §4.2). Defaults:
+// io.argos.proto.ProtocolLimits. Changing a value is not a protocol change (11 §12).
+message Limits {
+  // 4194304 (4 MiB, after decompression).
+  uint32 max_message_bytes = 1;
+  // 5000.
+  uint32 max_transactions_per_batch = 2;
+  // 50000.
+  uint32 max_steps_per_batch = 3;
+  // 4096.
+  uint32 max_detail_bytes = 4;
+  // 2048.
+  uint32 max_string_bytes = 5;
+  // 30 (ERROR) / 64 (STACK).
+  uint32 max_frames = 6;
+  // 500.
+  uint32 max_active_items = 7;
+  // 500.
+  uint32 max_series_per_instance = 8;
+  // 10000.
+  uint32 max_dictionary_entries_per_hour = 9;
+}
+
+// NTP-style clock synchronization (D-02, 11 §9). The server computes the offset.
+message Heartbeat {
+  // Send time of this heartbeat (agent clock).
+  int64 t1_ms = 1;
+  // t1 of the previous heartbeat.
+  int64 prev_t1_ms = 2;
+  // Receive time of the previous HeartbeatAck (agent clock).
+  int64 prev_t4_ms = 3;
+  // Light status summary.
+  uint32 active_transactions = 4;
+  // Cumulative agent drops (all queues).
+  uint64 dropped_total = 5;
+  uint64 last_tx_seq = 6;
+  uint64 last_profile_seq = 7;
+  uint64 last_metric_seq = 8;
+  uint64 last_stat_seq = 9;
+}
+
+message HeartbeatAck {
+  // Echo of Heartbeat.t1_ms.
+  int64 t1_ms = 1;
+  // Server receive time.
+  int64 t2_ms = 2;
+  // Server send time.
+  int64 t3_ms = 3;
+  // Latest offset computed by the server: server - agent (the 11 §9 formula
+  // ((t2 - t1) + (t3 - t4)) / 2; a server clock 3 s ahead gives +3000; ADR-0010 C-139).
+  // Informational.
+  int32 clock_offset_ms = 4;
+  // Instance state as the server sees it (UP/WARN), shown in the agent self-diagnostics.
+  InstanceState state = 5;
+}
+
+enum InstanceState {
+  INSTANCE_STATE_UNSPECIFIED = 0;
+  UP = 1;
+  STALE = 2;
+  DOWN = 3;
+  WARN = 4;
+}
+
+message DictionaryEntry {
+  DictionaryKind kind = 1;
+  // xxh3_64(text). 0 is invalid (INVALID_ARGUMENT).
+  uint64 hash = 2;
+  // SQL_TEXT <= 64 KiB, other kinds <= 8 KiB. Longer texts are cut and truncated is set.
+  string text = 3;
+  bool truncated = 4;
+  // SQL_TEXT only: normalizer version (D-22).
+  uint32 norm_version = 5;
+}
+
+// <= 1,000 entries per message.
+message DictionaryEntries {
+  repeated DictionaryEntry entries = 1;
+}
+
+// Ids the server does not know (11 §7). <= 1,000 refs per message.
+message DictionaryRequest {
+  repeated DictionaryRef refs = 1;
+}
+
+message DictionaryRef {
+  DictionaryKind kind = 1;
+  uint64 hash = 2;
+}
+
+// Server configuration push (11 §8.1). The agent checks every key again against its local
+// remote-config.allow hard cap, the forbidden patterns (SEC-25) and the value ranges.
+message ConfigPush {
+  // UUID. F-S29 change record.
+  string change_id = 1;
+  // Keys in argos-agent.yml dotted form ("sampling.profile.normal-rate").
+  map<string, string> values = 2;
+  // A push of the previous value set held by the server; no special agent behaviour.
+  bool revert = 3;
+  int64 issued_at_ms = 4;
+}
+
+message ConfigApplyResult {
+  string change_id = 1;
+  repeated string applied_keys = 2;
+  repeated RejectedKey rejected = 3;
+  string effective_config_hash = 4;
+  // Custom-method changes (<= 50 classes per command).
+  uint32 retransformed_classes = 5;
+  uint32 duration_ms = 6;
+}
+
+message RejectedKey {
+  string key = 1;
+  RejectCode code = 2;
+  // English, no collected data or secret values.
+  string message = 3;
+}
+
+enum RejectCode {
+  REJECT_CODE_UNSPECIFIED = 0;
+  NOT_ALLOWED = 1;
+  UNKNOWN_KEY = 2;
+  INVALID_VALUE = 3;
+  FORBIDDEN_PATTERN = 4;
+  LIMIT_EXCEEDED = 5;
+}
+
+// Server command (11 §8.2). Closed list: CommandType.
+message Command {
+  // UUIDv4.
+  string command_id = 1;
+  CommandType type = 2;
+  int64 issued_at_ms = 3;
+  // Default 60. The agent measures it from the receive time.
+  uint32 ttl_s = 4;
+  // THREAD_STACK: "tx_id" or "thread_id". <= 8 entries, values <= 256 B.
+  map<string, string> args = 5;
+}
+
+message CommandResult {
+  string command_id = 1;
+  CommandStatus status = 2;
+  // Payload chunking: chunk <= 256 KiB, total <= 1 MiB.
+  uint32 chunk_index = 3;
+  uint32 chunk_count = 4;
+  bytes payload = 5;
+  // "text/plain", "application/json".
+  string content_type = 6;
+  // Failure reason (English, no collected data or secret values).
+  string error = 7;
+  uint32 duration_ms = 8;
+  // Cut at the 1 MiB cap.
+  bool truncated = 9;
+}
+
+enum CommandStatus {
+  COMMAND_STATUS_UNSPECIFIED = 0;
+  OK = 1;
+  REJECTED = 2;
+  EXPIRED = 3;
+  FAILED = 4;
+  COOLDOWN = 5;
+}
+
+// Instance metadata changes after the Hello. Absent fields are unchanged (11 §4.4).
+message InstanceUpdate {
+  // "host:port" once the connector port is known.
+  optional string instance_name = 1;
+  optional bool virtual_threads = 2;
+  optional string app_version = 3;
+  // "http-nio-8080".
+  repeated string connectors = 4;
+  optional string config_hash = 5;
+}
+
+// Normal shutdown; the server delays the DOWN state by 5 minutes (F-S28).
+message AgentBye {
+  ByeReason reason = 1;
+  uint64 last_tx_seq = 2;
+  uint64 last_profile_seq = 3;
+  uint64 last_metric_seq = 4;
+  uint64 last_stat_seq = 5;
+}
+
+enum ByeReason {
+  BYE_REASON_UNSPECIFIED = 0;
+  SHUTDOWN = 1;
+  AGENT_DISABLED = 2;
+}
+
+message AgentEvent {
+  AgentEventType type = 1;
+  // Module name when relevant.
+  string module = 2;
+  // <= 1 KiB, no collected data, no token.
+  string detail = 3;
+  int64 at_ms = 4;
+}
+
+enum AgentEventType {
+  AGENT_EVENT_TYPE_UNSPECIFIED = 0;
+  // Auto-disabled after the error threshold (F-A15).
+  MODULE_DISABLED = 1;
+  TRANSFORM_ERRORS = 2;
+  // Drop burst within one minute.
+  QUEUE_DROP_BURST = 3;
+  KILL_SWITCH_ON = 4;
+  KILL_SWITCH_OFF = 5;
+  // Agent thread CPU above the threshold: sampling lowered automatically.
+  SELF_CPU_HIGH = 6;
+  CONFIG_FILE_RELOADED = 7;
+}
+
+message SessionClose {
+  CloseReason reason = 1;
+  // English, no token.
+  string message = 2;
+  uint32 retry_after_s = 3;
+}
+
+enum CloseReason {
+  CLOSE_REASON_UNSPECIFIED = 0;
+  TOKEN_REVOKED_CLOSE = 1;
+  SERVER_SHUTDOWN = 2;
+  REPLACED = 3;
+  PROTOCOL_ERROR = 4;
+  // No heartbeat for 3 intervals (90 s, C-19).
+  IDLE_TIMEOUT = 5;
+}
+
+// Server load hints (11 §6). Absent fields leave the agent unchanged (11 §4.4).
+message Throttle {
+  // Lowered profile sampling rate (A-3); never above the agent's configured rate.
+  optional float profile_normal_rate = 1;
+  // Minimum pause before the next batch.
+  optional uint32 send_backoff_ms = 2;
+}

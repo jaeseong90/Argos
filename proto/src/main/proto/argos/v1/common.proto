@@ -1,0 +1,163 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// argos.v1 common types (docs/11-protocol-design.md §4.1).
+//
+// Differences from 11 §4.1 (each one is listed with its decision in proto/README.md):
+//   - StepType numbers follow 02 §7 / C-1 (SQL=1 ... SUMMARY=11), the numbers of the agent
+//     constants (io.argos.agent.bootstrap.StepType) and of the ClickHouse Enum8.
+//   - DictionaryKind follows C-16 (SERVICE=1 ... APP_VERSION=11, the agent DictKind numbers) and
+//     adds POOL = 12 (ADR-0010 C-101).
+//
+// Evolution rules (11 §12): field and enum numbers are permanent, removed ones are reserved, new
+// enum values go at the end, receivers map unknown enum values to *_UNSPECIFIED and count them.
+//
+// Protocol integer version: proto/PROTOCOL_VERSION (io.argos.proto.ProtocolVersion.CURRENT, 19 §3.4).
+// Adding messages, fields or enum values does not change it; changing the meaning of a field or
+// adding a mandatory behaviour does (11 §5 version rules).
+
+syntax = "proto3";
+
+package argos.v1;
+
+option java_multiple_files = true;
+option java_outer_classname = "CommonProto";
+option java_package = "io.argos.proto.v1";
+
+// Transaction kind (DSN-02-15). Agent constants: io.argos.agent.bootstrap.Kind.
+enum TransactionKind {
+  TRANSACTION_KIND_UNSPECIFIED = 0;
+  HTTP = 1;
+  BATCH = 2;
+  MESSAGE = 3;
+}
+
+// Profile step type. Numbers are 02 §7 / C-1, shared by the agent (bootstrap StepType), the protocol
+// and the ClickHouse profile_step.type Enum8 (11 §4.1 numbered them differently; C-1 wins).
+enum StepType {
+  STEP_TYPE_UNSPECIFIED = 0;
+  SQL = 1;
+  // DataSource.getConnection wait (DBC).
+  DBC = 2;
+  COMMIT = 3;
+  ROLLBACK = 4;
+  // Outgoing HTTP call (ClickHouse 'HTTP').
+  HTTP_CALL = 5;
+  METHOD = 6;
+  ASYNC = 7;
+  ERROR = 8;
+  STACK = 9;
+  // Message consume/produce step (ClickHouse 'MESSAGE').
+  MESSAGE_STEP = 10;
+  // Aggregated step of the summary mode (10 §9.1, C-69 flag 4). Field reuse (status, rows,
+  // fetch_us, repeat_count): the proto/README.md profile_step table is normative (ADR-0010 C-141).
+  SUMMARY = 11;
+}
+
+// Outgoing call failure classification (F-A05). Agent constants: io.argos.agent.bootstrap.FailureKind.
+// The zero value is the meaningful "no failure" of 11 §4.1 (ProfileStep.failure default), not an
+// "unspecified" value. It is the only zero value without the *_UNSPECIFIED suffix: the buf lint
+// exception below applies to this value only (EnumZeroValueTest lists it as the only exception).
+enum FailureKind {
+  // buf:lint:ignore ENUM_ZERO_VALUE_SUFFIX
+  // "No failure" (11 §4.1, agent FailureKind.NONE = 0), not "unspecified".
+  FAILURE_NONE = 0;
+  TIMEOUT = 1;
+  CONNECT_FAIL = 2;
+  HTTP_5XX = 3;
+  OTHER_ERROR = 4;
+}
+
+// Dictionary kinds (DSN-02-10). Every hash is xxh3_64 of the UTF-8 text and is never 0.
+// Numbers are C-16 (the agent io.argos.agent.bootstrap.DictKind numbers and the PostgreSQL
+// dictionary kind enum); 11 §4.1 numbered DB_TARGET 8 and APP_VERSION 9 (C-16 wins).
+enum DictionaryKind {
+  DICTIONARY_KIND_UNSPECIFIED = 0;
+  // Service name "GET /api/orders/{id}", "BATCH Job.Step". Agent cap 10,000 per app (F-A29).
+  SERVICE = 1;
+  // Normalized SQL (sent with norm_version, D-22). Text <= 64 KiB.
+  SQL_TEXT = 2;
+  // Fully qualified class name (exception classes, ...).
+  CLASS = 3;
+  // "Class#method".
+  METHOD_NAME = 4;
+  // Normalized thread name (numeric suffixes removed).
+  THREAD = 5;
+  // Outgoing call target "scheme://host:port" (13 §3.5, V001 ext_stat_raw.host_id; ADR-0010
+  // C-142): scheme and host lower case, the port always written (also the default port), an IPv6
+  // host in brackets, no userinfo, path or query. A non-HTTP call uses its protocol as the scheme.
+  HOST = 6;
+  // Stack frame "Class.method(File)" (line number excluded).
+  FRAME = 7;
+  // Metric name (C-16, 10 §2).
+  METRIC = 8;
+  // Error group (C-16, 10 §2).
+  ERROR_GROUP = 9;
+  // JDBC target "vendor://host:port/db".
+  DB_TARGET = 10;
+  // app.version string (F-A21).
+  APP_VERSION = 11;
+  // Additive (ADR-0010 C-101): connection pool name of DBC steps (10 §6.3, 13 §12.3 'pool').
+  POOL = 12;
+}
+
+// Metric kind (D-16). The agent sends it with every series and a reset-corrected delta (C-15).
+enum MetricKind {
+  METRIC_KIND_UNSPECIFIED = 0;
+  GAUGE = 1;
+  COUNTER = 2;
+}
+
+// Capture modes reported in AgentHello (DSN-11-10, SEC-31..3A). The agent applies them before a
+// value is put in any message.
+enum IpMode {
+  IP_MODE_UNSPECIFIED = 0;
+  IP_FULL = 1;
+  IP_MASKED = 2;
+  IP_OFF = 3;
+}
+
+enum UserIdMode {
+  USER_ID_MODE_UNSPECIFIED = 0;
+  USER_ID_OFF = 1;
+  USER_ID_PLAIN = 2;
+  USER_ID_HASHED = 3;
+}
+
+enum QueryStringMode {
+  QUERY_STRING_MODE_UNSPECIFIED = 0;
+  QS_OFF = 1;
+  QS_WHITELIST = 2;
+  QS_FULL = 3;
+}
+
+enum SqlParamMode {
+  SQL_PARAM_MODE_UNSPECIFIED = 0;
+  SQL_PARAM_MASKED = 1;
+  SQL_PARAM_PARTIAL = 2;
+  SQL_PARAM_FULL = 3;
+}
+
+// Closed list of commands (SEC-21, SEC-24, DSN-11-11, ADR-0010 C-103). The agent answers REJECTED to
+// any other value. There is never a type that carries code, class names or scripts. Configuration
+// changes, the kill switch and custom-method retransforms travel as ConfigPush (C-103).
+enum CommandType {
+  COMMAND_TYPE_UNSPECIFIED = 0;
+  // Full thread dump (virtual threads included). Operator or above.
+  THREAD_DUMP = 1;
+  // Single thread stack (args: "tx_id" or "thread_id"). Operator or above.
+  THREAD_STACK = 2;
+  // Self-diagnostics report. Operator or above.
+  SELF_DIAGNOSTICS = 3;
+  // Reload the local configuration file. Administrator.
+  CONFIG_RELOAD = 4;
+  // Environment variables and system properties, masked by the agent (SEC-20). Administrator.
+  ENV_DUMP = 5;
+  // 1.x: HEAP_HISTOGRAM, GC_RUN, LOADED_CLASSES.
+  reserved 6 to 9;
+}
+
+// key <= 128 B, value <= 1 KiB.
+message KeyValue {
+  string key = 1;
+  string value = 2;
+}

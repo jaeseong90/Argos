@@ -7,7 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.argos.agent.testing.collector.Collected;
 import io.argos.agent.testing.collector.JsonlCollected;
-import io.argos.agent.testing.collector.poc.PocProtocol;
+import io.argos.agent.testing.collector.v1.V1Protocol;
 import io.argos.agent.testing.export.FileExporterReader;
 import io.argos.agent.testing.export.RecordSource;
 import io.argos.agent.testing.export.TransactionRecord;
@@ -157,7 +157,7 @@ class AssertionDslTest {
         .hasMessageStartingWith("unsupported: agent counters");
   }
 
-  /** A collector-like source that carries everything (the shape PocProtocol produces). */
+  /** A collector-like source that carries everything (the shape V1Protocol produces). */
   static Collected full(List<TransactionRecord> transactions) {
     return new Collected() {
       @Override
@@ -167,7 +167,7 @@ class AssertionDslTest {
 
       @Override
       public RecordSource source() {
-        return PocProtocol.SOURCE;
+        return V1Protocol.SOURCE;
       }
 
       @Override
@@ -228,18 +228,18 @@ class AssertionDslTest {
     List<Object> steps = new ArrayList<>();
     steps.add(step);
     virtual.put("steps", steps);
-    TransactionRecord tx = new TransactionRecord(virtual, "vt", PocProtocol.SOURCE);
+    TransactionRecord tx = new TransactionRecord(virtual, "vt", V1Protocol.SOURCE);
     assertThat(tx).hasEnv("test").hasVersion("1.2.3").cpuTimeMs().isMissing().allocBytes().isZero();
     assertThatThrownBy(() -> assertThat(tx).cpuTimeMs().isZero())
         .hasMessageContaining("cpu_time_ms to be present but it is missing");
     assertThatThrownBy(() -> assertThat(tx).allocBytes().isMissing())
         .hasMessageContaining("alloc_bytes to be missing but was <0>");
-    // PocProtocol.SOURCE has no step thread either: still unsupported.
+    // V1Protocol.SOURCE has no step thread either: still unsupported.
     assertThatThrownBy(() -> assertThat(tx).noStepFromThread(startsWith("argos-")))
         .hasMessageStartingWith("unsupported");
     RecordSource withThreads =
         new RecordSource(
-            "threads", PocProtocol.SOURCE.transactionFields(), java.util.Set.of("thread", "type"));
+            "threads", V1Protocol.SOURCE.transactionFields(), java.util.Set.of("thread", "type"));
     TransactionRecord threaded = new TransactionRecord(virtual, "vt", withThreads);
     assertThat(threaded).noStepFromThread(startsWith("argos-"));
     step.put("thread", "argos-sender");

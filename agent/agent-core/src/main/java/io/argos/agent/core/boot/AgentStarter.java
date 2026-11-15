@@ -165,9 +165,11 @@ public final class AgentStarter {
     List<InstrumentationModule> modules = ModuleRegistry.load(agentLoader, config, control, faults);
     String[] moduleNames = new String[64];
     StringBuilder moduleList = new StringBuilder();
+    List<String> moduleIds = new ArrayList<String>(modules.size());
     for (InstrumentationModule module : modules) {
       moduleNames[module.moduleId()] = module.id();
       moduleList.append(moduleList.length() == 0 ? "" : ",").append(module.id());
+      moduleIds.add(module.id());
     }
     protection.setModuleNames(moduleNames);
 
@@ -231,7 +233,7 @@ public final class AgentStarter {
           });
       running.selfDiagnostics = selfDiagnostics;
     }
-    recording.startSender(AgentLogger.logDirectory());
+    recording.startSender(AgentLogger.logDirectory(), loaded, moduleIds, diagnostics);
     watch.start();
     running.watch = watch;
 

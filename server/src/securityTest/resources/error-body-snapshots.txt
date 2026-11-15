@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# T-SEC-56: the exact body of each error status (14 §2.6, 16 §7.14), with the request id replaced.
+# Changed by hand, and only with the API contract. Format: <status> <TAB> <body>
+400	{"error":{"code":"limit_exceeded","message":"A request limit is exceeded","request_id":"<request_id>"}}
+401	{"error":{"code":"unauthenticated","message":"Authentication is required","request_id":"<request_id>"}}
+403	{"error":{"code":"forbidden","message":"The operation is not allowed","request_id":"<request_id>"}}
+404	{"error":{"code":"not_found","message":"The resource does not exist","request_id":"<request_id>"}}
+409	{"error":{"code":"invalid_state","message":"The resource is not in a valid state for this operation","request_id":"<request_id>"}}
+422	{"error":{"code":"password_policy","message":"The password does not satisfy the password policy","request_id":"<request_id>"}}
+423	{"error":{"code":"account_locked","message":"The account is locked","request_id":"<request_id>"}}
+429	{"error":{"code":"rate_limited","message":"Too many requests","request_id":"<request_id>"}}
+500	{"error":{"code":"internal","message":"Internal server error","request_id":"<request_id>"}}

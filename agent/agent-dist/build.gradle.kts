@@ -9,8 +9,11 @@
 //                    -> build/libs/argos-agent-<version>.jar
 //   4-5. generateDepsManifest, generateThirdPartyNotices, cyclonedxDirectBom feed step 3.
 //   6-8. checkShading, checkRelocatedStrings, checkMajorVersion (and checkModuleIndex, C-25,
-//        checkOwnRelocatedLiterals, C-23, checkManifestVersion, T-BLD-010) run from
-//        verifyAgentJar, which is part of check and finalizes agentJar.
+//        checkOwnRelocatedLiterals, C-23, checkManifestVersion, T-BLD-010, checkJulBridge,
+//        ADR-0005 decision 4, checkThirdPartyNotices, O-L04) run from verifyAgentJar, which is
+//        part of check and finalizes agentJar.
+// Transport (WO-11, ADR-0005, ADR-0009 C-72/C-73): the argos.v1 code of :proto, grpc-netty and
+// Netty 4.1 (enforced, C-22) are shipped from here; agent-core only compiles against them.
 // No temporary files are extracted at runtime; nothing here may add Add-Opens,
 // Launcher-Agent-Class or Boot-Class-Path to the manifest (DSN-02-03).
 
@@ -20,12 +23,14 @@ import com.github.jengelman.gradle.plugins.shadow.transformers.ApacheLicenseReso
 import com.github.jengelman.gradle.plugins.shadow.transformers.ApacheNoticeResourceTransformer
 import io.argos.buildlogic.AgentShading
 import io.argos.buildlogic.ArgosProject
+import io.argos.buildlogic.CheckJulBridge
 import io.argos.buildlogic.CheckLicenses
 import io.argos.buildlogic.CheckMajorVersion
 import io.argos.buildlogic.CheckManifestVersion
 import io.argos.buildlogic.CheckModuleIndex
 import io.argos.buildlogic.CheckOwnRelocatedLiterals
 import io.argos.buildlogic.CheckRelocatedStrings
+import io.argos.buildlogic.CheckThirdPartyNotices
 import io.argos.buildlogic.GenerateDepsManifest
 import io.argos.buildlogic.GenerateThirdPartyNotices
 import io.argos.buildlogic.NormalizeSbom
@@ -35,6 +40,7 @@ import io.argos.buildlogic.argosProtocolVersion
 import io.argos.buildlogic.argosSourceDateInstant
 import org.cyclonedx.gradle.CyclonedxDirectTask
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.artifacts.component.ProjectComponentIdentifier
 import org.cyclonedx.model.Component
 import org.cyclonedx.model.ExternalReference
 
@@ -64,6 +70,17 @@ dependencies {
   // entry points and only trims their third-party dependencies.
   api(project(":agent:agent-core"))
   instrumentationPaths.forEach { api(project(it)) }
+  // The gRPC transport of agent-core (WO-11): the argos.v1 messages and stubs (ADR-0010 C-104),
+  // grpc-netty (ADR-0005 decision 1) and the agent's Netty 4.1 line (ADR-0009 C-73, enforced so
+  // that grpc-netty's own Netty 4.2 dependency cannot win: Netty 4.2 ships Java 11 class files).
+  implementation(project(":proto"))
+  implementation(enforcedPlatform(libs.agent.netty.bom))
+  implementation(libs.grpc.netty)
+}
+
+// Annotation-only artifacts are not shipped at all (AgentShading.ANNOTATION_ONLY_MODULES, P-3).
+configurations.runtimeClasspath {
+  AgentShading.ANNOTATION_ONLY_MODULES.forEach { (group, module) -> exclude(group = group, module = module) }
 }
 
 // agent-bootstrap goes to the jar root (bootstrap class loader), never below inst/.
@@ -94,9 +111,28 @@ shadowJar {
   destinationDirectory = layout.buildDirectory.dir("shadow")
   dependencies { exclude(project(ArgosProject.AGENT_BOOTSTRAP_PATH)) }
   AgentShading.RELOCATED_PACKAGES.forEach { relocate(it, "${AgentShading.PREFIX}.$it") }
-  // Reflection/ServiceLoader-loaded classes (gRPC NameResolverProvider, Netty channels) get
-  // minimize exclusions together with the transport stack in WO-02 (19 §13 #4).
+  // No java.util.logging in the agent (AGT-02, ADR-0005 decision 4): the shaded libraries' JUL
+  // Logger becomes the agent's bridge (agent-core io.argos.agent.core.log.JulLogger), so the JDK
+  // LogManager is never initialised by the agent and library messages go to the agent log.
+  relocate("java.util.logging.Logger", AgentShading.JUL_LOGGER_BRIDGE)
+  // Minimize roots (kept whole with everything they reference): the Argos projects (agent-core,
+  // instrumentation modules, the generated protocol of :proto) and gRPC, whose providers are loaded
+  // through ServiceLoader and Class.forName (ADR-0005 decision 5, 19 §13 #4). Netty, Guava,
+  // protobuf and JCTools are minimized.
   minimize()
+  val runtime = project.configurations.runtimeClasspath
+  apiJars.setFrom(
+    runtime.map { conf ->
+      conf.incoming
+        .artifactView {
+          componentFilter {
+            it is ProjectComponentIdentifier ||
+              (it is ModuleComponentIdentifier && it.group in AgentShading.MINIMIZE_ROOT_GROUPS)
+          }
+        }
+        .files
+    }
+  )
   // Let the transformers see every copy of the merged resources; other duplicates keep the first.
   duplicatesStrategy = DuplicatesStrategy.INCLUDE
   mergeServiceFiles()
@@ -110,6 +146,13 @@ shadowJar {
   // Both the original and the relocated path, so the rule holds whichever form Shadow filters on.
   exclude(AgentShading.UNSAFE_EXCLUDED_CLASSES)
   exclude(AgentShading.UNSAFE_EXCLUDED_CLASSES.map { AgentShading.PREFIX.replace('.', '/') + "/" + it })
+  // The same rule for the transport stack (ADR-0009 C-74): never-loaded Unsafe users are removed.
+  exclude(AgentShading.TRANSPORT_UNSAFE_EXCLUDED_CLASSES)
+  exclude(
+    AgentShading.TRANSPORT_UNSAFE_EXCLUDED_CLASSES.map { AgentShading.PREFIX.replace('.', '/') + "/" + it }
+  )
+  // Proto sources and descriptor sets of the dependencies are not needed at run time.
+  exclude("**/*.proto")
 }
 
 // Stage 2.
@@ -151,6 +194,24 @@ val generateDepsManifest =
 // THIRD-PARTY-NOTICES (O-L04, Apache-2.0 4(d)).
 val bundledArtifacts = configurations.runtimeClasspath.get().incoming.artifacts
 
+// Texts the bundled jars do not carry (their Maven Central jars have no META-INF/LICENSE or NOTICE):
+// verbatim copies from the release tag of each bundled version, taken once at development time
+// (src/notices/README.md). Nothing is downloaded at build or run time.
+val noticesDir = layout.projectDirectory.dir("src/notices")
+
+fun upstreamText(file: String, source: String): Provider<String> =
+  providers.fileContents(noticesDir.file(file)).asText.map { "Source: $source\n\n${it.trimStart('\n')}" }
+
+// The bundled version each text was copied for: generateThirdPartyNotices fails when the resolved
+// version differs, until the text is replaced from the new release.
+val upstreamTextVersions =
+  mapOf(
+    "com.google.protobuf:protobuf-java" to "4.36.2",
+    "io.netty" to "4.1.139.Final",
+    "io.grpc" to "1.85.1",
+    "io.perfmark:perfmark-api" to "0.27.0",
+  )
+
 val generateThirdPartyNotices =
   tasks.register<GenerateThirdPartyNotices>("generateThirdPartyNotices") {
     runtimeRoot = agentRuntimeRoot
@@ -164,6 +225,35 @@ val generateThirdPartyNotices =
           id?.let { "${artifact.file.name}=${it.group}:${it.module}" }
         }
       }
+    // BSD-3-Clause condition 2: copyright line, conditions and disclaimer of protobuf-java.
+    licenseTexts.put(
+      "com.google.protobuf:protobuf-java",
+      upstreamText("protobuf-java-LICENSE.txt", "https://github.com/protocolbuffers/protobuf/blob/v36.2/LICENSE"),
+    )
+    // Apache-2.0 4(d): the NOTICE of the Netty and gRPC projects applies to each of their modules
+    // (written once), PerfMark's to perfmark-api. Netty's carries the MIT license of the
+    // SLF4J-derived io.netty.util.internal.logging classes that netty-common ships.
+    noticeTexts.put(
+      "io.netty",
+      upstreamText("netty-NOTICE.txt", "https://github.com/netty/netty/blob/netty-4.1.139.Final/NOTICE.txt")
+        .zip(
+          upstreamText(
+            "netty-LICENSE.slf4j.txt",
+            "https://github.com/netty/netty/blob/netty-4.1.139.Final/license/LICENSE.slf4j.txt",
+          )
+        ) { notice, slf4j ->
+          "$notice\n\nEmbedded component license (SLF4J, MIT; io.netty.util.internal.logging):\n$slf4j"
+        },
+    )
+    noticeTexts.put(
+      "io.grpc",
+      upstreamText("grpc-java-NOTICE.txt", "https://github.com/grpc/grpc-java/blob/v1.85.1/NOTICE.txt"),
+    )
+    noticeTexts.put(
+      "io.perfmark:perfmark-api",
+      upstreamText("perfmark-NOTICE.txt", "https://github.com/perfmark/perfmark/blob/v0.27.0/NOTICE"),
+    )
+    textVersions = upstreamTextVersions
     outputFile = layout.buildDirectory.file("agent-meta-inf/THIRD-PARTY-NOTICES")
   }
 
@@ -199,7 +289,7 @@ val agentSbom =
     inputFile = tasks.named<CyclonedxDirectTask>("cyclonedxDirectBom").flatMap { it.jsonOutput }
     timestamp = argosSourceDateInstant()
     requiredProjects =
-      listOf(ArgosProject.AGENT_BOOTSTRAP_PATH, ":agent:agent-core") + instrumentationPaths
+      listOf(ArgosProject.AGENT_BOOTSTRAP_PATH, ":agent:agent-core", ":proto") + instrumentationPaths
     outputFile = layout.buildDirectory.file("sbom/agent.cdx.json")
   }
 
@@ -328,21 +418,45 @@ val checkOwnRelocatedLiterals =
   tasks.register<CheckOwnRelocatedLiterals>("checkOwnRelocatedLiterals") {
     jar = agentJarFile
     prefix = AgentShading.PREFIX
+    // The relocated Netty property names the transport sets on purpose (NettyProps, ADR-0008).
+    allowed = AgentShading.OWN_RELOCATED_LITERALS
     reportFile = layout.buildDirectory.file("reports/agent-jar/own-relocated-literals.txt")
+  }
+
+// ADR-0005 decision 4, AGT-02: no class references java.util.logging.Logger or LogManager, and
+// every call the shaded libraries make on the JUL bridge exists in it.
+val checkJulBridge =
+  tasks.register<CheckJulBridge>("checkJulBridge") {
+    jar = agentJarFile
+    bridge = AgentShading.JUL_LOGGER_BRIDGE
+    forbidden = AgentShading.JUL_FORBIDDEN_CLASSES
+    reportFile = layout.buildDirectory.file("reports/agent-jar/jul-bridge.txt")
+  }
+
+// O-L04, T-BLD-003: THIRD-PARTY-NOTICES in the jar lists every module of argos-deps.txt, carries the
+// copyright line and license text of every module whose license is not Apache-2.0 (protobuf-java,
+// BSD-3-Clause), and the original NOTICE of the projects that have one.
+val checkThirdPartyNotices =
+  tasks.register<CheckThirdPartyNotices>("checkThirdPartyNotices") {
+    jar = agentJarFile
+    noticeRequired = listOf("net.bytebuddy:byte-buddy", "io.netty", "io.grpc", "io.perfmark:perfmark-api")
+    reportFile = layout.buildDirectory.file("reports/agent-jar/third-party-notices.txt")
   }
 
 val verifyAgentJar =
   tasks.register("verifyAgentJar") {
     group = "verification"
     description =
-      "Verifies the agent jar: shading, relocated strings (library and own), major version, manifest version, module index (18 §2.2)."
+      "Verifies the agent jar: shading, relocated strings (library and own), major version, manifest version, module index, JUL bridge, third-party notices (18 §2.2)."
     dependsOn(
       checkShading,
       checkRelocatedStrings,
       checkOwnRelocatedLiterals,
+      checkJulBridge,
       checkMajorVersion,
       checkManifestVersion,
       checkModuleIndex,
+      checkThirdPartyNotices,
     )
   }
 

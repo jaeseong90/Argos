@@ -183,6 +183,8 @@ class ConfigKeyCatalogTest {
             "argos.clickhouse.migrator.password",
             "argos.clickhouse.reader.password",
             "argos.clickhouse.writer.password",
+            "argos.jwt-key",
+            "argos.jwt-previous-key",
             "argos.master-key",
             "argos.metrics.token",
             "argos.postgres.owner.password",

@@ -181,12 +181,25 @@
 | Argos 사용자 세션 IP(`user_sessions.ip`) | 개인정보 가능(보안 기록) | 로그인·리프레시 때 | 전체 주소, `default-ip-mode` 미적용, 관리자·본인만 열람(ADR-0010 C-117) | 세션 만료·폐기 뒤 7일 | 세션 폐기·사용자 삭제·만료 정리 |
 | Argos 사용자 세션 UA(`user_sessions.user_agent`) | 개인정보 가능(낮음) | 수집 | 256자 절단, HTML 렌더 금지 | 세션과 같음 | 세션과 같음 |
 | 리프레시 토큰 해시(`user_sessions.refresh_hash`) | 비밀값 파생 | 발급 때 | SHA-256 hex만 저장, 원문 미저장, 로그·번들 제외 | 세션 수명 | 세션 폐기·사용자 삭제 |
-| 감사 로그 IP·UA(`audit_logs.ip`·`user_agent`) | 개인정보 가능(보안 기록) | 감사 이벤트 때 | 전체 주소(C-117), UA 256자 | 감사 로그와 같음 | 파티션 DROP(만료) |
-| 설정 토큰(32B base64url) | 비밀값 | 사용자가 없을 때 기동 시 생성 | 메모리·`conf/setup-token` 0600, 로그 1줄(DSN-16-12), 번들 제외 | 30분 또는 관리자 생성 즉시 | 파일 삭제·메모리 폐기 |
+| 감사 로그 IP·UA(`audit_logs.ip`·`user_agent`) | 개인정보 가능(보안 기록) | 감사 이벤트 때 | 전체 주소(C-117), UA 256자, before/after는 `AuditMasking` 뒤 저장 | 감사 로그와 같음 | 파티션 DROP(만료) |
+| 설정 토큰(32B base64url) | 비밀값 | 활성 ADMIN이 없을 때 기동 시 생성(ADR-0010 C-134) | 메모리·`conf/setup-token` 0600, 로그 1줄(DSN-16-12), 번들 제외 | 30분 또는 관리자 생성 즉시 | 파일 삭제·메모리 폐기 |
 | JWT 서명 키(Ed25519) | 비밀값 | 설치 시 생성 | `conf/jwt.key` 0600 또는 환경변수, 로그·번들 제외, kid 회전 | 교체까지 | 키 교체 |
 | DB 계정 비밀번호(PG owner·app·audit·backup, CH writer·reader·migrator) | 비밀값 | 설치기 생성 | 파일 0600·psql 변수, CH는 SHA-256만, 로그·유효 설정 마스킹 | 교체까지 | 교체 |
 | `ch_schema_history.error` | 내부 | 마이그레이션 실패 때 | 한 줄 2,000자 | 영구 | - |
 | `users.kiosk_ip_allowlist`, `pending_registrations.host` | 내부 | 설정·등록 때 | - | 행과 같음 | 행 삭제 |
+| 액세스 JWT(`argos_at` 쿠키) | 비밀값 파생 | 로그인·리프레시 때 | 저장 안 함(서명 검증), HttpOnly 쿠키로만, 로그 마스킹 | 토큰 수명(16 §7.1) | 만료 |
+| CSRF 토큰 | 비밀값 파생 | 요청 때 | 저장 안 함(더블 서브밋 쿠키), 로그 마스킹 | 쿠키 수명 | - |
+| 세션 내부 열(`user_sessions.family_id`·`rotated_at`·`rotated_from`·`revoked_reason`·`idle_expires_at`·`absolute_expires_at`) | 내부(보안 기록) | 발급·회전·폐기 때 | - | 세션과 같음 | 세션과 같음 |
+| 로그인 실패 기록(`login_failures_unknown`, `users.failed_logins`·`lockout_level`) | 내부(미존재 이름은 SHA-256 가명) | 로그인 실패 때 | 미존재 이름 원문 미저장, `argos_app` DML·`argos_backup` SELECT | `login_failures_unknown` 상한 10만 행(오래된 실패부터 삭제) | users는 성공 로그인·관리자 해제·비밀번호 변경/재설정 때 초기화, 미존재 이름은 축출만 |
+| 사용자 권한(`user_permissions`) | 내부(관리자 부여 기록) | 부여 때 | 부여자·시각 기록 | 사용자와 같음 | 사용자 삭제 시 CASCADE |
+| `settings.default_ip_mode` | 내부 | 설치·설정 때 | - | 영구 | 설정 변경 |
+| 레이트 리밋 버킷 키(IP·세션 id·사용자 id) | 내부 | 요청 때 | 메모리만, 상한 있음 | 전체 리필 시간의 2배 | 자동 폐기 |
+| CSP 위반 리포트 | 내부 | 브라우저 보고 때 | 저장 안 함, 로그에 directive·차단 origin·disposition만 | 로그 보존 | - |
+| DB 커넥션 풀 이름(`DictionaryKind.POOL` 사전, DBC step `name_id`) | 내부 | 수집(WO-13부터) | 사전 상한 | 사전 90일 미참조 정리 | 사전 관리자 삭제 |
+| SQL·외부 호출 전수 통계(`SqlStat`·`ExtStat`: count·error·sum·max·`buckets[15]`·`sum_exec/fetch`) | 내부 | 수집(WO-16부터) | - | `sql_stat_raw`·`ext_stat_raw` 원본 14일, 롤업 정책 | - |
+| 평문 접속 선언(`AgentHello.plaintext`) | 내부 | 수집 | - | 인스턴스 보관 정책 | 인스턴스 삭제 |
+| 프로파일 트랜잭션 종류(`TransactionProfile.kind`, C-138) | 내부 | 수집 | - | profile 7일 | 삭제 API |
+| 요청 ID(`request_id`, `capture.request-id-header`, C-124) | 내부(헤더 값에 사용자 값이 들어가면 개인정보 가능) | 수집 안 함(설정한 경우만) | 헤더 1개, 값 128B 절단, 원격 설정 불가(10 §12 기본 불허) | xlog 30일 | 삭제 API(tx 범위) |
 
 ## 6. 데이터 흐름
 

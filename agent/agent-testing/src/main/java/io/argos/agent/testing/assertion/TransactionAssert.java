@@ -20,8 +20,7 @@ import org.assertj.core.api.AbstractAssert;
  * </pre>
  *
  * Fields the record's source cannot carry (on the JSONL exporter: headers, request id, connection
- * wait; on the WO-02 PoC protocol: env, version, step threads) fail as {@link Unsupported} instead
- * of passing.
+ * wait, step threads) fail as {@link Unsupported} instead of passing.
  */
 public final class TransactionAssert extends AbstractAssert<TransactionAssert, TransactionRecord> {
 

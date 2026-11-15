@@ -37,8 +37,10 @@ public final class OverheadBench {
             A-B-A-B-A-B load set (01 §7.3 items 2-7, 18 §7.3; --mode container: item 9; --vt: item
             10; --k6-ssh: k6 on a separate load machine, item 1). --exporter noop is 18 §5.4's no-op
             exporter (argos.test.exporter=noop), drop is the WO-02 setting (argos.test.exporter=drop),
-            grpc is refused until the agent has a transport (WO-11).
-        startup  --out DIR [--apps shop-boot3,shop-heavy] [--runs 10] [--cds default,off]
+            grpc measures the transport and needs --collector (and, for a plaintext or token-checking
+            collector, --agent-config server.tls=false,server.token-file=FILE).
+        startup  --out DIR [--exporter noop|drop|grpc] [--collector HOST:PORT]
+                 [--apps shop-boot3,shop-heavy] [--runs 10] [--cds default,off]
                  [--variants off,on] [--jvm-opts "-Xms2g -Xmx2g -XX:+UseG1GC"] [--java PATH]
                  [--agent JAR] [--agent-config key=value,...] [--env-record FILE] [--timeout 5m]
                  [--max-load 50] [--max-wait 5m] [--label TEXT]

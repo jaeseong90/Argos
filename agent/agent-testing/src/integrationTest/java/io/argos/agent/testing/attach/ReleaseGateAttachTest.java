@@ -63,8 +63,8 @@ class ReleaseGateAttachTest {
     List<String> settings =
         List.of(
             "-Dargos.test.faults=advice-throw:test-probe",
-            // Set so that the release run (no test exporter) reports no missing-address ERROR;
-            // there is no transport before WO-11, nothing connects.
+            // Set so that the release run (no test exporter: the gRPC transport) reports no
+            // missing-address ERROR; nothing listens on port 1, so it never connects.
             "-Dargos.server.address=127.0.0.1:1",
             "-Dargos.exporter=file",
             "-Dargos.exporter.file.path=" + work.resolve("jdk" + jdk + "-%s/out/poc.jsonl"));

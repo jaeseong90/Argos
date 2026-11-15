@@ -1,0 +1,38 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// argos.v1 AgentService (docs/11-protocol-design.md §3). Data is sent as batch unary RPCs and
+// control travels on one bidirectional Session stream per connection (DSN-11-01).
+//
+// Every RPC carries the metadata "authorization: Bearer argos_<base64url>" (11 §2; never logged,
+// 11 §11). Data RPCs also carry "argos-instance-id: <u32>" and "argos-session-id: <uuid>" and are
+// rejected with FAILED_PRECONDITION (detail SESSION_REQUIRED) until ServerHello.accepted = true.
+// Trailer keys: "argos-retry-after-ms" (u32), "argos-reject-reason" (RejectReason name) (11 §10).
+//
+// Not in 11 §4 (which lists common, session and data): the service gets its own file so that the
+// message files stay free of gRPC (proto/README.md).
+
+syntax = "proto3";
+
+package argos.v1;
+
+import "argos/v1/data.proto";
+import "argos/v1/session.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "ServiceProto";
+option java_package = "io.argos.proto.v1";
+
+service AgentService {
+  // Session and control; one per connection, opened by the agent, no deadline.
+  rpc Session(stream AgentMessage) returns (stream ServerMessage);
+  // XLog records: every 100 ms or 500 records, deadline 5 s.
+  rpc SendTransactions(TransactionBatch) returns (Ack);
+  // Profiles (steps of sampled transactions): every 100 ms or 2,000 steps, deadline 5 s.
+  rpc SendProfiles(ProfileBatch) returns (Ack);
+  // Metrics (5 s grid) and agent self metrics: once per grid point, deadline 5 s.
+  rpc SendMetrics(MetricBatch) returns (Ack);
+  // Complete SQL and outgoing-call statistics of a 10 s window (D-12): once per window, deadline 5 s.
+  rpc SendStats(StatBatch) returns (Ack);
+  // In-flight transactions every 5 s (also with total_active = 0), deadline 3 s.
+  rpc SendActiveSnapshot(ActiveTransactionSnapshot) returns (Ack);
+}

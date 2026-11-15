@@ -168,7 +168,10 @@ public final class AgentBoundaryRules {
   }
 
   /**
-   * AGT-02: no logging framework. java.util.logging nowhere in the agent; SLF4J, Log4j, Logback,
+   * AGT-02: no logging framework. java.util.logging nowhere in the agent, with one exception:
+   * {@code core.log.JulLogger}, the class that replaces {@code java.util.logging.Logger} in the
+   * shaded libraries (ADR-0005 decision 4), must take their {@code Level} and {@code LogRecord}
+   * values; {@code Logger} and {@code LogManager} stay forbidden there too. SLF4J, Log4j, Logback,
    * commons-logging and JBoss Logging nowhere except the logging instrumentation module, which
    * instruments them (10 §6.9).
    */
@@ -181,13 +184,26 @@ public final class AgentBoundaryRules {
             "org.apache.commons.logging.",
             "ch.qos.logback.",
             "org.jboss.logging.");
+    String julBridge = layout.core() + ".log.JulLogger";
+    Set<String> julBridgeValues = Set.of("java.util.logging.Level", "java.util.logging.LogRecord");
     return noClasses()
         .that(agentClasses(layout))
-        .should()
-        .dependOnClassesThat(
-            DescribedPredicate.describe(
-                "java.util.logging classes",
-                c -> base(c).getName().startsWith("java.util.logging.")))
+        .should(
+            new ArchCondition<JavaClass>(
+                "use java.util.logging (the JUL bridge: its values only)") {
+              @Override
+              public void check(JavaClass item, ConditionEvents events) {
+                for (Dependency dependency : item.getDirectDependenciesFromSelf()) {
+                  String target = base(dependency.getTargetClass()).getName();
+                  boolean bridgeValue =
+                      item.getName().equals(julBridge) && julBridgeValues.contains(target);
+                  if (target.startsWith("java.util.logging.") && !bridgeValue) {
+                    events.add(
+                        SimpleConditionEvent.satisfied(dependency, dependency.getDescription()));
+                  }
+                }
+              }
+            })
         .orShould(
             new ArchCondition<JavaClass>("use a logging framework outside the logging module") {
               @Override

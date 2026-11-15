@@ -165,11 +165,20 @@ public final class AgentLogAssert extends AbstractAssert<AgentLogAssert, String>
     return doesNotContainText(SEED_SENTINEL);
   }
 
-  /** The text does not appear anywhere in the log (a token, T-SEC-06; a secret). */
+  /**
+   * The text does not appear anywhere in the log (a token, T-SEC-06; a secret). The failure message
+   * names the line number only: printing the text (or the line) would put the secret into the test
+   * output (11 §11, SEC-06).
+   */
   public AgentLogAssert doesNotContainText(String text) {
     isNotNull();
-    if (actual.contains(text)) {
-      failWithMessage("expected the agent log not to contain <%s>", text);
+    int index = actual.indexOf(text);
+    if (index >= 0) {
+      long line = actual.substring(0, index).chars().filter(c -> c == '\n').count() + 1;
+      failWithMessage(
+          "expected the agent log not to contain the given text (%s characters, not printed) but"
+              + " line %s does",
+          text.length(), line);
     }
     return this;
   }

@@ -95,7 +95,7 @@ public final class TokenHolder {
    * looks like that ({@code /opt/argos_agent}) is masked as well; this is meant for configuration
    * values quoted in messages, not for whole log lines.
    */
-  static String maskTokenRuns(String text) {
+  public static String maskTokenRuns(String text) {
     if (text == null || text.indexOf("argos_") < 0) {
       return text;
     }

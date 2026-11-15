@@ -51,6 +51,7 @@ testing {
               repositoryRoot.file("build-logic/allowed-licenses.json"),
               repositoryRoot.file("build-logic/license-overrides.json"),
               repositoryRoot.file("docs/licenses/dev-only.md"),
+              repositoryRoot.dir("agent/agent-dist/src/notices"),
             )
             .withPathSensitivity(PathSensitivity.RELATIVE)
             .withPropertyName("repositoryFiles")

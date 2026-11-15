@@ -100,10 +100,17 @@ class JvmToolsTest {
         .containsExactly("io.argos.agent.shaded.a.UsesUnsafe");
     assertThat(UnsafeScanner.violations(agent, allowlist))
         .containsExactly("io.argos.agent.shaded.b.Reflective");
-    // The repository allow-list (single source with check-shading.sh) is empty.
-    assertThat(
-            UnsafeScanner.readAllowlist(Path.of(System.getProperty("argos.test.unsafeAllowlist"))))
-        .isEmpty();
+    // The repository allow-list (single source with check-shading.sh): ADR-0009 C-74 lets a class
+    // stay when a test proves its conditions (UnsafeProofTransportTest), and every line must carry
+    // a reason;
+    // only shaded dependencies can be on it, never the agent's own code.
+    Path repository = Path.of(System.getProperty("argos.test.unsafeAllowlist"));
+    assertThat(UnsafeScanner.readAllowlist(repository))
+        .allSatisfy(name -> assertThat(name).startsWith("io.argos.agent.shaded."));
+    assertThat(Files.readAllLines(repository, StandardCharsets.UTF_8))
+        .filteredOn(line -> !line.isBlank() && !line.stripLeading().startsWith("#"))
+        .allSatisfy(
+            line -> assertThat(line).as("C-74: a reason per line").containsPattern("#\\s*\\S"));
   }
 
   @Test

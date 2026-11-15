@@ -11,13 +11,9 @@
 //   code (--release 8), so that every rule is shown to fail on a violation (T-AG-001..004).
 //   Fixtures are test-only and never packaged.
 
-import com.google.protobuf.gradle.ProtobufExtension
-import com.google.protobuf.gradle.id
 import io.argos.buildlogic.AgentShading
 import io.argos.buildlogic.ArgosProject
 import io.argos.buildlogic.argosArchivesName
-import io.argos.buildlogic.argosLibs
-import io.argos.buildlogic.versionOf
 import java.util.zip.ZipFile
 
 plugins {
@@ -25,43 +21,23 @@ plugins {
   id("argos.integration-test")
 }
 
-// The protobuf plugin comes with the build-logic classpath (see :agent:agent-dist).
-apply(plugin = "com.google.protobuf")
-
 description = "Argos agent test harness (launcher, fake collector, assertions, matrix)."
 
-// --- FakeCollector wire contract (18 §5.3) -------------------------------------------------------
-// The FakeCollector speaks the WO-02 transport PoC protocol (test/agent/transport-poc/src/proto, a
-// snapshot of 11 §4), generated here into the collectorProto source set; only
-// io.argos.agent.testing.collector.poc.PocProtocol uses the generated types (CollectorProtocol is
-// the seam). WO-11 points this at proto/argos/v1 and replaces PocProtocol.
-val collectorProto = sourceSets.create("collectorProto")
-
-collectorProto.extensions
-  .getByName<SourceDirectorySet>("proto")
-  .setSrcDirs(listOf(layout.settingsDirectory.dir("test/agent/transport-poc/src/proto")))
-
-configure<ProtobufExtension> {
-  protoc { artifact = "com.google.protobuf:protoc:${argosLibs.versionOf("protobuf")}" }
-  plugins { id("grpc") { artifact = "io.grpc:protoc-gen-grpc-java:${argosLibs.versionOf("grpc")}" } }
-  generateProtoTasks {
-    ofSourceSet(collectorProto.name).configureEach { plugins { id("grpc") { option("@generated=omit") } } }
-  }
-}
-
-// Generated code is not ours to lint (the argos.java-common -Werror would fail on protoc output).
-tasks.named<JavaCompile>(collectorProto.compileJavaTaskName) { options.compilerArgs.remove("-Werror") }
-
+// --- FakeCollector wire contract (18 §5.3, 11 §16) ----------------------------------------------
+// The FakeCollector speaks argos.v1 from :proto, the single generated source of the protocol
+// (ADR-0010 C-104, proto/README.md "consumers"): agent-testing uses the unrelocated
+// io.argos.proto.v1 classes on JDK 21, the same artifact the server consumes (WO-21). Only
+// io.argos.agent.testing.collector.v1.V1Protocol touches generated types (CollectorProtocol is the
+// seam). The WO-02 transport PoC keeps its own snapshot (test/agent/transport-poc).
 dependencies {
-  "collectorProtoImplementation"(libs.protobuf.java)
-  "collectorProtoImplementation"(libs.grpc.protobuf)
-  "collectorProtoImplementation"(libs.grpc.stub)
-  // FakeCollector API (io.grpc.Status, protobuf Message) and the generated PoC stubs for tests.
-  api(collectorProto.output)
+  // FakeCollector API (io.grpc.Status, protobuf Message) and the argos.v1 stubs for tests.
+  api(project(":proto"))
   api(libs.protobuf.java)
   api(libs.grpc.api)
   api(libs.grpc.stub)
   implementation(libs.grpc.protobuf)
+  // The fake collector's server transport: the server-side Netty of the catalog, never the agent's
+  // relocated Netty 4.1 entry (ADR-0009 C-73 is for the agent jar only).
   implementation(platform(libs.netty.bom))
   implementation(libs.grpc.netty)
   // AppLauncher container mode (18 §5.2): Testcontainers GenericContainer.
@@ -234,10 +210,37 @@ dependencies {
   implementation(libs.assertj.core)
   // In-process target of the sample apps' outgoing calls (WO-02 P-6: HttpURLConnection, F-A32).
   "integrationTestImplementation"(project(":sample-apps:ext-stub"))
-  // FakeCollectorTest: a real gRPC client (grpc-netty) against the fake collector.
+  // FakeCollectorTest and the contract suite: a real gRPC client (grpc-netty) against the fake
+  // collector.
   "integrationTestImplementation"(platform(libs.netty.bom))
   "integrationTestImplementation"(libs.grpc.netty)
 }
+
+// --- Standalone fake collector (bench, development-only, never shipped) --------------------------
+// build/fake-collector/fake-collector.jar runs io.argos.agent.testing.collector.FakeCollectorMain
+// (README "Standalone collector"); its manifest Class-Path names the runtime libraries copied to
+// build/fake-collector/lib, so the jar works with that directory next to it.
+val fakeCollectorDir = layout.buildDirectory.dir("fake-collector")
+val fakeCollectorRuntime: FileCollection = configurations.runtimeClasspath.get()
+val fakeCollectorLibs =
+  tasks.register<Sync>("fakeCollectorLibs") {
+    description = "Runtime libraries of the standalone fake collector (development-only)."
+    from(fakeCollectorRuntime)
+    into(fakeCollectorDir.map { it.dir("lib") })
+  }
+val fakeCollectorJar =
+  tasks.register<Jar>("fakeCollectorJar") {
+    description = "Standalone FakeCollector for the bench: build/fake-collector/fake-collector.jar (development-only)."
+    group = "build"
+    dependsOn(fakeCollectorLibs)
+    archiveFileName = "fake-collector.jar"
+    destinationDirectory = fakeCollectorDir
+    from(sourceSets.main.get().output)
+    val runtime = fakeCollectorRuntime
+    inputs.files(runtime).withPropertyName("fakeCollectorRuntime").withNormalizer(ClasspathNormalizer::class.java)
+    manifest { attributes("Main-Class" to "io.argos.agent.testing.collector.FakeCollectorMain") }
+    doFirst { manifest.attributes("Class-Path" to runtime.files.joinToString(" ") { "lib/" + it.name }) }
+  }
 
 // -Pagent.container=true: ContainerModeTest runs the first -Pagent.e2e app in Docker (18 §5.2).
 val containerMode = providers.gradleProperty("agent.container").map(String::toBoolean).getOrElse(false)
@@ -346,6 +349,12 @@ tasks.named<Test>("integrationTest") {
   systemProperty("argos.test.container", containerMode.toString())
   inputs.property("containerImages", containerImages)
   containerImages.forEach { (name, image) -> systemProperty(name, image) }
+  // Old JREs below and at the 8u252 TLS line (OldJreTransportTest, docs/poc/agent-poc.md 9.8): not
+  // Gradle toolchains, so their homes come in as -Pagent.jdk8u252=<JRE home> and
+  // -Pagent.jdk8u242=<JRE home>; without them the tests skip and say so.
+  listOf("jdk8u252", "jdk8u242").forEach { jre ->
+    providers.gradleProperty("agent.$jre").orNull?.let { systemProperty("argos.test.$jre", it) }
+  }
   jvmArgumentProviders.add(
     CommandLineArgumentProvider {
       listOf("-Dargos.test.e2e=" + combos, "-Dargos.test.reportDir=" + e2eReportDir.get().asFile.absolutePath) +
@@ -357,6 +366,12 @@ tasks.named<Test>("integrationTest") {
   val appClasses = trivialApp.output.classesDirs
   val preloadJar = preloadAgentJar.flatMap { it.archiveFile }
   inputs.file(preloadJar).withPropertyName("preloadAgentJar").withPathSensitivity(PathSensitivity.NONE)
+  // FakeCollectorMainTest runs the standalone collector jar as its own process.
+  val collectorJar = fakeCollectorJar.flatMap { it.archiveFile }
+  inputs.file(collectorJar).withPropertyName("fakeCollectorJar").withPathSensitivity(PathSensitivity.NONE)
+  jvmArgumentProviders.add(
+    CommandLineArgumentProvider { listOf("-Dargos.test.fakeCollectorJar=" + collectorJar.get().asFile.absolutePath) }
+  )
   inputs.files(releaseJarFiles).withPropertyName("releaseAgentJar").withNormalizer(ClasspathNormalizer::class.java)
   inputs.file(probeJar).withPropertyName("probeAgentJar").withPathSensitivity(PathSensitivity.NONE)
   inputs.files(appClasses).withPropertyName("trivialApp").withNormalizer(ClasspathNormalizer::class.java)

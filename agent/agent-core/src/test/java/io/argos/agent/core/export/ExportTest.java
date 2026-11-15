@@ -12,6 +12,7 @@ import io.argos.agent.core.config.AgentConfig;
 import io.argos.agent.core.context.ThreadNames;
 import io.argos.agent.core.guard.AgentCounters;
 import io.argos.agent.core.trace.Dictionary;
+import io.argos.agent.core.trace.Sampler;
 import io.argos.agent.core.trace.TestMeters;
 import io.argos.agent.core.trace.TraceRuntime;
 import io.argos.agent.core.trace.TracerImpl;
@@ -53,6 +54,15 @@ class ExportTest {
           new TxIdGenerator(),
           1000,
           100);
+
+  {
+    // The module-test tracer's default sampler draws sampling.profile.normal-rate (10 %) at random;
+    // the transactions of this class are fast and successful, so with rate 0 none is sampled and
+    // their profile_captured is always false (it was true in about one run in ten).
+    tracer.setSampler(
+        new Sampler(
+            Sampler.DEFAULT_SLOW_THRESHOLD_MS, Collections.<String, Integer>emptyMap(), 0.0));
+  }
 
   private Transaction transaction(String service, String sql) {
     TraceContext ctx = tracer.begin(Kind.HTTP, service, 1_000_000);
@@ -295,7 +305,7 @@ class ExportTest {
     assertThat(file.describe())
         .isEqualTo("file " + new File(dir, Exporters.DEFAULT_FILE_NAME).getAbsoluteFile());
     file.close();
-    // The grpc transport is not part of this build (P-3/WO-11): noop with one WARN.
+    // Without the recording runtime the grpc transport cannot start: one ERROR, noop.
     assertThat(Exporters.create(context("grpc"), dir)).isInstanceOf(NoopExporter.class);
     assertThat(Exporters.create(context("bogus"), dir)).isInstanceOf(NoopExporter.class);
     assertThat(Exporters.configuredName(AgentConfig.of(Collections.<String, String>emptyMap())))
@@ -383,15 +393,23 @@ class ExportTest {
     Transaction tx = transaction("GET /n", "select 2");
     noop.export(Collections.singletonList(tx));
     assertThat(((NoopExporter) noop).exported()).isEqualTo(1);
-    assertThat(((NoopExporter) noop).encodedChars())
-        .isEqualTo(JsonlFileExporter.encode(tx, dictionary).length());
+    long encoded = ((NoopExporter) noop).encodedBytes();
+    assertThat(encoded).as("the sender's protobuf encoding of the record").isPositive();
+    assertThat(encoded)
+        .as("the record, and once the dictionary entries it is the first to use")
+        .isEqualTo(new io.argos.agent.core.transport.BatchEncoder(dictionary).encode(tx));
+    noop.export(Collections.singletonList(tx));
+    assertThat(((NoopExporter) noop).encodedBytes())
+        .as("the second time the entries are known: only the record")
+        .isGreaterThan(encoded)
+        .isLessThan(2 * encoded);
     // test.exporter=drop (the P-2 baseline, formerly exporter=noop) does not encode.
     NoopExporter plain = (NoopExporter) Exporters.create(testContext("drop"), dir);
     plain.export(Collections.singletonList(tx));
-    assertThat(plain.encodedChars()).isZero();
+    assertThat(plain.encodedBytes()).isZero();
     assertThat(plain.describe()).isEqualTo("drop");
 
-    // grpc is the default name; this build has no transport (WO-11): one WARN, noop.
+    // grpc is the default name; without the recording runtime the transport cannot start: noop.
     assertThat(Exporters.create(testContext("grpc"), dir)).isInstanceOf(NoopExporter.class);
     assertThat(Exporters.create(testContext("kafka:x"), dir)).isInstanceOf(NoopExporter.class);
 

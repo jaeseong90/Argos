@@ -5,11 +5,15 @@ import static io.argos.agent.testing.log.AgentLogAssert.assertThatAgentLog;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** T-AG-060 log rules: ERROR 0, WARN only from the allow-list fixture, no seed sentinel. */
 @Tag("req:F-A35")
@@ -36,18 +40,31 @@ class AgentLogAssertTest {
   @Test
   @DisplayName(
       "T-AG-060 the fixture allows only the listed WARN lines; ERROR and other WARN lines fail")
-  void allowlist() {
-    List<Pattern> fixture = AgentLogAssert.defaultAllowlist();
-    assertThat(fixture).isNotEmpty();
+  void allowlist(@TempDir Path dir) throws Exception {
+    // Since WO-11 the jar has the transport: the C-5 line left the fixture and fails the rule now.
     String grpcMissing =
         "2026-11-03T03:00:01.000+09:00 WARN  [argos-sender] exporter 'grpc' is not available in"
             + " this agent build (io.argos.agent.core.transport.GrpcExporterFactory missing);"
             + " transactions are recorded and dropped (noop)";
-    assertThatAgentLog(BANNER + "\n" + grpcMissing + "\n")
+    assertThatThrownBy(() -> assertThatAgentLog(BANNER + "\n" + grpcMissing).isNormalScenarioLog())
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("exporter 'grpc'");
+    // The mechanism on a list of its own: comments are skipped, a pattern takes the whole message.
+    Path file = dir.resolve("allow.txt");
+    Files.writeString(file, "# a comment\n\nknown warning \\d+\n", StandardCharsets.UTF_8);
+    List<Pattern> listed = AgentLogAssert.readAllowlist(file);
+    assertThat(listed).hasSize(1);
+    String known = "2026-11-03T03:00:01.000+09:00 WARN  [argos-sender] known warning 7";
+    assertThatAgentLog(BANNER + "\n" + known + "\n")
         .hasStartBanner()
-        .isNormalScenarioLog()
-        .hasWarningCount("exporter 'grpc'", 1);
-    assertThatThrownBy(() -> assertThatAgentLog(BANNER + "\n" + grpcMissing).hasNoWarnings())
+        .hasNoErrors()
+        .hasOnlyAllowedWarnings(listed)
+        .hasWarningCount("known warning", 1);
+    assertThatThrownBy(() -> assertThatAgentLog(BANNER + "\n" + known).hasNoWarnings())
+        .isInstanceOf(AssertionError.class);
+    assertThatThrownBy(
+            () ->
+                assertThatAgentLog(BANNER + "\n" + known + " more").hasOnlyAllowedWarnings(listed))
         .isInstanceOf(AssertionError.class);
     String other = "2026-11-03T03:00:01.000+09:00 WARN  [main] configuration: unknown key 'x'";
     assertThatThrownBy(() -> assertThatAgentLog(BANNER + "\n" + other).isNormalScenarioLog())
@@ -59,6 +76,12 @@ class AgentLogAssertTest {
         .hasMessageContaining("failed to start");
     assertThatThrownBy(() -> assertThatAgentLog("x ARGOS_SEED y").doesNotContainSeedSentinel())
         .isInstanceOf(AssertionError.class);
+    // A secret is never echoed by the failure (SEC-06): only its length and line number.
+    String secret = "s3cr3t-value-not-a-token";
+    assertThatThrownBy(() -> assertThatAgentLog("a\nb " + secret + " c").doesNotContainText(secret))
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("line 2")
+        .hasMessageNotContaining(secret);
     assertThatThrownBy(() -> assertThatAgentLog("").hasStartBanner())
         .isInstanceOf(AssertionError.class);
   }

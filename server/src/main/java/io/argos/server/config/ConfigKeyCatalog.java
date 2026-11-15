@@ -45,8 +45,12 @@ public final class ConfigKeyCatalog {
   /** Root of the tree. */
   public static final String PREFIX = "argos";
 
-  /** Last segments of secret value keys; their values are never shown. */
-  static final Set<String> SECRET_NAMES = Set.of("password", "token", "master-key");
+  /**
+   * Last segments of secret value keys; their values are never shown. {@code jwt-key} and {@code
+   * jwt-previous-key} are the access-token signing keys (WO-24, 16 §7.1).
+   */
+  static final Set<String> SECRET_NAMES =
+      Set.of("password", "token", "master-key", "jwt-key", "jwt-previous-key");
 
   // Initialization order matters: build() uses SIMPLE_TYPES.
   private static final Map<Class<?>, String> SIMPLE_TYPES = simpleTypes();

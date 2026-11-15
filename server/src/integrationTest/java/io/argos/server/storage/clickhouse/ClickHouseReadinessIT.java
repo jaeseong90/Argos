@@ -76,19 +76,24 @@ class ClickHouseReadinessIT {
     return last;
   }
 
-  /** The id of the Docker container that publishes ClickHouse's HTTP port on {@code hostPort}. */
+  /**
+   * The id of the Docker container that publishes ClickHouse's HTTP port on {@code hostPort}. The
+   * daemon is shared: containers of other test runs that are being created or removed may report no
+   * ports at all (null), and they are not this one.
+   */
   private static String clickHouseContainerId(DockerClient docker, int hostPort) {
     List<Container> matches =
         docker.listContainersCmd().exec().stream()
             .filter(
                 c ->
-                    Arrays.stream(c.getPorts())
-                        .anyMatch(
-                            p ->
-                                p.getPrivatePort() != null
-                                    && p.getPrivatePort() == ArgosClickHouse.HTTP_PORT
-                                    && p.getPublicPort() != null
-                                    && p.getPublicPort() == hostPort))
+                    c.getPorts() != null
+                        && Arrays.stream(c.getPorts())
+                            .anyMatch(
+                                p ->
+                                    p.getPrivatePort() != null
+                                        && p.getPrivatePort() == ArgosClickHouse.HTTP_PORT
+                                        && p.getPublicPort() != null
+                                        && p.getPublicPort() == hostPort))
             .toList();
     assertThat(matches).as("the ClickHouse container of this test").hasSize(1);
     return matches.get(0).getId();

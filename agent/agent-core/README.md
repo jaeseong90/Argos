@@ -21,7 +21,7 @@ are discovered at runtime from `META-INF/services/io.argos.agent.instrumentation
 | `core.masking` | `Masker` + `MaskPatterns`: 16 §6.6 default set (email, Korean mobile, RRN, card with Luhn, IPv4, JWT) then `capture.mask-patterns` (32 x 512 chars, read budget, fail closed), input cut to 64 KiB, message limit applied after masking |
 | `core.hash` | `Xxh3` (own XXH3-64, no `Unsafe`, reference vectors; 10 U-17, C-91) |
 | `core.context` | `VirtualThreads` (cached `MethodHandle`), `ThreadNames` (normalization, 1,000-name dictionary cap, `_other_`) |
-| `core.transport` | `Queues`: five bounded queues (JCTools `MpscAtomicArrayQueue`; count, 120 s age and shared byte budget; drop the oldest once and retry once; `argos_agent_dropped_total{queue}`), `LatestSlot` (active snapshot); the gRPC sender is WO-11 |
+| `core.transport` | `Queues`: five bounded queues (JCTools `MpscAtomicArrayQueue`; count, 120 s age and shared byte budget; drop the oldest once and retry once; `argos_agent_dropped_total{queue}`), `LatestSlot` (active snapshot). The gRPC transport (WO-11, 10 §10.2-§10.4, 11): `GrpcTransport` (the channel of 10 §10.3: one `argos-io` thread, no gRPC shared threads, 4 MiB inbound, keepalive, JDK TLS, token `CallCredentials`, `NettyProps` with the relocated names), `SessionClient` (hello, heartbeat, dictionary answers, reconnect `Backoff`, `isReady` pending list), `Sender` (`argos-sender`: per-kind `seq` and `agent_epoch`, 4 in flight, deadlines, retries of 11 §6, `SESSION_REQUIRED`, split, drop and count), `BatchAssembler` (`Limits`, 1 MiB, gzip above 1 KiB), `DictionaryCache`, `ClockSync`, `RejectingDispatcher` (WO-17 replaces it), `AgentSession` (`InstanceUpdate` API for later work orders), `TransportCounters` (self metrics), `GrpcExporter` (`QueueExporter`, the shutdown sequence) |
 | `core.stats`, `core.metric`, `core.command`, `core.watch` | `package-info.java` only: owners WO-16, WO-16, WO-17, WO-19 |
 | `core.sql` | `SqlNormalizer` (10 §9.4, SEC-35, WO-02 subset): literals become `?` (strings, prefixed, dollar-quoted, numbers), comments and whitespace collapse, `IN (?, ?)` and multi-row `VALUES` collapse, `<unparsed>` on failure; `TracerImpl.dict(DictKind.SQL, raw)` goes through it (`core.trace.SqlIds`, bounded raw-text cache), so no SQL literal is kept or exported |
 | `core.log` | `AgentLogger` (async `argos-logger` thread, `log.dir/argos-agent.log` rolled `log.max-file-mb` x `log.max-files` (10 MB x 5), directory created 0700 on POSIX, `<jar dir>/../logs` else `java.io.tmpdir/argos-agent-<pid>` without `log.dir` (C-76), stderr fallback 10 lines/min and the same message once a minute, held until the start completes, nothing on stdout; a failed start without a log file prints only `argos: agent disabled: <reason>`, C-78) |
@@ -41,5 +41,12 @@ ids and dictionary, JSONL export and queue bounds, configuration, logger (format
 limit, timestamps), ignore list and globs, module discovery, agent builder factory, `--check`,
 request exclusion rules, fallback service names and cap, path cleaning, IP masking, message
 masking (`HttpRulesTest`, `HttpSettingsTest`, `MaskerTest`), SQL normalization and SQL ids
-(`SqlNormalizerTest`, `SqlIdsTest`).
-End-to-end behaviour on JDK 8-25 is tested in `agent-testing` (`AgentAttachTest`).
+(`SqlNormalizerTest`, `SqlIdsTest`), the transport with fake seams and a manual clock (`SenderTest`,
+`SessionClientTest`, `BatchAssemblerTest`, `TransportPartsTest`), the log bridge and byte bound
+(`JulLoggerTest`, `LogPipelineBytesTest`).
+`:agent:agent-core:integrationTest` adds `SessionFlowControlIntegrationTest`: the real grpc-netty
+stack against a raw gRPC server on the loopback (`isReady` back pressure, call metadata), and
+`ExportWorkerShutdownIntegrationTest`: the shutdown hook's bounds with the real bye (1 s) and flush
+(1 s) times (`ExportWorkerShutdownTest` checks the same properties with a scaled budget, ADR-0010
+C-146 (2)).
+End-to-end behaviour on JDK 8-25 is tested in `agent-testing` (`AgentAttachTest`, `transport.*`).

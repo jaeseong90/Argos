@@ -15,9 +15,11 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -65,10 +67,10 @@ import java.util.stream.Stream;
  * sample app's name) and {@code app.env=test} (the required keys of 10 §4.3 P4, so that a normal
  * run logs no configuration ERROR or WARN), {@code log.dir}, {@code debug.transform-list}, {@code
  * debug.transform-log} and {@code test.selfdiag-file} ({@code out/selfdiag.json}, ADR-0010 C-95) in
- * the work directory, and {@code test.exporter=file:<workDir>/out} (or the collector's {@code
- * server.*} settings with {@link #collector}); the test's own settings come last and win. Readiness
- * (HTTP apps): the port is bound and the readiness path answers 200 (ADR-0004 C-49 startup is spawn
- * to port binding).
+ * the work directory, and {@code test.exporter=file:<workDir>/out} unless a {@link
+ * #collector(FakeCollector)} is set (its {@code server.*} settings apply with or without the
+ * defaults); the test's own settings come last and win. Readiness (HTTP apps): the port is bound
+ * and the readiness path answers 200 (ADR-0004 C-49 startup is spawn to port binding).
  *
  * <p>WAR apps ({@link SampleApp#isWar}) run in a standalone Tomcat staged for the run ({@link
  * TomcatStaging}: CATALINA_HOME from the sample app's build, CATALINA_BASE {@code
@@ -102,6 +104,7 @@ public final class AppLauncher {
   private boolean inDocker;
   private String cpus;
   private String memory;
+  private String tokenFileMode;
   private String tomcatKey;
 
   private AppLauncher(SampleApp app, Jdk jdk) {
@@ -199,12 +202,24 @@ public final class AppLauncher {
   }
 
   /**
-   * Sends to {@code fakeCollector} ({@code server.*} settings) instead of the JSONL file exporter;
-   * {@code null} restores the file exporter. The agent's gRPC exporter arrives with WO-11.
+   * Sends to {@code fakeCollector} through the agent's default {@code grpc} exporter instead of the
+   * JSONL file exporter ({@code null} restores the file exporter): {@code server.address} (the
+   * collector's {@code 127.0.0.1:<port>}, in container mode {@code host.docker.internal:<port>}),
+   * {@code server.tls} as the collector runs (TLS unless it was started plaintext), {@code
+   * server.tls.ca-file} ({@code <workDir>/collector/ca.pem}, a copy of {@link
+   * FakeCollector#trustPem()}) and {@code server.token-file} ({@code <workDir>/collector/token},
+   * the collector's test token, owner-only where the file system has POSIX permissions; never on
+   * the command line, SEC-06; in container mode with {@link #tokenFileMode(String)} the agent reads
+   * a copy inside the container). These apply with or without the harness defaults.
    */
   public AppLauncher collector(FakeCollector fakeCollector) {
     this.collector = fakeCollector;
     return this;
+  }
+
+  /** The collector of {@link #collector(FakeCollector)}, or null. */
+  FakeCollector collector() {
+    return collector;
   }
 
   /**
@@ -216,6 +231,28 @@ public final class AppLauncher {
     this.cpus = cpuLimit;
     this.memory = memoryLimit;
     return this;
+  }
+
+  /**
+   * Container mode with {@link #collector(FakeCollector)} only: the POSIX mode ({@code "0644"},
+   * {@code "0600"}, octal) of the token file the agent reads. The container's entrypoint copies
+   * {@code <workDir>/collector/token} to {@value ContainerApp#TOKEN_FILE} inside the container and
+   * sets this mode with {@code chmod}, and {@code server.token-file} names that copy, so the
+   * permissions the agent checks (16 §2.6 WARN) do not depend on how the host's bind mount shows
+   * the run directory (Docker Desktop shows host files as readable by others). Null (default): the
+   * agent reads the bind-mounted file.
+   */
+  public AppLauncher tokenFileMode(String octalMode) {
+    if (octalMode != null && !octalMode.matches("[0-7]{3,4}")) {
+      throw new IllegalArgumentException("token file mode must be octal (0600, 644): " + octalMode);
+    }
+    this.tokenFileMode = octalMode;
+    return this;
+  }
+
+  /** The mode of {@link #tokenFileMode(String)}, or null. */
+  String tokenFileMode() {
+    return tokenFileMode;
   }
 
   /**
@@ -300,12 +337,54 @@ public final class AppLauncher {
           "test.selfdiag-file", dir.resolve("out").resolve(SELF_DIAGNOSTICS_FILE).toString());
       if (collector == null) {
         settings.put("test.exporter", "file:" + dir.resolve("out"));
-      } else {
-        settings.putAll(collector.agentSettings());
       }
+    }
+    if (collector != null) {
+      settings.putAll(collectorSettings(dir));
     }
     settings.putAll(agentSettings.asMap());
     return settings;
+  }
+
+  /** Directory of the collector files of a run ({@link #collector(FakeCollector)}). */
+  static final String COLLECTOR_DIR = "collector";
+
+  /**
+   * The {@code server.*} settings of {@link #collector(FakeCollector)} for a run in {@code dir}.
+   */
+  Map<String, String> collectorSettings(Path dir) {
+    Map<String, String> settings = new LinkedHashMap<>();
+    Path files = dir.resolve(COLLECTOR_DIR);
+    settings.put("server.address", inDocker ? collector.containerAddress() : collector.address());
+    settings.put("server.tls", Boolean.toString(collector.tls()));
+    if (collector.tls()) {
+      settings.put("server.tls.ca-file", files.resolve("ca.pem").toString());
+    }
+    settings.put(
+        "server.token-file",
+        inDocker && tokenFileMode != null
+            ? ContainerApp.TOKEN_FILE
+            : files.resolve("token").toString());
+    return settings;
+  }
+
+  /** Writes the token file and the CA copy that {@link #collectorSettings} name. */
+  private void writeCollectorFiles(Path dir) throws IOException {
+    Path files = Files.createDirectories(dir.resolve(COLLECTOR_DIR));
+    Path token = files.resolve("token");
+    Files.deleteIfExists(token);
+    if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+      Files.createFile(
+          token,
+          PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
+    } else {
+      Files.createFile(token);
+    }
+    Files.writeString(token, collector.token() + "\n", StandardCharsets.UTF_8);
+    Path pem = collector.trustPem();
+    if (pem != null) {
+      Files.copy(pem, files.resolve("ca.pem"), StandardCopyOption.REPLACE_EXISTING);
+    }
   }
 
   /** The command line a run in {@code dir} uses (also for reports). */
@@ -352,12 +431,19 @@ public final class AppLauncher {
     if (workDir == null) {
       throw new IllegalStateException("workDir(...) is required");
     }
+    if (tokenFileMode != null && (!inDocker || collector == null || agentJar == null)) {
+      throw new IllegalStateException(
+          "tokenFileMode(...) needs container mode, an agent and collector(...)");
+    }
     Path dir = Files.createDirectories(workDir.toAbsolutePath());
     Files.createDirectories(dir.resolve("tmp"));
     Files.createDirectories(dir.resolve("out"));
     if (agentJar != null) {
       Path copy = Files.createDirectories(dir.resolve("agent")).resolve("argos-agent.jar");
       Files.copy(agentJar, copy, StandardCopyOption.REPLACE_EXISTING);
+      if (collector != null) {
+        writeCollectorFiles(dir);
+      }
       if (configFile) {
         Files.writeString(
             dir.resolve("argos-agent.yml"), agentSettings(dir).yaml(), StandardCharsets.UTF_8);

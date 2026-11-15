@@ -6,8 +6,3 @@
 #
 # Adding a line needs a reason and the work order that removes it again. The goal is an empty list
 # (03 §3.1 "정상 시나리오 로그 ERROR 0·WARN 0").
-
-# C-5 (WO-02 report): the default exporter `grpc` has no transport before WO-11; the agent logs this
-# once and drops transactions (noop). Harness runs use argos.test.exporter=file, so it only shows
-# when a test selects the default exporter. Remove with WO-11.
-exporter 'grpc' is not available in this agent build \(io\.argos\.agent\.core\.transport\.GrpcExporterFactory missing\); transactions are recorded and dropped \(noop\)

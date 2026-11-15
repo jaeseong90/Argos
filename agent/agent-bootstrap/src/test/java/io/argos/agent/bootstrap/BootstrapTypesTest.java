@@ -124,10 +124,13 @@ class BootstrapTypesTest {
               DictKind.METRIC,
               DictKind.ERROR_GROUP,
               DictKind.DB_TARGET,
-              DictKind.APP_VERSION
+              DictKind.APP_VERSION,
+              DictKind.POOL
             })
-        .containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11);
+        .containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
+    assertThat(DictKind.COUNT).isEqualTo(13);
     assertThat(DictKind.name(DictKind.DB_TARGET)).isEqualTo("DB_TARGET");
+    assertThat(DictKind.name(DictKind.POOL)).isEqualTo("POOL");
   }
 
   @Test

@@ -22,7 +22,7 @@ Test layers, test IDs and requirement tags: [test/README.md](../../test/README.m
 | Package | Classes | 18 |
 |---|---|---|
 | `launcher` | `AppLauncher`, `RunningApp` (`ProcessApp`, `ContainerApp`), `ExitedApp`, `Jdk`, `JvmOptions`, `SampleApp`, `TomcatStaging`, `AgentSettings`, `LoadResult`, `SelfDiagnostics`, `TempWatch`, `HttpResult` | §5.2, §5.10 |
-| `collector` | `FakeCollector`, `FaultInjector`, `Collected` (`JsonlCollected`, collector view), `ReceivedBatch`, `SessionInfo`, `ConfigApplyOutcome`, `CommandOutcome`, `CollectorProtocol` (wire seam), `poc.PocProtocol` | §5.3 |
+| `collector` | `FakeCollector`, `FaultInjector`, `Collected` (`JsonlCollected`, collector view), `ReceivedBatch`, `SessionInfo`, `HeartbeatRecord`, `ByeInfo`, `KindCounts`, `ReceivedToken`, `ConfigApplyOutcome`, `CommandOutcome`, `ClockEstimator` (11 §9), `Deduplicator` (11 §6), `ContractVectors`, `FakeCollectorMain` (standalone), `CollectorProtocol` (wire seam), `v1.V1Protocol` (argos.v1 of `:proto`) | §5.3 |
 | `export` | `FileExporterReader` (JSONL), `TransactionRecord`, `RecordSource`, `ExporterSettings` | §5.4 |
 | `assertion` | `ArgosAssertions`, `CollectedAssert`, `TransactionsAssert`, `TransactionAssert`, `StepsAssert`, `StepAssert`, `MetricAssert`, `ValueAssert` (missing vs zero), `Unsupported` | §5.5 |
 | `baseline` | `TransformLog`, `TransformBaseline` (record and diff), `TransformList`, `PremainClassBudget` (C-79) | §5.6 |
@@ -67,10 +67,18 @@ try (RunningApp app =
 - Agent settings (`AgentSettings`): harness defaults `app.name` (the sample app's name), `app.env=test`
   (the required keys of 10 §4.3 P4, so a normal run logs no configuration WARN), `log.dir`,
   `debug.transform-list`, `debug.transform-log`, `test.selfdiag-file=<workDir>/out/selfdiag.json`
-  (ADR-0010 C-95), `test.exporter=file:<workDir>/out` (or the collector's `server.*`), then the
+  (ADR-0010 C-95), `test.exporter=file:<workDir>/out` (unless a collector is set), then the
   test's settings, all as `-Dargos.<key>`. `agentConfigFile(true)` also writes `argos-agent.yml`
   and passes `-Dargos.config` (the agent's own bounded YAML subset parser, WO-10).
-  `harnessDefaults(false)` passes only the test's own settings.
+  `harnessDefaults(false)` passes only the test's own settings (and the collector's, below).
+- Collector (`collector(fakeCollector)`, 18 §5.2): the agent sends through its default `grpc`
+  exporter (no `test.exporter`) to `server.address=127.0.0.1:<port>` (container mode:
+  `host.docker.internal:<port>`), `server.tls` as the collector runs (TLS unless it was started
+  plaintext), `server.tls.ca-file=<workDir>/collector/ca.pem` (a copy of `trustPem()`) and
+  `server.token-file=<workDir>/collector/token` (the collector's per-collector test token,
+  owner-only where the file system has POSIX permissions). The token never goes on the command
+  line (SEC-06: `-Dargos.server.token` would also make the agent WARN). `RunningApp.collected()`
+  is then the collector's view. These settings apply with or without the harness defaults.
 - `RunningApp`: `port()`, `pid()`, `workDir()`, `agentLogDir()`, `call()`/`get()`, `load()` (small
   open-model load, not the benchmark), `collected()`, `transactions()`, `jcmd()`,
   `selfDiagnostics()`, `startupTime()` (spawn to port binding, C-49), `readyTime()`, `kill9()`,
@@ -105,7 +113,18 @@ try (RunningApp app =
   with the Ryuk image pinned in `src/main/resources/testcontainers.properties`, the work directory
   bind-mounted at `/argos/run`, port 8080 published, memory 4g unless given. `pid()` is -1,
   `jcmd()` runs inside the container, the temp directory is the tree at the time of the call.
-  `ContainerModeTest` runs with `-Pagent.container=true`.
+  `ContainerModeTest` runs with `-Pagent.container=true`. With a collector the container gets
+  `--add-host host.docker.internal:host-gateway` and the agent sends to
+  `host.docker.internal:<port>` (the collector's TLS certificate names that host too). The
+  collector then listens beyond the loopback: `FakeCollector.builder().bindAddress("0.0.0.0")`
+  (tests only: the collector is reachable on every interface of the machine while the test runs;
+  `host-gateway` is the Docker bridge address on a native Linux host). `CollectorWiringTest`
+  checks this end to end (run on Docker Desktop for Windows; not yet run on a native Linux Docker
+  host). `tokenFileMode("0644")` (container mode with a collector only) makes the container's
+  entrypoint copy `collector/token` to `/argos/secret/token` (`ContainerApp.TOKEN_FILE`, outside
+  the bind mount), `chmod` it to that mode and `exec` the unchanged command; `server.token-file`
+  names the copy, so the permissions the agent checks (16 §2.6 WARN) do not depend on how the
+  Docker host shows the bind mount (`TokenTransportTest`: 0644 WARN, 0600 none).
 - `selfDiagnostics()` reads the agent's self-diagnostics snapshot (18 §19, ADR-0010 C-95): a
   development build with `argos.test.selfdiag-file=<file>` (a harness default) rewrites `<file>`
   atomically every 2 s on `argos-watch` and at shutdown with `threadlocal_contexts_live`,
@@ -129,54 +148,181 @@ try (RunningApp app =
   `ExitedApp.premainClasses()` the sorted list `<file>.premain-classes` (the classes the agent class
   loader defined on the premain thread, C-79). WO-17 adds the `SELF_DIAGNOSTICS` command as a second
   source of the same snapshot.
-- Not yet: `collector(...)` with a real agent exporter (WO-11), and the 50 WAR redeploys of
-  `TomcatRedeployDriver` against a real Tomcat (manager app, matrix, WO-50).
+- Not yet: the 50 WAR redeploys of `TomcatRedeployDriver` against a real Tomcat (manager app,
+  matrix, WO-50).
 
 ## FakeCollector (`collector`, 18 §5.3)
 
 ```java
-try (FakeCollector collector = FakeCollector.start()) {           // or startTls()
-  collector.faults().latency(Duration.ofMillis(200)).failNext(2, Status.UNAVAILABLE);
-  ... AppLauncher...collector(collector).start() ...               // server.* settings (WO-11)
-  collector.awaitBatches(BatchKind.TRANSACTIONS, 10, Duration.ofSeconds(10));
-  ConfigApplyOutcome applied = collector.pushConfig(Map.of("enabled", "false")).get(10, SECONDS);
-  CommandOutcome dump = collector.command("THREAD_DUMP", Map.of()).get(10, SECONDS);
-  assertThat(collector.collected()).stats().sqlCount("select ...").isEqualTo(1000);
+try (FakeCollector collector = FakeCollector.builder().tls(true).heartbeatIntervalS(1).start()) {
+  collector.faults().latency(Duration.ofMillis(200)).clockOffset(Duration.ofSeconds(3));
+  try (RunningApp app = AppLauncher.of(...).withAgent(agentJar).collector(collector).start()) {
+    collector.awaitBatches(BatchKind.TRANSACTIONS, 10, Duration.ofSeconds(10));
+    assertThat(collector.maxConcurrentUnaryCalls()).isLessThanOrEqualTo(4);        // T-AG-071
+    assertThat(collector.clockOffsetMs(1)).hasValueSatisfying(o -> ...);             // T-ACC-02
+    ConfigApplyOutcome applied = collector.pushConfig(Map.of("enabled", "false")).get(10, SECONDS);
+    CommandOutcome dump = collector.command("THREAD_DUMP", Map.of()).get(10, SECONDS);
+    assertThat(app.collected()).stats().sqlCount("select ...").isEqualTo(1000);
+  }
 }
 ```
 
-- A grpc-netty server on 127.0.0.1 in the test JVM (an agent in another JVM connects over
-  loopback). Every unary batch is recorded as `ReceivedBatch` (kind, instance, epoch, seq, receive
-  time, body, size, outcome) before a fault decides the answer; no limits or quotas (the inbound
-  message and metadata limits are lifted from gRPC's 4 MiB default, 18 §5.3): it is the "sent
-  count" reference (DSN-18-04). `address()` and `server.address` are `127.0.0.1:<port>` with and
+- A grpc-netty server of argos.v1 (`:proto`, ADR-0010 C-104) on 127.0.0.1 in the test JVM (an
+  agent in another JVM connects over loopback). Every data call is recorded as `ReceivedBatch`
+  (kind, instance, epoch, seq, receive time, body, size, outcome, duplicate flag, dropped items,
+  session id, masked token, `sent_at_ms`) before the answer is decided; no limits or quotas (the
+  inbound message and metadata limits are lifted from gRPC's 4 MiB default, 18 §5.3): it is the
+  "sent count" reference (DSN-18-04). Refused calls, retries and duplicates are recorded too;
+  `Collected` (transactions, statistics, metrics, counters) reads only written batches (`ACKED`),
+  so a retried or duplicated batch counts once. `address()` is `127.0.0.1:<port>` with and
   without TLS.
-- `FaultInjector`: `latency(Duration)`, `failNext(n, Status)`, `hang()`, `rejectAuth()` (unary
-  `UNAUTHENTICATED`, hello `TOKEN_INVALID`), `closeStream()`, `serverRestart(newInstanceId)` (same
-  port), `plaintextOnly()`, `wrongHostCertificate()` (TLS for `wrong.example`), `clear()`.
-- TLS: a throw-away self-signed certificate for `localhost`/127.0.0.1 made with the JDK's `keytool`
-  at start and deleted at `close()` (`trustPem()` is the client's trust anchor,
-  `server.tls.ca-file`). No key material is stored in the repository.
-- Session stream: hello (instance ids from 1, `firstInstanceId`), heartbeat answers, dictionary
-  entries, `pushConfig(...)` and `command(...)` complete with the agent's `ConfigApplyResult` and
-  joined `CommandResult` chunks.
+- The 11 §16 contract (each behaviour cites its clause in the javadoc of `FakeCollector` and
+  `FaultInjector`; `contract.ProtocolContractTest` replays the vectors below):
+  - 11 §5 session: `AgentHello` → `ServerHello` with an instance id (from `firstInstanceId`, reused
+    for the same `(app_name, env, instance_name)` while the server runs), a new UUID `session_id`,
+    `server_time_ms`, the 11 §4.2 `Limits` defaults (`ProtocolLimits.defaults()`),
+    `heartbeat_interval_s` (`heartbeatIntervalS(n)`, default 30), `config(...)`, `user_id_salt`
+    (`userIdSalt(...)`, over TLS only). Hello checks in the order of the 11 §5 table: 1 token, 2
+    app, 3 plaintext (`plaintextRejected()`), 4 protocol version in `[1, ProtocolVersion.CURRENT]`,
+    5 registration, 6 limits; `rejectHello` injects a reason at its own check. An instance has one
+    session (12 §4.1): a hello for an instance with an open session sends the old stream
+    `SessionClose{REPLACED}` whatever its `agent_epoch` (check 7; an agent that reconnects has
+    already cancelled that stream), and the old session id is refused from then on, also when its
+    stream had already ended.
+  - 11 §2/§3 data calls need `authorization: Bearer argos_<base64url>` (any well-formed token, or
+    exactly `requireToken(t)`), `argos-instance-id` and `argos-session-id` of an accepted session:
+    otherwise `UNAUTHENTICATED` (trailer `argos-reject-reason: TOKEN_INVALID`) or
+    `FAILED_PRECONDITION` with description `SESSION_REQUIRED` (before a hello, after
+    `serverRestart`, after `sessionClose`, after a new hello of the instance); another app's token
+    on a session is `PERMISSION_DENIED`. The token check comes first (12 §3.1): a token revoked by
+    `sessionClose(TOKEN_REVOKED_CLOSE)` is `UNAUTHENTICATED` with `argos-reject-reason:
+    TOKEN_REVOKED`. A session stays valid after its stream ends, so the agent's shutdown flush after
+    `AgentBye` is acknowledged (11 §6 "종료").
+  - 11 §6 deduplication (`Deduplicator`): key `(instance_id, agent_epoch, kind, seq)`, the 1,000
+    most recently written seqs per `(instance, epoch, kind)`; `ACK_DUPLICATE` with `last_seq`, the
+    seq most recently written for the key (11 §4.3, 12 §3.2: the batch's own seq on `ACK_OK`, so a
+    retry of an older seq lowers it); an error answer writes nothing, so its retry is `ACK_OK`.
+  - 11 §9 clock (`ClockEstimator`): every heartbeat is answered with t2/t3 and completes the round
+    of its `prev_t1`/`prev_t4`: `offset = ((t2 - t1) + (t3 - t4)) / 2` (server minus agent),
+    `rtt = (t4 - t1) - (t3 - t2)`, median of the last 5 accepted offsets, a round with rtt > 3 x the
+    median rtt of the last 5 rounds (discarded ones count, so a lasting rtt change cannot freeze
+    the estimate) discarded, `server_time_ms - sent_at_ms` before the first round.
+    `HeartbeatAck.clock_offset_ms` carries the estimate (the §9 value, server minus agent, ADR-0010
+    C-139) and `state` is `WARN` at
+    |offset| >= 1 s.
+    `clock(LongSupplier)` injects the collector's wall clock (18 §19).
+- `FaultInjector` (status codes and trailers of 11 §5 and §10): `latency(Duration)`,
+  `failNext(n, Status[, retryAfter])` (`argos-retry-after-ms`), `hang()` (no answer to data calls,
+  hellos or heartbeats), `rejectAuth()`, `requireToken(token)`, `plaintextRejected()`
+  (`PLAINTEXT_NOT_ALLOWED`, `FAILED_PRECONDITION`), `rejectHello(reason[, retryAfter])` (the 11 §5
+  status of each `RejectReason`: `TOKEN_*` `UNAUTHENTICATED`, `APP_MISMATCH` `PERMISSION_DENIED`,
+  version and plaintext `FAILED_PRECONDITION`, `APP_NOT_REGISTERED` completes, `INSTANCE_LIMIT`
+  and `RATE_LIMITED` `RESOURCE_EXHAUSTED` with 60 s), `partialDrop(n)` (`ACK_PARTIAL_DROP`),
+  `walFull()` (`ACK_OK` with every item dropped and nothing written, 11 §6 "서버 드롭", DSN-11-09),
+  `throttle(rate, backoff)` (`Ack.throttle`), `clockOffset(Duration)`, `pauseSessionReads()` and
+  `resumeSessionReads()` (the collector stops reading the session streams, so the client's stream
+  stops being ready, T-AG-071; `FakeCollector.builder().flowControlWindow(bytes)` makes that
+  happen after little data, the default window is gRPC's 1 MiB and up), `closeStream()` (connection
+  loss, `UNAVAILABLE`), `sessionClose(reason, retryAfter)` (`SessionClose`, then
+  `TOKEN_REVOKED_CLOSE` `UNAUTHENTICATED`, `SERVER_SHUTDOWN` `UNAVAILABLE`, others OK; sessions
+  forgotten; `TOKEN_REVOKED_CLOSE` also revokes the sessions' tokens, 12 §4.1: data calls get
+  `UNAUTHENTICATED`/`TOKEN_REVOKED`, hellos `ServerHello{TOKEN_REVOKED, retry_after_s 0}`, until
+  `clear()` or another token; `SERVER_SHUTDOWN` does not imitate the 12 §3.9 drain, so data calls
+  get `SESSION_REQUIRED` where a real server answers `UNAVAILABLE`),
+  `serverRestart(newInstanceId)` (same port, sessions forgotten), `plaintextOnly()`,
+  `wrongHostCertificate()` (TLS for `wrong.example`), `clear()` (also lifts revocations).
+- The collector view reads like the JSONL one (`V1Protocol`, same assertion DSL, 18 §5.5): the field
+  names of the JSONL exporter, step `seq` and `parent` in its numbering (0-based, -1 for a root; the
+  wire is 1-based with 0 for a root), `SUMMARY` steps as `summary[]` entries. Not on the wire, so
+  `unsupported` in the DSL: `service_fixed`, `summary_overflow`, a step's `thread`. Only on the wire
+  (the full list is `V1Protocol.SOURCE`): `headers`, `request_id`, `sql_ids`, `dbc_wait_ms`,
+  `dispatch_count`, `timed_out`, a step's `failure` and `batch_size`, among others. `thread` is the
+  normalized name (the JSONL's `thread_name`), and
+  `truncated` and `total_steps` come with the profile, so a transaction that was not sampled has
+  none. Steps and dictionary texts travel apart from the record (11 §3, §7): `awaitTransactions`
+  also waits up to 2 s for what its matches still miss, so read through it, not `transactions()`,
+  right after a request. An unknown dictionary id reads `#<id>`. `CollectorWiringTest` compares the
+  two views on the same request.
+- Server messages: `pushConfig(...)` and `command(...)` complete with the agent's
+  `ConfigApplyResult` and joined `CommandResult` chunks; `requestDictionary(kind, hashes...)`
+  (11 §7 step 3, the answer lands in `dictionary()`); `sendThrottle(rate, backoff)` (11 §6).
+- Accessors: `batches()`, `seqs(kind)` (arrival order, retries and duplicates included),
+  `batchesAfter(instant)`, `counts()` (`KindCounts` per kind), `maxConcurrentUnaryCalls()` (the
+  high-water mark of data calls between arrival and answer, never above the client's own
+  outstanding calls; `resetMaxConcurrentUnaryCalls()`), `heartbeats()` (`HeartbeatRecord`: t1,
+  prev_t1, prev_t4, t2, t3, completed round, estimate, `dropped_total`), `clockOffsetMs(instance)`,
+  `byes()` and `flushAfterBye(bye)` (time from `AgentBye` to the last batch after it, T-AG-067),
+  `sessions()` (`SessionInfo` with session id, reject reason, epoch, plaintext, masked token),
+  `acceptedSessionCount()`, `reconnectCount()`, `openSessionCount()`, `dictionaryEntries()`.
+- Tokens: `token()` is a random per-collector test token (`argos_<base64url>`); received tokens are
+  `ReceivedToken`s whose `toString` is `argos_****` (ADR-0010 C-94), so records and AssertJ
+  failure messages never show a value; compare with `matches(expected)`.
+- TLS: a throw-away self-signed certificate for `localhost`, `host.docker.internal` and 127.0.0.1
+  made with the JDK's `keytool` at start and deleted at `close()` (`trustPem()` is the client's
+  trust anchor, `server.tls.ca-file`). No key material is stored in the repository.
 - Wire seam: tests use only `FakeCollector`, `FaultInjector`, `Collected` and the records of the
   package. Everything that touches generated protobuf types is one `CollectorProtocol`
-  implementation, today `poc.PocProtocol` over the WO-02 transport PoC protocol
-  (`test/agent/transport-poc/src/proto/argos/v1`, a snapshot of 11 §4, generated here in the
-  `collectorProto` source set). WO-11 points `collectorProto` at `proto/argos/v1` (or depends on
-  the `argos-proto` artifact, 18 §19) and replaces `PocProtocol` with an implementation over those
-  stubs; the tests do not change. `FakeCollectorTest` (integrationTest) proves every fault with a
-  real grpc-netty client.
+  implementation, `v1.V1Protocol` over `io.argos.proto.v1` (`api(project(":proto"))`; the WO-02
+  transport PoC keeps its own snapshot in `test/agent/transport-poc`). `FakeCollectorTest`
+  (integrationTest) proves every fault with a real grpc-netty client (`ScriptedAgent`).
+
+## Contract vectors (11 §16, reference for WO-21)
+
+`src/main/resources/contract/argos-v1-vectors.json` (`ContractVectors.load()`) holds fixed inputs
+and expected outputs: `clock` (11 §9 heartbeats with t1/prev_t1/prev_t4/t2/t3, the completed
+round, the estimate after each heartbeat), `dedup` (11 §6 steps with kind, epoch, seq and the
+expected `AckStatus`/`last_seq`, the 1,000 window and a retry after an error), `session` (11 §3/§5
+scripted steps: data before a hello, metadata and token checks, restart, hello check order,
+REPLACED) and `status_codes` (11 §5/§10: rejections, failures, quota drop, WAL full, deadline,
+throttle and session closes with their code, `retry_after_s` and trailers). `interpretations` lists
+the choices 11 leaves open or that 12 settles (window semantics, `last_seq`, rounding, which rounds
+count for the median rtt, session validity after the stream ends, REPLACED without an epoch
+exception). The unit tests `ClockEstimatorTest` and `DeduplicatorTest` check the arithmetic without
+network;
+`contract.ProtocolContractTest` replays every section over gRPC (the clock with
+`FakeCollector.builder().clock(...)`). The server's ingest tests (WO-21, WO-22) can replay the
+`session`, `dedup` and `clock` sections (a `fault` step there names the state to set up first) and
+the `status_codes` entries without a `fault` field against the real collector; a `status_codes`
+entry with a `fault` field pins the FakeCollector's answer to an injected fault (`FaultInjector`)
+and is not a server replay. A session close's `expected_data_after` is the answer to a data call
+with the closed session's token and ids (code required, description and trailers optional):
+`TOKEN_REVOKED_CLOSE` `UNAUTHENTICATED` with `argos-reject-reason: TOKEN_REVOKED` (12 §3.1 token
+before session, 12 §4.1 revocation), `IDLE_TIMEOUT` `SESSION_REQUIRED`, and none for
+`SERVER_SHUTDOWN` (12 §3.9: the server drains and answers `UNAVAILABLE`; the FakeCollector does not
+imitate the drain).
+
+## Standalone collector (bench, development-only)
+
+```
+./gradlew :agent:agent-testing:fakeCollectorJar      # build/fake-collector/fake-collector.jar + lib/
+java -jar agent/agent-testing/build/fake-collector/fake-collector.jar \
+    --port 0 --ready-file build/fc.ready --token-file build/fc.token [--tls --tls-dir build/fc-tls] \
+    [--report-every 10] [--duration 0] [--summary build/fc-summary.json]
+```
+
+The `FakeCollector` as its own process (`FakeCollectorMain`) for the overhead bench
+(`--exporter grpc`, 18 §7) and manual runs; never shipped. It keeps per-kind totals only
+(`retainBatches(false)`), follows the same 11 §16 contract, and prints `fake-collector listening on
+<host:port> tls=... ca-file=... token=file:<path>` once and `fake-collector t=<s>s sessions=...
+max_in_flight=... | transactions batches=... items=... bytes=... acked=... dup=... failed=... | ...`
+every `--report-every` seconds (`0`: only at the end) and at the end (`final`). `--ready-file` gets
+`host:port` to connect to (and the CA path with `--tls`) once listening; `--token-file` gets the
+collector's test token (owner-only) and then only that token is accepted, so the agent uses
+`server.token-file=<that file>`; the token is never printed. `--summary` writes the final totals as
+JSON. Other options: `--bind`, `--heartbeat-interval-s`. The jar's manifest names `lib/*.jar` (the
+runtime classpath), so keep the two together. `StandaloneCollectorTest` runs the jar as a process.
+
+An agent connects with `server.address=<ready file, line 1>`, `server.token-file=<--token-file>` and
+either `server.tls=false` or, with `--tls`, `server.tls.ca-file=<ready file, line 2>`.
 
 ## Exporters and the test namespace (18 §5.4, §15, T-BLD-010)
 
 | Setting | Effect |
 |---|---|
 | `-Dargos.test.exporter=file:<dir>` | JSONL in `<dir>/argos-transactions.jsonl` (`FileExporterReader`) |
-| `-Dargos.test.exporter=noop` | encode every transaction (the JSONL encoder until WO-11), then drop |
+| `-Dargos.test.exporter=noop` | encode every transaction as the sender does (protobuf `BatchEncoder`, dictionary entries included; 18 §5.4), then drop |
 | `-Dargos.test.exporter=drop` | record and drop without encoding (the WO-02 P-2 baseline, formerly `-Dargos.exporter=noop`; ADR-0009 C-80, C-88) |
-| `-Dargos.test.exporter=grpc` | the default exporter; no transport before WO-11: one WARN, then noop |
+| `-Dargos.test.exporter=grpc` | the default exporter: the gRPC transport to `server.address` (WO-11) |
 | `-Dargos.test.faults=<spec>,...` | `advice-throw:<module>`, `transform-error:<module>`, `helper-nocdef:<module>` (module unit, see below) |
 | `-Dargos.test.selfdiag-file=<file>` | self-diagnostics snapshot (ADR-0010 C-95, 18 §19): JSON rewritten atomically every 2 s and at shutdown, plus `<file>.premain-classes` once after the start (C-79); `SelfDiagnostics`, `ExitedApp.premainClasses()` |
 | `-Dargos.debug.transform-log=<file>` | transform log (below); a diagnostic key, not test-only |
@@ -215,9 +361,10 @@ assertThat(collector.collected()).counters().counter("sql_outside_tx_total").isZ
 - Missing vs zero: `isMissing()` passes only when the field is absent, `isZero()` only when it is
   present and 0 (D-23).
 - Unsupported: each record knows its `RecordSource`. A field or part the source cannot carry fails
-  with `unsupported: ...` and the work order that adds it: on the JSONL exporter `env`, `version`,
-  `cpu_time_ms`, `alloc_bytes`, step threads (`noStepFromThread`), statistics, metrics, dictionary
-  and counters. Nothing passes on data that cannot exist.
+  with `unsupported: ...`: on the JSONL exporter `headers`, `request_id`, `dbc_wait_ms`, `sql_ids`,
+  `dispatch_count`, statistics, metrics, dictionary and counters; on the collector view the fields
+  listed under FakeCollector, among them step threads (`noStepFromThread`). Nothing passes on data
+  that cannot exist.
 
 ## Transform baselines (`baseline`, 18 §5.6, DSN-18-05, T-AG-005)
 
@@ -249,9 +396,9 @@ and any class of the shaded transport (`io.argos.agent.shaded.` + `io.grpc.`, `i
 `com.google.api.`: the transport packages of `AgentShading.RELOCATED_PACKAGES`, kept in step with
 it) on the premain thread fails whatever the budget (10 §4.3 P7: the transport of WO-11 starts on an
 agent thread). ByteBuddy and JCTools are not on the list (premain builds the transformer and may
-create the queues). Until WO-11 the jar has no transport class, so only `PremainClassBudgetTest`
-exercises this rule; `PremainBudgetAttachTest` enforces it on real runs from then on. The same `-Pagent.baseline.record=true` re-records the budgets;
-review the class diff like a transform baseline.
+create the queues). `PremainClassBudgetTest` exercises the rule on fixed lists and
+`PremainBudgetAttachTest` enforces it on real runs. The same `-Pagent.baseline.record=true`
+re-records the budgets; review the class diff like a transform baseline.
 
 ## Fail-safe, re-entrance, leaks (18 §5.7-§5.9)
 
@@ -299,15 +446,17 @@ review the class diff like a transform baseline.
 ## Logs and Unsafe (18 §5.10)
 
 - `AgentLogAssert.assertThatAgentLog(log).hasNoErrors().hasOnlyAllowedWarnings()` (T-AG-060):
-  every WARN must match a regular expression of `fixtures/log-allowlist/agent-info.txt` (one entry
-  today: the C-5 missing gRPC transport, until WO-11); `hasNoWarnings()` is the stricter 03 §3.1
+  every WARN must match a regular expression of `fixtures/log-allowlist/agent-info.txt` (the goal is
+  an empty list); `hasNoWarnings()` is the stricter 03 §3.1
   rule the normal-scenario tests use. `assertQuietConsole(stdout, stderr)`: only the application's
   log lines on stdout, only the JVM's CDS notice on stderr. `doesNotContainSeedSentinel()`
   (T-SEC-26), `doesNotContainText(token)` (T-SEC-06).
 - `UnsafeScanner` (T-BLD-004): constant-pool scan of every class and `inst/**.classdata` entry for
   `sun/misc/Unsafe` and `sun.misc.Unsafe`, the two patterns of `test/agent/check-shading.sh`. One
-  allow-list for both: `test/agent/unsafe-allowlist.txt` (empty, PM approval per line). 18 §5.10
-  calls it `fixtures/unsafe-allowlist.txt`; the repository file is the single source of truth.
+  allow-list for both: `test/agent/unsafe-allowlist.txt` (ADR-0009 C-74: a shaded class that loads,
+  with a proof test and a reason on its line; `JvmToolsTest` checks the reason and the shaded
+  prefix). 18 §5.10 calls it `fixtures/unsafe-allowlist.txt`; the repository file is the single
+  source of truth.
 
 ## Agent rules (`archTest`, part of `check`)
 
@@ -356,7 +505,14 @@ review the class diff like a transform baseline.
                                                                              # WAR app in Tomcat 11 (about 50 s)
 ./gradlew :agent:agent-testing:integrationTest -Pagent.baseline.record=true  # re-record baselines
 ./gradlew :agent:agent-testing:integrationTest -Pagent.container=true        # + container mode (Docker)
+./gradlew :agent:agent-testing:integrationTest --tests '*transport*' \
+    -Pagent.jdk8u252=<JRE home> -Pagent.jdk8u242=<JRE home>                  # gRPC transport (WO-11) with the old JREs
 ```
+
+The old JREs (AdoptOpenJDK `jdk8u242-b08` and `jdk8u252-b09.1`, docs/poc/agent-poc.md 9.8) are
+not Gradle toolchains: `-Pagent.jdk8u252`/`-Pagent.jdk8u242` (or the environment variables
+`ARGOS_TEST_JDK8U252`/`ARGOS_TEST_JDK8U242`) name their homes, and without them
+`transport.OldJreTransportTest` is skipped and says so. On Windows unpack them outside `%TEMP%`.
 
 The classes are split by requirement: a dynamic test carries only the tags of its factory and class
 (test/README.md §5), so each class has one factory and class-level `req:` tags. Shared launch and
@@ -374,8 +530,12 @@ happens once, as before.
 | `e2e.LoadLeakE2eTest` | F-A15, N-02 | first jar combination: T-AG-050/T-AG-053 10,000 requests (18 §5.9) in two batches of 5,000: no transaction or step from an `argos-` thread, counters unchanged (no producer before WO-13/15/18), ThreadLocal / registry / weak map (`weakmap_size`) 0 after GC, `weakmap_entries` after GC not higher after batch 2 than after batch 1, heap <= 64 MB (C-87); every check measured (no NOT_AVAILABLE) |
 | `e2e.WarAppAgentTest` | F-A01, DSN-18-03 | per WAR combination of `-Pagent.e2e` (none by default: the class is then skipped): one request to the first context is one transaction (status 200), no agent ERROR, quiet console |
 | `BytecodeVerificationFlagTest` | T-AG-006: the test JVM and the preset on every attach JDK |
-| `collector.FakeCollectorTest` | recording, `latency`, `failNext`, `hang`, `rejectAuth`, session round trips, `closeStream`, `serverRestart`, TLS modes |
+| `collector.FakeCollectorTest` | DSN-18-04: recording and acks, `ServerHello` contents and instance reuse, `latency`, `failNext` (retry-after trailer), `hang`, `rejectAuth`, `requireToken` (masked tokens), session round trips (config, command, dictionary request, throttle), `closeStream`, `serverRestart` (`SESSION_REQUIRED`), `sessionClose` (per reason) and the revoked token (`TOKEN_REVOKED` on data calls and hellos, `clear()` lifts it), `plaintextRejected`, `rejectHello` and the §5 check order, `clockOffset` (T-ACC-02 collector side), `partialDrop`, `walFull`, `pauseSessionReads`, `throttle`, duplicates, concurrency high-water mark, `AgentBye` and flush, `REPLACED`, large batch, gzip, TLS modes |
+| `collector.StandaloneCollectorTest` | DSN-18-04: `fake-collector.jar` as a process (TLS, token file, report, summary); `--report-every 0` sleeps, wildcard `--bind` |
+| `collector.CollectorWiringTest` | DSN-18-04, SEC-06: `collector(c)` settings, token file and CA copy, no token on the command line or in the agent's output; end to end over gRPC, with the JSONL view of the same request as the reference (process; container with `-Pagent.container=true`) when the release jar has the gRPC exporter, else skipped |
+| `contract.ProtocolContractTest` | DSN-11-01, DSN-11-02: the contract vectors over gRPC (11 §3/§5 session order, §6 dedup and acks, §9 clock, §5/§10 codes and trailers) |
 | `jvm.AgentJarScanTest` | T-BLD-004 on the release jar |
+| `transport.*` (14 classes, shared code in `TransportRuns` and `TcpProbe`) | SEC-06, SEC-07, SEC-08, N-26, F-A35 and others per class | the gRPC transport of WO-11 against the `FakeCollector`: T-AG-071 back pressure and seq order, T-AG-067 `AgentBye` and the 1 s flush, T-ACC-02 clock (+3 s), T-ACC-06 drops during `hang()`, T-SEC-06 token (metadata only, never in log, console, self-diagnostics, hello or batches, also at `log.level=DEBUG`), T-SEC-07/T-SEC-08 TLS (host name, unknown CA, skip-verify and plaintext WARN per connection, plaintext refusal), T-NFR-26a threads and direct memory, T-BLD-004a C-74 Unsafe proof (class-load records per JDK), T-BLD-005/006 and C-75 (Windows `socket_<n>` only; Linux in container mode), T-BLD-011 network references and T-BLD-011a no proxy of the application JVM at run time, T-AG-060, session reactions (C-102 token backoff, rejects, REPLACED not retried, a refusal for good releases the connection and `argos-io`, TCP connects follow the session back-off, an unresolvable host logs once per minute, `Ack.throttle`), the shaded protocol descriptors, 8u242/8u252 (old JREs above). `-Pagent.container=true` adds the POSIX token-file WARN, Linux C-75 and Linux T-NFR-26a |
 | `launcher.ContainerModeTest` | container mode (`-Pagent.container=true`, else skipped) |
 
 The probe agent jar (`build/probe-agent/argos-agent-probe.jar`, `probeAgentJar`) is the release jar

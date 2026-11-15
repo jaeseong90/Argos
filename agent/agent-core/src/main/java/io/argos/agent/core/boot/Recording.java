@@ -4,6 +4,7 @@ package io.argos.agent.core.boot;
 import io.argos.agent.bootstrap.AgentControl;
 import io.argos.agent.bootstrap.Tracer;
 import io.argos.agent.core.config.AgentConfig;
+import io.argos.agent.core.config.LoadedConfig;
 import io.argos.agent.core.export.AgentInfo;
 import io.argos.agent.core.export.ExportWorker;
 import io.argos.agent.core.export.ExporterContext;
@@ -13,6 +14,7 @@ import io.argos.agent.core.guard.SelfProtection;
 import io.argos.agent.core.trace.TraceRuntime;
 import io.argos.agent.core.trace.TracerImpl;
 import java.io.File;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -27,12 +29,15 @@ final class Recording {
   private final TraceRuntime runtime;
   private final AgentConfig config;
   private final AgentInfo info;
+  private final AgentCounters counters;
   private volatile ExportWorker sender;
 
-  private Recording(TraceRuntime runtime, AgentConfig config, AgentInfo info) {
+  private Recording(
+      TraceRuntime runtime, AgentConfig config, AgentInfo info, AgentCounters counters) {
     this.runtime = runtime;
     this.config = config;
     this.info = info;
+    this.counters = counters;
   }
 
   /** P5: the runtime of {@code config}; advice errors go to {@code protection}. */
@@ -53,7 +58,7 @@ final class Recording {
                 protection.adviceError(moduleId, error);
               }
             });
-    return new Recording(runtime, config, info);
+    return new Recording(runtime, config, info, counters);
   }
 
   Tracer tracer() {
@@ -71,14 +76,28 @@ final class Recording {
   }
 
   /**
-   * P7: starts {@code argos-sender}; the after-premain work and the exporter (the transport from
-   * WO-11 on) run on that thread, never on the premain thread (C-79).
+   * P7: starts {@code argos-sender}; the after-premain work and the exporter (the gRPC transport by
+   * default, WO-11) run on that thread, never on the premain thread (C-79). {@code loaded} gives
+   * the transport the effective token and the configuration hash, {@code modules} the module ids of
+   * {@code AgentHello}, {@code diagnostics} the place for its self metrics.
    */
-  void startSender(File logDirectory) {
+  void startSender(
+      File logDirectory,
+      LoadedConfig loaded,
+      List<String> modules,
+      SelfDiagnosticsCollector diagnostics) {
     ExportWorker worker =
         new ExportWorker(
             runtime,
-            new ExporterContext(config, runtime.dictionary(), info),
+            new ExporterContext(
+                config,
+                runtime.dictionary(),
+                info,
+                loaded,
+                counters,
+                runtime,
+                modules,
+                diagnostics),
             logDirectory,
             config.senderBatchSize(),
             config.senderFlushIntervalMs());

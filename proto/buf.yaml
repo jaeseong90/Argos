@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# buf configuration of the argos.v1 protocol (docs/11-protocol-design.md §12, docs/19 §6.2).
+# Run through .github/scripts/check-proto.sh (pinned buf container, no network); see proto/README.md.
+#
+# Lint: the STANDARD category (buf's v2 name of the former DEFAULT category) with only the
+# exceptions that the names fixed by 11 §3-§4 need. Each exception is scoped to the files that
+# need it. New enums and RPCs follow the rule unless they extend one of the listed 11 patterns.
+#
+# Comment ignores (buf v2 default: allowed) are used for single elements only. There is one:
+# `// buf:lint:ignore ENUM_ZERO_VALUE_SUFFIX` on FailureKind.FAILURE_NONE in common.proto (the
+# meaningful "no failure" zero value of 11 §4.1 and the agent constant FailureKind.NONE = 0). Every
+# other enum, in every file, needs its *_UNSPECIFIED zero value (also asserted by the :proto test
+# EnumZeroValueTest).
+#
+# Breaking: the FILE category (wire and generated-code compatibility per file, the strictest one),
+# so renumbering, removing (without reserving) or retyping a field, enum value or RPC fails.
+version: v2
+modules:
+  - path: src/main/proto
+lint:
+  use:
+    - STANDARD
+  ignore_only:
+    # 11 §4 enum values are not prefixed with the enum name (HTTP, SQL, ACK_OK, ...). They are
+    # the names the agent constants, the ClickHouse Enum8 labels and the server use; renaming
+    # them would change every generated Java constant for no wire benefit (values are unique in
+    # the package anyway, protoc enforces that).
+    ENUM_VALUE_PREFIX:
+      - src/main/proto/argos/v1/common.proto
+      - src/main/proto/argos/v1/session.proto
+      - src/main/proto/argos/v1/data.proto
+    # 11 §3: the session stream exchanges AgentMessage/ServerMessage and every data RPC takes a
+    # *Batch (or ActiveTransactionSnapshot) and answers the shared Ack (DSN-11-01): one Ack type
+    # keeps the deduplication and retry semantics identical for all batch kinds.
+    RPC_REQUEST_STANDARD_NAME:
+      - src/main/proto/argos/v1/service.proto
+    RPC_RESPONSE_STANDARD_NAME:
+      - src/main/proto/argos/v1/service.proto
+    RPC_REQUEST_RESPONSE_UNIQUE:
+      - src/main/proto/argos/v1/service.proto
+breaking:
+  use:
+    - FILE

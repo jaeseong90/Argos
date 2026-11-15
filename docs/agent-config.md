@@ -428,3 +428,40 @@ may change at any time.
   access control.
 - **YAML subset.** Only the subset in [The YAML file](#the-yaml-file) is read; anything else makes
   the agent ignore the whole file with a WARN.
+- **Java 8 needs 8u252 or later for the transport.** TLS to the collector needs ALPN in the JDK,
+  which Java 8 has from 8u252 on (negotiating TLS 1.2; TLS 1.3 depends on the update). On an older
+  Java 8 with `server.tls: true` the agent logs one ERROR and turns the transport off: the
+  application and the instrumentation keep running, and collected data is dropped. Plaintext
+  (`server.tls: false`) does not need ALPN.
+- **Temporary file of the JDK on Windows.** On Windows with JDK 16 or later, the JDK's NIO selector
+  creates a `socket_<n>` file in the temporary directory and deletes it at once (an AF_UNIX
+  wake-up pipe, when the path fits 108 characters). The JDK makes this file, not the agent, and the
+  only way around it is a JVM-wide property (`jdk.net.unixdomain.tmpdir`) that the agent does not
+  set for the application. The agent creates no temporary files, and Linux and macOS have no such
+  file.
+- **Plaintext and skipped verification warn on every connect.** `server.tls: false` sends the token
+  and the collected data unencrypted and works only when the collector allows plaintext;
+  `server.tls.insecure-skip-verify: true` accepts any certificate. The agent logs one WARN each time
+  it connects in either mode, including reconnects.
+- **A refused session.** After a token rejection the agent reconnects every 5 minutes and logs one
+  WARN per hour. It reads the token once at start, so a replaced `server.token-file` takes effect
+  at the next restart. A refusal without a retry time (plaintext not allowed, an unsupported
+  version) ends the transport until the next restart, with one ERROR: the agent closes its
+  connection and its network thread, and drops (and counts) what it collects from then on.
+- **Two JVMs with the same instance name.** The collector keeps one session per application and
+  instance name, so a second JVM with the same `app.name` and `app.instance` replaces the first
+  one's session. The replaced agent logs one WARN and stops sending until it is restarted (like a
+  refusal without a retry time); it does not reconnect, which would only push the other JVM out
+  in turn. Give each JVM its own `app.instance`, or leave it unset.
+- **Reconnects and connections.** When the collector cannot be reached, the agent tries again
+  after 1, 2, 4, 8, 16 and then every 30 seconds (with ±20 % jitter), and holds no connection in
+  between; each try is one TCP connect and, for a host name, one name lookup. It logs the failure
+  once per minute. Repeated warnings of the libraries it ships (gRPC, Netty) are logged once per
+  minute each (`argos_agent_library_log_suppressed_total` counts the rest).
+- **No proxy.** The agent connects to `server.address` directly. It ignores the application JVM's
+  proxy settings (`http(s).proxyHost`, `socksProxyHost`, `java.net.useSystemProxies`, a
+  `ProxySelector` or `Authenticator` the application installs) and `GRPC_PROXY_EXP`, and has no
+  proxy setting of its own: the collector address must be reachable without one.
+- **`direct_memory_bytes`.** This self-diagnostics value is the JVM's whole direct buffer pool, so it
+  includes the application's own direct buffers. The agent's Netty uses heap buffers; its sockets
+  use the JDK's temporary direct buffers, which that pool counts.

@@ -43,7 +43,13 @@ import org.springframework.context.ConfigurableApplicationContext;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class MigrationStartupIT {
 
-  /** The 13 §12 tables of V001 (ADR-0010 C-98). */
+  /** The PostgreSQL scripts of db/pg: V001 (13 §12, WO-20) and V002 (authentication, WO-24). */
+  static final List<String> PG_VERSIONS = List.of("001", "002");
+
+  /**
+   * The 13 §12 tables of V001 (ADR-0010 C-98) and {@code user_permissions} and {@code
+   * login_failures_unknown} of V002 (WO-24).
+   */
   static final List<String> PG_TABLES =
       List.of(
           "agent_tokens",
@@ -61,11 +67,13 @@ class MigrationStartupIT {
           "error_groups",
           "events",
           "instances",
+          "login_failures_unknown",
           "notification_channels",
           "notification_deliveries",
           "pending_registrations",
           "privacy_jobs",
           "settings",
+          "user_permissions",
           "user_sessions",
           "users");
 
@@ -108,8 +116,8 @@ class MigrationStartupIT {
       PostgresMigrationPhase.Result flyway = ctx.getBean(PostgresMigrationPhase.class).lastResult();
       ClickHouseMigrationRunner.Result ch =
           ctx.getBean(ClickHouseMigrationPhase.class).lastResult();
-      assertThat(flyway.migrationsExecuted()).isEqualTo(1);
-      assertThat(flyway.schemaVersion()).isEqualTo("001");
+      assertThat(flyway.migrationsExecuted()).isEqualTo(PG_VERSIONS.size());
+      assertThat(flyway.schemaVersion()).isEqualTo(PG_VERSIONS.get(PG_VERSIONS.size() - 1));
       assertThat(ch.applied())
           .extracting(ClickHouseMigrationRunner.Applied::version)
           .containsExactly("V001");
@@ -213,6 +221,8 @@ class MigrationStartupIT {
             "ix_dictionary_text_trgm",
             "ix_events_app_ts",
             "ix_instances_app_status",
+            "ix_login_failures_unknown_last_failed",
+            "ix_user_sessions_family",
             "ix_user_sessions_user");
     assertThat(
             pgScalar(

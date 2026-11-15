@@ -20,6 +20,11 @@ spring-boot = "4.1.2"
 clickhouse-client = "0.11.0"
 postgresql = "42.7.14"
 flyway = "13.11.1"
+# springdoc 3.x is the Spring Boot 4 line; 3.2.0 is built against Boot 4.1.2. Only the WebMVC API
+# starter is used: the runtime OpenAPI document, no Swagger UI webjar (14 §8, §12 #9; WO-24).
+springdoc = "3.2.0"
+# In-memory token buckets of the API rate limits (16 §7.13, §15 #12; Apache-2.0, no dependencies).
+bucket4j = "8.21.0"
 # --- tests ---
 # JUnit stays on the 5.x line: JUnit 6 requires Java 17, but agent tests run on Java 8
 # (DSN-19-02). Projects that import the Spring Boot BOM get the Boot-managed JUnit version.
@@ -90,6 +95,9 @@ grpc-netty = { module = "io.grpc:grpc-netty", version.ref = "grpc" }
 grpc-okhttp = { module = "io.grpc:grpc-okhttp", version.ref = "grpc" }
 # Netty 4.1 line for the P-3 ADR-0003 C-22 comparison (Netty 4.2 ships Java 11 class files).
 poc-netty41-bom = { module = "io.netty:netty-bom", version = "4.1.139.Final" }
+# Netty of the agent transport only (ADR-0009 C-73: 4.1.x >= 4.1.139 keeps C-22, shaded major <= 52;
+# enforced in :agent:agent-dist). Never used by the server (its own netty-bom entry, WO-21).
+agent-netty-bom = { module = "io.netty:netty-bom", version = "4.1.139.Final" }
 grpc-inprocess = { module = "io.grpc:grpc-inprocess", version.ref = "grpc" }
 protoc-gen-grpc-java = { module = "io.grpc:protoc-gen-grpc-java", version.ref = "grpc" }
 protobuf-bom = { module = "com.google.protobuf:protobuf-bom", version.ref = "protobuf" }
@@ -117,6 +125,16 @@ server-starter-log4j2 = { module = "org.springframework.boot:spring-boot-starter
 server-log4j-layout-template-json = { module = "org.apache.logging.log4j:log4j-layout-template-json" }
 server-micrometer-prometheus = { module = "io.micrometer:micrometer-registry-prometheus" }
 server-tomcat-annotations-api = { module = "org.apache.tomcat:tomcat-annotations-api" }
+# WO-24: Spring Security (stateless filter chains, BCryptPasswordEncoder) and Caffeine (session
+# state cache, rate-limit bucket maps; DSN-12-10) from spring-boot-bom; springdoc runtime spec and
+# Bucket4j for JDK 17+ with the versions above.
+server-starter-security = { module = "org.springframework.boot:spring-boot-starter-security" }
+server-caffeine = { module = "com.github.ben-manes.caffeine:caffeine" }
+server-springdoc-webmvc-api = { module = "org.springdoc:springdoc-openapi-starter-webmvc-api", version.ref = "springdoc" }
+server-bucket4j = { module = "com.bucket4j:bucket4j_jdk17-core", version.ref = "bucket4j" }
+# Parts of the above used directly by the server test fixtures (ApiTestClient, TestUsers).
+server-security-crypto = { module = "org.springframework.security:spring-security-crypto" }
+server-jackson-databind = { module = "tools.jackson.core:jackson-databind" }
 # Server test modules (Boot 4 splits the test support per technology), versions from spring-boot-bom.
 server-test-starter = { module = "org.springframework.boot:spring-boot-starter-test" }
 server-test-webmvc = { module = "org.springframework.boot:spring-boot-starter-webmvc-test" }

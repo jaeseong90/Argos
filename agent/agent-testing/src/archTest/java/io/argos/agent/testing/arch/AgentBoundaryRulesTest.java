@@ -17,6 +17,7 @@ import io.argos.agent.testing.arch.fixture.violating.bootstrap.UsesJul;
 import io.argos.agent.testing.arch.fixture.violating.bootstrap.UsesThirdParty;
 import io.argos.agent.testing.arch.fixture.violating.core.PrintsToConsole;
 import io.argos.agent.testing.arch.fixture.violating.core.ReferencesModule;
+import io.argos.agent.testing.arch.fixture.violating.core.UsesJulLevel;
 import io.argos.agent.testing.arch.fixture.violating.core.trace.StepBuffer;
 import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.ByteBuddyApiAdvice;
 import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.CoreReferenceHelper;
@@ -192,6 +193,26 @@ class AgentBoundaryRulesTest {
           AgentBoundaryRules.noLoggingFrameworks(VIOLATING),
           classes(UsesJul.class),
           "UsesJul",
+          "java.util.logging.Logger");
+    }
+
+    @Test
+    @DisplayName("AGT-02 rejects java.util.logging.Level outside the JUL bridge")
+    void rejectsJulLevelElsewhere() {
+      assertViolation(
+          AgentBoundaryRules.noLoggingFrameworks(VIOLATING),
+          classes(UsesJulLevel.class),
+          "UsesJulLevel",
+          "java.util.logging.Level");
+    }
+
+    @Test
+    @DisplayName("AGT-02 the JUL bridge may not use Logger or LogManager (ADR-0005 decision 4)")
+    void rejectsLoggerInBridge() {
+      assertViolation(
+          AgentBoundaryRules.noLoggingFrameworks(VIOLATING),
+          classes(io.argos.agent.testing.arch.fixture.violating.core.log.JulLogger.class),
+          "JulLogger",
           "java.util.logging.Logger");
     }
 

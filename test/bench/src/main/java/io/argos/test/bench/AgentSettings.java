@@ -51,12 +51,14 @@ final class AgentSettings {
    *   <li>{@code drop}: {@code argos.test.exporter=drop}, the WO-02 P-2 setting: transactions are
    *       recorded and dropped without encoding. Use it to reproduce the WO-02 numbers. The WO-02
    *       key {@code argos.exporter=noop} is gone (ADR-0009 C-88): {@code drop} is a test-only
-   *       value too, so a release build is refused like {@code noop}. Until WO-11 adds the gRPC
-   *       encoder, the agent's {@code noop} encodes with the JSONL test encoder on {@code
-   *       argos-sender}; {@code drop} skips that step, which C-80 counts as the same
-   *       instrumentation cost.
-   *   <li>{@code grpc}: the transport cost (P-3). Refused until the agent jar has the gRPC exporter
-   *       (WO-11), and needs {@code --collector host:port}.
+   *       value too, so a release build is refused like {@code noop}. The agent's {@code noop}
+   *       encodes with the sender's protobuf encoder on {@code argos-sender} (WO-11); {@code drop}
+   *       skips that step, so the two no longer cost the same (C-80 treated them as equal while
+   *       {@code noop} used the JSONL test encoder).
+   *   <li>{@code grpc}: the transport cost (P-3, WO-11): the agent's default exporter to {@code
+   *       --collector host:port}, which is required. A jar without the gRPC exporter is refused.
+   *       TLS and token of the collector come from {@code --agent-config} (for the standalone
+   *       FakeCollector: {@code server.tls=false,server.token-file=<its --token-file>}).
    * </ul>
    */
   static Exporter exporter(String name, Path agentJar, String collector) throws IOException {

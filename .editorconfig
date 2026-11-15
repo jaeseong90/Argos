@@ -34,3 +34,10 @@ indent_size = 2
 
 [gradle/verification-metadata.xml]
 indent_size = 3
+
+[agent/agent-dist/src/notices/*.txt]
+# Verbatim upstream license/NOTICE texts (SHA-256 in the README there): never reformat.
+trim_trailing_whitespace = unset
+insert_final_newline = unset
+indent_style = unset
+indent_size = unset

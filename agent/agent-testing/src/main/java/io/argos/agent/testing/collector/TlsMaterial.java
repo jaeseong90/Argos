@@ -51,7 +51,11 @@ final class TlsMaterial {
     return host;
   }
 
-  /** Generates a 2048-bit RSA certificate for {@code host} (also IP 127.0.0.1 for localhost). */
+  /**
+   * Generates a 2048-bit RSA certificate for {@code host}; the {@code localhost} certificate also
+   * names IP 127.0.0.1 and {@code host.docker.internal} (an agent in a container, {@link
+   * FakeCollector#containerAddress()}).
+   */
   static TlsMaterial generate(Path parent, String host) {
     try {
       Files.createDirectories(parent);
@@ -61,7 +65,10 @@ final class TlsMaterial {
       char[] password = HexFormat.of().formatHex(random).toCharArray();
       Path store = directory.resolve("collector.p12");
       Path pem = directory.resolve("collector-ca.pem");
-      String san = host.equals("localhost") ? "dns:localhost,ip:127.0.0.1" : "dns:" + host;
+      String san =
+          host.equals("localhost")
+              ? "dns:localhost,dns:" + FakeCollector.DOCKER_HOST + ",ip:127.0.0.1"
+              : "dns:" + host;
       keytool(
           "-genkeypair",
           "-alias",

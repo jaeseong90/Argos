@@ -19,6 +19,12 @@
 spring:
   application:
     name: argos-server
+  autoconfigure:
+    # WO-24: no Spring Security user store. Argos authenticates with session cookies only
+    # (io.argos.server.web.security.SecurityConfig); Boot's in-memory user would also log a
+    # generated password. Applies to every application built from this configuration.
+    exclude:
+      - org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
   main:
     banner-mode: off
   jmx:
@@ -34,6 +40,12 @@ server:
   address: ${ARGOS_HTTP_BIND:0.0.0.0}
   port: 8080
   shutdown: graceful
+  # WO-24: X-Forwarded-* headers are ignored unless the operator trusts a reverse proxy (also on
+  # Kubernetes, where Spring Boot would otherwise trust every private address). Behind a proxy
+  # that terminates TLS (17 §3.10) set server.forward-headers-strategy=native and
+  # server.tomcat.remoteip.internal-proxies to the proxy's address: the client address (rate
+  # limits, audit) and the scheme (HSTS, 16 §9.8) then come from the proxy's headers.
+  forward-headers-strategy: none
   # 14 §7.2: request headers up to 16 KB; bodies up to 1 MB (RequestBodyLimitFilter for every
   # content type, the Tomcat limits below for form posts and swallowed uploads).
   max-http-request-header-size: 16KB
@@ -100,6 +112,25 @@ management:
 logging:
   level:
     root: ${ARGOS_LOG_LEVEL:INFO}
+
+# WO-24: the runtime OpenAPI document (14 §8), served to viewer sessions only
+# (io.argos.server.api.openapi): JSON at /api/v1/openapi, YAML at /api/v1/openapi.yaml. Only the
+# REST API is documented; springdoc's default /v3/api-docs paths do not exist, and there is no
+# Swagger UI (the UI webjar is not a dependency).
+springdoc:
+  api-docs:
+    # Explicit on purpose: the document is a viewer-only endpoint (OpenApiConfiguration), and an
+    # explicit value keeps springdoc from logging "enabled by default ... disable it in production"
+    # at every start.
+    enabled: true
+    path: /api/v1/openapi
+  paths-to-match: /api/**
+  show-actuator: false
+  # The error shape is 14 §2.6 for every operation; the exception handlers are not per-operation
+  # responses.
+  override-with-generic-response: false
+  swagger-ui:
+    enabled: false
 
 argos:
   server:

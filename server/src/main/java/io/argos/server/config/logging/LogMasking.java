@@ -11,7 +11,19 @@ import java.util.regex.Pattern;
  * sees it ({@link MaskingLogEventFactory}). Code must still never log a secret; this catches the
  * mistakes.
  *
- * <p>Rules, applied in order (the replacement keeps what identifies the value, drops the value):
+ * <p>The replacement keeps what identifies the value and drops the value. First, the PEM rule:
+ * private keys in PEM armour (RFC 7468) keep their armour lines and lose everything between them,
+ * also across lines: from {@code -----BEGIN <label>-----}, where the label is upper-case letters,
+ * digits and blanks ending in {@code PRIVATE KEY} ({@code PRIVATE KEY}, {@code RSA PRIVATE KEY},
+ * {@code ENCRYPTED PRIVATE KEY}, ...), to the matching {@code -----END <label>-----} becomes {@code
+ * -----BEGIN PRIVATE KEY-----****-----END PRIVATE KEY-----}; without a matching end line everything
+ * up to the end of the message is masked (fail closed). The JWT signing key is such a block in
+ * {@code conf/jwt.key} and may be given as one in {@code ARGOS_JWT_KEY} (16 §7.1). The PEM rule
+ * scans the text once from left to right, also when it opens many blocks, and runs before the
+ * numbered rules, so that rule 5 cannot cut the armour line of a key given as a setting value in
+ * half and leave the block unrecognised.
+ *
+ * <p>Then the rules, applied in order:
  *
  * <ol>
  *   <li>agent tokens {@code argos_[A-Za-z0-9_-]{43}} become {@code argos_****} (12 §7.1, ADR-0010
@@ -34,9 +46,21 @@ import java.util.regex.Pattern;
  *       and HTTP URLs, and the password of {@code scheme://user:password@host};
  *   <li>{@code key=value} and {@code key: value} pairs whose key ends with {@code password}, {@code
  *       passwd}, {@code pwd}, {@code secret}, {@code token}, {@code api-key}, {@code apikey},
- *       {@code access-key}, {@code private-key}, {@code credential} or {@code credentials} (any
- *       case, separators {@code -}, {@code _}, {@code .}): {@code db.password=****}.
+ *       {@code access-key}, {@code private-key}, {@code jwt-key}, {@code jwt-previous-key}, {@code
+ *       master-key}, {@code credential}, {@code credentials} or {@code csrf} (any case, separators
+ *       {@code -}, {@code _}, {@code .}): {@code db.password=****}, {@code X-Argos-CSRF: ****},
+ *       {@code setup_token=****}, {@code ARGOS_JWT_KEY=****}, {@code argos.master-key=****}; keys
+ *       that only continue such a name ({@code argos.jwt-key-file}) are not secrets;
+ *   <li>the session cookies wherever a {@code Cookie} or {@code Set-Cookie} value is printed (16
+ *       §7.1): {@code argos_at=****}, {@code argos_rt=****}, {@code argos_csrf=****};
+ *   <li>anything shaped like a JWT (three base64url segments starting with {@code eyJ}, the header
+ *       of a JSON object): {@code ****}.
  * </ol>
+ *
+ * <p>One line is deliberately not masked: the single line of {@code SetupTokenBootstrap} that shows
+ * the setup token to the operator (16 §7.8, DSN-16-12, SEC-47; the token has no other way out when
+ * the file cannot be read). Its wording keeps the value away from rule 5 (the word {@code token} is
+ * not followed by a separator), and a test pins that; no other code logs the token.
  *
  * <p>Every rule leaves an already masked value unchanged: {@code mask(mask(x))} equals {@code
  * mask(x)}.
@@ -90,11 +114,29 @@ public final class LogMasking {
   private static final Pattern AUTHORIZATION_ITEM_HEAD =
       Pattern.compile("(?i)[\\s\\[(\"']*+(?:" + AUTH_SCHEME + "\\s++)?+");
 
+  /** PEM rule: the start of an armour line that opens a block. */
+  private static final String PEM_BEGIN = "-----BEGIN ";
+
+  /** PEM rule: the start of an armour line that closes a block. */
+  private static final String PEM_END = "-----END ";
+
+  /** PEM rule: the end of every armour line. */
+  private static final String PEM_DASHES = "-----";
+
+  /** PEM rule: how the label of a private key ends. */
+  private static final String PEM_PRIVATE_KEY = "PRIVATE KEY";
+
+  /**
+   * PEM rule: the longest label taken for a private key (real ones have up to about 25 characters).
+   * The bound keeps each search for an end line short, so the scan stays linear.
+   */
+  private static final int PEM_MAX_LABEL = 64;
+
   /** Rule 1. */
   private static final Rule AGENT_TOKEN =
       new Rule(Pattern.compile("argos_[A-Za-z0-9_-]{43}"), "argos_" + MASK);
 
-  /** Rules 3 to 5. */
+  /** Rules 3 to 7. */
   private static final List<Rule> RULES_AFTER_AUTHORIZATION =
       List.of(
           new Rule(
@@ -109,9 +151,16 @@ public final class LogMasking {
           new Rule(
               Pattern.compile(
                   "(?i)(\\b[\\w.-]*(?:password|passwd|pwd|secret|token|api[_.-]?key|access[_.-]?key"
-                      + "|private[_.-]?key|credentials?)[\"']?\\s*[=:]\\s*[\"']?)(?!\\*{4})"
+                      + "|private[_.-]?key|jwt(?:[_.-]?previous)?[_.-]?key|master[_.-]?key"
+                      + "|credentials?|csrf)[\"']?\\s*[=:]\\s*[\"']?)(?!\\*{4})"
                       + "[^\\s\"',;&}]+"),
-              "$1" + MASK));
+              "$1" + MASK),
+          new Rule(
+              Pattern.compile("(\\bargos_(?:at|rt|csrf)=)(?!\\*{4})[^\\s\"',;&}\\]]+"),
+              "$1" + MASK),
+          new Rule(
+              Pattern.compile("\\beyJ[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,}"),
+              MASK));
 
   private LogMasking() {}
 
@@ -120,11 +169,58 @@ public final class LogMasking {
     if (text == null || text.isEmpty()) {
       return text;
     }
-    String result = maskAuthorization(AGENT_TOKEN.apply(text));
+    String result = maskAuthorization(AGENT_TOKEN.apply(maskPemPrivateKeys(text)));
     for (Rule rule : RULES_AFTER_AUTHORIZATION) {
       result = rule.apply(result);
     }
     return result;
+  }
+
+  /**
+   * The PEM rule: the body of every private key block becomes ****, up to the matching end line or,
+   * without one, up to the end of the text. Each search starts where the previous one stopped: a
+   * label is read at most {@link #PEM_MAX_LABEL} characters far and holds no {@code -}, so no
+   * opening line starts inside it; after a block the scan goes on behind its end line, and a block
+   * without one ends the scan. Every character is therefore scanned a bounded number of times.
+   */
+  private static String maskPemPrivateKeys(String text) {
+    int length = text.length();
+    StringBuilder out = null;
+    int copied = 0;
+    int from = 0;
+    int begin;
+    while ((begin = text.indexOf(PEM_BEGIN, from)) >= 0) {
+      int labelStart = begin + PEM_BEGIN.length();
+      int labelEnd = labelStart;
+      int labelLimit = Math.min(length, labelStart + PEM_MAX_LABEL);
+      while (labelEnd < labelLimit && isPemLabelChar(text.charAt(labelEnd))) {
+        labelEnd++;
+      }
+      from = labelEnd;
+      if (labelEnd - labelStart < PEM_PRIVATE_KEY.length()
+          || !text.startsWith(PEM_PRIVATE_KEY, labelEnd - PEM_PRIVATE_KEY.length())
+          || !text.startsWith(PEM_DASHES, labelEnd)) {
+        continue;
+      }
+      int body = labelEnd + PEM_DASHES.length();
+      String endLine = PEM_END + text.substring(labelStart, labelEnd) + PEM_DASHES;
+      int end = text.indexOf(endLine, body);
+      if (out == null) {
+        out = new StringBuilder(length);
+      }
+      out.append(text, copied, body).append(MASK);
+      if (end < 0) {
+        return out.toString();
+      }
+      copied = end;
+      from = end + endLine.length();
+    }
+    return out == null ? text : out.append(text, copied, length).toString();
+  }
+
+  /** The characters of a PEM label as this rule reads it: {@code [A-Z0-9 ]}. */
+  private static boolean isPemLabelChar(char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ' ';
   }
 
   /**

@@ -14,16 +14,35 @@ import java.util.concurrent.locks.LockSupport;
 /**
  * Asynchronous log pipeline behind {@link AgentLogger} (10 §14): application threads only enqueue
  * (lock-free, bounded, never waiting); the {@code argos-logger} thread formats and writes.
+ *
+ * <p>Bounds of the queued records (N-02, ADR-0010 C-120 (3)): at most {@value #CAPACITY} records
+ * and at most {@value #MAX_QUEUED_BYTES} estimated bytes of queued text in total, counted as
+ * characters times 2 (message and thread name) plus {@value #RECORD_OVERHEAD_BYTES} bytes per
+ * record ({@value #ERROR_OVERHEAD_BYTES} more when the record carries a throwable, whose stack is
+ * formatted on the logger thread). A record beyond either bound is dropped and counted ({@link
+ * #dropped()}, the self metric {@code argos_agent_log_dropped_total}); the enqueuing thread never
+ * waits. Without the byte bound the worst case was 4,096 records of 8,192 characters, about 64 MB.
  */
 final class LogPipeline {
   static final int CAPACITY = 4096;
   static final int MAX_MESSAGE_CHARS = 8192;
+
+  /** Total estimated bytes of the queued records (ADR-0010 C-120 (3): 1 MiB). */
+  static final long MAX_QUEUED_BYTES = 1024L * 1024;
+
+  /** Estimated fixed bytes of one queued record: the record, two String headers, references. */
+  static final long RECORD_OVERHEAD_BYTES = 128L;
+
+  /** Extra estimate for a record that keeps a throwable until the logger thread formats it. */
+  static final long ERROR_OVERHEAD_BYTES = 512L;
+
   private static final int MAX_ONCE_KEYS = 1024;
   private static final int MAX_STACK_FRAMES = 40;
   private static final long IDLE_PARK_NANOS = TimeUnit.MILLISECONDS.toNanos(50);
 
   private final ConcurrentLinkedQueue<LogRecord> queue = new ConcurrentLinkedQueue<LogRecord>();
   private final AtomicInteger queued = new AtomicInteger();
+  private final AtomicLong queuedBytes = new AtomicLong();
   private final AtomicLong dropped = new AtomicLong();
   private final ConcurrentHashMap<String, Boolean> onceKeys =
       new ConcurrentHashMap<String, Boolean>();
@@ -72,7 +91,10 @@ final class LogPipeline {
     return silenced;
   }
 
-  /** Enqueues an event unless the queue is full (then counted as dropped). Never blocks. */
+  /**
+   * Enqueues an event unless the record count or the byte bound is reached (then counted as
+   * dropped). Never blocks.
+   */
   void enqueue(LogLevel recordLevel, String message, Throwable error) {
     if (silenced) {
       return;
@@ -86,13 +108,44 @@ final class LogPipeline {
         message.length() > MAX_MESSAGE_CHARS
             ? message.substring(0, MAX_MESSAGE_CHARS) + "...(truncated)"
             : message;
+    String threadName = Thread.currentThread().getName();
+    long bytes = estimatedBytes(text, threadName, error);
+    if (!reserveBytes(bytes)) {
+      queued.decrementAndGet();
+      dropped.incrementAndGet();
+      return;
+    }
     queue.offer(
-        new LogRecord(
-            System.currentTimeMillis(),
-            recordLevel,
-            Thread.currentThread().getName(),
-            text,
-            error));
+        new LogRecord(System.currentTimeMillis(), recordLevel, threadName, text, error, bytes));
+  }
+
+  /** The byte estimate of a queued record (see the class comment). */
+  static long estimatedBytes(String text, String threadName, Throwable error) {
+    long chars = (long) text.length() + (threadName == null ? 0 : threadName.length());
+    return RECORD_OVERHEAD_BYTES + 2L * chars + (error != null ? ERROR_OVERHEAD_BYTES : 0L);
+  }
+
+  /** Adds {@code bytes} to the queued total unless that passes the bound; one CAS, no wait. */
+  private boolean reserveBytes(long bytes) {
+    while (true) {
+      long used = queuedBytes.get();
+      if (used + bytes > MAX_QUEUED_BYTES) {
+        return false;
+      }
+      if (queuedBytes.compareAndSet(used, used + bytes)) {
+        return true;
+      }
+    }
+  }
+
+  /** Estimated bytes of the records queued now. */
+  long queuedBytes() {
+    return queuedBytes.get();
+  }
+
+  /** Records queued now. */
+  int queued() {
+    return queued.get();
   }
 
   /** True the first time {@code key} is seen (bounded: later keys are always "seen"). */
@@ -113,6 +166,7 @@ final class LogPipeline {
     LogRecord record;
     while ((record = queue.poll()) != null) {
       queued.decrementAndGet();
+      queuedBytes.addAndGet(-record.bytes);
       write(target, record);
       written++;
     }
@@ -126,7 +180,12 @@ final class LogPipeline {
               System.currentTimeMillis(),
               LogLevel.WARN,
               "argos-logger",
-              newDrops + " log record(s) dropped: logger queue full (" + CAPACITY + ")",
+              newDrops
+                  + " log record(s) dropped: logger queue full ("
+                  + CAPACITY
+                  + " records or "
+                  + MAX_QUEUED_BYTES
+                  + " bytes)",
               null));
     }
     boolean requested = flushRequested;
@@ -152,8 +211,10 @@ final class LogPipeline {
 
   /** Drops every queued record without writing it (start failure without a log file, C-78). */
   synchronized void discardQueued() {
-    while (queue.poll() != null) {
+    LogRecord record;
+    while ((record = queue.poll()) != null) {
       queued.decrementAndGet();
+      queuedBytes.addAndGet(-record.bytes);
     }
   }
 
@@ -196,7 +257,10 @@ final class LogPipeline {
     }
     line.append(" [").append(record.thread).append("] ").append(record.message);
     if (record.error != null) {
-      line.append('\n').append(stackTrace(record.error));
+      // 11 §11, SEC-06, C-94: a throwable's message and its causes' messages are not the agent's
+      // own text (a library may put a header or a URL in them): masked like library messages,
+      // here on the logger thread, which pays the cost.
+      line.append('\n').append(LogMask.mask(stackTrace(record.error)));
     }
     return line.toString();
   }

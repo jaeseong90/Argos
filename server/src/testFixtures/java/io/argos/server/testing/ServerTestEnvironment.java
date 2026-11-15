@@ -244,6 +244,11 @@ public final class ServerTestEnvironment implements AutoCloseable {
       p.put(key + ".user", account.user());
       p.put(key + ".password-file", path(passwordFile(account)));
     }
+    // WO-24: the JWT signing key and the setup token files of the server under test live in this
+    // private directory too (deleted by close()), never in conf/ of the working directory, which
+    // is the source tree (server/) under Gradle.
+    p.put("argos.jwt-key-file", path(secretsDir.resolve("conf").resolve("jwt.key")));
+    p.put("argos.auth.setup-token-file", path(secretsDir.resolve("conf").resolve("setup-token")));
     return p;
   }
 

@@ -24,7 +24,7 @@ public final class ExporterSettings {
     return Map.of(KEY, "noop");
   }
 
-  /** The default exporter (gRPC; this build has no transport before WO-11: one WARN, noop). */
+  /** The default exporter: the gRPC transport to {@code server.address} (WO-11). */
   public static Map<String, String> grpc() {
     return Map.of(KEY, "grpc");
   }

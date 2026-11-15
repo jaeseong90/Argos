@@ -391,7 +391,7 @@ public final class TracerImpl implements Tracer {
     tx.sampled(reason);
     ProfileRecord profile =
         reason != Sampler.NONE && queues != null
-            ? new ProfileRecord(ctx.txId, ctx.startEpochMs, steps, now)
+            ? new ProfileRecord(ctx.txId, ctx.startEpochMs, ctx.kind, steps, now)
             : null;
     if (!retainSteps) {
       tx.detachSteps();

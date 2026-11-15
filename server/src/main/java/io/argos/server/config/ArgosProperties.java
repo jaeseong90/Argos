@@ -49,6 +49,15 @@ import org.springframework.util.unit.DataSize;
  * testing.*} (18 §15). The management port of 12 §10 ({@code management.server.port} 9101) is 8081
  * on 127.0.0.1 (02 C-7) and stays a Spring key ({@code application.yml}).
  *
+ * <p>WO-24 additions: {@code jwt-key-file}, {@code jwt-key}, {@code jwt-previous-key-file} and
+ * {@code jwt-previous-key} (16 §7.1 {@code conf/jwt.key} or {@code ARGOS_JWT_KEY}, the previous key
+ * of a rotation; top level like {@code master-key}, so that the relaxed environment names are the
+ * documented {@code ARGOS_JWT_KEY} and {@code ARGOS_JWT_KEY_FILE}), {@code admin-username} and
+ * {@code admin-password-file} (unattended setup, 16 §7.8 / 17 §3.8 {@code ARGOS_ADMIN_USERNAME},
+ * {@code ARGOS_ADMIN_PASSWORD_FILE}), {@code auth.setup-token-file} (16 §7.8 {@code
+ * conf/setup-token}) and {@code security.*} (16 §7.1 {@code argos.security.cookie.secure}, 16 §7.5
+ * and §15 #15 {@code argos.security.kiosk.*}).
+ *
  * @param server server-wide settings
  * @param collector gRPC collector (WO-21)
  * @param wal write-ahead log (WO-21)
@@ -58,8 +67,21 @@ import org.springframework.util.unit.DataSize;
  * @param masterKeyFile master key file of the envelope cipher (WO-28)
  * @param masterKey master key as a value, normally from the environment variable {@code
  *     ARGOS_MASTER_KEY} (12 §8.2, WO-28)
+ * @param jwtKeyFile Ed25519 signing key of the access tokens (PKCS#8 PEM), created at the first
+ *     start when missing and {@code jwt-key} is not set (16 §7.1, WO-24)
+ * @param jwtKey the signing key as a value, normally from the environment variable {@code
+ *     ARGOS_JWT_KEY}; wins over {@code jwt-key-file} (16 §7.1, WO-24)
+ * @param jwtPreviousKeyFile the previous signing key during a key rotation: tokens signed with it
+ *     are still accepted until they expire, never issued (16 §7.1 "kid", WO-24)
+ * @param jwtPreviousKey the previous signing key as a value; wins over {@code
+ *     jwt-previous-key-file}
+ * @param adminUsername first administrator of an unattended installation (with {@code
+ *     admin-password-file} and an explicit {@code privacy.default-ip-mode}, 16 §7.8, WO-24)
+ * @param adminPasswordFile file holding that administrator's initial password (0600; the password
+ *     must be changed at the first login)
  * @param web web UI and REST API
  * @param auth user authentication (WO-24)
+ * @param security cookie and kiosk-session settings of the UI sessions (16 §7.1, §7.5; WO-24)
  * @param ratelimit API rate limits (WO-24)
  * @param alert alert engine (WO-25)
  * @param agent agent registration policy (WO-22)
@@ -82,8 +104,15 @@ public record ArgosProperties(
     @Valid @DefaultValue Postgres postgres,
     @DefaultValue("conf/master.key") String masterKeyFile,
     String masterKey,
+    @DefaultValue("conf/jwt.key") String jwtKeyFile,
+    String jwtKey,
+    String jwtPreviousKeyFile,
+    String jwtPreviousKey,
+    String adminUsername,
+    String adminPasswordFile,
     @Valid @DefaultValue Web web,
     @Valid @DefaultValue Auth auth,
+    @Valid @DefaultValue Security security,
     @Valid @DefaultValue RateLimit ratelimit,
     @Valid @DefaultValue Alert alert,
     @Valid @DefaultValue Agent agent,
@@ -99,6 +128,12 @@ public record ArgosProperties(
   public ArgosProperties {
     masterKeyFile = blankToNull(masterKeyFile);
     masterKey = blankToNull(masterKey);
+    jwtKeyFile = blankToNull(jwtKeyFile);
+    jwtKey = blankToNull(jwtKey);
+    jwtPreviousKeyFile = blankToNull(jwtPreviousKeyFile);
+    jwtPreviousKey = blankToNull(jwtPreviousKey);
+    adminUsername = blankToNull(adminUsername);
+    adminPasswordFile = blankToNull(adminPasswordFile);
   }
 
   @Override
@@ -119,10 +154,24 @@ public record ArgosProperties(
         + masterKeyFile
         + ", masterKey="
         + Credential.mask(masterKey)
+        + ", jwtKeyFile="
+        + jwtKeyFile
+        + ", jwtKey="
+        + Credential.mask(jwtKey)
+        + ", jwtPreviousKeyFile="
+        + jwtPreviousKeyFile
+        + ", jwtPreviousKey="
+        + Credential.mask(jwtPreviousKey)
+        + ", adminUsername="
+        + adminUsername
+        + ", adminPasswordFile="
+        + adminPasswordFile
         + ", web="
         + web
         + ", auth="
         + auth
+        + ", security="
+        + security
         + ", ratelimit="
         + ratelimit
         + ", alert="
@@ -484,17 +533,28 @@ public record ArgosProperties(
    * Web UI and REST API.
    *
    * @param publicUrl external URL of the UI ({@code https://argos.example.com}): Origin check and
-   *     deep links (12 §10, required)
+   *     deep links (12 §10, required); also the WebSocket origin of the CSP {@code connect-src}
+   * @param csp Content-Security-Policy of the UI page (16 §9.9; WO-24)
    */
   public record Web(
       @NotBlank(
               message =
                   "is required: the external URL of the web UI, e.g. https://argos.example.com")
-          String publicUrl) {
+          String publicUrl,
+      @Valid @DefaultValue Csp csp) {
 
     public Web {
       publicUrl = blankToNull(publicUrl);
     }
+
+    /**
+     * Content-Security-Policy of the UI page (16 §9.9, SEC-46, DSN-16-15).
+     *
+     * @param styleUnsafeInline {@code style-src 'self' 'unsafe-inline'} instead of the per-request
+     *     nonce: the documented fallback of 16 §9.9 for a component library that cannot attach the
+     *     nonce to its style elements (16 §15 #6, decided by the UI work order). Off by default
+     */
+    public record Csp(@DefaultValue("false") boolean styleUnsafeInline) {}
   }
 
   /**
@@ -507,6 +567,8 @@ public record ArgosProperties(
    * @param password password policy
    * @param lockout login lockout
    * @param setupTokenTtl lifetime of the setup token (SEC-47)
+   * @param setupTokenFile file the setup token is written to (0600 on POSIX; deleted when the first
+   *     administrator is created, 16 §7.8; WO-24)
    */
   public record Auth(
       @DefaultValue("15m") Duration accessTtl,
@@ -515,7 +577,12 @@ public record ArgosProperties(
       @Positive @DefaultValue("5") int maxSessionsPerUser,
       @Valid @DefaultValue Password password,
       @Valid @DefaultValue Lockout lockout,
-      @DefaultValue("30m") Duration setupTokenTtl) {
+      @DefaultValue("30m") Duration setupTokenTtl,
+      @DefaultValue("conf/setup-token") String setupTokenFile) {
+
+    public Auth {
+      setupTokenFile = blankToNull(setupTokenFile);
+    }
 
     /**
      * Password policy (SEC-45).
@@ -546,16 +613,56 @@ public record ArgosProperties(
   }
 
   /**
+   * Security settings of the UI sessions (16 §7.1, §7.5; WO-24).
+   *
+   * @param cookie session cookies
+   * @param kiosk long sessions of approved viewer accounts (F-U21)
+   */
+  public record Security(@Valid @DefaultValue Cookie cookie, @Valid @DefaultValue Kiosk kiosk) {
+
+    /**
+     * Session cookies (16 §7.1).
+     *
+     * @param secure the {@code Secure} attribute on {@code argos_at}, {@code argos_rt} and {@code
+     *     argos_csrf}. Always true in production; false is accepted for non-production setups
+     *     without TLS and logs a warning at every start
+     */
+    public record Cookie(@DefaultValue("true") boolean secure) {}
+
+    /**
+     * Kiosk sessions (16 §7.5, §15 #15; ADR-0010 C-106 (5)): a viewer account with {@code
+     * kiosk_allowed} that logs in from one of its allowed address ranges gets these lifetimes
+     * instead of {@code auth.refresh-idle-ttl} and {@code auth.refresh-max-ttl}.
+     *
+     * @param enabled whether kiosk sessions are issued at all (off by default)
+     * @param idleTtl idle lifetime of a kiosk session
+     * @param maxTtl absolute lifetime of a kiosk session
+     */
+    public record Kiosk(
+        @DefaultValue("false") boolean enabled,
+        @DefaultValue("24h") Duration idleTtl,
+        @DefaultValue("30d") Duration maxTtl) {}
+  }
+
+  /**
    * API rate limits (SEC-56; WO-24).
    *
-   * @param loginPerIpPerMinute login attempts per IP per minute
-   * @param apiPerUserPerSecond API calls per user per second
-   * @param exportPerUserPerMinute exports and searches per user per minute
+   * @param loginPerIpPerMinute requests per client address per minute to login, refresh and the
+   *     setup endpoints (14 §2.7, 16 §7.13)
+   * @param apiPerUserPerSecond API calls per session per second (refill rate of the general bucket)
+   * @param exportPerUserPerMinute heavy requests (search, CSV export, long traces; handlers with
+   *     {@code @RateLimited(HEAVY)}) per user per minute
+   * @param apiBurstPerUser capacity of the general bucket per session: the burst allowed above the
+   *     per-second rate (16 §7.13; WO-24); at least {@code api-per-user-per-second} is used
+   * @param cspReportPerIpPerMinute CSP violation reports per client address per minute (16 §9.9;
+   *     WO-24)
    */
   public record RateLimit(
       @Positive @DefaultValue("20") int loginPerIpPerMinute,
       @Positive @DefaultValue("50") int apiPerUserPerSecond,
-      @Positive @DefaultValue("10") int exportPerUserPerMinute) {}
+      @Positive @DefaultValue("10") int exportPerUserPerMinute,
+      @Positive @DefaultValue("100") int apiBurstPerUser,
+      @Positive @DefaultValue("60") int cspReportPerIpPerMinute) {}
 
   /**
    * Alert engine (12 §5; WO-25).

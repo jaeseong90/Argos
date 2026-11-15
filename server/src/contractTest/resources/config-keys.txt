@@ -3,6 +3,8 @@
 # Checked by ConfigKeySnapshotTest (contractTest). Change this file by hand, in the same change
 # as the key, and report every addition, rename or default change.
 
+argos.admin-password-file	string	(none)
+argos.admin-username	string	(none)
 argos.agent.auto-register	map<string,boolean>	{default=true}
 argos.alert.evaluation-interval	duration	10s
 argos.alert.group-window	duration	30s
@@ -30,6 +32,7 @@ argos.auth.password.max-length	int	128
 argos.auth.password.min-length	int	12
 argos.auth.refresh-idle-ttl	duration	8h
 argos.auth.refresh-max-ttl	duration	1d
+argos.auth.setup-token-file	string	conf/setup-token
 argos.auth.setup-token-ttl	duration	30m
 argos.clickhouse.database	string	argos
 argos.clickhouse.migration.repair-checksums	boolean	false
@@ -76,6 +79,10 @@ argos.collector.tls.enabled	boolean	true
 argos.collector.tls.key-file	string	conf/tls/server.key
 argos.instance.archive-after	duration	7d
 argos.instance.purge-after	duration	30d
+argos.jwt-key	string	(none)
+argos.jwt-key-file	string	conf/jwt.key
+argos.jwt-previous-key	string	(none)
+argos.jwt-previous-key-file	string	(none)
 argos.master-key	string	(none)
 argos.master-key-file	string	conf/master.key
 argos.metrics.allow-cidrs	list<string>	[]
@@ -94,7 +101,9 @@ argos.postgres.password-file	string	(none)
 argos.postgres.url	string	(none)
 argos.postgres.user	string	argos_app
 argos.privacy.default-ip-mode	enum(full|masked|off)	masked
+argos.ratelimit.api-burst-per-user	int	100
 argos.ratelimit.api-per-user-per-second	int	50
+argos.ratelimit.csp-report-per-ip-per-minute	int	60
 argos.ratelimit.export-per-user-per-minute	int	10
 argos.ratelimit.login-per-ip-per-minute	int	20
 argos.retention.alert-events	duration	365d
@@ -106,6 +115,10 @@ argos.retention.rollup-1h	duration	365d
 argos.retention.rollup-1m	duration	90d
 argos.retention.stat	duration	14d
 argos.retention.xlog	duration	30d
+argos.security.cookie.secure	boolean	true
+argos.security.kiosk.enabled	boolean	false
+argos.security.kiosk.idle-ttl	duration	1d
+argos.security.kiosk.max-ttl	duration	30d
 argos.server.timezone	time-zone	UTC
 argos.testing.hold-before-phase	enum(config|keys|postgres-migration|clickhouse-migration|wal-recovery|listeners)	(none)
 argos.testing.hold-file	string	(none)
@@ -116,6 +129,7 @@ argos.wal.fsync-interval-ms	int	10
 argos.wal.max-bytes	data-size	10GB
 argos.wal.segment-bytes	data-size	256MB
 argos.wal.warn-ratio	double	0.8
+argos.web.csp.style-unsafe-inline	boolean	false
 argos.web.public-url	string	(none)
 argos.writer.flush-interval-ms	int	2000
 argos.writer.flush-rows	int	50000

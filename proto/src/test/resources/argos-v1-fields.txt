@@ -1,0 +1,464 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# argos.v1 field snapshot (proto contract test FieldSnapshotTest, docs/11-protocol-design.md §12).
+# Generated from the runtime descriptors and committed, so that every schema change is an explicit,
+# reviewed edit of this file:
+#   file <name>: package, java options, imports
+#   message.field = number, type, label     (label: singular | optional | repeated | map | oneof <name>)
+#   <message|enum> reserved <number[..last]> | "<name>"
+#   enum.VALUE = number
+#   rpc Service.Method([stream ]Input) returns ([stream ]Output)
+# Rules (11 §12, ADR-0010 C-101): numbers are never reused; a removed field or value is reserved
+# (number and name); additions after WO-11 need PM approval. When the test fails it writes the
+# current schema to proto/build/proto-contract/argos-v1-fields.txt; review it and copy it here.
+file argos/v1/common.proto: package argos.v1, java_package io.argos.proto.v1, java_multiple_files true, java_outer_classname CommonProto, imports []
+enum argos.v1.TransactionKind
+argos.v1.TransactionKind.TRANSACTION_KIND_UNSPECIFIED = 0
+argos.v1.TransactionKind.HTTP = 1
+argos.v1.TransactionKind.BATCH = 2
+argos.v1.TransactionKind.MESSAGE = 3
+enum argos.v1.StepType
+argos.v1.StepType.STEP_TYPE_UNSPECIFIED = 0
+argos.v1.StepType.SQL = 1
+argos.v1.StepType.DBC = 2
+argos.v1.StepType.COMMIT = 3
+argos.v1.StepType.ROLLBACK = 4
+argos.v1.StepType.HTTP_CALL = 5
+argos.v1.StepType.METHOD = 6
+argos.v1.StepType.ASYNC = 7
+argos.v1.StepType.ERROR = 8
+argos.v1.StepType.STACK = 9
+argos.v1.StepType.MESSAGE_STEP = 10
+argos.v1.StepType.SUMMARY = 11
+enum argos.v1.FailureKind
+argos.v1.FailureKind.FAILURE_NONE = 0
+argos.v1.FailureKind.TIMEOUT = 1
+argos.v1.FailureKind.CONNECT_FAIL = 2
+argos.v1.FailureKind.HTTP_5XX = 3
+argos.v1.FailureKind.OTHER_ERROR = 4
+enum argos.v1.DictionaryKind
+argos.v1.DictionaryKind.DICTIONARY_KIND_UNSPECIFIED = 0
+argos.v1.DictionaryKind.SERVICE = 1
+argos.v1.DictionaryKind.SQL_TEXT = 2
+argos.v1.DictionaryKind.CLASS = 3
+argos.v1.DictionaryKind.METHOD_NAME = 4
+argos.v1.DictionaryKind.THREAD = 5
+argos.v1.DictionaryKind.HOST = 6
+argos.v1.DictionaryKind.FRAME = 7
+argos.v1.DictionaryKind.METRIC = 8
+argos.v1.DictionaryKind.ERROR_GROUP = 9
+argos.v1.DictionaryKind.DB_TARGET = 10
+argos.v1.DictionaryKind.APP_VERSION = 11
+argos.v1.DictionaryKind.POOL = 12
+enum argos.v1.MetricKind
+argos.v1.MetricKind.METRIC_KIND_UNSPECIFIED = 0
+argos.v1.MetricKind.GAUGE = 1
+argos.v1.MetricKind.COUNTER = 2
+enum argos.v1.IpMode
+argos.v1.IpMode.IP_MODE_UNSPECIFIED = 0
+argos.v1.IpMode.IP_FULL = 1
+argos.v1.IpMode.IP_MASKED = 2
+argos.v1.IpMode.IP_OFF = 3
+enum argos.v1.UserIdMode
+argos.v1.UserIdMode.USER_ID_MODE_UNSPECIFIED = 0
+argos.v1.UserIdMode.USER_ID_OFF = 1
+argos.v1.UserIdMode.USER_ID_PLAIN = 2
+argos.v1.UserIdMode.USER_ID_HASHED = 3
+enum argos.v1.QueryStringMode
+argos.v1.QueryStringMode.QUERY_STRING_MODE_UNSPECIFIED = 0
+argos.v1.QueryStringMode.QS_OFF = 1
+argos.v1.QueryStringMode.QS_WHITELIST = 2
+argos.v1.QueryStringMode.QS_FULL = 3
+enum argos.v1.SqlParamMode
+argos.v1.SqlParamMode.SQL_PARAM_MODE_UNSPECIFIED = 0
+argos.v1.SqlParamMode.SQL_PARAM_MASKED = 1
+argos.v1.SqlParamMode.SQL_PARAM_PARTIAL = 2
+argos.v1.SqlParamMode.SQL_PARAM_FULL = 3
+enum argos.v1.CommandType
+argos.v1.CommandType.COMMAND_TYPE_UNSPECIFIED = 0
+argos.v1.CommandType.THREAD_DUMP = 1
+argos.v1.CommandType.THREAD_STACK = 2
+argos.v1.CommandType.SELF_DIAGNOSTICS = 3
+argos.v1.CommandType.CONFIG_RELOAD = 4
+argos.v1.CommandType.ENV_DUMP = 5
+argos.v1.CommandType reserved 6..9
+message argos.v1.KeyValue
+argos.v1.KeyValue.key = 1, string, singular
+argos.v1.KeyValue.value = 2, string, singular
+file argos/v1/session.proto: package argos.v1, java_package io.argos.proto.v1, java_multiple_files true, java_outer_classname SessionProto, imports [argos/v1/common.proto]
+enum argos.v1.RejectReason
+argos.v1.RejectReason.REJECT_REASON_UNSPECIFIED = 0
+argos.v1.RejectReason.TOKEN_INVALID = 1
+argos.v1.RejectReason.TOKEN_EXPIRED = 2
+argos.v1.RejectReason.TOKEN_REVOKED = 3
+argos.v1.RejectReason.APP_MISMATCH = 4
+argos.v1.RejectReason.APP_NOT_REGISTERED = 5
+argos.v1.RejectReason.AGENT_VERSION_TOO_NEW = 6
+argos.v1.RejectReason.AGENT_VERSION_TOO_OLD = 7
+argos.v1.RejectReason.PROTOCOL_UNSUPPORTED = 8
+argos.v1.RejectReason.PLAINTEXT_NOT_ALLOWED = 9
+argos.v1.RejectReason.INSTANCE_LIMIT = 10
+argos.v1.RejectReason.RATE_LIMITED = 11
+argos.v1.RejectReason.SERVER_SHUTTING_DOWN = 12
+enum argos.v1.InstanceState
+argos.v1.InstanceState.INSTANCE_STATE_UNSPECIFIED = 0
+argos.v1.InstanceState.UP = 1
+argos.v1.InstanceState.STALE = 2
+argos.v1.InstanceState.DOWN = 3
+argos.v1.InstanceState.WARN = 4
+enum argos.v1.RejectCode
+argos.v1.RejectCode.REJECT_CODE_UNSPECIFIED = 0
+argos.v1.RejectCode.NOT_ALLOWED = 1
+argos.v1.RejectCode.UNKNOWN_KEY = 2
+argos.v1.RejectCode.INVALID_VALUE = 3
+argos.v1.RejectCode.FORBIDDEN_PATTERN = 4
+argos.v1.RejectCode.LIMIT_EXCEEDED = 5
+enum argos.v1.CommandStatus
+argos.v1.CommandStatus.COMMAND_STATUS_UNSPECIFIED = 0
+argos.v1.CommandStatus.OK = 1
+argos.v1.CommandStatus.REJECTED = 2
+argos.v1.CommandStatus.EXPIRED = 3
+argos.v1.CommandStatus.FAILED = 4
+argos.v1.CommandStatus.COOLDOWN = 5
+enum argos.v1.ByeReason
+argos.v1.ByeReason.BYE_REASON_UNSPECIFIED = 0
+argos.v1.ByeReason.SHUTDOWN = 1
+argos.v1.ByeReason.AGENT_DISABLED = 2
+enum argos.v1.AgentEventType
+argos.v1.AgentEventType.AGENT_EVENT_TYPE_UNSPECIFIED = 0
+argos.v1.AgentEventType.MODULE_DISABLED = 1
+argos.v1.AgentEventType.TRANSFORM_ERRORS = 2
+argos.v1.AgentEventType.QUEUE_DROP_BURST = 3
+argos.v1.AgentEventType.KILL_SWITCH_ON = 4
+argos.v1.AgentEventType.KILL_SWITCH_OFF = 5
+argos.v1.AgentEventType.SELF_CPU_HIGH = 6
+argos.v1.AgentEventType.CONFIG_FILE_RELOADED = 7
+enum argos.v1.CloseReason
+argos.v1.CloseReason.CLOSE_REASON_UNSPECIFIED = 0
+argos.v1.CloseReason.TOKEN_REVOKED_CLOSE = 1
+argos.v1.CloseReason.SERVER_SHUTDOWN = 2
+argos.v1.CloseReason.REPLACED = 3
+argos.v1.CloseReason.PROTOCOL_ERROR = 4
+argos.v1.CloseReason.IDLE_TIMEOUT = 5
+message argos.v1.AgentMessage
+argos.v1.AgentMessage.hello = 1, message argos.v1.AgentHello, oneof body
+argos.v1.AgentMessage.heartbeat = 2, message argos.v1.Heartbeat, oneof body
+argos.v1.AgentMessage.dictionary_entries = 3, message argos.v1.DictionaryEntries, oneof body
+argos.v1.AgentMessage.config_apply_result = 4, message argos.v1.ConfigApplyResult, oneof body
+argos.v1.AgentMessage.command_result = 5, message argos.v1.CommandResult, oneof body
+argos.v1.AgentMessage.instance_update = 6, message argos.v1.InstanceUpdate, oneof body
+argos.v1.AgentMessage.bye = 7, message argos.v1.AgentBye, oneof body
+argos.v1.AgentMessage.event = 8, message argos.v1.AgentEvent, oneof body
+message argos.v1.ServerMessage
+argos.v1.ServerMessage.hello = 1, message argos.v1.ServerHello, oneof body
+argos.v1.ServerMessage.heartbeat_ack = 2, message argos.v1.HeartbeatAck, oneof body
+argos.v1.ServerMessage.dictionary_request = 3, message argos.v1.DictionaryRequest, oneof body
+argos.v1.ServerMessage.config_push = 4, message argos.v1.ConfigPush, oneof body
+argos.v1.ServerMessage.command = 5, message argos.v1.Command, oneof body
+argos.v1.ServerMessage.close = 6, message argos.v1.SessionClose, oneof body
+argos.v1.ServerMessage.throttle = 7, message argos.v1.Throttle, oneof body
+message argos.v1.AgentHello
+argos.v1.AgentHello.agent_version = 1, string, singular
+argos.v1.AgentHello.protocol_version = 2, uint32, singular
+argos.v1.AgentHello.app_name = 3, string, singular
+argos.v1.AgentHello.env = 4, string, singular
+argos.v1.AgentHello.instance_name = 5, string, singular
+argos.v1.AgentHello.host = 6, string, singular
+argos.v1.AgentHello.pid = 7, uint32, singular
+argos.v1.AgentHello.jvm_version = 8, string, singular
+argos.v1.AgentHello.jvm_vendor = 9, string, singular
+argos.v1.AgentHello.os = 10, string, singular
+argos.v1.AgentHello.arch = 11, string, singular
+argos.v1.AgentHello.virtual_threads = 12, bool, singular
+argos.v1.AgentHello.cgroup = 13, string, singular
+argos.v1.AgentHello.config_hash = 14, string, singular
+argos.v1.AgentHello.remote_config_allow = 15, string, repeated
+argos.v1.AgentHello.ip_mode = 16, enum argos.v1.IpMode, singular
+argos.v1.AgentHello.user_id_mode = 17, enum argos.v1.UserIdMode, singular
+argos.v1.AgentHello.query_string_mode = 18, enum argos.v1.QueryStringMode, singular
+argos.v1.AgentHello.sql_param_mode = 19, enum argos.v1.SqlParamMode, singular
+argos.v1.AgentHello.app_version = 20, string, singular
+argos.v1.AgentHello.sent_at_ms = 21, int64, singular
+argos.v1.AgentHello.agent_epoch = 22, uint64, singular
+argos.v1.AgentHello.process_start_ms = 23, int64, singular
+argos.v1.AgentHello.instrumentation_modules = 24, string, repeated
+argos.v1.AgentHello.plaintext = 25, bool, optional
+message argos.v1.ServerHello
+argos.v1.ServerHello.accepted = 1, bool, singular
+argos.v1.ServerHello.reject_reason = 2, enum argos.v1.RejectReason, singular
+argos.v1.ServerHello.reject_message = 3, string, singular
+argos.v1.ServerHello.retry_after_s = 4, uint32, singular
+argos.v1.ServerHello.app_id = 5, uint32, singular
+argos.v1.ServerHello.instance_id = 6, uint32, singular
+argos.v1.ServerHello.session_id = 7, string, singular
+argos.v1.ServerHello.server_version = 8, string, singular
+argos.v1.ServerHello.protocol_version = 9, uint32, singular
+argos.v1.ServerHello.min_agent_version = 10, string, singular
+argos.v1.ServerHello.max_agent_version = 11, string, singular
+argos.v1.ServerHello.server_time_ms = 12, int64, singular
+argos.v1.ServerHello.config = 13, map<string, string>, map
+argos.v1.ServerHello.heartbeat_interval_s = 14, uint32, singular
+argos.v1.ServerHello.active_snapshot_interval_s = 15, uint32, singular
+argos.v1.ServerHello.stat_window_s = 16, uint32, singular
+argos.v1.ServerHello.limits = 17, message argos.v1.Limits, singular
+argos.v1.ServerHello.user_id_salt = 18, bytes, singular
+message argos.v1.Limits
+argos.v1.Limits.max_message_bytes = 1, uint32, singular
+argos.v1.Limits.max_transactions_per_batch = 2, uint32, singular
+argos.v1.Limits.max_steps_per_batch = 3, uint32, singular
+argos.v1.Limits.max_detail_bytes = 4, uint32, singular
+argos.v1.Limits.max_string_bytes = 5, uint32, singular
+argos.v1.Limits.max_frames = 6, uint32, singular
+argos.v1.Limits.max_active_items = 7, uint32, singular
+argos.v1.Limits.max_series_per_instance = 8, uint32, singular
+argos.v1.Limits.max_dictionary_entries_per_hour = 9, uint32, singular
+message argos.v1.Heartbeat
+argos.v1.Heartbeat.t1_ms = 1, int64, singular
+argos.v1.Heartbeat.prev_t1_ms = 2, int64, singular
+argos.v1.Heartbeat.prev_t4_ms = 3, int64, singular
+argos.v1.Heartbeat.active_transactions = 4, uint32, singular
+argos.v1.Heartbeat.dropped_total = 5, uint64, singular
+argos.v1.Heartbeat.last_tx_seq = 6, uint64, singular
+argos.v1.Heartbeat.last_profile_seq = 7, uint64, singular
+argos.v1.Heartbeat.last_metric_seq = 8, uint64, singular
+argos.v1.Heartbeat.last_stat_seq = 9, uint64, singular
+message argos.v1.HeartbeatAck
+argos.v1.HeartbeatAck.t1_ms = 1, int64, singular
+argos.v1.HeartbeatAck.t2_ms = 2, int64, singular
+argos.v1.HeartbeatAck.t3_ms = 3, int64, singular
+argos.v1.HeartbeatAck.clock_offset_ms = 4, int32, singular
+argos.v1.HeartbeatAck.state = 5, enum argos.v1.InstanceState, singular
+message argos.v1.DictionaryEntry
+argos.v1.DictionaryEntry.kind = 1, enum argos.v1.DictionaryKind, singular
+argos.v1.DictionaryEntry.hash = 2, uint64, singular
+argos.v1.DictionaryEntry.text = 3, string, singular
+argos.v1.DictionaryEntry.truncated = 4, bool, singular
+argos.v1.DictionaryEntry.norm_version = 5, uint32, singular
+message argos.v1.DictionaryEntries
+argos.v1.DictionaryEntries.entries = 1, message argos.v1.DictionaryEntry, repeated
+message argos.v1.DictionaryRequest
+argos.v1.DictionaryRequest.refs = 1, message argos.v1.DictionaryRef, repeated
+message argos.v1.DictionaryRef
+argos.v1.DictionaryRef.kind = 1, enum argos.v1.DictionaryKind, singular
+argos.v1.DictionaryRef.hash = 2, uint64, singular
+message argos.v1.ConfigPush
+argos.v1.ConfigPush.change_id = 1, string, singular
+argos.v1.ConfigPush.values = 2, map<string, string>, map
+argos.v1.ConfigPush.revert = 3, bool, singular
+argos.v1.ConfigPush.issued_at_ms = 4, int64, singular
+message argos.v1.ConfigApplyResult
+argos.v1.ConfigApplyResult.change_id = 1, string, singular
+argos.v1.ConfigApplyResult.applied_keys = 2, string, repeated
+argos.v1.ConfigApplyResult.rejected = 3, message argos.v1.RejectedKey, repeated
+argos.v1.ConfigApplyResult.effective_config_hash = 4, string, singular
+argos.v1.ConfigApplyResult.retransformed_classes = 5, uint32, singular
+argos.v1.ConfigApplyResult.duration_ms = 6, uint32, singular
+message argos.v1.RejectedKey
+argos.v1.RejectedKey.key = 1, string, singular
+argos.v1.RejectedKey.code = 2, enum argos.v1.RejectCode, singular
+argos.v1.RejectedKey.message = 3, string, singular
+message argos.v1.Command
+argos.v1.Command.command_id = 1, string, singular
+argos.v1.Command.type = 2, enum argos.v1.CommandType, singular
+argos.v1.Command.issued_at_ms = 3, int64, singular
+argos.v1.Command.ttl_s = 4, uint32, singular
+argos.v1.Command.args = 5, map<string, string>, map
+message argos.v1.CommandResult
+argos.v1.CommandResult.command_id = 1, string, singular
+argos.v1.CommandResult.status = 2, enum argos.v1.CommandStatus, singular
+argos.v1.CommandResult.chunk_index = 3, uint32, singular
+argos.v1.CommandResult.chunk_count = 4, uint32, singular
+argos.v1.CommandResult.payload = 5, bytes, singular
+argos.v1.CommandResult.content_type = 6, string, singular
+argos.v1.CommandResult.error = 7, string, singular
+argos.v1.CommandResult.duration_ms = 8, uint32, singular
+argos.v1.CommandResult.truncated = 9, bool, singular
+message argos.v1.InstanceUpdate
+argos.v1.InstanceUpdate.instance_name = 1, string, optional
+argos.v1.InstanceUpdate.virtual_threads = 2, bool, optional
+argos.v1.InstanceUpdate.app_version = 3, string, optional
+argos.v1.InstanceUpdate.connectors = 4, string, repeated
+argos.v1.InstanceUpdate.config_hash = 5, string, optional
+message argos.v1.AgentBye
+argos.v1.AgentBye.reason = 1, enum argos.v1.ByeReason, singular
+argos.v1.AgentBye.last_tx_seq = 2, uint64, singular
+argos.v1.AgentBye.last_profile_seq = 3, uint64, singular
+argos.v1.AgentBye.last_metric_seq = 4, uint64, singular
+argos.v1.AgentBye.last_stat_seq = 5, uint64, singular
+message argos.v1.AgentEvent
+argos.v1.AgentEvent.type = 1, enum argos.v1.AgentEventType, singular
+argos.v1.AgentEvent.module = 2, string, singular
+argos.v1.AgentEvent.detail = 3, string, singular
+argos.v1.AgentEvent.at_ms = 4, int64, singular
+message argos.v1.SessionClose
+argos.v1.SessionClose.reason = 1, enum argos.v1.CloseReason, singular
+argos.v1.SessionClose.message = 2, string, singular
+argos.v1.SessionClose.retry_after_s = 3, uint32, singular
+message argos.v1.Throttle
+argos.v1.Throttle.profile_normal_rate = 1, float, optional
+argos.v1.Throttle.send_backoff_ms = 2, uint32, optional
+file argos/v1/data.proto: package argos.v1, java_package io.argos.proto.v1, java_multiple_files true, java_outer_classname DataProto, imports [argos/v1/common.proto, argos/v1/session.proto]
+enum argos.v1.AckStatus
+argos.v1.AckStatus.ACK_STATUS_UNSPECIFIED = 0
+argos.v1.AckStatus.ACK_OK = 1
+argos.v1.AckStatus.ACK_DUPLICATE = 2
+argos.v1.AckStatus.ACK_PARTIAL_DROP = 3
+enum argos.v1.ActiveState
+argos.v1.ActiveState.ACTIVE_STATE_UNSPECIFIED = 0
+argos.v1.ActiveState.IN_METHOD = 1
+argos.v1.ActiveState.IN_SQL = 2
+argos.v1.ActiveState.IN_DBC_WAIT = 3
+argos.v1.ActiveState.IN_HTTP = 4
+argos.v1.ActiveState.IN_ASYNC = 5
+message argos.v1.BatchHeader
+argos.v1.BatchHeader.instance_id = 1, uint32, singular
+argos.v1.BatchHeader.agent_epoch = 2, uint64, singular
+argos.v1.BatchHeader.seq = 3, uint64, singular
+argos.v1.BatchHeader.sent_at_ms = 4, int64, singular
+message argos.v1.Ack
+argos.v1.Ack.last_seq = 1, uint64, singular
+argos.v1.Ack.status = 2, enum argos.v1.AckStatus, singular
+argos.v1.Ack.dropped_items = 3, uint32, singular
+argos.v1.Ack.throttle = 4, message argos.v1.Throttle, singular
+message argos.v1.TransactionBatch
+argos.v1.TransactionBatch.header = 1, message argos.v1.BatchHeader, singular
+argos.v1.TransactionBatch.records = 2, message argos.v1.TransactionRecord, repeated
+message argos.v1.TransactionRecord
+argos.v1.TransactionRecord.tx_id = 1, uint64, singular
+argos.v1.TransactionRecord.trace_id = 2, bytes, singular
+argos.v1.TransactionRecord.span_id = 3, uint64, singular
+argos.v1.TransactionRecord.parent_span_id = 4, uint64, singular
+argos.v1.TransactionRecord.incoming_trace = 5, bool, singular
+argos.v1.TransactionRecord.caller_app_id = 6, uint32, singular
+argos.v1.TransactionRecord.kind = 7, enum argos.v1.TransactionKind, singular
+argos.v1.TransactionRecord.service_id = 8, uint64, singular
+argos.v1.TransactionRecord.start_ts_ms = 9, int64, singular
+argos.v1.TransactionRecord.elapsed_us = 10, uint64, singular
+argos.v1.TransactionRecord.http_method = 11, string, singular
+argos.v1.TransactionRecord.http_status = 12, uint32, singular
+argos.v1.TransactionRecord.url_path = 13, string, singular
+argos.v1.TransactionRecord.error = 14, bool, singular
+argos.v1.TransactionRecord.error_class_id = 15, uint64, singular
+argos.v1.TransactionRecord.error_message = 16, string, singular
+argos.v1.TransactionRecord.error_top_frame_id = 17, uint64, singular
+argos.v1.TransactionRecord.remote_ip = 18, bytes, singular
+argos.v1.TransactionRecord.user_id = 19, string, singular
+argos.v1.TransactionRecord.sql_count = 20, uint32, singular
+argos.v1.TransactionRecord.sql_time_ms = 21, uint32, singular
+argos.v1.TransactionRecord.ext_count = 22, uint32, singular
+argos.v1.TransactionRecord.ext_time_ms = 23, uint32, singular
+argos.v1.TransactionRecord.dbc_wait_ms = 24, uint32, singular
+argos.v1.TransactionRecord.cpu_time_us = 25, int64, optional
+argos.v1.TransactionRecord.alloc_bytes = 26, uint64, optional
+argos.v1.TransactionRecord.thread_name_id = 27, uint64, singular
+argos.v1.TransactionRecord.virtual_thread = 28, bool, singular
+argos.v1.TransactionRecord.profile_captured = 29, bool, singular
+argos.v1.TransactionRecord.sql_ids = 30, uint64, repeated
+argos.v1.TransactionRecord.dispatch_count = 31, uint32, singular
+argos.v1.TransactionRecord.streaming = 32, bool, singular
+argos.v1.TransactionRecord.timed_out = 33, bool, singular
+argos.v1.TransactionRecord.headers = 34, message argos.v1.KeyValue, repeated
+argos.v1.TransactionRecord.request_id = 35, string, singular
+argos.v1.TransactionRecord.app_version_id = 36, uint64, singular
+argos.v1.TransactionRecord.flags = 37, uint32, singular
+message argos.v1.ProfileBatch
+argos.v1.ProfileBatch.header = 1, message argos.v1.BatchHeader, singular
+argos.v1.ProfileBatch.profiles = 2, message argos.v1.TransactionProfile, repeated
+message argos.v1.TransactionProfile
+argos.v1.TransactionProfile.tx_id = 1, uint64, singular
+argos.v1.TransactionProfile.start_ts_ms = 2, int64, singular
+argos.v1.TransactionProfile.steps = 3, message argos.v1.ProfileStep, repeated
+argos.v1.TransactionProfile.truncated = 4, bool, singular
+argos.v1.TransactionProfile.total_steps = 5, uint32, singular
+argos.v1.TransactionProfile.kind = 6, enum argos.v1.TransactionKind, singular
+message argos.v1.ProfileStep
+argos.v1.ProfileStep.seq = 1, uint32, singular
+argos.v1.ProfileStep.parent_seq = 2, uint32, singular
+argos.v1.ProfileStep.type = 3, enum argos.v1.StepType, singular
+argos.v1.ProfileStep.start_offset_us = 4, uint32, singular
+argos.v1.ProfileStep.elapsed_us = 5, uint32, singular
+argos.v1.ProfileStep.fetch_us = 6, uint32, singular
+argos.v1.ProfileStep.name_id = 7, uint64, singular
+argos.v1.ProfileStep.target_id = 8, uint64, singular
+argos.v1.ProfileStep.rows = 9, uint32, singular
+argos.v1.ProfileStep.status = 10, uint32, singular
+argos.v1.ProfileStep.failure = 11, enum argos.v1.FailureKind, singular
+argos.v1.ProfileStep.error = 12, bool, singular
+argos.v1.ProfileStep.detail = 13, string, singular
+argos.v1.ProfileStep.frame_ids = 14, uint64, repeated
+argos.v1.ProfileStep.batch_size = 15, uint32, singular
+argos.v1.ProfileStep.repeat_count = 16, uint32, singular
+message argos.v1.MetricBatch
+argos.v1.MetricBatch.header = 1, message argos.v1.BatchHeader, singular
+argos.v1.MetricBatch.series = 2, message argos.v1.MetricSeries, repeated
+argos.v1.MetricBatch.samples = 3, message argos.v1.MetricSample, repeated
+message argos.v1.MetricSeries
+argos.v1.MetricSeries.index = 1, uint32, singular
+argos.v1.MetricSeries.name = 2, string, singular
+argos.v1.MetricSeries.kind = 3, enum argos.v1.MetricKind, singular
+message argos.v1.MetricSample
+argos.v1.MetricSample.series_index = 1, uint32, singular
+argos.v1.MetricSample.ts_ms = 2, int64, singular
+argos.v1.MetricSample.value = 3, double, singular
+argos.v1.MetricSample.delta = 4, double, singular
+message argos.v1.StatBatch
+argos.v1.StatBatch.header = 1, message argos.v1.BatchHeader, singular
+argos.v1.StatBatch.window_start_ms = 2, int64, singular
+argos.v1.StatBatch.window_len_s = 3, uint32, singular
+argos.v1.StatBatch.sql = 4, message argos.v1.SqlStat, repeated
+argos.v1.StatBatch.ext = 5, message argos.v1.ExtStat, repeated
+argos.v1.StatBatch.counters = 6, message argos.v1.CounterDelta, repeated
+message argos.v1.SqlStat
+argos.v1.SqlStat.sql_id = 1, uint64, singular
+argos.v1.SqlStat.db_id = 2, uint64, singular
+argos.v1.SqlStat.kind = 3, enum argos.v1.TransactionKind, singular
+argos.v1.SqlStat.count = 4, uint32, singular
+argos.v1.SqlStat.error_count = 5, uint32, singular
+argos.v1.SqlStat.sum_us = 6, uint64, singular
+argos.v1.SqlStat.max_us = 7, uint32, singular
+argos.v1.SqlStat.fetch_rows = 8, uint64, singular
+argos.v1.SqlStat.buckets = 10, uint32, repeated
+argos.v1.SqlStat.sum_exec_us = 11, uint64, optional
+argos.v1.SqlStat.sum_fetch_us = 12, uint64, optional
+argos.v1.SqlStat reserved 9
+argos.v1.SqlStat reserved "dbc_wait_sum_us"
+message argos.v1.ExtStat
+argos.v1.ExtStat.host_id = 1, uint64, singular
+argos.v1.ExtStat.kind = 2, enum argos.v1.TransactionKind, singular
+argos.v1.ExtStat.count = 3, uint32, singular
+argos.v1.ExtStat.error_count = 4, uint32, singular
+argos.v1.ExtStat.timeout_count = 5, uint32, singular
+argos.v1.ExtStat.connect_fail_count = 6, uint32, singular
+argos.v1.ExtStat.sum_us = 7, uint64, singular
+argos.v1.ExtStat.max_us = 8, uint32, singular
+argos.v1.ExtStat.buckets = 9, uint32, repeated
+message argos.v1.CounterDelta
+argos.v1.CounterDelta.name = 1, string, singular
+argos.v1.CounterDelta.delta = 2, uint64, singular
+message argos.v1.ActiveTransactionSnapshot
+argos.v1.ActiveTransactionSnapshot.header = 1, message argos.v1.BatchHeader, singular
+argos.v1.ActiveTransactionSnapshot.snapshot_ts_ms = 2, int64, singular
+argos.v1.ActiveTransactionSnapshot.total_active = 3, uint32, singular
+argos.v1.ActiveTransactionSnapshot.items = 4, message argos.v1.ActiveTransaction, repeated
+argos.v1.ActiveTransactionSnapshot.truncated = 5, bool, singular
+message argos.v1.ActiveTransaction
+argos.v1.ActiveTransaction.tx_id = 1, uint64, singular
+argos.v1.ActiveTransaction.service_id = 2, uint64, singular
+argos.v1.ActiveTransaction.kind = 3, enum argos.v1.TransactionKind, singular
+argos.v1.ActiveTransaction.start_ts_ms = 4, int64, singular
+argos.v1.ActiveTransaction.elapsed_ms = 5, uint32, singular
+argos.v1.ActiveTransaction.state = 6, enum argos.v1.ActiveState, singular
+argos.v1.ActiveTransaction.state_name_id = 7, uint64, singular
+argos.v1.ActiveTransaction.thread_name_id = 8, uint64, singular
+argos.v1.ActiveTransaction.thread_id = 9, int64, singular
+argos.v1.ActiveTransaction.virtual_thread = 10, bool, singular
+argos.v1.ActiveTransaction.user_id = 11, string, singular
+argos.v1.ActiveTransaction.remote_ip = 12, bytes, singular
+file argos/v1/service.proto: package argos.v1, java_package io.argos.proto.v1, java_multiple_files true, java_outer_classname ServiceProto, imports [argos/v1/data.proto, argos/v1/session.proto]
+service argos.v1.AgentService
+rpc argos.v1.AgentService.Session(stream argos.v1.AgentMessage) returns (stream argos.v1.ServerMessage)
+rpc argos.v1.AgentService.SendTransactions(argos.v1.TransactionBatch) returns (argos.v1.Ack)
+rpc argos.v1.AgentService.SendProfiles(argos.v1.ProfileBatch) returns (argos.v1.Ack)
+rpc argos.v1.AgentService.SendMetrics(argos.v1.MetricBatch) returns (argos.v1.Ack)
+rpc argos.v1.AgentService.SendStats(argos.v1.StatBatch) returns (argos.v1.Ack)
+rpc argos.v1.AgentService.SendActiveSnapshot(argos.v1.ActiveTransactionSnapshot) returns (argos.v1.Ack)

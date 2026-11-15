@@ -55,13 +55,15 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
 ./gradlew spotlessApply                           # Java 포맷·SPDX 헤더 자동 수정
 ./gradlew :agent:agent-dist:agentJar              # 에이전트 단일 jar → agent/agent-dist/build/libs/argos-agent-<버전>.jar
 ./gradlew :agent:agent-dist:check verifyAgentJar  # checkShading, checkMajorVersion(자체 52·셰이딩 ≤ 52), checkRelocatedStrings·checkOwnRelocatedLiterals(C-23), checkModuleIndex,
-                                                  # checkManifestVersion(Implementation-Version = 프로젝트 버전, T-BLD-010 릴리스 판정 fail-closed)
+                                                  # checkManifestVersion(Implementation-Version = 프로젝트 버전, T-BLD-010 릴리스 판정 fail-closed), checkJulBridge(JUL 참조 0),
+                                                  # checkThirdPartyNotices(O-L04: 비Apache 라이선스의 저작권·본문, Netty·gRPC·PerfMark 원 NOTICE. 원문은 agent/agent-dist/src/notices/)
 ./gradlew :agent:agent-testing:archTest           # Advice·패키지 경계·코드 규칙(T-AG-001~004, ADV-01~04, A-1~A-9, B-1~B-4, AGT-01~03, 10 §14 로그 인자 allowlist LOG-01).
                                                   # 규칙마다 위반 픽스처(src/archFixtures)가 실제로 잡혀야 통과. INFO 이상 로그의 문자열 인자는 src/archTest/resources/log-argument-allowlist.txt에 근거와 함께
 ./gradlew checkLicenses checkDevOnlyLicenses      # 라이선스 허용 목록(테스트 전용 예외: docs/licenses/dev-only.md)
 ./gradlew integrationTest                         # Testcontainers(Docker), 샘플 앱 shop-boot3 스모크 3변형·시드 센티널, 저장소 스키마·생성기·쿼리(실제 ClickHouse). check에 포함되지 않음
 ./gradlew integrationTest -Pqueries.profile=ci    # CI와 같다: 저장소 정합 T-ST-030~033·053을 생성기 1/100 프로파일로(12스레드 개발 머신에서 전체 약 7분)
-./gradlew :agent:agent-core:integrationTest       # T-ACC-11(tx_id 1,000만 건 충돌 0·tx_id >> 23 ±1ms·두 인스턴스·begin 경로 start_ts 일치)과 N-02 축소판 힙 예산(포크 JVM, 큐·사전 상한, io.argos.agent. ≤ 64MB). 약 1.5~2분
+./gradlew :agent:agent-core:integrationTest       # T-ACC-11(tx_id 1,000만 건 충돌 0·tx_id >> 23 ±1ms·두 인스턴스·begin 경로 start_ts 일치)과 N-02 축소판 힙 예산(포크 JVM, 큐·사전 상한, io.argos.agent. ≤ 64MB),
+                                                  # SessionFlowControlIntegrationTest(실제 grpc-netty 스택: isReady 백프레셔·메타데이터·SESSION_REQUIRED 같은 seq 재전송). 약 1.5~2분
 ./gradlew :agent:agent-testing:integrationTest -Pagent.attach.jdks=8,11,17,21,25 -Pagent.e2e=shop-boot2@8,shop-boot2@11,shop-boot2@17,shop-boot2@21,shop-boot3@17,shop-boot3@21,shop-boot3@25
                                                   # 에이전트 하네스(agent/agent-testing/README.md) 위의 부착(JDK별)·샘플 앱 종단 매트릭스와 FakeCollector
                                                   # (T-AG-005·010·040~045·050·053·060·070, T-BLD-006·010, T-NFR-30a premain 클래스 예산, C-27 플래그, JDK 25는 deny).
@@ -73,6 +75,13 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
                                                   # -Pagent.e2e에 WAR 조합(shop-war-javax@8·11·17·21, shop-war-jakarta@17·21·25)을 넣으면 독립 Tomcat(127.0.0.1)에서 WarAppAgentTest
                                                   # (조합당 약 30~50초, 기본에는 WAR 조합이 없어 skip). 예: -Pagent.e2e=shop-war-jakarta@21 --tests '*WarAppAgentTest'
                                                   # -Pagent.container=true는 컨테이너 모드 테스트 추가(Docker, JDK 이미지는 다이제스트 고정, -Pagent.container.image.<jdk>=<image>@sha256:<digest>로 교체)
+./gradlew :agent:agent-testing:integrationTest --tests '*transport*' -Pagent.jdk8u252=<JRE> -Pagent.jdk8u242=<JRE>
+                                                  # gRPC 전송(WO-11) 대 FakeCollector: T-AG-071·067, T-ACC-02a·06a, T-SEC-06·07a·08c, T-NFR-26a, C-74 증명(T-BLD-004a), C-75, T-BLD-011·011a(실행 시점 프록시 미사용),
+                                                  # 세션 반응(ConnectionTransportTest: 백오프당 TCP 접속·DNS 조회 1회, 해석 불가 주소 WARN 분당 1회, 영구 거부·REPLACED 뒤 연결·argos-io 해제, Ack.throttle).
+                                                  # 옛 JRE(AdoptOpenJDK 8u242-b08·8u252-b09.1, docs/poc/agent-poc.md 9.8)는 툴체인이 아니라 경로로 준다(없으면 skip, Windows는 %TEMP% 밖에 풀 것).
+                                                  # -Pagent.container=true면 POSIX token-file WARN(0644·0600)·Linux C-75·Linux T-NFR-26a 추가. 약 12~15분(ConnectionTransportTest 약 4~5분 포함)
+./gradlew :agent:agent-testing:fakeCollectorJar   # 독립 실행 FakeCollector(개발 전용, 벤치 --exporter grpc용) → agent/agent-testing/build/fake-collector/fake-collector.jar + lib/
+                                                  # java -jar <jar> --port 0 --ready-file F --token-file T [--tls --tls-dir D] [--summary S]. 계약 벡터는 src/main/resources/contract/argos-v1-vectors.json
 ./gradlew :test:agent:transport-poc:transportPocJars :test:agent:transport-poc:transportPocTest
                                                   # P-3 전송 비교 jar 9종·보고서, proto 테스트, 스모크(JDK 8·21). 알려진 발견(ADR-0005 P1·P3)은 단언하고 -Ptransport.poc.strict=true면 실패로 셈
 ./gradlew :test:agent:transport-poc:transportPocBench -Ptransport.poc.jdk8u242=<JRE> -Ptransport.poc.jdk8u252=<JRE>
@@ -90,6 +99,11 @@ test/storage/bench/bench-server.sh start          # 저장소 PoC 벤치용 단�
 ./gradlew :test:storage:queries:storageQueries -Pqueries.args="--url http://127.0.0.1:18123" -Pqueries.cold=none
                                                   # Q01~Q20 러너 → test/storage/queries/build/reports/storage-queries/bench/report.md
 ./gradlew securityTest                            # 보안 테스트 스위트. check에 포함되지 않음
+./gradlew :server:securityTest                    # 서버 SEC 스위트(T-SEC-40~49·55·56 서버 부분: 쿠키·세션 수명·CSRF·설정 토큰·비밀번호·헤더·CSP·레이트 리밋·에러 본문,
+                                                  # 실제 로그인 세션 권한 매트릭스, 미존재 사용자명 잠금(재기동·노드 간 유지). Testcontainers, 약 4분). 실측 표 server/build/reports/rate-limits.md·permission-matrix-session.md.
+                                                  # 웹 계층 스텁 매트릭스(Docker 없음)는 :server:contractTest → permission-matrix.md. 두 Gradle 실행이 같은 :server:securityTest를 동시에 돌리면 결과 파일이 깨진다
+java server/scripts/GeneratePasswordDenylist.java # 비밀번호 금지 목록 해시 재생성(개발 도구, SecLists 10k를 고정 커밋·SHA-256으로 내려받음, 출처 NOTICE)
+                                                  # → server/src/main/resources/security/password-denylist.sha256. 빌드·실행 시에는 아무것도 내려받지 않는다
 ./gradlew matrixTest -Pmatrix.combo=<id>          # 호환성 매트릭스 1개 조합(또는 -Pmatrix.group=<group>)을 로컬 실행(Docker·해당 JDK 필요). 전체 매트릭스는 신뢰 러너 전용.
                                                   # 라벨(ARGOS_RUNNER_LABELS=argos-matrix)·선택이 없으면 SKIPPED + WARNING 1줄
 ./gradlew :test:bench:benchTest -Pbench.machine-profile=<id>
@@ -102,6 +116,8 @@ test/bench/bench-run.sh --app shop-boot3 --jdk 21 --rounds 3 --exporter noop
                                                   # WO-02 P-2 설정 재현, C-80). 옛 키 argos.exporter는 없다(C-88). 둘 다 테스트 키라 개발(-SNAPSHOT) jar만 받는다(릴리스 jar는 거부)
 test/bench/bench-run.sh --smoke --startup --exporter drop --machine-profile <이름>
                                                   # 공유 머신에서 측정 체인만 확인(약 7분, 보고서는 항상 INVALID)
+test/bench/bench-run.sh ... --exporter grpc --collector HOST:PORT --agent-config server.tls=false,server.token-file=FILE
+                                                  # 전송 비용 포함(N-01·N-03 gRPC 재측정). 수집기는 fake-collector.jar 또는 서버, 예시는 test/bench/README.md
 test/bench/bench.sh <load|startup|report|publish> ...   # 벤치 하네스 직접 실행(k6는 test/bench/fetch-k6.sh). 사용법 test/bench/README.md
 ./gradlew traceabilityReport                      # 요구 → 테스트 ID → 테스트 → 마지막 결과 → build/reports/traceability.md·.json(테스트 실행 없음, test/README.md 6장)
 ./gradlew :sample-apps:<app>:sampleSmoke          # 샘플 앱을 에이전트 없이 기동해 엔드포인트 카탈로그 검증(전 변형, check 미포함).
@@ -125,6 +141,7 @@ java -jar sample-apps/load/build/sample-app/load.jar --target-url http://127.0.0
 bash test/seed/seed-traffic.sh --start --repeat 10   # PII·XSS 시드 트래픽(센티널 ARGOS_SEED). 실행 중인 앱은 --url <URL>
 bash test/agent/check-shading.sh agent/agent-dist/build/libs/argos-agent-0.0.0-SNAPSHOT.jar
 bash .github/scripts/check-workflows.sh           # 워크플로 정책(pull_request_target·self-hosted 금지, SHA 고정)
+bash .github/scripts/check-proto.sh [--against-git <base>|--against <dir>]   # proto buf lint, 인자를 주면 buf breaking(고정 다이제스트 컨테이너, --network none, PR lint 잡)
 bash .github/scripts/check-file-modes.sh          # git 인덱스에서 gradlew·*.sh가 100755인지(lint 잡)
 REQUIRE_DOCKER=1 bash .github/scripts/test/run-all.sh   # CI 스크립트 테스트(DCO·changelog·워크플로 정책 등)
 bash .github/scripts/run-gitleaks.sh dir          # 비밀 스캔(Docker)

@@ -84,17 +84,7 @@ public class PostgresMigrationPhase implements StartupPhase, Ordered {
     }
     try (owner) {
       MigrateResult result = flyway(owner).migrate();
-      List<Applied> applied = new ArrayList<>();
-      for (MigrateOutput m : result.migrations) {
-        applied.add(new Applied(m.version, m.description, m.executionTime));
-      }
-      lastResult =
-          new Result(
-              result.targetSchemaVersion == null
-                  ? result.initialSchemaVersion
-                  : result.targetSchemaVersion,
-              result.migrationsExecuted,
-              applied);
+      lastResult = result(result);
       LOG.info(
           "PostgreSQL schema {} at version {} ({} migrations applied in {} ms, owner {})",
           SCHEMA,
@@ -136,6 +126,35 @@ public class PostgresMigrationPhase implements StartupPhase, Ordered {
         .skipDefaultCallbacks(true)
         .loggers("slf4j")
         .load();
+  }
+
+  /**
+   * Migrates with the settings of {@link #flyway} up to and including {@code target} only: the
+   * schema of an installation of that earlier version, which the upgrade-path tests (03 §3.2,
+   * T-ST-052) fill with rows before the newer scripts run. The start sequence never stops early.
+   *
+   * @param target a Flyway version ({@code 1} for V001)
+   */
+  static Result migrateTo(DataSource owner, String target) {
+    return result(
+        Flyway.configure(PostgresMigrationPhase.class.getClassLoader())
+            .configuration(flyway(owner).getConfiguration())
+            .target(target)
+            .load()
+            .migrate());
+  }
+
+  private static Result result(MigrateResult result) {
+    List<Applied> applied = new ArrayList<>();
+    for (MigrateOutput m : result.migrations) {
+      applied.add(new Applied(m.version, m.description, m.executionTime));
+    }
+    return new Result(
+        result.targetSchemaVersion == null
+            ? result.initialSchemaVersion
+            : result.targetSchemaVersion,
+        result.migrationsExecuted,
+        applied);
   }
 
   /**

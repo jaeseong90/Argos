@@ -29,9 +29,14 @@ Verification: `./gradlew :agent:agent-dist:verifyAgentJar` (also part of `check`
 | `checkOwnRelocatedLiterals` | T-BLD-005 | no string constant of the agent's own relocated classes (`inst/io/argos/agent/`, outside `shaded/`) lies in the relocated namespace: Shadow rewrites literals such as `"net.bytebuddy."` too, so build them at run time (C-23, ADR-0005 transport); report `build/reports/agent-jar/own-relocated-literals.txt` |
 | `checkModuleIndex` | C-25 | every class in `inst/META-INF/services/io.argos.agent.instrumentation.api.InstrumentationModule` exists in the jar |
 | `checkLicenses` | T-BLD-007 | licenses of the bundled dependencies (also feeds the license column of `argos-deps.txt` and `THIRD-PARTY-NOTICES`) |
+| `checkThirdPartyNotices` | T-BLD-003 | `META-INF/THIRD-PARTY-NOTICES` names every module of `argos-deps.txt` with its version and license, carries the copyright line and license text of every module whose license is not Apache-2.0 (protobuf-java, BSD-3-Clause), and the original NOTICE of ByteBuddy, Netty, gRPC and PerfMark (O-L04); report `build/reports/agent-jar/third-party-notices.txt` |
 
 THIRD-PARTY-NOTICES carries each bundled module's original `META-INF/NOTICE` text and the
 licenses of code embedded in its jar (`META-INF/licenses/*`, e.g. ByteBuddy's ASM, BSD-3-Clause).
+Texts that the upstream jars do not carry (the protobuf-java license, the Netty, gRPC and PerfMark
+NOTICE files) are verbatim copies from the release tags in [`src/notices/`](src/notices/README.md);
+`generateThirdPartyNotices` fails when a bundled version no longer matches the version a text was
+copied for.
 
 The script can also be run directly: `bash test/agent/check-shading.sh agent/agent-dist/build/libs/argos-agent-<version>.jar`
 (the expected `Implementation-Version` is then the `<version>` of the file name, or `ARGOS_EXPECTED_VERSION`).

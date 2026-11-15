@@ -48,12 +48,25 @@ every transaction is encoded and dropped); `drop` is the WO-02 P-2 setting
 (`-Dargos.test.exporter=drop`: recorded and dropped without encoding; use it to reproduce the WO-02
 numbers). Both are values of the test-only key `argos.test.exporter` (the WO-02 key
 `argos.exporter` is gone, ADR-0009 C-88), so a release build of the agent is refused: measure the
-development (`-SNAPSHOT`) build of the same commit. Until WO-11 adds the gRPC encoder, `noop`
-encodes with the JSONL test encoder on `argos-sender` and `drop` skips that step; C-80 treats both
-as the instrumentation cost; `grpc` measures the transport and is refused until
-the agent jar contains the gRPC exporter (WO-11), then it needs `--collector host:port`. The harness
-checks the agent's start banner of every run: an agent that started with another exporter makes
-the set INVALID.
+development (`-SNAPSHOT`) build of the same commit. `noop` encodes with the sender's protobuf
+encoder on `argos-sender` (WO-11) and `drop` skips that step, so their numbers differ by the
+encoding cost. `grpc` measures the transport: the agent's default exporter sends to
+`--collector host:port` (required; a jar without the gRPC exporter is refused). The collector's TLS
+and token settings come from `--agent-config`. The standalone FakeCollector
+(`agent/agent-testing/README.md`, "Standalone collector") is enough for the agent's cost:
+
+```
+./gradlew :agent:agent-testing:fakeCollectorJar
+java -jar agent/agent-testing/build/fake-collector/fake-collector.jar --port 0 \
+    --ready-file build/fc.ready --token-file build/fc.token --report-every 30 &
+test/bench/bench-run.sh --app shop-boot3 --jdk 21 --rounds 3 --exporter grpc \
+    --collector "$(cat build/fc.ready)" \
+    --agent-config "server.tls=false,server.token-file=$PWD/build/fc.token"
+```
+
+Keep the collector on another machine or core set for a verdict run (18 §7.3): on the same CPUs it
+is part of the measured load. The harness checks the agent's start banner of every run: an agent
+that started with another exporter makes the set INVALID.
 
 ## Report (18 §7.6, §7.7)
 

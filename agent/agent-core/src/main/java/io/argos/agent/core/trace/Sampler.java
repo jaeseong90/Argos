@@ -122,6 +122,25 @@ public final class Sampler {
     return normalRate;
   }
 
+  /**
+   * This sampler with the normal rate lowered to {@code maxRate} (the server's {@code
+   * Throttle.profile_normal_rate}, 11 §6, A-3): the rate never rises above this sampler's own rate,
+   * thresholds stay. Returns this sampler when {@code maxRate} does not lower the rate.
+   */
+  public Sampler withMaxNormalRate(double maxRate) {
+    if (Double.isNaN(maxRate) || maxRate >= normalRate) {
+      return this;
+    }
+    return new Sampler(this, Math.max(0.0, maxRate));
+  }
+
+  private Sampler(Sampler base, double normalRate) {
+    this.defaultSlowNanos = base.defaultSlowNanos;
+    this.serviceSlowNanos = base.serviceSlowNanos;
+    this.normalRate = normalRate;
+    this.random = base.random;
+  }
+
   private static final class ThreadLocalSource implements RandomSource {
     @Override
     public double nextDouble() {

@@ -169,6 +169,23 @@ jobs:
         run: ./gradlew spotlessCheck
       - name: SPDX headers
         run: bash test/lint/check-spdx.sh
+      - name: Protocol (buf lint, buf breaking against the pull request base)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$BASE_SHA" ]; then
+            env -u GH_TOKEN bash .github/scripts/check-proto.sh
+            exit 0
+          fi
+          # The checkout is shallow and keeps no credentials: fetch the base commit with the
+          # read-only job token, passed through the environment (not argv) and masked in the log.
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
+          echo "::add-mask::${auth}"
+          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
+            GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${auth}" \
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          env -u GH_TOKEN bash .github/scripts/check-proto.sh --against-git "$BASE_SHA"
       - name: Install UI dependencies
         run: pnpm -C ui install --frozen-lockfile
       - name: ESLint

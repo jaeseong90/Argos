@@ -1,0 +1,308 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// argos.v1 data batches (docs/11-protocol-design.md §4.3, §6). Each batch is one unary RPC of
+// AgentService with a BatchHeader; the deduplication key is (instance_id, agent_epoch, batch kind,
+// seq) (C-3, DSN-11-02).
+//
+// Differences from 11 §4.3 (each one is listed with its decision in proto/README.md):
+//   - imports session.proto for Ack.throttle (WO-02 D-11);
+//   - TransactionRecord.flags = 37 (ADR-0007 C-69);
+//   - MetricSample.delta = 4 (C-15, DSN-13-04);
+//   - SqlStat: dbc_wait_sum_us = 9 removed and reserved (ADR-0007 C-68); buckets = 10,
+//     optional sum_exec_us = 11, optional sum_fetch_us = 12 added; ExtStat.buckets = 9 added
+//     (DSN-13-03, 13 §18, ADR-0010 C-101);
+//   - TransactionProfile.kind = 6 added (ADR-0010 C-138).
+//
+// Missing values (C-4, D-23): only optional fields express "not measured" (cpu_time_us,
+// alloc_bytes, SqlStat.sum_exec_us, sum_fetch_us); every other numeric 0 is the value 0. Time:
+// wall clock *_ms (agent clock, D-02), durations *_us or *_ms; the server stores microseconds as
+// rounded milliseconds.
+//
+// Latency buckets (DSN-13-03, 13 §2): 15 counts per statistic. Bucket i counts executions whose
+// elapsed time in milliseconds is <= LATENCY_BOUNDS_MS[i] (and above the previous bound), with
+// LATENCY_BOUNDS_MS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 30000]; the
+// 15th bucket counts everything above 30000 ms. Shared constants: io.argos.proto.LatencyBuckets.
+
+syntax = "proto3";
+
+package argos.v1;
+
+import "argos/v1/common.proto";
+import "argos/v1/session.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "DataProto";
+option java_package = "io.argos.proto.v1";
+
+// Common header of every batch.
+message BatchHeader {
+  uint32 instance_id = 1;
+  uint64 agent_epoch = 2;
+  // Independent per batch kind, starts at 1 and increases monotonically for the process lifetime
+  // (unrelated to session re-establishment).
+  uint64 seq = 3;
+  // Agent clock. Ingest lag is measured from the server receive time (N-15).
+  int64 sent_at_ms = 4;
+}
+
+message Ack {
+  // Last seq of this batch kind the server wrote to its WAL.
+  uint64 last_seq = 1;
+  AckStatus status = 2;
+  // Items dropped by a quota (ACK_PARTIAL_DROP) or by a full WAL (ACK_OK with all items).
+  uint32 dropped_items = 3;
+  Throttle throttle = 4;
+}
+
+enum AckStatus {
+  ACK_STATUS_UNSPECIFIED = 0;
+  ACK_OK = 1;
+  ACK_DUPLICATE = 2;
+  ACK_PARTIAL_DROP = 3;
+}
+
+// records <= 5,000.
+message TransactionBatch {
+  BatchHeader header = 1;
+  repeated TransactionRecord records = 2;
+}
+
+// One XLog point (ClickHouse xlog row).
+message TransactionRecord {
+  // DSN-02-09 (time prefix: start = tx_id >> 23, D-11).
+  uint64 tx_id = 1;
+  // 16 bytes. The agent always fills it.
+  bytes trace_id = 2;
+  uint64 span_id = 3;
+  uint64 parent_span_id = 4;
+  // Joined an incoming traceparent.
+  bool incoming_trace = 5;
+  // From the tracestate argos entry; 0 when absent. Not trusted (service map only, 11 §11).
+  uint32 caller_app_id = 6;
+  TransactionKind kind = 7;
+  // SERVICE dictionary.
+  uint64 service_id = 8;
+  // Agent clock (D-02); the time prefix of tx_id (ADR-0010 C-121). The server guards it (D-15).
+  int64 start_ts_ms = 9;
+  // D-01. Stored as ms.
+  uint64 elapsed_us = 10;
+  // <= 16 B.
+  string http_method = 11;
+  // Final status (D-21). BATCH: 0.
+  uint32 http_status = 12;
+  // Path only (query string by mode). <= 2 KiB.
+  string url_path = 13;
+  // D-10.
+  bool error = 14;
+  // CLASS dictionary.
+  uint64 error_class_id = 15;
+  // Masked (SEC-36), <= 1 KiB. Input of the server's error fingerprint (F-S19).
+  string error_message = 16;
+  // FRAME dictionary (top application frame).
+  uint64 error_top_frame_id = 17;
+  // 4 or 16 bytes. Empty when IP_OFF; masked by the agent when IP_MASKED.
+  bytes remote_ip = 18;
+  // <= 128 B. Empty when OFF; 16 hex characters when HASHED.
+  string user_id = 19;
+  uint32 sql_count = 20;
+  uint32 sql_time_ms = 21;
+  uint32 ext_count = 22;
+  uint32 ext_time_ms = 23;
+  // Connection acquisition wait total (F-A03).
+  uint32 dbc_wait_ms = 24;
+  // Absent when not measured (D-23): virtual threads, thread switch.
+  optional int64 cpu_time_us = 25;
+  // Absent when not measured (D-23).
+  optional uint64 alloc_bytes = 26;
+  // THREAD dictionary (normalized).
+  uint64 thread_name_id = 27;
+  // Equals bit 1 of flags (C-69).
+  bool virtual_thread = 28;
+  // The profile batch carries steps of this transaction.
+  bool profile_captured = 29;
+  // A-10. Distinct, <= 64.
+  repeated uint64 sql_ids = 30;
+  // F-A28.
+  uint32 dispatch_count = 31;
+  // F-A34.
+  bool streaming = 32;
+  bool timed_out = 33;
+  // Whitelisted headers, <= 10 (KeyValue caps).
+  repeated KeyValue headers = 34;
+  // Configured request id header value, <= 128 B.
+  string request_id = 35;
+  // APP_VERSION dictionary. 0: use the instance metadata value.
+  uint64 app_version_id = 36;
+  // ADR-0007 C-69 bits: 1 = virtual thread, 2 = leaked, 4 = summarized; other bits reserved (0).
+  uint32 flags = 37;
+}
+
+// Total steps of all profiles <= 50,000.
+message ProfileBatch {
+  BatchHeader header = 1;
+  repeated TransactionProfile profiles = 2;
+}
+
+message TransactionProfile {
+  uint64 tx_id = 1;
+  int64 start_ts_ms = 2;
+  // <= 1,000 per transaction.
+  repeated ProfileStep steps = 3;
+  // More steps than the cap (1,000): the tail is summarized.
+  bool truncated = 4;
+  // Steps that actually happened.
+  uint32 total_steps = 5;
+  // Additive (ADR-0010 C-138): the transaction's kind (= TransactionRecord.kind), the source of
+  // profile_step.kind; filled by the agent.
+  TransactionKind kind = 6;
+}
+
+message ProfileStep {
+  // Root steps have parent_seq = 0; seq >= 1.
+  uint32 seq = 1;
+  uint32 parent_seq = 2;
+  StepType type = 3;
+  // From the transaction start.
+  uint32 start_offset_us = 4;
+  // SQL: exec + fetch.
+  uint32 elapsed_us = 5;
+  // SQL only.
+  uint32 fetch_us = 6;
+  // SQL_TEXT / HOST / METHOD_NAME / CLASS / POOL dictionary.
+  uint64 name_id = 7;
+  // SQL, DBC, COMMIT: DB_TARGET; HTTP_CALL: HOST; otherwise 0.
+  uint64 target_id = 8;
+  // SQL fetched rows, HTTP response bytes (<= u32).
+  uint32 rows = 9;
+  // HTTP status code.
+  uint32 status = 10;
+  FailureKind failure = 11;
+  bool error = 12;
+  // Bind parameters (mode applied), URL path, ... <= 4 KiB. Never a raw stack.
+  string detail = 13;
+  // FRAME dictionary. ERROR <= 30, STACK <= 64.
+  repeated uint64 frame_ids = 14;
+  // SQL executeBatch item count.
+  uint32 batch_size = 15;
+  // Folded consecutive repeats (same name_id and type). 0 or 1: a single step.
+  uint32 repeat_count = 16;
+}
+
+message MetricBatch {
+  BatchHeader header = 1;
+  // Series dictionary of this batch, <= 500.
+  repeated MetricSeries series = 2;
+  repeated MetricSample samples = 3;
+}
+
+// name: OpenMetrics "jvm_memory_used_bytes{area=\"heap\"}", <= 256 B.
+message MetricSeries {
+  uint32 index = 1;
+  string name = 2;
+  MetricKind kind = 3;
+}
+
+message MetricSample {
+  uint32 series_index = 1;
+  // On the 5 s grid.
+  int64 ts_ms = 2;
+  // Gauge: value; counter: cumulative value.
+  double value = 3;
+  // C-15 (DSN-13-04): counter: reset-corrected increase since the previous sample; gauge: 0.
+  double delta = 4;
+}
+
+message StatBatch {
+  BatchHeader header = 1;
+  int64 window_start_ms = 2;
+  // 10.
+  uint32 window_len_s = 3;
+  // <= 5,000.
+  repeated SqlStat sql = 4;
+  // <= 1,000.
+  repeated ExtStat ext = 5;
+  // Window counters (ignored transactions, orphan steps, ...; D-19, D-20).
+  repeated CounterDelta counters = 6;
+}
+
+// Complete SQL statistics of one (sql_id, db_id, kind) key in one window (D-12).
+message SqlStat {
+  // ADR-0007 C-68: connection wait is a pool-level metric (jdbc_pool_wait_*) and xlog.dbc_wait_ms.
+  reserved 9;
+  reserved "dbc_wait_sum_us";
+
+  uint64 sql_id = 1;
+  uint64 db_id = 2;
+  TransactionKind kind = 3;
+  uint32 count = 4;
+  uint32 error_count = 5;
+  // exec + fetch.
+  uint64 sum_us = 6;
+  uint32 max_us = 7;
+  uint64 fetch_rows = 8;
+  // DSN-13-03: exactly 15 counts (bounds in the file comment, io.argos.proto.LatencyBuckets).
+  repeated uint32 buckets = 10;
+  // Additive optional (13 §18, ADR-0010 C-101, 11 §12): execute time total
+  // (sum_us = sum_exec_us + sum_fetch_us when both are set). Absent: not reported (C-4); a set 0 is
+  // the value 0.
+  optional uint64 sum_exec_us = 11;
+  // Additive optional (13 §18, ADR-0010 C-101, 11 §12): ResultSet fetch time total. Absent: not
+  // reported (C-4); a set 0 is the value 0.
+  optional uint64 sum_fetch_us = 12;
+}
+
+// Complete outgoing-call statistics of one (host_id, kind) key in one window.
+message ExtStat {
+  uint64 host_id = 1;
+  TransactionKind kind = 2;
+  uint32 count = 3;
+  // 5xx and other exceptions.
+  uint32 error_count = 4;
+  uint32 timeout_count = 5;
+  uint32 connect_fail_count = 6;
+  uint64 sum_us = 7;
+  uint32 max_us = 8;
+  // DSN-13-03: exactly 15 counts (bounds in the file comment, io.argos.proto.LatencyBuckets).
+  repeated uint32 buckets = 9;
+}
+
+// name: "transactions_ignored_total{reason=\"health\"}", <= 256 B.
+message CounterDelta {
+  string name = 1;
+  uint64 delta = 2;
+}
+
+message ActiveTransactionSnapshot {
+  BatchHeader header = 1;
+  int64 snapshot_ts_ms = 2;
+  uint32 total_active = 3;
+  // Elapsed time descending, <= 500.
+  repeated ActiveTransaction items = 4;
+  bool truncated = 5;
+}
+
+message ActiveTransaction {
+  uint64 tx_id = 1;
+  uint64 service_id = 2;
+  TransactionKind kind = 3;
+  int64 start_ts_ms = 4;
+  uint32 elapsed_ms = 5;
+  ActiveState state = 6;
+  // SQL: sql_id; HTTP: host_id; DBC_WAIT: DB_TARGET; METHOD: 0.
+  uint64 state_name_id = 7;
+  uint64 thread_name_id = 8;
+  int64 thread_id = 9;
+  bool virtual_thread = 10;
+  // Mode applied (as TransactionRecord).
+  string user_id = 11;
+  bytes remote_ip = 12;
+}
+
+enum ActiveState {
+  ACTIVE_STATE_UNSPECIFIED = 0;
+  IN_METHOD = 1;
+  IN_SQL = 2;
+  IN_DBC_WAIT = 3;
+  IN_HTTP = 4;
+  IN_ASYNC = 5;
+}

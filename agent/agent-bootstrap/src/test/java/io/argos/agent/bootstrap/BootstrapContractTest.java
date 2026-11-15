@@ -81,8 +81,10 @@ class BootstrapContractTest {
                 10,
                 "APP_VERSION",
                 11,
+                "POOL",
+                12,
                 "COUNT",
-                12));
+                13));
     assertThat(constants(Kind.class)).isEqualTo(map("HTTP", 1, "BATCH", 2, "MESSAGE", 3));
     assertThat(constants(ModuleHealth.class))
         .isEqualTo(

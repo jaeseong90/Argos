@@ -323,3 +323,153 @@ abstract class CheckModuleIndex : DefaultTask() {
     logger.info("checkModuleIndex: ${modules.size} module(s) in ${file.name}")
   }
 }
+
+/**
+ * The parts of a class file that checkJulBridge reads: Utf8 constants, member references
+ * (`Fieldref`, `Methodref`, `InterfaceMethodref` as owner, name, descriptor) and the declared fields
+ * and methods (name + descriptor). No bytecode library (build-logic keeps its classpath small).
+ */
+internal class ClassMembers(
+  val name: String,
+  val utf8: List<String>,
+  val memberRefs: List<Triple<String, String, String>>,
+  val declared: Set<String>,
+) {
+  companion object {
+    fun read(bytes: ByteArray): ClassMembers {
+      val input = java.io.DataInputStream(java.io.ByteArrayInputStream(bytes))
+      if (input.readInt() != 0xCAFEBABE.toInt()) throw java.io.IOException("not a class file")
+      input.readUnsignedShort()
+      input.readUnsignedShort()
+      val count = input.readUnsignedShort()
+      val utf8 = arrayOfNulls<String>(count)
+      val classes = IntArray(count)
+      val nameAndTypes = arrayOfNulls<IntArray>(count)
+      val refs = mutableListOf<IntArray>()
+      var index = 1
+      while (index < count) {
+        when (val tag = input.readUnsignedByte()) {
+          1 -> utf8[index] = input.readUTF()
+          3, 4 -> input.skipBytes(4)
+          5, 6 -> {
+            input.skipBytes(8)
+            index++
+          }
+          7 -> classes[index] = input.readUnsignedShort()
+          8, 16, 19, 20 -> input.skipBytes(2)
+          9, 10, 11 -> refs += intArrayOf(input.readUnsignedShort(), input.readUnsignedShort())
+          12 -> nameAndTypes[index] = intArrayOf(input.readUnsignedShort(), input.readUnsignedShort())
+          15 -> input.skipBytes(3)
+          17, 18 -> input.skipBytes(4)
+          else -> throw java.io.IOException("unknown constant pool tag $tag")
+        }
+        index++
+      }
+      input.readUnsignedShort() // access
+      val thisClass = utf8.getOrNull(classes[input.readUnsignedShort()]) ?: ""
+      input.readUnsignedShort() // super
+      input.skipBytes(2 * input.readUnsignedShort())
+      val declared = mutableSetOf<String>()
+      repeat(2) { // fields, then methods
+        repeat(input.readUnsignedShort()) {
+          input.readUnsignedShort()
+          val memberName = utf8[input.readUnsignedShort()]
+          val descriptor = utf8[input.readUnsignedShort()]
+          declared += "$memberName$descriptor"
+          repeat(input.readUnsignedShort()) {
+            input.readUnsignedShort()
+            input.skipBytes(input.readInt())
+          }
+        }
+      }
+      val memberRefs =
+        refs.mapNotNull { (classIndex, nameAndType) ->
+          val owner = utf8.getOrNull(classes.getOrElse(classIndex) { 0 }) ?: return@mapNotNull null
+          val nat = nameAndTypes.getOrNull(nameAndType) ?: return@mapNotNull null
+          Triple(owner, utf8[nat[0]] ?: "", utf8[nat[1]] ?: "")
+        }
+      return ClassMembers(thisClass, utf8.filterNotNull(), memberRefs, declared)
+    }
+  }
+}
+
+/**
+ * checkJulBridge (ADR-0005 decision 4, AGT-02, F-A35): the shaded libraries' `java.util.logging`
+ * goes to the agent log through [bridge] ([AgentShading.JUL_LOGGER_BRIDGE]), which Shadow
+ * substitutes for `java.util.logging.Logger`. Fails when a class of the jar still references one of
+ * [forbidden] (`java/util/logging/Logger`, `java/util/logging/LogManager`: as a class, in a
+ * descriptor or as a dotted string), when the bridge is missing although something refers to it,
+ * or when a class calls a bridge member the bridge does not declare (a library update that uses
+ * another `Logger` method would otherwise fail at run time with `NoSuchMethodError`). Writes the
+ * referring classes and the members they use to [reportFile].
+ */
+abstract class CheckJulBridge : DefaultTask() {
+
+  @get:InputFile
+  @get:PathSensitive(PathSensitivity.NONE)
+  abstract val jar: RegularFileProperty
+
+  /** Binary name of the bridge class (dots). */
+  @get:Input abstract val bridge: Property<String>
+
+  /** Internal names (slashes) of the JDK classes nothing may reference. */
+  @get:Input abstract val forbidden: ListProperty<String>
+
+  @get:OutputFile abstract val reportFile: RegularFileProperty
+
+  init {
+    group = "verification"
+    description =
+      "Checks that no class references java.util.logging.Logger/LogManager and that every bridge call exists (ADR-0005)."
+  }
+
+  @TaskAction
+  fun check() {
+    val file = jar.get().asFile
+    val bridgeInternal = bridge.get().replace('.', '/')
+    val bridgeEntry = "inst/$bridgeInternal.classdata"
+    val problems = sortedSetOf<String>()
+    val users = sortedMapOf<String, MutableSet<String>>()
+    var bridgeMembers: Set<String>? = null
+    val classes = mutableListOf<Pair<String, ClassMembers>>()
+    for ((entry, bytes) in ClassFiles.classEntries(file)) {
+      if (ClassFiles.majorVersion(bytes) == null) continue
+      val members = ClassMembers.read(bytes)
+      classes += entry to members
+      if (entry == bridgeEntry) bridgeMembers = members.declared
+      for (value in members.utf8) {
+        for (name in forbidden.get()) {
+          if (value.contains(name) || value.contains(name.replace('/', '.'))) {
+            problems += "$entry references ${name.replace('/', '.')} ($value)"
+          }
+        }
+      }
+    }
+    for ((entry, members) in classes) {
+      for ((owner, memberName, descriptor) in members.memberRefs) {
+        if (owner != bridgeInternal) continue
+        users.getOrPut(entry) { sortedSetOf() } += "$memberName$descriptor"
+        val declared = bridgeMembers
+        if (declared == null) {
+          problems += "$entry uses $memberName$descriptor but $bridgeEntry is missing"
+        } else if ("$memberName$descriptor" !in declared) {
+          problems += "$entry uses $memberName$descriptor, which ${bridge.get()} does not declare"
+        }
+      }
+    }
+    reportFile.get().asFile.apply { parentFile.mkdirs() }
+      .writeText(
+        "# checkJulBridge for ${file.name}: ${users.size} class(es) log through ${bridge.get()}\n" +
+          users.entries.joinToString("") { (entry, used) -> "$entry\n" + used.joinToString("") { "  $it\n" } } +
+          problems.joinToString("") { "PROBLEM $it\n" },
+        Charsets.UTF_8,
+      )
+    if (problems.isNotEmpty()) {
+      throw GradleException(
+        "checkJulBridge: java.util.logging is not fully redirected to ${bridge.get()} (ADR-0005 " +
+          "decision 4, AGT-02):\n  " + problems.joinToString("\n  ")
+      )
+    }
+    logger.info("checkJulBridge: ${users.size} class(es) of ${file.name} use ${bridge.get()}")
+  }
+}

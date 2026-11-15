@@ -50,7 +50,9 @@ public final class PremainClassBudget {
           "io.argos.agent.shaded.com.google.rpc.",
           "io.argos.agent.shaded.com.google.type.",
           "io.argos.agent.shaded.com.google.longrunning.",
-          "io.argos.agent.shaded.com.google.api.");
+          "io.argos.agent.shaded.com.google.api.",
+          // The argos.v1 protocol classes of :proto, relocated in the agent jar (ADR-0010 C-104).
+          "io.argos.agent.shaded.io.argos.proto.");
 
   static final String HEADER =
       "# Premain class budget (ADR-0009 C-79, N-30): classes the agent class loader defines on the"

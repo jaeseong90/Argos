@@ -6,8 +6,10 @@
 //   main             Spring MVC (embedded Tomcat), Actuator + Micrometer Prometheus, JDBC (HikariCP),
 //                    Bean Validation, Log4j 2 (JSON template layout), Flyway + PostgreSQL driver,
 //                    ClickHouse client-v2
+//                    + (WO-24) Spring Security, Caffeine, springdoc WebMVC API (runtime spec), Bucket4j
 //   testFixtures     ServerTestEnvironment: PostgreSQL 16 and ClickHouse in Testcontainers (pinned
-//                    images, C-11 roles, generated passwords); reused by WO-21, WO-23 and WO-24
+//                    images, C-11 roles, generated passwords); reused by WO-21, WO-23 and WO-24.
+//                    testing.auth (WO-24): ApiTestClient (cookie jar, CSRF, Origin) and TestUsers
 //   integrationTest  real PostgreSQL and ClickHouse only (Testcontainers), plus the storage
 //                    generator for the 1/100 data of T-ST-052 path 2 and T-SV-002
 // test/storage/* projects are development-only: they appear in testFixtures and test suites, never
@@ -37,12 +39,27 @@ dependencies {
   runtimeOnly(libs.flyway.database.postgresql)
   implementation(libs.postgresql)
   implementation(libs.clickhouse.client)
+  // WO-24: authentication, sessions, RBAC and rate limits (12 §7.2-7.4, 16 §7). Spring Security runs
+  // stateless (io.argos.server.web.security.SecurityConfig); JWT signing uses the JDK's Ed25519
+  // (16 §15 #11), no JOSE library.
+  implementation(libs.server.starter.security)
+  implementation(libs.server.caffeine)
+  implementation(libs.server.springdoc.webmvc.api)
+  implementation(libs.server.bucket4j)
 
   testFixturesImplementation(platform(libs.spring.boot.bom))
   testFixturesApi(project(":test:storage:clickhouse-support"))
   testFixturesApi(libs.testcontainers.core)
   testFixturesApi(libs.testcontainers.postgresql)
   testFixturesRuntimeOnly(libs.postgresql)
+  // testing.auth (WO-24): JSON responses of ApiTestClient, bcrypt hashes of TestUsers, the server
+  // start of ArgosTestServer (SpringApplication). No new artifacts: all are on the runtime classpath.
+  testFixturesApi(libs.server.jackson.databind)
+  testFixturesApi(libs.server.starter.webmvc)
+  testFixturesImplementation(libs.server.security.crypto)
+  // io.argos.servertest.security (WO-24): the permission-matrix generator and the test-only header
+  // authentication use the Spring Security types of ArgosAuthentication. No new artifacts.
+  testFixturesImplementation(libs.server.starter.security)
 }
 
 testing {
@@ -70,6 +87,11 @@ testing {
       }
     }
     named<JvmTestSuite>("securityTest") {
+      dependencies { implementation(testFixtures(project())) }
+    }
+    named<JvmTestSuite>("contractTest") {
+      // The permission-matrix generator (T-SEC-49, T-API-010) and ApiTestClient. The contract suite
+      // starts no container: it is part of check, which needs no Docker.
       dependencies { implementation(testFixtures(project())) }
     }
   }

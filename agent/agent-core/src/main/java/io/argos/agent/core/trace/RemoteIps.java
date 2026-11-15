@@ -53,6 +53,42 @@ public final class RemoteIps {
         + "::";
   }
 
+  /**
+   * The bytes of an address literal for {@code TransactionRecord.remote_ip} (11 §4.3): 4 for IPv4,
+   * 16 for IPv6 (brackets and a zone id are ignored), null for anything else. Never resolves a name
+   * (no DNS, DSN-02-22).
+   */
+  public static byte[] bytes(String address) {
+    if (address == null) {
+      return null;
+    }
+    String value = address.trim();
+    if (value.startsWith("[") && value.endsWith("]")) {
+      value = value.substring(1, value.length() - 1);
+    }
+    int zone = value.indexOf('%');
+    if (zone >= 0) {
+      value = value.substring(0, zone);
+    }
+    if (value.indexOf(':') < 0) {
+      int[] v4 = parseIpv4(value);
+      if (v4 == null) {
+        return null;
+      }
+      return new byte[] {(byte) v4[0], (byte) v4[1], (byte) v4[2], (byte) v4[3]};
+    }
+    int[] groups = parseIpv6(value);
+    if (groups == null) {
+      return null;
+    }
+    byte[] out = new byte[16];
+    for (int i = 0; i < 8; i++) {
+      out[2 * i] = (byte) (groups[i] >> 8);
+      out[2 * i + 1] = (byte) groups[i];
+    }
+    return out;
+  }
+
   static int[] parseIpv4(String value) {
     String[] parts = value.split("\\.", -1);
     if (parts.length != 4) {

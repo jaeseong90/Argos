@@ -1,0 +1,187 @@
+{
+  "description": "argos.v1 contract vectors (docs/11-protocol-design.md §16): fixed inputs and expected outputs for the session order (§3, §5), batch deduplication and acks (§6), clock arithmetic (§9) and status codes and trailers (§5, §10). The agent test harness drives its FakeCollector with them (io.argos.agent.testing.contract.ProtocolContractTest over gRPC, ClockEstimatorTest and DeduplicatorTest without network). A status_codes entry with a \"fault\" field is a FakeCollector fault injection (FaultInjector) only, not a server replay: the answer it pins is the FakeCollector's for that injected state. The server's ingest tests (WO-21, WO-22) can replay the session, dedup and clock sections (a \"fault\" step there names the state the replaying side sets up first) and the status_codes entries without a \"fault\" field. Numbers are milliseconds; codes are gRPC status code names; kinds are AgentService data RPCs; expected_data_after is the answer to a data call with the closed session's token and ids: code required, description and trailers optional.",
+  "spdx": "SPDX-License-Identifier: Apache-2.0",
+  "protocol_version": 1,
+  "metadata": {
+    "authorization": "authorization: Bearer argos_<base64url>",
+    "instance_id": "argos-instance-id",
+    "session_id": "argos-session-id",
+    "trailer_retry_after_ms": "argos-retry-after-ms",
+    "trailer_reject_reason": "argos-reject-reason",
+    "session_required_description": "SESSION_REQUIRED"
+  },
+  "interpretations": [
+    "§6 window: the 1,000 most recently written seqs per (instance_id, agent_epoch, kind); a seq that left the window is written again.",
+    "§6 Ack.last_seq is the seq most recently written for (instance_id, agent_epoch, kind) (11 §4.3): the batch's own seq on ACK_OK (12 §3.2 Ack.ok(key.seq())), the remembered one on ACK_DUPLICATE (12 §3.2 Ack.duplicate(dedup.lastSeq(type))). A retry of an older seq lowers it. 0 before the first write.",
+    "§6 only written batches enter the window: an error answer writes nothing, so the retry with the same seq is ACK_OK.",
+    "§6 WAL full (DSN-11-09, 12 §3.2): ACK_OK, dropped_items = every item, last_seq unchanged, nothing written, so a resend of the seq is new; a key already written is still ACK_DUPLICATE.",
+    "§6 ACTIVE_SNAPSHOT: these vectors only ack a new seq. 12 §3.2 keeps snapshots out of the WAL, so the server need not deduplicate them.",
+    "§9 offset = ((t2 - t1) + (t3 - t4)) / 2 is server minus agent; halves round toward negative infinity (floorDiv), also in the median of an even count (mean of the two middle values).",
+    "§9 a round is discarded when rtt > 3 x the median rtt of the last 5 completed rounds, discarded ones included: otherwise a lasting rtt change would discard every later round and freeze the estimate. prev_t1 <= 0, prev_t4 <= 0 or a prev_t1 the server never acknowledged completes no round.",
+    "§9 before the first round the estimate is ServerHello.server_time_ms - AgentHello.sent_at_ms.",
+    "§3 a session stays valid after its stream ends (agent shutdown flush) until a server restart, a SessionClose or a new hello of the instance.",
+    "§5 check 7 has no exception for the agent's own reconnect (12 §4.1): an open session of the instance gets SessionClose REPLACED whatever its agent_epoch; an agent that reconnects has already cancelled that stream.",
+    "§5 APP_NOT_REGISTERED names no status code: the stream completes (OK) after the rejected ServerHello.",
+    "§5 SERVER_SHUTTING_DOWN is not in the §5 table: UNAVAILABLE (§10) with retry_after_s 5.",
+    "§10 SessionClose TOKEN_REVOKED_CLOSE revokes the token (12 §4.1 closeByToken after the token cache is invalidated at once) and 12 §3.1 checks the token (TokenAuthInterceptor) before the session: a later data call with that token is UNAUTHENTICATED with argos-reject-reason TOKEN_REVOKED, a hello gets ServerHello{rejected, TOKEN_REVOKED, retry_after_s 0} and UNAUTHENTICATED (§5 check 1).",
+    "12 §3.9: a server shutting down sends SessionClose SERVER_SHUTDOWN and then drains (gRPC shutdown), so a new call is UNAVAILABLE. The FakeCollector does not imitate the drain, so the 'session server shutdown' entry names no expected_data_after."
+  ],
+  "clock": [
+    {
+      "name": "server 3 s ahead: median of the last 5 rounds, an rtt outlier discarded, the window rolls",
+      "clause": "11 §9",
+      "hello": {"sent_at_ms": 1000000, "server_time_ms": 1003005, "expected_estimate_ms": 3005},
+      "heartbeats": [
+        {"t1": 1000100, "prev_t1": 0, "prev_t4": 0, "t2": 1003105, "t3": 1003105, "expected_round": null, "expected_estimate_ms": 3005},
+        {"t1": 1030100, "prev_t1": 1000100, "prev_t4": 1000110, "t2": 1033104, "t3": 1033106, "expected_round": {"offset_ms": 3000, "rtt_ms": 10, "discarded": false}, "expected_estimate_ms": 3000},
+        {"t1": 1060100, "prev_t1": 1030100, "prev_t4": 1030112, "t2": 1063150, "t3": 1063151, "expected_round": {"offset_ms": 2999, "rtt_ms": 10, "discarded": false}, "expected_estimate_ms": 2999},
+        {"t1": 1090100, "prev_t1": 1060100, "prev_t4": 1060160, "t2": 1093103, "t3": 1093104, "expected_round": {"offset_ms": 3020, "rtt_ms": 59, "discarded": true}, "expected_estimate_ms": 2999},
+        {"t1": 1120100, "prev_t1": 1090100, "prev_t4": 1090106, "t2": 1123101, "t3": 1123102, "expected_round": {"offset_ms": 3000, "rtt_ms": 5, "discarded": false}, "expected_estimate_ms": 3000},
+        {"t1": 1150100, "prev_t1": 1120100, "prev_t4": 1120104, "t2": 1153110, "t3": 1153110, "expected_round": {"offset_ms": 2999, "rtt_ms": 3, "discarded": false}, "expected_estimate_ms": 2999},
+        {"t1": 1180100, "prev_t1": 1150100, "prev_t4": 1150110, "t2": 1183102, "t3": 1183102, "expected_round": {"offset_ms": 3005, "rtt_ms": 10, "discarded": false}, "expected_estimate_ms": 3000},
+        {"t1": 1210100, "prev_t1": 1180100, "prev_t4": 1180104, "t2": 1213100, "t3": 1213100, "expected_round": {"offset_ms": 3000, "rtt_ms": 4, "discarded": false}, "expected_estimate_ms": 3000},
+        {"t1": 1240100, "prev_t1": 999, "prev_t4": 1240000, "t2": 1243100, "t3": 1243100, "expected_round": null, "expected_estimate_ms": 3000}
+      ]
+    },
+    {
+      "name": "agent 1 s ahead: negative offsets, halves toward negative infinity, a small median rtt discards a 20 ms round",
+      "clause": "11 §9",
+      "hello": {"sent_at_ms": 5000000, "server_time_ms": 4999000, "expected_estimate_ms": -1000},
+      "heartbeats": [
+        {"t1": 5000200, "prev_t1": 0, "prev_t4": 0, "t2": 4999201, "t3": 4999202, "expected_round": null, "expected_estimate_ms": -1000},
+        {"t1": 5030200, "prev_t1": 5000200, "prev_t4": 5000204, "t2": 5029200, "t3": 5029200, "expected_round": {"offset_ms": -1001, "rtt_ms": 3, "discarded": false}, "expected_estimate_ms": -1001},
+        {"t1": 5060200, "prev_t1": 5030200, "prev_t4": 5030200, "t2": 5059201, "t3": 5059201, "expected_round": {"offset_ms": -1000, "rtt_ms": 0, "discarded": false}, "expected_estimate_ms": -1001},
+        {"t1": 5090200, "prev_t1": 5060200, "prev_t4": 5060202, "t2": 5089000, "t3": 5089000, "expected_round": {"offset_ms": -1000, "rtt_ms": 2, "discarded": false}, "expected_estimate_ms": -1000},
+        {"t1": 5120200, "prev_t1": 5090200, "prev_t4": 5090220, "t2": 5119200, "t3": 5119200, "expected_round": {"offset_ms": -1210, "rtt_ms": 20, "discarded": true}, "expected_estimate_ms": -1000}
+      ]
+    },
+    {
+      "name": "a lasting rtt change: discarded rounds count for the median rtt, so the rounds are accepted again and the estimate follows the new offset",
+      "clause": "11 §9",
+      "hello": {"sent_at_ms": 2000000, "server_time_ms": 2002000, "expected_estimate_ms": 2000},
+      "heartbeats": [
+        {"t1": 2000100, "prev_t1": 0, "prev_t4": 0, "t2": 2002105, "t3": 2002105, "expected_round": null, "expected_estimate_ms": 2000},
+        {"t1": 2030100, "prev_t1": 2000100, "prev_t4": 2000110, "t2": 2032105, "t3": 2032105, "expected_round": {"offset_ms": 2000, "rtt_ms": 10, "discarded": false}, "expected_estimate_ms": 2000},
+        {"t1": 2060100, "prev_t1": 2030100, "prev_t4": 2030110, "t2": 2062105, "t3": 2062105, "expected_round": {"offset_ms": 2000, "rtt_ms": 10, "discarded": false}, "expected_estimate_ms": 2000},
+        {"t1": 2090100, "prev_t1": 2060100, "prev_t4": 2060110, "t2": 2092225, "t3": 2092225, "expected_round": {"offset_ms": 2000, "rtt_ms": 10, "discarded": false}, "expected_estimate_ms": 2000},
+        {"t1": 2120100, "prev_t1": 2090100, "prev_t4": 2090150, "t2": 2122225, "t3": 2122225, "expected_round": {"offset_ms": 2100, "rtt_ms": 50, "discarded": true}, "expected_estimate_ms": 2000},
+        {"t1": 2150100, "prev_t1": 2120100, "prev_t4": 2120150, "t2": 2152225, "t3": 2152225, "expected_round": {"offset_ms": 2100, "rtt_ms": 50, "discarded": true}, "expected_estimate_ms": 2000},
+        {"t1": 2180100, "prev_t1": 2150100, "prev_t4": 2150150, "t2": 2182225, "t3": 2182225, "expected_round": {"offset_ms": 2100, "rtt_ms": 50, "discarded": true}, "expected_estimate_ms": 2000},
+        {"t1": 2210100, "prev_t1": 2180100, "prev_t4": 2180150, "t2": 2212225, "t3": 2212225, "expected_round": {"offset_ms": 2100, "rtt_ms": 50, "discarded": false}, "expected_estimate_ms": 2000},
+        {"t1": 2240100, "prev_t1": 2210100, "prev_t4": 2210150, "t2": 2242225, "t3": 2242225, "expected_round": {"offset_ms": 2100, "rtt_ms": 50, "discarded": false}, "expected_estimate_ms": 2000},
+        {"t1": 2270100, "prev_t1": 2240100, "prev_t4": 2240150, "t2": 2272225, "t3": 2272225, "expected_round": {"offset_ms": 2100, "rtt_ms": 50, "discarded": false}, "expected_estimate_ms": 2100}
+      ]
+    }
+  ],
+  "dedup": [
+    {
+      "name": "deduplication key (instance_id, agent_epoch, kind, seq), last_seq per kind, window 1,000, retries after an error",
+      "clause": "11 §6, C-3, DSN-11-02",
+      "steps": [
+        {"kind": "TRANSACTIONS", "agent_epoch": 7, "seq": 1, "expected_status": "ACK_OK", "expected_last_seq": 1},
+        {"kind": "TRANSACTIONS", "agent_epoch": 7, "seq": 2, "expected_status": "ACK_OK", "expected_last_seq": 2},
+        {"kind": "TRANSACTIONS", "agent_epoch": 7, "seq": 1, "expected_status": "ACK_DUPLICATE", "expected_last_seq": 2},
+        {"kind": "PROFILES", "agent_epoch": 7, "seq": 1, "expected_status": "ACK_OK", "expected_last_seq": 1},
+        {"kind": "TRANSACTIONS", "agent_epoch": 8, "seq": 1, "expected_status": "ACK_OK", "expected_last_seq": 1},
+        {"kind": "TRANSACTIONS", "agent_epoch": 7, "seq": 5, "expected_status": "ACK_OK", "expected_last_seq": 5},
+        {"kind": "TRANSACTIONS", "agent_epoch": 7, "seq": 4, "expected_status": "ACK_OK", "expected_last_seq": 4},
+        {"kind": "TRANSACTIONS", "agent_epoch": 7, "seq": 4, "expected_status": "ACK_DUPLICATE", "expected_last_seq": 4},
+        {"kind": "METRICS", "agent_epoch": 7, "seq_from": 1, "seq_to": 1000, "expected_status": "ACK_OK", "expected_last_seq": "seq"},
+        {"kind": "METRICS", "agent_epoch": 7, "seq": 1, "expected_status": "ACK_DUPLICATE", "expected_last_seq": 1000},
+        {"kind": "METRICS", "agent_epoch": 7, "seq": 1001, "expected_status": "ACK_OK", "expected_last_seq": 1001},
+        {"kind": "METRICS", "agent_epoch": 7, "seq": 1, "expected_status": "ACK_OK", "expected_last_seq": 1},
+        {"kind": "STATS", "agent_epoch": 7, "seq": 1, "fault": "UNAVAILABLE", "expected_code": "UNAVAILABLE"},
+        {"kind": "STATS", "agent_epoch": 7, "seq": 1, "expected_status": "ACK_OK", "expected_last_seq": 1},
+        {"kind": "STATS", "agent_epoch": 7, "seq": 1, "expected_status": "ACK_DUPLICATE", "expected_last_seq": 1},
+        {"kind": "ACTIVE_SNAPSHOT", "agent_epoch": 7, "seq": 3, "expected_status": "ACK_OK", "expected_last_seq": 3}
+      ]
+    }
+  ],
+  "session": [
+    {
+      "name": "data calls need the token and an accepted session; a restart forgets sessions; the instance changes the dedup key",
+      "clause": "11 §2, §3, §5, §6, 12 §3.1",
+      "steps": [
+        {"action": "data", "token": "valid", "session": "none", "seq": 1, "expected_code": "FAILED_PRECONDITION", "expected_description": "SESSION_REQUIRED"},
+        {"action": "hello", "token": "valid", "expected_accepted": true, "expected_instance_id": 1},
+        {"action": "data", "token": "valid", "session": "current", "seq": 1, "expected_code": "OK", "expected_status": "ACK_OK", "expected_last_seq": 1},
+        {"action": "data", "token": "valid", "session": "unknown", "seq": 2, "expected_code": "FAILED_PRECONDITION", "expected_description": "SESSION_REQUIRED"},
+        {"action": "data", "token": "valid", "session": "current_other_instance", "seq": 2, "expected_code": "FAILED_PRECONDITION", "expected_description": "SESSION_REQUIRED"},
+        {"action": "data", "token": "other", "session": "current", "seq": 2, "expected_code": "PERMISSION_DENIED"},
+        {"action": "data", "token": "missing", "session": "current", "seq": 2, "expected_code": "UNAUTHENTICATED", "expected_trailers": {"argos-reject-reason": "TOKEN_INVALID"}},
+        {"action": "data", "token": "malformed", "session": "current", "seq": 2, "expected_code": "UNAUTHENTICATED", "expected_trailers": {"argos-reject-reason": "TOKEN_INVALID"}},
+        {"action": "restart", "new_instance_id": 50},
+        {"action": "data", "token": "valid", "session": "previous", "seq": 2, "expected_code": "FAILED_PRECONDITION", "expected_description": "SESSION_REQUIRED"},
+        {"action": "hello", "token": "valid", "expected_accepted": true, "expected_instance_id": 50},
+        {"action": "data", "token": "valid", "session": "current", "seq": 2, "expected_code": "OK", "expected_status": "ACK_OK", "expected_last_seq": 2},
+        {"action": "data", "token": "valid", "session": "current", "seq": 1, "expected_code": "OK", "expected_status": "ACK_OK", "expected_last_seq": 1}
+      ]
+    },
+    {
+      "name": "hello checks in 11 §5 order: 1 token, 2 app, 3 plaintext, 4 version, 5 registration, 6 limits; each fails before the next is looked at",
+      "clause": "11 §5",
+      "steps": [
+        {"action": "hello", "token": "missing", "expected_accepted": false, "expected_reject_reason": "TOKEN_INVALID", "expected_retry_after_s": 0, "expected_code": "UNAUTHENTICATED", "expected_trailers": {"argos-reject-reason": "TOKEN_INVALID"}},
+        {"action": "hello", "token": "valid", "protocol_version": 2, "expected_accepted": false, "expected_reject_reason": "PROTOCOL_UNSUPPORTED", "expected_retry_after_s": 0, "expected_code": "FAILED_PRECONDITION", "expected_trailers": {"argos-reject-reason": "PROTOCOL_UNSUPPORTED"}},
+        {"action": "hello", "token": "valid", "protocol_version": 0, "expected_accepted": false, "expected_reject_reason": "PROTOCOL_UNSUPPORTED", "expected_retry_after_s": 0, "expected_code": "FAILED_PRECONDITION"},
+        {"action": "fault", "fault": "plaintextRejected"},
+        {"action": "hello", "token": "missing", "expected_accepted": false, "expected_reject_reason": "TOKEN_INVALID", "expected_code": "UNAUTHENTICATED"},
+        {"action": "hello", "token": "valid", "expected_accepted": false, "expected_reject_reason": "PLAINTEXT_NOT_ALLOWED", "expected_retry_after_s": 0, "expected_code": "FAILED_PRECONDITION", "expected_trailers": {"argos-reject-reason": "PLAINTEXT_NOT_ALLOWED"}},
+        {"action": "hello", "token": "valid", "protocol_version": 2, "expected_accepted": false, "expected_reject_reason": "PLAINTEXT_NOT_ALLOWED", "expected_code": "FAILED_PRECONDITION"},
+        {"action": "fault", "fault": "rejectHello", "reason": "APP_MISMATCH"},
+        {"action": "hello", "token": "missing", "expected_accepted": false, "expected_reject_reason": "TOKEN_INVALID", "expected_code": "UNAUTHENTICATED"},
+        {"action": "hello", "token": "valid", "expected_accepted": false, "expected_reject_reason": "APP_MISMATCH", "expected_retry_after_s": 0, "expected_code": "PERMISSION_DENIED"},
+        {"action": "fault", "fault": "clear"},
+        {"action": "fault", "fault": "rejectHello", "reason": "APP_NOT_REGISTERED"},
+        {"action": "hello", "token": "valid", "protocol_version": 2, "expected_accepted": false, "expected_reject_reason": "PROTOCOL_UNSUPPORTED", "expected_code": "FAILED_PRECONDITION"},
+        {"action": "hello", "token": "valid", "expected_accepted": false, "expected_reject_reason": "APP_NOT_REGISTERED", "expected_retry_after_s": 300, "expected_code": "OK"},
+        {"action": "fault", "fault": "rejectHello", "reason": "INSTANCE_LIMIT"},
+        {"action": "hello", "token": "valid", "protocol_version": 2, "expected_accepted": false, "expected_reject_reason": "PROTOCOL_UNSUPPORTED", "expected_code": "FAILED_PRECONDITION"},
+        {"action": "hello", "token": "valid", "expected_accepted": false, "expected_reject_reason": "INSTANCE_LIMIT", "expected_retry_after_s": 60, "expected_code": "RESOURCE_EXHAUSTED"},
+        {"action": "fault", "fault": "clear"},
+        {"action": "hello", "token": "valid", "expected_accepted": true, "expected_instance_id": 1}
+      ]
+    },
+    {
+      "name": "one session per instance: a new hello replaces the open session (SessionClose REPLACED) whatever its agent_epoch, and the old session id is refused, also when its stream had already ended",
+      "clause": "11 §5 check 7, 12 §3.1, §4.1",
+      "steps": [
+        {"action": "hello", "token": "valid", "agent_epoch": 11, "stream": "a", "expected_accepted": true, "expected_instance_id": 1},
+        {"action": "hello", "token": "valid", "agent_epoch": 11, "stream": "b", "expected_accepted": true, "expected_instance_id": 1},
+        {"action": "expect_stream", "stream": "a", "expected_messages": [{"close": {"reason": "REPLACED"}}], "expected_code": "OK"},
+        {"action": "data", "token": "valid", "session": "previous", "seq": 1, "expected_code": "FAILED_PRECONDITION", "expected_description": "SESSION_REQUIRED"},
+        {"action": "data", "token": "valid", "session": "current", "seq": 1, "expected_code": "OK", "expected_status": "ACK_OK", "expected_last_seq": 1},
+        {"action": "hello", "token": "valid", "agent_epoch": 12, "stream": "c", "expected_accepted": true, "expected_instance_id": 1},
+        {"action": "expect_stream", "stream": "b", "expected_messages": [{"close": {"reason": "REPLACED"}}], "expected_code": "OK"},
+        {"action": "complete", "stream": "c"},
+        {"action": "data", "token": "valid", "session": "current", "seq": 2, "expected_code": "OK", "expected_status": "ACK_OK", "expected_last_seq": 2},
+        {"action": "hello", "token": "valid", "agent_epoch": 12, "stream": "d", "expected_accepted": true, "expected_instance_id": 1},
+        {"action": "expect_stream", "stream": "c", "expected_messages": [], "expected_code": "OK"},
+        {"action": "data", "token": "valid", "session": "previous", "seq": 3, "expected_code": "FAILED_PRECONDITION", "expected_description": "SESSION_REQUIRED"},
+        {"action": "data", "token": "valid", "session": "current", "seq": 3, "expected_code": "OK", "expected_status": "ACK_OK", "expected_last_seq": 3}
+      ]
+    }
+  ],
+  "status_codes": [
+    {"name": "hello TOKEN_EXPIRED", "clause": "11 §5 check 1", "call": "hello", "fault": "rejectHello", "reason": "TOKEN_EXPIRED", "expected_code": "UNAUTHENTICATED", "expected_retry_after_s": 3600, "expected_trailers": {"argos-reject-reason": "TOKEN_EXPIRED", "argos-retry-after-ms": "3600000"}},
+    {"name": "hello TOKEN_REVOKED", "clause": "11 §5 check 1", "call": "hello", "fault": "rejectHello", "reason": "TOKEN_REVOKED", "expected_code": "UNAUTHENTICATED", "expected_retry_after_s": 0, "expected_trailers": {"argos-reject-reason": "TOKEN_REVOKED"}},
+    {"name": "hello APP_MISMATCH", "clause": "11 §5 check 2", "call": "hello", "fault": "rejectHello", "reason": "APP_MISMATCH", "expected_code": "PERMISSION_DENIED", "expected_retry_after_s": 0, "expected_trailers": {"argos-reject-reason": "APP_MISMATCH"}},
+    {"name": "hello AGENT_VERSION_TOO_NEW", "clause": "11 §5 check 4", "call": "hello", "fault": "rejectHello", "reason": "AGENT_VERSION_TOO_NEW", "expected_code": "FAILED_PRECONDITION", "expected_retry_after_s": 0, "expected_trailers": {"argos-reject-reason": "AGENT_VERSION_TOO_NEW"}},
+    {"name": "hello APP_NOT_REGISTERED", "clause": "11 §5 check 5", "call": "hello", "fault": "rejectHello", "reason": "APP_NOT_REGISTERED", "expected_code": "OK", "expected_retry_after_s": 300, "expected_trailers": {}},
+    {"name": "hello INSTANCE_LIMIT", "clause": "11 §5 check 6", "call": "hello", "fault": "rejectHello", "reason": "INSTANCE_LIMIT", "expected_code": "RESOURCE_EXHAUSTED", "expected_retry_after_s": 60, "expected_trailers": {"argos-reject-reason": "INSTANCE_LIMIT", "argos-retry-after-ms": "60000"}},
+    {"name": "hello RATE_LIMITED", "clause": "11 §5 check 6", "call": "hello", "fault": "rejectHello", "reason": "RATE_LIMITED", "expected_code": "RESOURCE_EXHAUSTED", "expected_retry_after_s": 60, "expected_trailers": {"argos-reject-reason": "RATE_LIMITED", "argos-retry-after-ms": "60000"}},
+    {"name": "hello SERVER_SHUTTING_DOWN", "clause": "11 §10 UNAVAILABLE", "call": "hello", "fault": "rejectHello", "reason": "SERVER_SHUTTING_DOWN", "expected_code": "UNAVAILABLE", "expected_retry_after_s": 5, "expected_trailers": {"argos-reject-reason": "SERVER_SHUTTING_DOWN", "argos-retry-after-ms": "5000"}},
+    {"name": "data quota or rate limit with retry advice", "clause": "11 §10 RESOURCE_EXHAUSTED", "call": "data", "fault": "failNext", "code": "RESOURCE_EXHAUSTED", "retry_after_ms": 2000, "expected_code": "RESOURCE_EXHAUSTED", "expected_trailers": {"argos-retry-after-ms": "2000"}},
+    {"name": "data malformed batch", "clause": "11 §10 INVALID_ARGUMENT", "call": "data", "fault": "failNext", "code": "INVALID_ARGUMENT", "expected_code": "INVALID_ARGUMENT", "expected_trailers": {}},
+    {"name": "data server overloaded", "clause": "11 §10 UNAVAILABLE", "call": "data", "fault": "failNext", "code": "UNAVAILABLE", "expected_code": "UNAVAILABLE", "expected_trailers": {}},
+    {"name": "data quota drop", "clause": "11 §6 ACK_PARTIAL_DROP", "call": "data", "records": 3, "fault": "partialDrop", "dropped_items": 2, "expected_code": "OK", "expected_status": "ACK_PARTIAL_DROP", "expected_dropped_items": 2},
+    {"name": "data quota drop capped at the batch", "clause": "11 §6 ACK_PARTIAL_DROP", "call": "data", "records": 3, "fault": "partialDrop", "dropped_items": 10, "expected_code": "OK", "expected_status": "ACK_PARTIAL_DROP", "expected_dropped_items": 3},
+    {"name": "data WAL full", "clause": "11 §6 서버 드롭, DSN-11-09, 12 §3.2", "call": "data", "records": 3, "fault": "walFull", "expected_code": "OK", "expected_status": "ACK_OK", "expected_last_seq": 0, "expected_dropped_items": 3, "expected_resend": {"status": "ACK_OK", "last_seq": 1, "dropped_items": 0}},
+    {"name": "data no answer: the client's deadline ends the call", "clause": "11 §10 DEADLINE_EXCEEDED", "call": "data", "fault": "hang", "deadline_ms": 300, "expected_code": "DEADLINE_EXCEEDED"},
+    {"name": "data back pressure hint", "clause": "11 §6 Ack.throttle", "call": "data", "fault": "throttle", "profile_normal_rate": 0.05, "send_backoff_ms": 250, "expected_code": "OK", "expected_status": "ACK_OK", "expected_throttle": {"profile_normal_rate": 0.05, "send_backoff_ms": 250}},
+    {"name": "data back pressure with the backoff only", "clause": "11 §6, §4.4 optional", "call": "data", "fault": "throttle", "send_backoff_ms": 100, "expected_code": "OK", "expected_status": "ACK_OK", "expected_throttle": {"send_backoff_ms": 100}},
+    {"name": "session revoked token", "clause": "11 §10 UNAUTHENTICATED, 12 §4.1", "call": "session", "fault": "sessionClose", "reason": "TOKEN_REVOKED_CLOSE", "retry_after_s": 0, "expected_close": {"reason": "TOKEN_REVOKED_CLOSE", "retry_after_s": 0}, "expected_code": "UNAUTHENTICATED", "expected_trailers": {}, "expected_data_after": {"code": "UNAUTHENTICATED", "trailers": {"argos-reject-reason": "TOKEN_REVOKED"}}},
+    {"name": "session server shutdown", "clause": "11 §10 UNAVAILABLE, 12 §3.9", "call": "session", "fault": "sessionClose", "reason": "SERVER_SHUTDOWN", "retry_after_s": 30, "expected_close": {"reason": "SERVER_SHUTDOWN", "retry_after_s": 30}, "expected_code": "UNAVAILABLE", "expected_trailers": {"argos-retry-after-ms": "30000"}},
+    {"name": "session idle timeout", "clause": "11 §15 #6, C-19", "call": "session", "fault": "sessionClose", "reason": "IDLE_TIMEOUT", "retry_after_s": 0, "expected_close": {"reason": "IDLE_TIMEOUT", "retry_after_s": 0}, "expected_code": "OK", "expected_trailers": {}, "expected_data_after": {"code": "FAILED_PRECONDITION", "description": "SESSION_REQUIRED"}}
+  ]
+}

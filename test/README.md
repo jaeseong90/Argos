@@ -14,7 +14,7 @@ enforces what it can (section 3); everything else here is a review rule.
 | `<module>/src/test` | Unit tests of every Java module (agent modules run them on JDK 8) |
 | `<module>/src/archTest` | ArchUnit rules; the agent rules over all agent modules live in `agent/agent-testing/src/archTest` |
 | `<module>/src/integrationTest` | Integration tests: Testcontainers, fake collector, sample apps, real processes |
-| `server/src/contractTest` | OpenAPI lint and diff, permission matrix, schema and config-key snapshots (from WO-20/WO-23) |
+| `server/src/contractTest` | OpenAPI lint and diff, permission matrix, schema and config-key snapshots (from WO-20/WO-23). No Docker: the permission matrix (WO-24) runs on the real web layer (Tomcat, Spring Security, every controller) with stubbed services; its run on real login sessions and databases is in `server/src/securityTest` |
 | `server/src/testFixtures` | `ServerTestEnvironment` (WO-20): PostgreSQL 16 and ClickHouse 26.8 in Testcontainers (digest-pinned images of `deploy/*/image.properties`), roles from `deploy/postgres/roles.sql`, generated passwords in owner-only files, Spring properties with `*password-file` keys only; used by the server `integrationTest` and `securityTest`, reused by WO-21, WO-23 and WO-24. The server test JVMs use `server/build/tmp/<task>` as `java.io.tmpdir`, so nothing they create lands in the system temp directory that the agent harness watches during attach runs |
 | `<module>/src/securityTest` | SEC suite (server, agent-testing); UI security checks are Playwright tests tagged `@security` |
 | `agent/agent-testing/src/matrixTest` | Compatibility matrix (sample apps x JDKs, 18 §6) |

@@ -4,6 +4,7 @@ package io.argos.server.config.logging;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.Base64;
@@ -13,7 +14,10 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 
-/** The masking rules of the server log (12 §7.1, 17 §11.3, ADR-0010 C-94). */
+/**
+ * The masking rules of the server log (12 §7.1, 17 §11.3, ADR-0010 C-94). The linear-time test over
+ * inputs of several megabytes is {@code LogMaskingSlowIT} (src/integrationTest, 18 §2.2).
+ */
 @Tag("req:SEC-06")
 class LogMaskingTest {
 
@@ -30,6 +34,30 @@ class LogMaskingTest {
     byte[] bytes = new byte[18];
     RANDOM.nextBytes(bytes);
     return "s" + Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+  }
+
+  private static byte[] randomBytes(int n) {
+    byte[] bytes = new byte[n];
+    RANDOM.nextBytes(bytes);
+    return bytes;
+  }
+
+  private static final String DASHES = "-----";
+
+  /**
+   * A PEM armour line ({@code kind} is {@code BEGIN} or {@code END}), assembled at run time, so the
+   * source of this class holds no armour that secret scanners report as a private key.
+   */
+  private static String armour(String kind, String label) {
+    return DASHES + kind + " " + label + DASHES;
+  }
+
+  /** The base64 lines of a PEM body (64 characters each, as {@code JwtKey.toPem()} writes them). */
+  private static List<String> pemLines(byte[] der) {
+    return List.of(
+        Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
+            .encodeToString(der)
+            .split("\n"));
   }
 
   /**
@@ -233,5 +261,141 @@ class LogMaskingTest {
     assertThat(mask("3 tokens: refreshed")).isEqualTo("3 tokens: refreshed");
     assertThat(mask(null)).isNull();
     assertThat(mask("")).isEmpty();
+  }
+
+  @Test
+  @DisplayName("T-SEC-06e session cookies, the CSRF header and setup tokens are masked (16 §7.1)")
+  void sessionCookies() {
+    String at = secret();
+    String rt = secret();
+    String csrf = secret();
+    assertThat(mask("Cookie:\"argos_at=" + at + "; argos_rt=" + rt + "; argos_csrf=" + csrf + "\""))
+        .isEqualTo("Cookie:\"argos_at=****; argos_rt=****; argos_csrf=****\"");
+    assertThat(mask("Cookie:[argos_at=" + at + ", other=1]"))
+        .isEqualTo("Cookie:[argos_at=****, other=1]");
+    assertThat(
+            mask(
+                "Set-Cookie: argos_rt="
+                    + rt
+                    + "; Path=/api/v1/auth/refresh; Max-Age=86400; Secure; HttpOnly"))
+        .isEqualTo(
+            "Set-Cookie: argos_rt=****; Path=/api/v1/auth/refresh; Max-Age=86400; Secure; HttpOnly");
+    assertThat(mask("X-Argos-CSRF:\"" + csrf + "\"")).isEqualTo("X-Argos-CSRF:\"****\"");
+    assertThat(mask("X-Argos-Setup-Token: " + csrf)).isEqualTo("X-Argos-Setup-Token: ****");
+    assertThat(mask("{\"setup_token\":\"" + csrf + "\"}")).isEqualTo("{\"setup_token\":\"****\"}");
+    assertThat(mask("argos_rt_rotations_total 3")).isEqualTo("argos_rt_rotations_total 3");
+  }
+
+  @Test
+  @DisplayName("T-SEC-06e anything shaped like a JWT is masked (16 §7.1)")
+  void jwtShape() {
+    String jwt = "eyJhbGciOiJFZERTQSJ9." + secret() + "." + secret();
+    assertThat(mask("token was " + jwt + " today")).isEqualTo("token was **** today");
+    assertThat(mask("argos_at=" + jwt)).isEqualTo("argos_at=****");
+    assertThat(mask("version 1.2.3 of eyJ")).isEqualTo("version 1.2.3 of eyJ");
+  }
+
+  @Test
+  @DisplayName(
+      "T-SEC-06e JWT signing key and master key settings are masked; their file settings, key ids"
+          + " and other key names are not (16 §7.1)")
+  void signingKeySettings() {
+    String key = secret();
+    // ARGOS_JWT_KEY as the installer writes it: base64 of a 32-byte seed, padded (16 §10.6).
+    String seed = Base64.getEncoder().encodeToString(randomBytes(32));
+    assertThat(seed).endsWith("=");
+    assertThat(mask("argos.jwt-key=" + key)).isEqualTo("argos.jwt-key=****");
+    assertThat(mask("ARGOS_JWT_KEY=" + seed)).isEqualTo("ARGOS_JWT_KEY=****");
+    assertThat(mask("argos.master-key=" + key)).isEqualTo("argos.master-key=****");
+    assertThat(mask("ARGOS_MASTER_KEY=" + seed)).isEqualTo("ARGOS_MASTER_KEY=****");
+    assertThat(mask("argos.jwt-previous-key: " + key)).isEqualTo("argos.jwt-previous-key: ****");
+    assertThat(mask("ARGOS_JWT_PREVIOUS_KEY=" + seed)).isEqualTo("ARGOS_JWT_PREVIOUS_KEY=****");
+    assertThat(mask("{\"jwt_key\":\"" + key + "\"}")).isEqualTo("{\"jwt_key\":\"****\"}");
+    // The component names of a record's toString(), as ArgosProperties prints them.
+    assertThat(
+            mask(
+                "masterKey="
+                    + key
+                    + ", jwtKeyFile=conf/jwt.key, jwtKey="
+                    + key
+                    + ", jwtPreviousKey="
+                    + seed))
+        .isEqualTo("masterKey=****, jwtKeyFile=conf/jwt.key, jwtKey=****, jwtPreviousKey=****");
+
+    // File settings, key ids and the messages of the KEYS start phase stay readable.
+    String kid = Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes(12));
+    for (String plain :
+        List.of(
+            "argos.jwt-key-file=conf/jwt.key",
+            "argos.jwt-previous-key-file=/run/secrets/jwt_previous.key",
+            "argos.master-key-file=conf/master.key",
+            "ARGOS_JWT_KEY_FILE=/data/jwt.key",
+            "JwtKey[kid=" + kid + "]",
+            "JwtKey[kid=" + kid + ", verify-only]",
+            "kid=" + kid,
+            "JWT signing with key id " + kid + " (argos.jwt-key-file conf/jwt.key)",
+            "argos.jwt-key is not a usable Ed25519 key: the key is neither PEM nor base64",
+            "argos.jwt-key-file names a file that cannot be read (/data/conf/jwt.key):"
+                + " NoSuchFileException",
+            // No suffix as broad as "key" alone.
+            "cache key=" + kid + " sort-key: name primary_key=id public-key=" + kid)) {
+      assertThat(mask(plain)).as(plain).isEqualTo(plain);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "T-SEC-06e private keys in PEM armour are masked over several lines up to their end line, and"
+          + " without one up to the end of the message (16 §7.1)")
+  void pemPrivateKeys() {
+    List<String> lines = pemLines(randomBytes(96));
+    assertThat(lines).hasSize(2);
+    String body = String.join("\n", lines);
+    String begin = armour("BEGIN", "PRIVATE KEY");
+    String end = armour("END", "PRIVATE KEY");
+    String masked = begin + LogMasking.MASK + end;
+
+    // conf/jwt.key as JwtKey.toPem() writes it, inside a message with text around it.
+    String block = mask("read:\n" + begin + "\n" + body + "\n" + end + "\nnext line");
+    assertThat(block).isEqualTo("read:\n" + masked + "\nnext line");
+    // Other private key labels and CRLF line ends.
+    String rsaBegin = armour("BEGIN", "RSA PRIVATE KEY");
+    String rsaEnd = armour("END", "RSA PRIVATE KEY");
+    String rsa = mask(rsaBegin + "\r\n" + String.join("\r\n", lines) + "\r\n" + rsaEnd);
+    assertThat(rsa).isEqualTo(rsaBegin + LogMasking.MASK + rsaEnd);
+    String encryptedBegin = armour("BEGIN", "ENCRYPTED PRIVATE KEY");
+    String encryptedEnd = armour("END", "ENCRYPTED PRIVATE KEY");
+    String encrypted = mask(encryptedBegin + "\n" + body + "\n" + encryptedEnd);
+    assertThat(encrypted).isEqualTo(encryptedBegin + LogMasking.MASK + encryptedEnd);
+    // Newlines escaped, as an .env file or a JSON string carries the block.
+    String escaped =
+        mask("{\"key\":\"" + begin + "\\n" + String.join("\\n", lines) + "\\n" + end + "\"}");
+    assertThat(escaped).isEqualTo("{\"key\":\"" + masked + "\"}");
+    // Two blocks in one message: each is masked, the text between them stays.
+    String two = mask(begin + body + end + " and " + begin + "\n" + body + "\n" + end);
+    assertThat(two).isEqualTo(masked + " and " + masked);
+    // The block as the value of ARGOS_JWT_KEY (16 §7.1): rule 5 takes the first word of what the
+    // PEM rule left, the body is gone.
+    String setting = mask("ARGOS_JWT_KEY=" + begin + "\n" + body + "\n" + end);
+    assertThat(setting).startsWith("ARGOS_JWT_KEY=****").endsWith(LogMasking.MASK + end);
+    // Without the matching end line (a message cut short, an end line of another label):
+    // everything after the begin line is masked.
+    String cut = mask("loaded " + begin + "\n" + body + "\nat line 3");
+    assertThat(cut).isEqualTo("loaded " + begin + LogMasking.MASK);
+    String otherEnd = mask(begin + "\n" + body + "\n" + rsaEnd + "\ntail");
+    assertThat(otherEnd).isEqualTo(begin + LogMasking.MASK);
+    assertThat(List.of(block, rsa, encrypted, escaped, two, setting, cut, otherEnd))
+        .noneMatch(m -> lines.stream().anyMatch(m::contains));
+
+    // Public keys and certificates are not secrets and stay as they are.
+    byte[] fixed = new byte[90];
+    for (int i = 0; i < fixed.length; i++) {
+      fixed[i] = (byte) i;
+    }
+    String publicBody = String.join("\n", pemLines(fixed));
+    for (String label : List.of("PUBLIC KEY", "CERTIFICATE")) {
+      String pem = armour("BEGIN", label) + "\n" + publicBody + "\n" + armour("END", label);
+      assertThat(mask(pem)).as(label).isEqualTo(pem);
+    }
   }
 }

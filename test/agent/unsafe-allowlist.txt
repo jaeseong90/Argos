@@ -8,3 +8,34 @@
 # or the .class/.classdata extension, followed by a comment that gives the reason and the PR, e.g.
 #   io.argos.agent.shaded.io.netty.util.internal.PlatformDependent0  # reason, #123
 # Adding a line needs PM approval (F-A35).
+#
+# ADR-0009 C-74 (WO-11): an Unsafe-referencing class that is never loaded is removed from the jar
+# (AgentShading.UNSAFE_EXCLUDED_CLASSES, TRANSPORT_UNSAFE_EXCLUDED_CLASSES). A class that does load
+# may stay only when a test proves all of: the agent's relocated Netty settings turn Unsafe off
+# (io.argos.agent.shaded.io.netty.noUnsafe=true, NettyProps; PlatformDependent.hasUnsafe() false),
+# JDK 25 in its default mode (warn) prints no Unsafe warning line, --sun-misc-unsafe-memory-access=deny
+# works end to end, and the class-load record names the class. The proof is
+# agent/agent-testing/src/integrationTest/.../transport/UnsafeProofTransportTest (connect, send, TLS,
+# reconnect, shutdown; JDK 8, 11, 17, 21, 25). Re-verify every line when grpc-java, Netty, Guava or
+# protobuf change (C-74).
+#
+# Netty 4.1.139 (grpc-netty 1.85.1, ADR-0009 C-73), loaded on every connect:
+io.argos.agent.shaded.io.netty.util.internal.PlatformDependent0  # loaded on JDK 8-25 (class-load records, WO-11); reads the relocated noUnsafe=true and never obtains Unsafe (hasUnsafe false, JDK 25 warn 0 lines, deny works)
+io.argos.agent.shaded.io.netty.util.internal.PlatformDependent  # loaded on JDK 8-25; with Unsafe off it uses heap buffers, the JDK cleaner and the atomic JCTools queues (C-74 proof, WO-11)
+io.argos.agent.shaded.io.netty.util.internal.CleanerJava9  # loaded on JDK 9+; its Unsafe lookup runs only when PlatformDependent0 has Unsafe, which noUnsafe=true prevents (C-74 proof, WO-11)
+# Netty's shaded JCTools field classes: loaded (class verification of Netty's queue factory) but never
+# initialised, because Netty picks the atomic queues when Unsafe is off; their static initialisers
+# would need UnsafeAccess, which the jar does not contain (TRANSPORT_UNSAFE_EXCLUDED_CLASSES).
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseLinkedQueueConsumerNodeRef  # loaded, not initialised, Unsafe never used (C-74 proof, WO-11)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseLinkedQueueProducerNodeRef  # loaded, not initialised, Unsafe never used (C-74 proof, WO-11)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseMpscLinkedArrayQueueColdProducerFields  # loaded, not initialised, Unsafe never used (C-74 proof, WO-11)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseMpscLinkedArrayQueueConsumerFields  # loaded, not initialised, Unsafe never used (C-74 proof, WO-11)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.BaseMpscLinkedArrayQueueProducerFields  # loaded, not initialised, Unsafe never used (C-74 proof, WO-11)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpmcArrayQueueConsumerIndexField  # loaded, not initialised, Unsafe never used (C-74 proof, WO-11)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpmcArrayQueueProducerIndexField  # loaded, not initialised, Unsafe never used (C-74 proof, WO-11)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpscArrayQueueConsumerIndexField  # loaded, not initialised, Unsafe never used (C-74 proof, WO-11)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpscArrayQueueProducerIndexField  # loaded, not initialised, Unsafe never used (C-74 proof, WO-11)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.MpscArrayQueueProducerLimitField  # loaded, not initialised, Unsafe never used (C-74 proof, WO-11)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.unpadded.MpscUnpaddedArrayQueueConsumerIndexField  # loaded, not initialised, Unsafe never used (C-74 proof, WO-11)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.unpadded.MpscUnpaddedArrayQueueProducerIndexField  # loaded, not initialised, Unsafe never used (C-74 proof, WO-11)
+io.argos.agent.shaded.io.netty.util.internal.shaded.org.jctools.queues.unpadded.MpscUnpaddedArrayQueueProducerLimitField  # loaded, not initialised, Unsafe never used (C-74 proof, WO-11)

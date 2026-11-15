@@ -4,6 +4,7 @@ package io.argos.agent.core.export;
 import io.argos.agent.core.trace.Dictionary;
 import io.argos.agent.core.trace.ProfileRecord;
 import io.argos.agent.core.trace.Transaction;
+import io.argos.agent.core.transport.BatchEncoder;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -15,15 +16,15 @@ import java.util.concurrent.atomic.AtomicLong;
  *   <li>{@code test.exporter=drop} (ADR-0009 C-80, the WO-02 P-2 setting): records and drops, no
  *       encoding;
  *   <li>{@code test.exporter=noop} (18 §5.4 "인코딩까지 하고 버림"): encodes every transaction record and
- *       every captured profile with the agent's encoder (the JSONL encoding until the gRPC encoder
- *       of WO-11 replaces it), then drops them.
+ *       every captured profile with the sender's protobuf encoder ({@link BatchEncoder}), then
+ *       drops them.
  * </ul>
  */
 public final class NoopExporter implements Exporter {
-  private final Dictionary encodeWith;
+  private final BatchEncoder encoder;
   private final AtomicLong exported = new AtomicLong();
   private final AtomicLong profiles = new AtomicLong();
-  private final AtomicLong encodedChars = new AtomicLong();
+  private final AtomicLong encodedBytes = new AtomicLong();
 
   /** Records and drops ({@code test.exporter=drop}). */
   public NoopExporter() {
@@ -35,34 +36,29 @@ public final class NoopExporter implements Exporter {
    *     to drop without encoding
    */
   NoopExporter(Dictionary encodeWith) {
-    this.encodeWith = encodeWith;
+    this.encoder = encodeWith == null ? null : new BatchEncoder(encodeWith);
   }
 
   @Override
   public void export(List<Transaction> batch) {
-    if (encodeWith != null) {
-      long chars = 0;
+    if (encoder != null) {
+      long bytes = 0;
       for (Transaction tx : batch) {
-        chars += JsonlFileExporter.encode(tx, encodeWith).length();
+        bytes += encoder.encode(tx);
       }
-      encodedChars.addAndGet(chars);
+      encodedBytes.addAndGet(bytes);
     }
     exported.addAndGet(batch.size());
   }
 
   @Override
   public void exportProfiles(List<ProfileRecord> batch) {
-    if (encodeWith != null) {
-      long chars = 0;
+    if (encoder != null) {
+      long bytes = 0;
       for (ProfileRecord profile : batch) {
-        StringBuilder text = new StringBuilder(256);
-        JsonWriter json = new JsonWriter(text).beginObject();
-        json.field("tx_id", Long.toUnsignedString(profile.txId()));
-        JsonlFileExporter.steps(json, profile.build(), encodeWith);
-        json.endObject();
-        chars += text.length();
+        bytes += encoder.encode(profile);
       }
-      encodedChars.addAndGet(chars);
+      encodedBytes.addAndGet(bytes);
     }
     profiles.addAndGet(batch.size());
   }
@@ -83,13 +79,13 @@ public final class NoopExporter implements Exporter {
     return profiles.get();
   }
 
-  /** Characters encoded so far (0 unless created with an encoder). */
-  public long encodedChars() {
-    return encodedChars.get();
+  /** Bytes encoded so far (0 unless created with an encoder). */
+  public long encodedBytes() {
+    return encodedBytes.get();
   }
 
   @Override
   public String describe() {
-    return encodeWith == null ? "drop" : "noop (encode, then drop)";
+    return encoder == null ? "drop" : "noop (encode, then drop)";
   }
 }

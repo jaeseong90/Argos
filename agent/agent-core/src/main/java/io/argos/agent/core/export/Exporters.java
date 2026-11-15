@@ -12,9 +12,10 @@ import java.util.Locale;
  * keys {@code exporter} and {@code exporter.file.*} are gone (ADR-0009 C-88): {@code
  * argos.test.exporter} is ignored in release builds (T-BLD-010), so a release agent never writes
  * collected data to a local file. The gRPC transport is found by class name in the agent class
- * loader, so the core does not depend on it at compile time; when it is missing (builds without a
- * transport, until WO-11) the agent logs one WARN and drops transactions like {@code noop}. An
- * unknown name also logs one WARN and falls back to {@code noop}.
+ * loader, on {@code argos-sender}: no transport class loads on the premain thread (C-79), and the
+ * test exporters load none at all. A jar without it (a stripped test jar) logs one WARN and drops
+ * transactions like {@code noop}. An unknown name also logs one WARN and falls back to {@code
+ * noop}.
  */
 public final class Exporters {
   public static final String NOOP = "noop";

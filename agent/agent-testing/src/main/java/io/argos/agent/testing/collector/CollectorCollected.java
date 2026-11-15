@@ -8,10 +8,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 
 /** {@link Collected} of a {@link FakeCollector}, converted by its {@link CollectorProtocol}. */
 final class CollectorCollected implements Collected {
+  /** How long {@link #awaitTransactions} waits for matching records to complete. */
+  static final long SETTLE_MILLIS = 2_000;
+
   private final FakeCollector collector;
   private final CollectorProtocol protocol;
 
@@ -36,12 +40,27 @@ final class CollectorCollected implements Collected {
         collector.batches(), collector.dictionary(), collector.sessionsByInstance());
   }
 
+  /**
+   * As the interface says, and once enough records match it also waits (at most {@value
+   * #SETTLE_MILLIS} ms, never past {@code timeout}) for what they still miss: the steps travel in a
+   * separate profile batch and a dictionary text may follow its data batch by 100 ms (11 §3, §7),
+   * so an assertion right after this call reads the same record as on the JSONL source. A record
+   * that stays incomplete (a dropped profile) is returned as it is.
+   */
   @Override
   public List<TransactionRecord> awaitTransactions(
       Predicate<TransactionRecord> filter, int count, Duration timeout) {
     long deadline = System.nanoTime() + timeout.toNanos();
     List<TransactionRecord> matching = matching(filter);
-    while (matching.size() < count && System.nanoTime() < deadline) {
+    long settleUntil = Long.MAX_VALUE;
+    while (System.nanoTime() < Math.min(deadline, settleUntil)) {
+      if (matching.size() >= count) {
+        if (matching.stream().allMatch(protocol::complete)) {
+          break;
+        }
+        settleUntil =
+            Math.min(settleUntil, System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(SETTLE_MILLIS));
+      }
       try {
         Thread.sleep(50);
       } catch (InterruptedException e) {

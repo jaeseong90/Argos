@@ -2,6 +2,7 @@
 package io.argos.agent.testing.launcher;
 
 import io.argos.agent.testing.collector.Collected;
+import io.argos.agent.testing.collector.FakeCollector;
 import io.argos.agent.testing.collector.JsonlCollected;
 import io.argos.agent.testing.jvm.JcmdClient;
 import java.io.IOException;
@@ -35,7 +36,10 @@ import org.testcontainers.utility.MountableFile;
  * /argos/app/app.jar}, the run's work directory bind-mounted at {@code /argos/run} (agent log,
  * JSONL, transform files stay readable on the host), port 8080 published to a random host port,
  * {@code --cpus}/{@code --memory} from the launcher (memory defaults to 4g: the shared development
- * machine caps containers at 5 GiB).
+ * machine caps containers at 5 GiB). With {@link AppLauncher#collector(FakeCollector)} the agent
+ * sends to {@code host.docker.internal:<port>} ({@code --add-host
+ * host.docker.internal:host-gateway}); on a native Linux Docker host the collector must listen
+ * beyond the loopback ({@link FakeCollector.Builder#bindAddress(String)}, tests only).
  *
  * <p>Differences from {@link ProcessApp}: {@link #pid()} is -1 ({@link #jcmd()} runs {@code jcmd 1}
  * inside the container), the temp directory is not watched live ({@link #tempCreated()} is the tree
@@ -47,6 +51,13 @@ public final class ContainerApp implements RunningApp {
   static final String APP_JAR = "/argos/app/app.jar";
   static final int APP_PORT = 8080;
   static final String DEFAULT_MEMORY = "4g";
+
+  /**
+   * The token file inside the container with {@link AppLauncher#tokenFileMode(String)}: a copy of
+   * the run's {@code collector/token} outside the bind mount, so its mode is what {@code chmod}
+   * set.
+   */
+  public static final String TOKEN_FILE = "/argos/secret/token";
 
   /** System property prefix of an image override: {@code argos.test.container.image.<jdk>}. */
   static final String IMAGE_PROPERTY = "argos.test.container.image.";
@@ -84,6 +95,7 @@ public final class ContainerApp implements RunningApp {
           .followRedirects(HttpClient.Redirect.NEVER)
           .build();
   private final Duration startup;
+  private final FakeCollector collector;
 
   private ContainerApp(
       SampleApp app,
@@ -91,19 +103,24 @@ public final class ContainerApp implements RunningApp {
       Path dir,
       List<String> command,
       GenericContainer<?> container,
-      Duration startup) {
+      Duration startup,
+      FakeCollector collector) {
     this.app = app;
     this.jdk = jdk;
     this.dir = dir;
     this.command = List.copyOf(command);
     this.container = container;
     this.startup = startup;
+    this.collector = collector;
   }
 
   static ContainerApp start(AppLauncher launcher, Path dir, Duration timeout) {
     SampleApp app = launcher.app();
     int jdk = launcher.jdk().feature();
     List<String> command = containerCommand(launcher.command(dir), dir, app);
+    if (launcher.tokenFileMode() != null) {
+      command = withTokenFileCopy(command, launcher.tokenFileMode());
+    }
     String memory = launcher.memory() != null ? launcher.memory() : DEFAULT_MEMORY;
     String cpus = launcher.cpus();
     GenericContainer<?> container =
@@ -134,10 +151,15 @@ public final class ContainerApp implements RunningApp {
                     .forStatusCode(200)
                     .withStartupTimeout(timeout));
     launcher.environment().forEach(container::withEnv);
+    FakeCollector collector = launcher.collector();
+    if (collector != null) {
+      // The agent reaches the collector on the Docker host (FakeCollector#containerAddress()).
+      container.withExtraHost(FakeCollector.DOCKER_HOST, "host-gateway");
+    }
     long spawn = System.nanoTime();
     container.start();
     return new ContainerApp(
-        app, jdk, dir, command, container, Duration.ofNanos(System.nanoTime() - spawn));
+        app, jdk, dir, command, container, Duration.ofNanos(System.nanoTime() - spawn), collector);
   }
 
   /**
@@ -182,6 +204,38 @@ public final class ContainerApp implements RunningApp {
       command.add(mapped);
     }
     return command;
+  }
+
+  /**
+   * {@code command} behind a shell step that copies the run's token file to {@link #TOKEN_FILE},
+   * sets {@code mode} on the copy and then {@code exec}s the command unchanged (its arguments are
+   * passed as {@code "$@"}, never parsed by the shell). The token value is not on the command line.
+   */
+  static List<String> withTokenFileCopy(List<String> command, String mode) {
+    if (!mode.matches("[0-7]{3,4}")) {
+      throw new IllegalArgumentException("token file mode must be octal: " + mode);
+    }
+    String directory = TOKEN_FILE.substring(0, TOKEN_FILE.lastIndexOf('/'));
+    List<String> wrapped = new ArrayList<>();
+    wrapped.add("sh");
+    wrapped.add("-c");
+    wrapped.add(
+        "mkdir -p "
+            + directory
+            + " && cp "
+            + RUN_DIR
+            + "/"
+            + AppLauncher.COLLECTOR_DIR
+            + "/token "
+            + TOKEN_FILE
+            + " && chmod "
+            + mode
+            + " "
+            + TOKEN_FILE
+            + " && exec \"$@\"");
+    wrapped.add("argos-token-copy"); // $0 of the script
+    wrapped.addAll(command);
+    return wrapped;
   }
 
   /** {@code 512m}, {@code 4g}, {@code 1073741824} → bytes. */
@@ -247,7 +301,7 @@ public final class ContainerApp implements RunningApp {
 
   @Override
   public Collected collected() {
-    return new JsonlCollected(transactions());
+    return collector != null ? collector.collected() : new JsonlCollected(transactions());
   }
 
   @Override

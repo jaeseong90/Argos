@@ -21,12 +21,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * {@code payload_too_large} (14 §2.6, §7.2) without reading the body. A body without a declared
  * length (chunked) is cut off by an input stream that throws {@link PayloadTooLargeException} (an
  * {@link IOException}) to whoever reads past the limit. This filter does not turn that exception
- * into a response: mapping it, also when it arrives as the cause of Spring's {@code
- * HttpMessageNotReadableException}, to 400 {@code payload_too_large} is the job of the global API
- * exception handling of WO-24. Until then Spring's default handling applies: a {@code @RequestBody}
- * argument fails with {@code HttpMessageNotReadableException} (400 in Spring Boot's error format,
- * not the 14 §2.6 schema), other readers may end in a 5xx. The Tomcat connector limits form posts
- * and swallowed uploads to the same size ({@code application.yml}).
+ * into a response: the global API exception handling ({@code
+ * io.argos.server.api.error.ApiExceptionHandler}, and the error page {@code ApiErrorController} for
+ * readers outside Spring MVC) answers it with 400 {@code payload_too_large} wherever it appears in
+ * the cause chain, e.g. as the cause of Spring's {@code HttpMessageNotReadableException} (WO-24).
+ * The Tomcat connector limits form posts and swallowed uploads to the same size ({@code
+ * application.yml}).
  */
 public class RequestBodyLimitFilter extends OncePerRequestFilter {
 

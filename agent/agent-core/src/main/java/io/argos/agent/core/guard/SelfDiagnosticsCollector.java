@@ -4,6 +4,8 @@ package io.argos.agent.core.guard;
 import io.argos.agent.bootstrap.ArgosThread;
 import io.argos.agent.bootstrap.ContextStore;
 import io.argos.agent.bootstrap.ModuleHealth;
+import io.argos.agent.core.log.AgentLogger;
+import io.argos.agent.core.log.JulLogger;
 import java.lang.management.BufferPoolMXBean;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
@@ -22,9 +24,16 @@ import java.util.Map;
  *   <li>{@code agent_threads_cpu_seconds_total}: CPU time of the live {@link ArgosThread}s ({@code
  *       ThreadMXBean}); absent when the JVM does not measure thread CPU time;
  *   <li>{@code direct_memory_bytes}: the JVM's {@code direct} buffer pool ({@code
- *       BufferPoolMXBean}) until the transport counts its own (WO-11); absent when unavailable;
+ *       BufferPoolMXBean}); absent when unavailable. The transport's Netty runs without {@code
+ *       Unsafe}, so Netty keeps no counter of its own ({@code PlatformDependent.usedDirectMemory()}
+ *       is -1): its sockets use the JDK's temporary direct buffers, which this pool counts (WO-11,
+ *       10 §10.3; the pool also holds the application's direct buffers, so it is an upper bound of
+ *       the agent's use);
  *   <li>{@code premain_ms}: start of premain to the start banner (P8);
- *   <li>every counter of {@link AgentCounters} and the state and error count of every named module.
+ *   <li>every counter of {@link AgentCounters}, {@value #LOG_DROPPED}, {@value
+ *       #LIBRARY_LOG_SUPPRESSED} and the extra counter source (the transport's self metrics, {@code
+ *       TransportCounters}, which the transport adds from {@code argos-sender}), and the state and
+ *       error count of every named module.
  * </ul>
  *
  * <p>Missing is not zero (C-4, D-23): a gauge that cannot be measured is left out. The JMX beans
@@ -32,6 +41,12 @@ import java.util.Map;
  * #MAX_THREADS} threads are enumerated.
  */
 public final class SelfDiagnosticsCollector {
+  /** Agent log records dropped by the logger's count and byte bounds (ADR-0010 C-120 (3)). */
+  public static final String LOG_DROPPED = "argos_agent_log_dropped_total";
+
+  /** Library warnings suppressed by the one-per-minute limit of {@code JulLogger} (10 §14). */
+  public static final String LIBRARY_LOG_SUPPRESSED = "argos_agent_library_log_suppressed_total";
+
   /** Upper bound of the threads enumerated for the agent CPU time. */
   static final int MAX_THREADS = 65_536;
 
@@ -42,6 +57,7 @@ public final class SelfDiagnosticsCollector {
 
   private final Gauges gauges;
   private final AgentCounters counters;
+  private volatile Gauges extraCounters;
   private final String[] moduleNames;
   private volatile double premainMillis = Double.NaN;
 
@@ -54,6 +70,14 @@ public final class SelfDiagnosticsCollector {
     this.gauges = gauges;
     this.counters = counters;
     this.moduleNames = moduleNames == null ? new String[0] : moduleNames.clone();
+  }
+
+  /**
+   * Adds the counters of {@code source} (by OpenMetrics name, merged after the agent counters) to
+   * every snapshot: the transport's self metrics (WO-11).
+   */
+  public void extraCounters(Gauges source) {
+    this.extraCounters = source;
   }
 
   /** Records {@code premain_ms} (P8). */
@@ -105,7 +129,21 @@ public final class SelfDiagnosticsCollector {
     if (!Double.isNaN(premain)) {
       builder.premainMs(premain);
     }
-    builder.counters(counters.snapshot());
+    Map<String, Long> all = new java.util.LinkedHashMap<String, Long>(counters.snapshot());
+    all.put(LOG_DROPPED, AgentLogger.droppedRecords());
+    all.put(LIBRARY_LOG_SUPPRESSED, JulLogger.suppressedTotal());
+    Gauges extra = extraCounters;
+    if (extra != null) {
+      try {
+        Map<String, Long> more = extra.values();
+        if (more != null) {
+          all.putAll(more);
+        }
+      } catch (Throwable ignored) {
+        // The extra source fails alone; the agent counters are still reported.
+      }
+    }
+    builder.counters(all);
     for (int id = 0; id < moduleNames.length && id < ModuleHealth.MAX_MODULES; id++) {
       if (moduleNames[id] != null) {
         builder.module(id, moduleNames[id], ModuleHealth.state(id), ModuleHealth.errors(id));

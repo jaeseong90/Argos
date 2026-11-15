@@ -16,9 +16,12 @@
 #   --rounds N              off/on rounds (3)
 #   --exporter X            noop (18 §5.4: argos.test.exporter=noop, encode and drop), drop (WO-02
 #                           setting: argos.test.exporter=drop, record and drop; both need a -SNAPSHOT
-#                           agent build, C-88) or grpc (refused until the agent has a transport,
-#                           WO-11; then needs --collector HOST:PORT)                         (noop)
-#   --collector HOST:PORT   collector for --exporter grpc
+#                           agent build, C-88) or grpc (the transport cost, WO-11; needs
+#                           --collector HOST:PORT)                                           (noop)
+#   --collector HOST:PORT   collector for --exporter grpc (a collector server, or the standalone
+#                           FakeCollector: agent/agent-testing/README.md "Standalone collector")
+#   --agent-config K=V,...  more agent settings of the load and startup sets, e.g. for a plaintext
+#                           FakeCollector: server.tls=false,server.token-file=<its --token-file>
 #   --profile P             default | worst (every normal request profiled, 18 §7.5)       (default)
 #   --vt                    virtual threads (SAMPLE_VT=true, Boot 3.2+, N-28)
 #   --container             app in a container: --cpus 2 --memory 4g, heap 2g (N-29)
@@ -60,6 +63,7 @@ java_bin=""
 rounds=3
 exporter="noop"
 collector=""
+agent_config=""
 profile="default"
 vt=0
 container=0
@@ -89,6 +93,7 @@ while [[ $# -gt 0 ]]; do
     --rounds) rounds="${2:?--rounds needs a value}"; shift 2 ;;
     --exporter) exporter="${2:?--exporter needs a value}"; shift 2 ;;
     --collector) collector="${2:?--collector needs a value}"; shift 2 ;;
+    --agent-config) agent_config="${2:?--agent-config needs a value}"; shift 2 ;;
     --profile) profile="${2:?--profile needs a value}"; shift 2 ;;
     --vt) vt=1; shift ;;
     --container) container=1; shift ;;
@@ -197,6 +202,7 @@ fi
 load=(load --out "$out/$role" --app "$app" --java "$java_bin" --rounds "$rounds" --exporter "$exporter"
   --profile "$profile" --env-record "$out/env-record.json" --label "bench-run $role")
 [[ -n "$collector" ]] && load+=(--collector "$collector")
+[[ -n "$agent_config" ]] && load+=(--agent-config "$agent_config")
 ((vt)) && load+=(--vt)
 ((container)) && load+=(--mode container --cpus "$cpus" --memory "$memory" --heap 2g)
 # shellcheck disable=SC2054 # off,on,otel is one comma-separated value of --variants, not three elements
@@ -215,6 +221,8 @@ run_harness "${load[@]}"
 if ((startup)); then
   start=(startup --out "$out/startup" --java "$java_bin" --exporter "$exporter"
     --env-record "$out/env-record.json" --label "bench-run startup")
+  [[ -n "$collector" ]] && start+=(--collector "$collector")
+  [[ -n "$agent_config" ]] && start+=(--agent-config "$agent_config")
   if ((smoke)); then
     start+=(--apps "$app" --runs 1 --cds default --max-wait 1m --max-load 100)
   else
