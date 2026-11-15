@@ -2,20 +2,29 @@
 package io.argos.agent.core.export;
 
 import io.argos.agent.core.config.AgentConfig;
-import io.argos.agent.core.config.ConfigKeys;
 import io.argos.agent.core.log.AgentLogger;
 import java.io.File;
 import java.util.Locale;
 
 /**
- * Exporter registry ({@code exporter} setting, and the test-only {@code test.exporter} of 18 §5.4):
- * {@code noop}, {@code file} and the {@code grpc} slot. The gRPC transport is found by class name
- * in the agent class loader, so the core does not depend on it at compile time; when it is missing
- * (builds without a transport, until WO-11) the agent logs one WARN and drops transactions like
- * {@code noop}. An unknown name also logs one WARN and falls back to {@code noop}.
+ * Exporter registry: the test-only {@code test.exporter} of 18 §5.4 ({@code noop}, {@code file})
+ * and the {@code grpc} slot, the only exporter of a configuration without test keys. The WO-02 PoC
+ * keys {@code exporter} and {@code exporter.file.*} are gone (ADR-0009 C-88): {@code
+ * argos.test.exporter} is ignored in release builds (T-BLD-010), so a release agent never writes
+ * collected data to a local file. The gRPC transport is found by class name in the agent class
+ * loader, so the core does not depend on it at compile time; when it is missing (builds without a
+ * transport, until WO-11) the agent logs one WARN and drops transactions like {@code noop}. An
+ * unknown name also logs one WARN and falls back to {@code noop}.
  */
 public final class Exporters {
   public static final String NOOP = "noop";
+
+  /**
+   * {@code test.exporter=drop}: records and drops without encoding, the WO-02 P-2 overhead baseline
+   * that the PoC key {@code exporter=noop} selected before ADR-0009 C-88 (benchmarks, C-80).
+   */
+  public static final String DROP = "drop";
+
   public static final String FILE = "file";
   public static final String GRPC = "grpc";
 
@@ -25,25 +34,28 @@ public final class Exporters {
 
   static final String DEFAULT_FILE_NAME = "argos-transactions.jsonl";
 
+  /** Size cap of the JSONL test file (the former {@code exporter.file.max-mb} default). */
+  static final int FILE_MAX_MB = 256;
+
   private Exporters() {}
 
   /**
-   * The configured exporter name, lower case ({@code grpc} by default): {@code test.exporter} (18
-   * §5.4, development builds only) wins over {@code exporter}; the part after its first {@code :}
-   * is the argument ({@code file:<dir>}).
+   * The configured exporter name, lower case: {@code test.exporter} (18 §5.4, development builds
+   * only; the part after its first {@code :} is the argument, {@code file:<dir>}), else {@code
+   * grpc}.
    */
   public static String configuredName(AgentConfig config) {
-    String test = config.get(ConfigKeys.TEST_EXPORTER, null);
-    if (test != null) {
+    String test = config.testExporter();
+    if (test != null && !test.isEmpty()) {
       int colon = test.indexOf(':');
       return (colon < 0 ? test : test.substring(0, colon)).trim().toLowerCase(Locale.ROOT);
     }
-    return config.get(ConfigKeys.EXPORTER, GRPC).toLowerCase(Locale.ROOT);
+    return GRPC;
   }
 
   /** The argument of {@code test.exporter=<name>:<argument>}, or null. */
   static String testArgument(AgentConfig config) {
-    String test = config.get(ConfigKeys.TEST_EXPORTER, null);
+    String test = config.testExporter();
     if (test == null || test.indexOf(':') < 0) {
       return null;
     }
@@ -55,37 +67,37 @@ public final class Exporters {
    * Creates the configured exporter; never throws (falls back to {@code noop}).
    *
    * <ul>
-   *   <li>{@code test.exporter=file:<dir>}: JSONL in {@code <dir>/}{@value #DEFAULT_FILE_NAME};
-   *       {@code exporter=file}: JSONL in {@code exporter.file.path} (default: the log directory);
-   *   <li>{@code test.exporter=noop}: encode, then drop; {@code exporter=noop}: drop;
+   *   <li>{@code test.exporter=file:<dir>}: JSONL in {@code <dir>/}{@value #DEFAULT_FILE_NAME}
+   *       ({@code file} alone: the log directory), at most {@value #FILE_MAX_MB} MB;
+   *   <li>{@code test.exporter=noop}: encode, then drop; {@code test.exporter=drop}: drop without
+   *       encoding;
    *   <li>{@code grpc} (default): the transport, when this build has one.
    * </ul>
    */
   public static Exporter create(ExporterContext context, File logDirectory) {
     String name = configuredName(context.config());
-    boolean testExporter = context.config().isSet(ConfigKeys.TEST_EXPORTER);
     try {
       if (name.equals(NOOP)) {
-        return testExporter ? new NoopExporter(context.dictionary()) : new NoopExporter();
+        return new NoopExporter(context.dictionary());
+      }
+      if (name.equals(DROP)) {
+        return new NoopExporter();
       }
       if (name.equals(FILE)) {
-        String path = context.config().get(ConfigKeys.EXPORTER_FILE_PATH, null);
-        File file = path != null ? new File(path) : new File(logDirectory, DEFAULT_FILE_NAME);
-        if (testExporter) {
-          String directory = testArgument(context.config());
-          file =
-              new File(directory != null ? new File(directory) : logDirectory, DEFAULT_FILE_NAME);
-        }
-        long maxBytes =
-            context.config().getInt(ConfigKeys.EXPORTER_FILE_MAX_MB, 256, 1, 100_000)
-                * 1024L
-                * 1024L;
-        return new JsonlFileExporter(file, maxBytes, context.dictionary());
+        String directory = testArgument(context.config());
+        File file =
+            new File(directory != null ? new File(directory) : logDirectory, DEFAULT_FILE_NAME);
+        return new JsonlFileExporter(
+            file,
+            FILE_MAX_MB * 1024L * 1024L,
+            context.dictionary(),
+            context.config().appEnv(),
+            context.config().appVersion());
       }
       if (name.equals(GRPC)) {
         return createByClassName(GRPC_FACTORY_CLASS, context);
       }
-      AgentLogger.warn("unknown exporter '{}' (noop, file, grpc); using noop", name);
+      AgentLogger.warn("unknown exporter '{}' (noop, drop, file, grpc); using noop", name);
     } catch (ClassNotFoundException e) {
       AgentLogger.warn(
           "exporter '{}' is not available in this agent build ({} missing); transactions are"

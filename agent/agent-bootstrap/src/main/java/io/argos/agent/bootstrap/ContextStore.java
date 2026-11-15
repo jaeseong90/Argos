@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.agent.bootstrap;
 
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -102,6 +103,26 @@ public abstract class ContextStore<K, V> {
     for (ConcurrentMap<String, ContextStore<?, ?>> byValue : STORES.values()) {
       for (ContextStore<?, ?> store : byValue.values()) {
         total += store.size();
+      }
+    }
+    return total;
+  }
+
+  /**
+   * Entries whose values carry transaction state ({@link TraceContext} or {@link Scope} values):
+   * the leak gauge {@code weakmap_size} of 18 §5.9/§19. Other stores cache facts about long-lived
+   * objects (a pooled JDBC connection's target id, 10 §6.3) and keep their entries as long as the
+   * key lives; they are counted by {@link #totalEntries()} only.
+   */
+  public static long contextEntries() {
+    long total = 0;
+    for (ConcurrentMap<String, ContextStore<?, ?>> byValue : STORES.values()) {
+      for (Map.Entry<String, ContextStore<?, ?>> store : byValue.entrySet()) {
+        String valueType = store.getKey();
+        if (valueType.equals(TraceContext.class.getName())
+            || valueType.equals(Scope.class.getName())) {
+          total += store.getValue().size();
+        }
       }
     }
     return total;

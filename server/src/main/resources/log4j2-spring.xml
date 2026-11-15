@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Server log (17 §11.3): JSON Lines, one event per line, on the console (docker logs, journald) and
+  in logs/server/argos-server.log, rolled at 100 MB, ten files kept (the active one and nine
+  rolled ones, argos-server.log.1 being the newest). The directory is ${LOG_PATH}, set by Spring
+  Boot from logging.file.path (environment LOGGING_FILE_PATH); without it logs/server below the
+  working directory.
+
+  Fields (argos-server-log.json): ts (UTC, ms), level, logger, thread, request_id (when the event
+  belongs to an HTTP request), message, error.class and error.stack (when an exception is logged).
+  Secrets are masked before any appender sees an event: MaskingLogEventFactory, installed by
+  log4j2.component.properties, masks the message and the rendered stack trace (12 §7.1).
+  Log levels: logging.level.* (ARGOS_LOG_LEVEL sets the root level).
+-->
+<Configuration status="WARN">
+  <Properties>
+    <Property name="logDir">${sys:LOG_PATH:-logs/server}</Property>
+  </Properties>
+  <Appenders>
+    <Console name="console" target="SYSTEM_OUT" follow="true">
+      <JsonTemplateLayout eventTemplateUri="classpath:argos-server-log.json" maxStringLength="40000"/>
+    </Console>
+    <RollingFile name="file"
+                 fileName="${logDir}/argos-server.log"
+                 filePattern="${logDir}/argos-server.log.%i"
+                 createOnDemand="true"
+                 filePermissions="rw-------">
+      <JsonTemplateLayout eventTemplateUri="classpath:argos-server-log.json" maxStringLength="40000"/>
+      <Policies>
+        <SizeBasedTriggeringPolicy size="100 MB"/>
+      </Policies>
+      <DefaultRolloverStrategy fileIndex="min" max="9"/>
+    </RollingFile>
+  </Appenders>
+  <Loggers>
+    <Root level="INFO">
+      <AppenderRef ref="console"/>
+      <AppenderRef ref="file"/>
+    </Root>
+  </Loggers>
+</Configuration>

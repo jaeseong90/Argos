@@ -2,7 +2,6 @@
 package io.argos.agent.core.boot;
 
 import io.argos.agent.core.config.AgentConfig;
-import io.argos.agent.core.config.ConfigKeys;
 import io.argos.agent.core.log.AgentLogger;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -67,7 +66,7 @@ final class TestFaults {
    */
   static TestFaults from(AgentConfig config) {
     List<String> warnings = new ArrayList<String>();
-    TestFaults faults = parse(config.getList(ConfigKeys.TEST_FAULTS), warnings);
+    TestFaults faults = parse(config.testFaults(), warnings);
     for (String warning : warnings) {
       AgentLogger.warn("{}", warning);
     }

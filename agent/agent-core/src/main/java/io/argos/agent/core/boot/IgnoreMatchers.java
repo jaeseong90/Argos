@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.agent.core.boot;
 
+import java.security.ProtectionDomain;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -8,8 +9,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
+import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
+import net.bytebuddy.utility.JavaModule;
 
 /**
  * The ignore list of the agent builder (10 §4.5, N-27): types the agent never transforms, checked
@@ -29,6 +32,14 @@ import net.bytebuddy.matcher.ElementMatcher;
  *
  * <p>Modules that instrument a JDK class must add it to {@link #JDK_ALLOWLIST} (P-6 classes are
  * listed); a JDK class outside the list is never transformed whatever a module matches.
+ *
+ * <p>The agent builder ignores a type when <em>either</em> its class loader is ignored (item 1)
+ * <em>or</em> its name is ({@link #matcher}). ByteBuddy's two-matcher {@code ignore(types,
+ * loaders)} and {@code RawMatcher.ForElementMatchers(types, loaders)} require both, which ignored
+ * nothing but the agent's own classes and let every module matcher run on every JDK and application
+ * class (N-27; found in WO-10, T-AG-042). The name tests run cheapest first: one prefix test
+ * settles most loaded classes (the JDK), substring scans for generated classes and the {@code
+ * instrumentation.exclude-classes} patterns come last (C-79).
  */
 public final class IgnoreMatchers {
   /** JDK classes that modules may transform (10 §4.5 item 3). */
@@ -139,6 +150,32 @@ public final class IgnoreMatchers {
     };
   }
 
+  /**
+   * The ignore matcher of the agent builder: the loader test (item 1) <em>or</em> the name and
+   * synthetic test (items 1-6); never throws.
+   */
+  public static AgentBuilder.RawMatcher matcher(
+      List<String> excludeGlobs, ClassLoader agentLoader) {
+    final ElementMatcher<ClassLoader> loaders = loaders(agentLoader);
+    final ElementMatcher<TypeDescription> types = types(excludeGlobs);
+    return new AgentBuilder.RawMatcher() {
+      @Override
+      public boolean matches(
+          TypeDescription type,
+          ClassLoader loader,
+          JavaModule module,
+          Class<?> classBeingRedefined,
+          ProtectionDomain protectionDomain) {
+        return loaders.matches(loader) || types.matches(type);
+      }
+
+      @Override
+      public String toString() {
+        return "argosIgnored(loaders or types)";
+      }
+    };
+  }
+
   /** The agent class loader and reflection accessor loaders (item 1). */
   public static ElementMatcher.Junction<ClassLoader> loaders(final ClassLoader agentLoader) {
     return new ElementMatcher.Junction.AbstractBase<ClassLoader>() {
@@ -170,18 +207,26 @@ public final class IgnoreMatchers {
     return false;
   }
 
-  /** True when the class named {@code name} must not be transformed (items 1-6, by name only). */
+  /**
+   * True when the class named {@code name} must not be transformed (items 1-6, by name only).
+   * Cheapest first: the JDK prefix test (most loaded classes), the other prefixes, then the
+   * substring scans for generated classes, then the {@code instrumentation.exclude-classes}
+   * patterns, which apply to every class that is not ignored otherwise (allow-listed JDK classes
+   * and servlet API classes included).
+   */
   static boolean ignored(String name, List<Pattern> excludes) {
+    if (startsWithAny(name, JDK_PREFIXES)
+        && !isJdkAllowlisted(name)
+        && !startsWithAny(name, JDK_EXCEPTIONS)) {
+      return true;
+    }
+    if (startsWithAny(name, OTHER_PREFIXES) && !startsWithAny(name, LOGGING_EXCEPTIONS)) {
+      return true;
+    }
     for (String marker : GENERATED_MARKERS) {
       if (name.contains(marker)) {
         return true;
       }
-    }
-    if (startsWithAny(name, JDK_PREFIXES)) {
-      return !isJdkAllowlisted(name) && !startsWithAny(name, JDK_EXCEPTIONS);
-    }
-    if (startsWithAny(name, OTHER_PREFIXES) && !startsWithAny(name, LOGGING_EXCEPTIONS)) {
-      return true;
     }
     for (Pattern exclude : excludes) {
       if (exclude.matcher(name).matches()) {

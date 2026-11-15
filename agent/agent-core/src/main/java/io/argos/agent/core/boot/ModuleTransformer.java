@@ -15,7 +15,8 @@ import net.bytebuddy.utility.JavaModule;
 /**
  * Applies one {@link TypeInstrumentation} of a module (10 §5.2 steps 3-4): injects the module's
  * helpers into the type's loader, then inlines the advice. Any exception fails the transformation
- * of this type only (ByteBuddy keeps the original class, {@link TransformErrorListener} counts it).
+ * of this type only (ByteBuddy keeps the original class, {@link
+ * io.argos.agent.core.guard.TransformErrorListener} counts it).
  */
 final class ModuleTransformer implements AgentBuilder.Transformer {
   private final InstrumentationModule module;

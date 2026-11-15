@@ -11,4 +11,9 @@ public final class LoaderFixture {
   public static String hello() {
     return "hello from " + LoaderFixture.class.getClassLoader();
   }
+
+  /** A second agent-owned class: defined after the premain recording stopped. */
+  public static final class Later {
+    private Later() {}
+  }
 }

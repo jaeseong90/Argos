@@ -92,9 +92,67 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   measurements, container and virtual-thread variants, the `docs/bench/<date>-<commit>.md` report
   with verdicts for N-01..N-04 and N-26..N-30 (INVALID when the off-run CPU variation exceeds 2%)
   and the regression warning against an approved report.
+- Collector server skeleton (`server/`, Java 21, Spring Boot 4.1): a fixed start sequence
+  (configuration, keys, PostgreSQL migration, ClickHouse migration, WAL recovery, listeners) that
+  stops the start with one error line when a step fails and opens no port before the migrations
+  have finished. Configuration under `argos.*` with validation, `*-file` secrets, short environment
+  names such as `ARGOS_PG_URL`, a warning for unknown keys and an effective-configuration summary
+  with masked secrets; the key list and the short environment names are checked contracts
+  (`server/src/contractTest/resources/config-keys.txt`, `config-env-aliases.txt`). PostgreSQL
+  schema V001 applied by Flyway with the schema owner and the role script
+  `deploy/postgres/roles.sql` (runtime, audit-retention and backup accounts); the ClickHouse schema
+  in `deploy/clickhouse` applied by the server's own
+  migration runner with checksums recorded in PostgreSQL, idempotency checks and multi-step
+  procedures for materialized-view replacement. Management port 8081 on 127.0.0.1 with `health`,
+  `info` and `prometheus` (bearer token and address allow-list for the last two); readiness is UP
+  only after the migrations and while PostgreSQL and ClickHouse answer. JSON Lines logs, request
+  ids and the `X-Argos-Server-Version` header; the HTTP port refuses request headers over 16 KB,
+  URLs over 8 KB (400 `limit_exceeded`) and bodies over 1 MB (a declared length over the limit gets
+  400 `payload_too_large`, a longer chunked body is cut off). Layered boot jar with the UI bundled,
+  and a container image built with Jib on a digest-pinned base image running as user 10001 that
+  writes its log to `/logs/server` and its WAL to `/data/wal` (volumes owned by uid 10001).
+- Agent configuration: `argos-agent.yml` (read by the agent's own bounded YAML subset parser),
+  `-Dargos.<key>` and `ARGOS_<KEY>` with the precedence defaults < file < system property <
+  environment, every key of the agent configuration reference registered with its type, default,
+  bounds and remote column, one warning per unknown key or invalid value, and the effective
+  configuration with the source of each value. The token comes from `server.token`,
+  `server.token-file` or `ARGOS_TOKEN`, is shown only as `argos_****` and is left out of the
+  configuration hash. Remote configuration changes are evaluated against a hard cap
+  (`remote-config.allow`, by default `sampling.*`, `instrumentation.disabled`,
+  `instrumentation.ignore-paths`, `log.level` and `enabled`; `server.*`, `remote-config.*`,
+  `app.*` and `log.dir` can never change remotely). Reference: `docs/agent-config.md`, checked
+  against the key registry by a test.
+- Agent queues: five bounded queues (transactions, profiles, statistics, metrics, active snapshot)
+  on JCTools MPSC queues (Apache-2.0, shaded, atomic variant without `sun.misc.Unsafe`) with a count
+  limit, a 120-second age limit and a shared byte budget. Application threads only offer; a full
+  queue drops its oldest entry once and retries once, and every drop is counted in
+  `argos_agent_dropped_total{queue}`.
+- Agent transaction model: sampling decided when a transaction ends, summary mode, folding of
+  repeated steps (`repeat_count`), `truncated` and `total_steps`, an open-step stack per activation
+  scope, forced end of a leaked context, transaction flags (virtual thread, leaked, summarized),
+  thread names normalized into a dictionary capped at 1,000 names, unmeasured CPU time and
+  allocation left absent instead of zero, and exception messages masked with the default set
+  (email addresses, Korean mobile and resident registration numbers, card numbers with a Luhn
+  check, IPv4 addresses, JWTs) followed by `capture.mask-patterns`.
+- Agent self-protection and self-diagnostics: advice and transformation error thresholds that
+  disable a module, `instrumentation.exclude-classes`, a retransformation limiter, agent counters,
+  and a self-diagnostics snapshot (live ThreadLocal contexts, active registry, weak map, agent
+  thread CPU, direct memory, premain time, module states and errors, drops, orphan steps, SQL
+  outside transactions) that development builds write to the file named by the test-only key
+  `argos.test.selfdiag-file`. `argos.debug.transform-timing` logs the time and the agent classes of
+  each start step, and the agent tests keep a premain class budget per JDK.
 
 ### Changed
 
+- Agent transaction ids: the node part starts from a provisional value at premain and is replaced by
+  12 bits of `SecureRandom` on an agent thread (later by the server-assigned instance id); above
+  2,048 ids in one millisecond the generator waits for the next millisecond, so `tx_id >> 23` is
+  always the creation time. Dictionary ids and `sql_id` are XXH3-64 (own implementation without
+  `sun.misc.Unsafe`) instead of FNV-1a.
+- Agent start: a start that fails before a log file exists prints the single line
+  `argos: agent disabled: <reason>` on stderr and nothing else; the ignore matcher skips agent class
+  loaders and ignored class names independently (it required both before), and fewer classes are
+  loaded on the premain thread.
 - ClickHouse storage aligned with the storage decisions of ADR-0007 (the unreleased V001 is changed in
   place): transaction rollups store `quantilesDD(0.01, 0.5, 0.95, 0.99)` percentile states, read with
   `quantilesDDMerge` and rebuilt byte for byte; the server default compression is ZSTD(1) and the column
@@ -108,6 +166,12 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   form `<wal_instance_id>:<epoch>:<first>-<last>`, and pin the Testcontainers resource reaper image by
   digest.
 
+### Removed
+
+- Agent proof-of-concept configuration keys `exporter` and `exporter.file.*`: they are now unknown
+  keys. Test exporters are chosen with the development-only key `argos.test.exporter` (`file:<dir>`,
+  `noop`, `drop`), which release builds ignore.
+
 ### Security
 
 - Release builds of the agent ignore `argos.test.*` and `argos.testing.*` settings (system properties
@@ -116,5 +180,13 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   without that attribute or with an unreadable manifest counts as a release build. The agent jar
   checks (`checkManifestVersion`, `test/agent/check-shading.sh`) require the attribute and its match
   with the project version.
+- Agent configuration warnings mask every `argos_...` run as `argos_****` before they cut a quoted
+  value to 64 characters, so no part of a token is logged. A `capture.mask-patterns` expression that
+  overflows the stack while matching masks the whole message as `<masked>`, and the transaction is
+  kept.
+- The server refuses to start when a database password is missing, shorter than 12 characters or on
+  the list of well-known default passwords, masks passwords, tokens, credentials in URLs and every
+  value of an `Authorization` header in every log line (masking an already masked line changes
+  nothing), and ignores `argos.testing.*` settings in release builds.
 
 [Unreleased]: https://github.com/argos-apm/argos/commits/main

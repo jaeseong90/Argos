@@ -2,6 +2,7 @@
 package io.argos.agent.core.log;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.argos.agent.core.config.AgentConfig;
 import java.io.ByteArrayOutputStream;
@@ -9,7 +10,9 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -93,6 +96,22 @@ class AgentLoggerTest {
     assertThat(sink.lines.get(LogPipeline.CAPACITY)).contains("7 log record(s) dropped");
     assertThat(pipeline.firstTime("k")).isTrue();
     assertThat(pipeline.firstTime("k")).isFalse();
+  }
+
+  @Test
+  @Tag("req:SEC-26")
+  @DisplayName(
+      "SEC-26 the log directory is created with mode 0700 on POSIX file systems (10 §14; skipped"
+          + " where the file system has no POSIX permissions)")
+  void logDirectoryIsOwnerOnly() throws IOException {
+    assumeTrue(
+        FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+        "POSIX file permissions");
+    File logs = new File(dir, "a/b/logs");
+    RollingFileSink sink = RollingFileSink.open(logs, 1024 * 1024, 2);
+    sink.close();
+    assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(logs.toPath())))
+        .isEqualTo("rwx------");
   }
 
   @Test
@@ -180,5 +199,145 @@ class AgentLoggerTest {
     assertThat(AgentLogger.directory(AgentConfig.of(Collections.<String, String>emptyMap()), jar))
         .isEqualTo(new File(dir, "logs"));
     assertThat(new File(dir, "logs")).isDirectory();
+  }
+
+  @Test
+  @Tag("req:F-A35")
+  @DisplayName(
+      "C-76 log directory: without log.dir and a writable <jar dir>/../logs, the temp directory"
+          + " argos-agent-<pid>")
+  void temporaryDirectoryFallback() throws IOException {
+    File blocker = new File(dir, "blocker");
+    Files.write(blocker.toPath(), new byte[] {1});
+    // <jar dir>/../logs cannot be created: its parent is a regular file.
+    File jar = new File(new File(new File(blocker, "x"), "agent"), "argos-agent.jar");
+    File chosen =
+        AgentLogger.directory(AgentConfig.of(Collections.<String, String>emptyMap()), jar);
+    assertThat(chosen.getParentFile()).isEqualTo(new File(System.getProperty("java.io.tmpdir")));
+    assertThat(chosen.getName()).matches("argos-agent-\\d+");
+  }
+
+  private static AgentConfig unwritableLogDir(File dir) throws IOException {
+    File blocker = new File(dir, "not-a-directory");
+    Files.write(blocker.toPath(), new byte[] {1});
+    Map<String, String> values = new HashMap<String, String>();
+    values.put("log.dir", new File(blocker, "logs").getPath());
+    return AgentConfig.of(values);
+  }
+
+  private static String text(ByteArrayOutputStream bytes) {
+    return new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+  }
+
+  @Test
+  @Tag("req:F-A15")
+  @DisplayName(
+      "T-AG-045 a stderr fallback created during the start holds its lines until the start"
+          + " completes, then writes at most 10 per minute")
+  void stderrLinesHeldUntilStartCompleted() throws IOException {
+    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+    LogPipeline pipeline = new LogPipeline();
+    String destination =
+        AgentLogger.configure(
+            pipeline, unwritableLogDir(dir), null, new PrintStream(bytes, true), true);
+    assertThat(destination).startsWith("stderr (limited to 10 lines per minute");
+    pipeline.enqueue(LogLevel.INFO, "info line", null);
+    for (int i = 0; i < 15; i++) {
+      pipeline.enqueue(LogLevel.WARN, "warning " + i, null);
+    }
+    pipeline.drain();
+    assertThat(text(bytes)).isEmpty();
+    AgentLogger.startCompleted(pipeline);
+    pipeline.drain();
+    String[] lines = text(bytes).split("\\R");
+    assertThat(lines).hasSize(StderrFallbackSink.LINES_PER_MINUTE);
+    assertThat(lines[0]).endsWith("warning 0");
+    assertThat(text(bytes)).doesNotContain("info line").doesNotContain("warning 10");
+  }
+
+  @Test
+  @Tag("req:F-A15")
+  @DisplayName(
+      "C-78 a failed start without a log file prints exactly one stderr line, tokens masked, and"
+          + " nothing afterwards")
+  void startFailureWithoutLogFile() throws IOException {
+    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+    PrintStream stderr = new PrintStream(bytes, true);
+    LogPipeline pipeline = new LogPipeline();
+    AgentLogger.configure(pipeline, unwritableLogDir(dir), null, stderr, true);
+    pipeline.enqueue(LogLevel.WARN, "configuration: something", null);
+    pipeline.drain();
+    String token = "argos_" + repeat('A', 43);
+    boolean logged =
+        AgentLogger.startFailed(
+            pipeline,
+            "Argos agent failed to start",
+            new IllegalStateException("bad\ntoken " + token),
+            stderr);
+    assertThat(logged).isFalse();
+    pipeline.enqueue(LogLevel.ERROR, "after the failure", null);
+    pipeline.drain();
+    String out = text(bytes);
+    assertThat(out.split("\\R")).hasSize(1);
+    assertThat(out)
+        .startsWith("argos: agent disabled: java.lang.IllegalStateException: bad token argos_****")
+        .doesNotContain(token)
+        .doesNotContain("configuration: something")
+        .doesNotContain("after the failure");
+
+    // No destination at all (the logger could not be configured): the same single line.
+    ByteArrayOutputStream none = new ByteArrayOutputStream();
+    assertThat(
+            AgentLogger.startFailed(
+                new LogPipeline(), "x", new RuntimeException(), new PrintStream(none, true)))
+        .isFalse();
+    assertThat(text(none).trim()).isEqualTo("argos: agent disabled: java.lang.RuntimeException");
+  }
+
+  @Test
+  @Tag("req:F-A15")
+  @DisplayName(
+      "C-78 / T-AG-044 a failed start with a log file writes the ERROR and its cause before"
+          + " returning, nothing on stderr")
+  void startFailureWithLogFile() throws IOException {
+    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+    LogPipeline pipeline = new LogPipeline();
+    Map<String, String> values = new HashMap<String, String>();
+    values.put("log.dir", new File(dir, "logs").getPath());
+    AgentLogger.configure(
+        pipeline, AgentConfig.of(values), null, new PrintStream(bytes, true), true);
+    boolean logged =
+        AgentLogger.startFailed(
+            pipeline,
+            "Argos agent failed to start; the application continues without instrumentation",
+            new IllegalStateException("injected"),
+            new PrintStream(bytes, true));
+    assertThat(logged).isTrue();
+    String log =
+        new String(
+            Files.readAllBytes(new File(new File(dir, "logs"), "argos-agent.log").toPath()),
+            StandardCharsets.UTF_8);
+    assertThat(log)
+        .contains("ERROR")
+        .contains("Argos agent failed to start; the application continues without instrumentation")
+        .contains("java.lang.IllegalStateException: injected");
+    assertThat(text(bytes)).isEmpty();
+    pipeline.stop(100);
+  }
+
+  @Test
+  @DisplayName("C-78 the reason is one line of at most 200 characters")
+  void reasonIsBounded() {
+    String reason = AgentLogger.reason(new IllegalArgumentException(repeat('x', 500)));
+    assertThat(reason).hasSize(AgentLogger.MAX_REASON_CHARS + 3).doesNotContain("\n");
+    assertThat(AgentLogger.reason(null)).isEqualTo("unknown error");
+  }
+
+  private static String repeat(char c, int count) {
+    StringBuilder out = new StringBuilder(count);
+    for (int i = 0; i < count; i++) {
+      out.append(c);
+    }
+    return out.toString();
   }
 }

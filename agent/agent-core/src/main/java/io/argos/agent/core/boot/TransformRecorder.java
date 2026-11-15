@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.agent.core.boot;
 
+import io.argos.agent.core.guard.TransformErrorListener;
 import io.argos.agent.core.log.AgentLogger;
 import java.io.File;
 import java.io.IOException;
@@ -160,6 +161,30 @@ final class TransformRecorder extends AgentBuilder.Listener.Adapter {
   public void onComplete(
       String typeName, ClassLoader classLoader, JavaModule module, boolean loaded) {
     CURRENT.get()[0] = 0;
+  }
+
+  /**
+   * The recorder seen by {@link TransformErrorListener}: module bits of the current type, failures
+   * for the transform log, loader names.
+   */
+  TransformErrorListener.Recorder errorRecorder() {
+    return new TransformErrorListener.Recorder() {
+      @Override
+      public long takeModules() {
+        return TransformRecorder.takeModules();
+      }
+
+      @Override
+      public void recordError(
+          String typeName, ClassLoader classLoader, long moduleBits, Throwable error) {
+        TransformRecorder.this.recordError(typeName, classLoader, moduleBits, error);
+      }
+
+      @Override
+      public String loaderName(ClassLoader classLoader) {
+        return TransformRecorder.loaderName(classLoader);
+      }
+    };
   }
 
   /**

@@ -27,12 +27,19 @@ final class LogPipeline {
   private final AtomicLong dropped = new AtomicLong();
   private final ConcurrentHashMap<String, Boolean> onceKeys =
       new ConcurrentHashMap<String, Boolean>();
-  private final Timestamps timestamps = new Timestamps(TimeZone.getDefault());
+
+  /**
+   * Created by the first {@link #format} (the {@code argos-logger} thread, inside {@link #drain}):
+   * the default time zone is not read on the premain thread (C-79).
+   */
+  private Timestamps timestamps;
 
   private volatile LogLevel level = LogLevel.INFO;
   private volatile LogSink sink;
   private volatile Thread thread;
   private volatile boolean running;
+  private volatile boolean flushRequested;
+  private volatile boolean silenced;
   private long reportedDrops;
 
   LogLevel level() {
@@ -56,8 +63,20 @@ final class LogPipeline {
     return dropped.get();
   }
 
+  /** Nothing is queued any more (the start failed without a log file, C-78). */
+  void silence() {
+    silenced = true;
+  }
+
+  boolean silenced() {
+    return silenced;
+  }
+
   /** Enqueues an event unless the queue is full (then counted as dropped). Never blocks. */
   void enqueue(LogLevel recordLevel, String message, Throwable error) {
+    if (silenced) {
+      return;
+    }
     if (queued.incrementAndGet() > CAPACITY) {
       queued.decrementAndGet();
       dropped.incrementAndGet();
@@ -110,7 +129,9 @@ final class LogPipeline {
               newDrops + " log record(s) dropped: logger queue full (" + CAPACITY + ")",
               null));
     }
-    if (written > 0) {
+    boolean requested = flushRequested;
+    if (written > 0 || requested) {
+      flushRequested = false;
       try {
         target.flush();
       } catch (IOException e) {
@@ -118,6 +139,22 @@ final class LogPipeline {
       }
     }
     return written;
+  }
+
+  /** The next {@link #drain()} flushes the sink even when nothing was queued (held lines). */
+  void requestFlush() {
+    flushRequested = true;
+    Thread worker = thread;
+    if (worker != null) {
+      LockSupport.unpark(worker);
+    }
+  }
+
+  /** Drops every queued record without writing it (start failure without a log file, C-78). */
+  synchronized void discardQueued() {
+    while (queue.poll() != null) {
+      queued.decrementAndGet();
+    }
   }
 
   private void write(LogSink target, LogRecord record) {
@@ -146,8 +183,13 @@ final class LogPipeline {
   }
 
   String format(LogRecord record) {
+    Timestamps clock = timestamps;
+    if (clock == null) {
+      clock = new Timestamps(TimeZone.getDefault());
+      timestamps = clock;
+    }
     StringBuilder line = new StringBuilder(96 + record.message.length());
-    timestamps.append(line, record.epochMillis);
+    clock.append(line, record.epochMillis);
     line.append(' ').append(record.level.name());
     for (int i = record.level.name().length(); i < 5; i++) {
       line.append(' ');

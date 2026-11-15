@@ -1,0 +1,139 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Packaged defaults of the Argos server (WO-20). Operators override them with their own
+# configuration file (spring.config.additional-location, e.g. conf/application.yml), environment
+# variables or command line arguments; every argos.* key, type and default is listed in
+# server/src/contractTest/resources/config-keys.txt (T-API-009) and documented on ArgosProperties.
+#
+# Short environment names (17 §3.8, ADR-0010 C-96): the ${ARGOS_...} placeholders below map the
+# documented short names onto the canonical keys (EnvironmentAliases lists them; the names, their
+# keys and the server.*/management.server.* defaults are fixed by the contract snapshot
+# server/src/contractTest/resources/config-env-aliases.txt, T-API-009). A canonical key
+# set anywhere else (configuration file, environment, system property, command line) wins over the
+# short name. Retention values are whole days.
+#
+# At start (PackagedSettingsPostProcessor) an entry whose short name is not set is dropped (the key
+# keeps the default of ArgosProperties), and so is every key that SpringApplication default
+# properties set (embedding code, tests): this file never overrides them.
+
+spring:
+  application:
+    name: argos-server
+  main:
+    banner-mode: off
+  jmx:
+    enabled: false
+  threads:
+    virtual:
+      # REST and WebSocket requests on virtual threads (12 §11)
+      enabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+server:
+  address: ${ARGOS_HTTP_BIND:0.0.0.0}
+  port: 8080
+  shutdown: graceful
+  # 14 §7.2: request headers up to 16 KB; bodies up to 1 MB (RequestBodyLimitFilter for every
+  # content type, the Tomcat limits below for form posts and swallowed uploads).
+  max-http-request-header-size: 16KB
+  tomcat:
+    max-http-form-post-size: 1MB
+    max-swallow-size: 1MB
+  # Error responses never carry messages, stack traces, exception classes or binding details
+  # (16 §7.14).
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-exception: false
+    include-binding-errors: never
+    include-path: never
+    whitelabel:
+      enabled: false
+
+management:
+  # Management port (02 C-7, SEC-55): 8081 on 127.0.0.1 only, nothing of Actuator on 8080.
+  server:
+    port: 8081
+    address: 127.0.0.1
+  endpoints:
+    access:
+      default: none
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      access: read-only
+      show-details: never
+      show-components: never
+      probes:
+        enabled: true
+        add-additional-paths: false
+      # Applications built from parts of the server (test applications) may lack the
+      # "migrations" indicator; the server always has it (RuntimeManagementIT).
+      validate-group-membership: false
+      group:
+        # Readiness (17 §3.5): the start sequence (migrations, WAL recovery) has completed, the
+        # application accepts traffic, the PostgreSQL runtime pool answers ("db") and ClickHouse
+        # answers SELECT 1 as the reader account within 2 s ("clickhouse",
+        # ClickHouseHealthIndicator). Liveness is separate and does not depend on the databases.
+        readiness:
+          include: readinessState,migrations,db,clickhouse
+        liveness:
+          include: livenessState
+    info:
+      access: read-only
+    prometheus:
+      access: read-only
+  info:
+    defaults:
+      enabled: false
+  metrics:
+    tags:
+      application: argos-server
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+logging:
+  level:
+    root: ${ARGOS_LOG_LEVEL:INFO}
+
+argos:
+  server:
+    timezone: ${ARGOS_TZ_DISPLAY:UTC}
+  collector:
+    bind: ${ARGOS_GRPC_BIND:0.0.0.0}
+    tls:
+      cert-file: ${ARGOS_TLS_CERT_FILE:conf/tls/server.crt}
+      key-file: ${ARGOS_TLS_KEY_FILE:conf/tls/server.key}
+  privacy:
+    default-ip-mode: ${ARGOS_IP_MODE:masked}
+  retention:
+    xlog: ${ARGOS_RETENTION_XLOG_DAYS:30}d
+    profile: ${ARGOS_RETENTION_PROFILE_DAYS:7}d
+    stat: ${ARGOS_RETENTION_RAW_STAT_DAYS:14}d
+    metric: ${ARGOS_RETENTION_METRIC_DAYS:14}d
+    rollup-1m: ${ARGOS_RETENTION_ROLLUP_1M_DAYS:90}d
+    rollup-1h: ${ARGOS_RETENTION_ROLLUP_1H_DAYS:365}d
+  postgres:
+    url: ${ARGOS_PG_URL:}
+    user: ${ARGOS_PG_USER:argos_app}
+    password-file: ${ARGOS_PG_PASSWORD_FILE:}
+    owner:
+      user: ${ARGOS_PG_OWNER_USER:argos}
+      password-file: ${ARGOS_PG_OWNER_PASSWORD_FILE:}
+  clickhouse:
+    url: ${ARGOS_CH_URL:http://clickhouse:8123}
+    database: ${ARGOS_CH_DATABASE:argos}
+    writer:
+      user: ${ARGOS_CH_WRITER_USER:argos_writer}
+      password-file: ${ARGOS_CH_WRITER_PASSWORD_FILE:}
+    reader:
+      user: ${ARGOS_CH_READER_USER:argos_reader}
+      password-file: ${ARGOS_CH_READER_PASSWORD_FILE:}
+    migrator:
+      user: ${ARGOS_CH_MIGRATOR_USER:argos_migrator}
+      password-file: ${ARGOS_CH_MIGRATOR_PASSWORD_FILE:}

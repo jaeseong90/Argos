@@ -82,10 +82,10 @@ class SqlIdsTest {
   void asyncStepSetting() {
     Map<String, String> values = new HashMap<String, String>();
     List<String> warnings = new ArrayList<String>();
-    assertThat(HttpSettings.capture(AgentConfig.of(values), warnings).asyncStep()).isFalse();
+    assertThat(HttpSettings.capture(AgentConfig.of(values)).asyncStep()).isFalse();
     values.put("async.step", "true");
-    assertThat(HttpSettings.capture(AgentConfig.of(values), warnings).asyncStep()).isTrue();
-    assertThat(HttpSettings.capture(AgentConfig.of(values), warnings).remoteIpMode())
+    assertThat(HttpSettings.capture(AgentConfig.of(values)).asyncStep()).isTrue();
+    assertThat(HttpSettings.capture(AgentConfig.of(values)).remoteIpMode())
         .isEqualTo(io.argos.agent.bootstrap.CaptureConfig.DEFAULT.remoteIpMode());
     assertThat(warnings).isEqualTo(Collections.<String>emptyList());
   }

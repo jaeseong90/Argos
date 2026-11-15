@@ -30,8 +30,8 @@ class LeakProbeTest {
 
   @Test
   @DisplayName(
-      "T-AG-053 heap residency: io.argos. bytes <= 64 MB passes, above fails; self-diagnostics"
-          + " checks are NOT_AVAILABLE until WO-10, never passed")
+      "T-AG-053 heap residency: io.argos.agent. bytes <= 64 MB passes, above fails; missing"
+          + " self-diagnostics are NOT_AVAILABLE, never passed")
   void probe() {
     List<List<String>> commands = new ArrayList<>();
     JcmdClient jcmd =
@@ -51,7 +51,7 @@ class LeakProbeTest {
     for (String name :
         List.of(LeakReport.THREADLOCAL, LeakReport.ACTIVE_REGISTRY, LeakReport.WEAK_MAP)) {
       assertThat(report.check(name).outcome()).isEqualTo(LeakReport.Outcome.NOT_AVAILABLE);
-      assertThat(report.check(name).detail()).contains("WO-10");
+      assertThat(report.check(name).detail()).contains("not available");
     }
     report.assertNoFailure();
     assertThatThrownBy(report::assertAllPassed)
@@ -122,6 +122,60 @@ class LeakProbeTest {
     LeakReport report = new LeakProbe(silent, SelfDiagnostics.notAvailable(), true).check();
     assertThat(report.check(LeakReport.HEAP_RESIDENCY).outcome())
         .isEqualTo(LeakReport.Outcome.NOT_AVAILABLE);
+    assertThatThrownBy(report::assertAllPassed).isInstanceOf(AssertionError.class);
+  }
+
+  @Test
+  @DisplayName(
+      "C-87 heap residency counts io.argos.agent. (own and shaded) and not the sample app's"
+          + " io.argos.sample. classes")
+  void heapResidencyPrefix() {
+    String histogram =
+        """
+         num     #instances         #bytes  class name (module)
+           1:         1000          40000  io.argos.agent.core.trace.Transaction
+           2:          100           2000  io.argos.agent.shaded.org.jctools.queues.Node
+           3:       500000       99999999  io.argos.sample.boot3.Order
+        """;
+    LeakReport.Check check = LeakProbe.heapResidency(ClassHistogram.parse(histogram), true);
+    assertThat(check.outcome()).isEqualTo(LeakReport.Outcome.PASS);
+    assertThat(check.value()).isEqualTo(42_000);
+    assertThat(check.detail()).contains("io.argos.agent.* instances 1100").contains("C-87");
+    assertThat(LeakProbe.AGENT_PREFIX).isEqualTo("io.argos.agent.");
+  }
+
+  @Test
+  @DisplayName(
+      "T-AG-053 self-diagnostics are read after the two GC.run, and a field the agent does not"
+          + " report is NOT_AVAILABLE")
+  void selfDiagnosticsAfterGc() {
+    List<String> events = new ArrayList<>();
+    JcmdClient jcmd =
+        new JcmdClient(
+            7,
+            arguments -> {
+              events.add(arguments.get(1));
+              return arguments.contains("GC.class_histogram") ? histogram(10) : "";
+            });
+    String snapshot =
+        "{\"format\":1,\"threadlocal_contexts_live\":0,\"active_registry_size\":0,"
+            + "\"counters\":{},\"modules\":[]}";
+    LeakReport report =
+        new LeakProbe(
+                jcmd,
+                after -> {
+                  events.add("selfdiag");
+                  return SelfDiagnostics.parse(snapshot);
+                },
+                true)
+            .check();
+    assertThat(events).containsExactly("GC.run", "GC.run", "selfdiag", "GC.class_histogram");
+    assertThat(report.check(LeakReport.THREADLOCAL).outcome()).isEqualTo(LeakReport.Outcome.PASS);
+    assertThat(report.check(LeakReport.ACTIVE_REGISTRY).outcome())
+        .isEqualTo(LeakReport.Outcome.PASS);
+    assertThat(report.check(LeakReport.WEAK_MAP).outcome())
+        .isEqualTo(LeakReport.Outcome.NOT_AVAILABLE);
+    assertThat(report.check(LeakReport.WEAK_MAP).detail()).contains("not reported by the agent");
     assertThatThrownBy(report::assertAllPassed).isInstanceOf(AssertionError.class);
   }
 

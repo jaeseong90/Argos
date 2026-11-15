@@ -44,9 +44,13 @@ ssh with key authentication for `--loader`.
 | 11 report | `bench.sh publish`: `docs/bench/<YYYY-MM-DD>-<commit7>.md` (below). OpenTelemetry reference: `--reference otel --otel-agent <jar>` adds a variant with the OpenTelemetry Java agent and every exporter set to `none`; the OTLP black-hole receiver of 18 §7.5 is not implemented (reference point only, no verdict) |
 
 `--exporter` (18 §7.3, §5.4): `noop` is the no-op exporter of 18 §5.4 (`-Dargos.test.exporter=noop`:
-every transaction is encoded and dropped; a test-only key, so a release build of the agent is
-refused); `drop` is the WO-02 P-2 setting (`-Dargos.exporter=noop`: recorded and dropped without
-encoding; use it to reproduce the WO-02 numbers); `grpc` measures the transport and is refused until
+every transaction is encoded and dropped); `drop` is the WO-02 P-2 setting
+(`-Dargos.test.exporter=drop`: recorded and dropped without encoding; use it to reproduce the WO-02
+numbers). Both are values of the test-only key `argos.test.exporter` (the WO-02 key
+`argos.exporter` is gone, ADR-0009 C-88), so a release build of the agent is refused: measure the
+development (`-SNAPSHOT`) build of the same commit. Until WO-11 adds the gRPC encoder, `noop`
+encodes with the JSONL test encoder on `argos-sender` and `drop` skips that step; C-80 treats both
+as the instrumentation cost; `grpc` measures the transport and is refused until
 the agent jar contains the gRPC exporter (WO-11), then it needs `--collector host:port`. The harness
 checks the agent's start banner of every run: an agent that started with another exporter makes
 the set INVALID.

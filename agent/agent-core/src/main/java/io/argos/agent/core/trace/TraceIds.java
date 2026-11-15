@@ -1,37 +1,51 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.agent.core.trace;
 
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.SplittableRandom;
 
 /**
- * W3C trace ids (10 §9.5, F-A06): Argos-generated trace ids carry the Unix seconds in their upper
- * 32 bits; span ids are random and never 0.
+ * W3C trace and span ids (10 §9.5, F-A06): {@code newTraceId} is the Unix seconds in the upper 32
+ * bits and 96 random bits; span ids are 64 random bits, never 0. The random bits come from a {@link
+ * SplittableRandom} per thread (10 §9.5 "스레드별"), created from the JVM-wide seed generator of {@code
+ * SplittableRandom} on a thread's first id: no lock, no {@code SecureRandom} (N-30).
  */
 public final class TraceIds {
   private static final char[] HEX = "0123456789abcdef".toCharArray();
 
+  private static final ThreadLocal<SplittableRandom> RANDOM = new PerThreadRandom();
+
   private TraceIds() {}
+
+  /** The random source of the current thread. */
+  static SplittableRandom random() {
+    return RANDOM.get();
+  }
 
   /** Upper 64 bits of a new trace id: Unix seconds (32 bits) and 32 random bits. */
   public static long newTraceIdHigh(long epochMillis) {
-    long seconds = epochMillis / 1000L;
-    return (seconds << 32) | (ThreadLocalRandom.current().nextInt() & 0xFFFFFFFFL);
+    return traceIdHigh(epochMillis, random());
   }
 
   /** Lower 64 bits of a new trace id (random, never 0). */
   public static long newTraceIdLow() {
-    return nonZeroRandom();
+    return nonZero(random());
   }
 
+  /** A new span id: 64 random bits, never 0. */
   public static long newSpanId() {
-    return nonZeroRandom();
+    return nonZero(random());
   }
 
-  private static long nonZeroRandom() {
+  static long traceIdHigh(long epochMillis, SplittableRandom random) {
+    long seconds = Math.max(0L, epochMillis / 1000L) & 0xFFFFFFFFL;
+    return (seconds << 32) | (random.nextInt() & 0xFFFFFFFFL);
+  }
+
+  static long nonZero(SplittableRandom random) {
     long value;
     do {
-      value = ThreadLocalRandom.current().nextLong();
-    } while (value == 0);
+      value = random.nextLong();
+    } while (value == 0L);
     return value;
   }
 
@@ -51,14 +65,23 @@ public final class TraceIds {
   }
 
   private static void write(char[] out, int offset, long value) {
+    long rest = value;
     for (int i = 15; i >= 0; i--) {
-      out[offset + i] = HEX[(int) (value & 0xF)];
-      value >>>= 4;
+      out[offset + i] = HEX[(int) (rest & 0xF)];
+      rest >>>= 4;
     }
   }
 
   /** {@code traceparent} (W3C Trace Context level 1, sampled flag set). */
   public static String traceparent(long traceHigh, long traceLow, long spanId) {
     return "00-" + hex32(traceHigh, traceLow) + "-" + hex16(spanId) + "-01";
+  }
+
+  /** Creates a thread's {@link SplittableRandom} from the JVM-wide seed generator. */
+  private static final class PerThreadRandom extends ThreadLocal<SplittableRandom> {
+    @Override
+    protected SplittableRandom initialValue() {
+      return new SplittableRandom();
+    }
   }
 }

@@ -136,7 +136,7 @@ public final class ProcessApp implements RunningApp {
 
   @Override
   public SelfDiagnostics selfDiagnostics() {
-    return SelfDiagnostics.notAvailable();
+    return readSelfDiagnostics();
   }
 
   @Override

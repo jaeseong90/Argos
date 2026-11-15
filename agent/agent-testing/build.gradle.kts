@@ -288,12 +288,18 @@ val sampleAppJars =
 // Agent log allow-list (T-AG-060): fixtures/log-allowlist/agent-info.txt. Unsafe allow-list
 // (T-BLD-004): one file for check-shading.sh and UnsafeScanner, test/agent/unsafe-allowlist.txt.
 val baselineDir = layout.projectDirectory.dir("baselines/transformed-classes")
+// Premain class budgets (ADR-0009 C-79): baselines/premain-classes/<run>-<jdk>.txt, recorded with
+// the same -Pagent.baseline.record=true (PremainClassBudget, PremainBudgetAttachTest).
+val premainBudgetDir = layout.projectDirectory.dir("baselines/premain-classes")
 val logAllowlist = layout.projectDirectory.file("fixtures/log-allowlist/agent-info.txt")
 val unsafeAllowlist = layout.settingsDirectory.file("test/agent/unsafe-allowlist.txt")
 val recordBaselines = providers.gradleProperty("agent.baseline.record").map(String::toBoolean).getOrElse(false)
 
 tasks.withType<Test>().configureEach {
   inputs.files(baselineDir.asFileTree).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("baselines")
+  inputs.files(premainBudgetDir.asFileTree)
+    .withPathSensitivity(PathSensitivity.RELATIVE)
+    .withPropertyName("premainBudgets")
   inputs.file(logAllowlist).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("logAllowlist")
   inputs.file(unsafeAllowlist).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("unsafeAllowlist")
   inputs.property("recordBaselines", recordBaselines)

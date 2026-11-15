@@ -122,6 +122,25 @@ class JvmToolsTest {
   }
 
   @Test
+  @Tag("req:F-A15")
+  @DisplayName("C-78 jar copy without one entry: manifest and other entries unchanged")
+  void withoutEntry() throws Exception {
+    Path source = dir.resolve("full.jar");
+    jar(source, "a/B.class", "x", "inst/c/D.classdata", "y");
+    Path broken =
+        AgentJars.withoutEntry(source, dir.resolve("out/broken.jar"), "inst/c/D.classdata");
+    assertThat(AgentJars.version(broken)).isEqualTo("0.0.0-SNAPSHOT");
+    try (java.util.jar.JarFile jar = new java.util.jar.JarFile(broken.toFile())) {
+      assertThat(jar.getEntry("a/B.class")).isNotNull();
+      assertThat(jar.getEntry("inst/c/D.classdata")).isNull();
+    }
+    assertThatThrownBy(
+            () -> AgentJars.withoutEntry(source, dir.resolve("out/other.jar"), "no/such.class"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("no/such.class");
+  }
+
+  @Test
   @Tag("req:N-02")
   @DisplayName("GC.class_histogram rows (JDK 8 and 9+ formats); io.argos. bytes and instances")
   void histogram() {

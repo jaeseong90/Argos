@@ -7,6 +7,13 @@ import java.util.concurrent.atomic.AtomicIntegerArray;
  * Runtime state and error counter of every instrumentation module (10 §3, §5.2): advice of a module
  * that is not {@link #ENABLED} returns at once through {@link Argos#skip(int)}, while its
  * transformations stay installed. Module IDs are 0..{@value #MAX_MODULES}-1.
+ *
+ * <p>The four states of 10 §5.2 step 5: {@link #ENABLED}, {@link #DISABLED_BY_CONFIG} ({@code
+ * instrumentation.disabled}), {@link #DISABLED_BY_ERRORS} (advice errors reached {@code
+ * instrumentation.error-threshold} or transform errors {@code .transform-error-threshold}) and
+ * {@link #DISABLED_BY_REMOTE} (a remote {@code instrumentation.disabled}). The core changes a state
+ * through {@link AgentControl#setModuleState} (10 §3 {@code disable(moduleId, reason)}, WO-02 D-2).
+ * {@link #TEST_FAULT} exists in development builds only ({@code argos.test.faults}, T-BLD-010).
  */
 public final class ModuleHealth {
   public static final int MAX_MODULES = 64;

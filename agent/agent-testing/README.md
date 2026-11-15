@@ -25,12 +25,13 @@ Test layers, test IDs and requirement tags: [test/README.md](../../test/README.m
 | `collector` | `FakeCollector`, `FaultInjector`, `Collected` (`JsonlCollected`, collector view), `ReceivedBatch`, `SessionInfo`, `ConfigApplyOutcome`, `CommandOutcome`, `CollectorProtocol` (wire seam), `poc.PocProtocol` | §5.3 |
 | `export` | `FileExporterReader` (JSONL), `TransactionRecord`, `RecordSource`, `ExporterSettings` | §5.4 |
 | `assertion` | `ArgosAssertions`, `CollectedAssert`, `TransactionsAssert`, `TransactionAssert`, `StepsAssert`, `StepAssert`, `MetricAssert`, `ValueAssert` (missing vs zero), `Unsupported` | §5.5 |
-| `baseline` | `TransformLog`, `TransformBaseline` (record and diff), `TransformList` | §5.6 |
+| `baseline` | `TransformLog`, `TransformBaseline` (record and diff), `TransformList`, `PremainClassBudget` (C-79) | §5.6 |
 | `leak` | `LeakProbe`, `LeakReport`, `TomcatRedeployDriver` | §5.9 |
 | `log` | `AgentLogAssert` (allow-list fixture), `AppOutput` (console) | §5.10 |
 | `jvm` | `JcmdClient`, `ClassHistogram`, `NmtSummary`, `ThreadCounter`, `UnsafeScanner`, `AgentJars` | §5.9, §5.10 |
 
 Other directories: `baselines/transformed-classes/<app>-<jdk>[-vt].txt` (T-AG-005),
+`baselines/premain-classes/trivial-release-<jdk>.txt` (premain class budget, ADR-0009 C-79),
 `fixtures/log-allowlist/agent-info.txt` (T-AG-060), `src/integrationTest`, `src/matrixTest`,
 `src/probeModule` (test-only agent modules), `src/trivialApp`, `src/preloadAgent`,
 `src/archTest` and `src/archFixtures` (ArchUnit).
@@ -63,11 +64,13 @@ try (RunningApp app =
   (plain on JDK 8 and 11, after `-XX:+UnlockDiagnosticVMOptions` on 17+, which reject it
   otherwise); `--sun-misc-unsafe-memory-access=deny` on JDK 25. `bytecodeVerification(false)` turns
   C-27 off (CDS notice checks).
-- Agent settings (`AgentSettings`): harness defaults `log.dir`, `debug.transform-list`,
-  `debug.transform-log`, `test.exporter=file:<workDir>/out` (or the collector's `server.*`), then the
+- Agent settings (`AgentSettings`): harness defaults `app.name` (the sample app's name), `app.env=test`
+  (the required keys of 10 §4.3 P4, so a normal run logs no configuration WARN), `log.dir`,
+  `debug.transform-list`, `debug.transform-log`, `test.selfdiag-file=<workDir>/out/selfdiag.json`
+  (ADR-0010 C-95), `test.exporter=file:<workDir>/out` (or the collector's `server.*`), then the
   test's settings, all as `-Dargos.<key>`. `agentConfigFile(true)` also writes `argos-agent.yml`
-  and passes `-Dargos.config`; the agent reads YAML from WO-10 on (until then it logs that the file
-  is not supported yet). `harnessDefaults(false)` passes only the test's own settings.
+  and passes `-Dargos.config` (the agent's own bounded YAML subset parser, WO-10).
+  `harnessDefaults(false)` passes only the test's own settings.
 - `RunningApp`: `port()`, `pid()`, `workDir()`, `agentLogDir()`, `call()`/`get()`, `load()` (small
   open-model load, not the benchmark), `collected()`, `transactions()`, `jcmd()`,
   `selfDiagnostics()`, `startupTime()` (spawn to port binding, C-49), `readyTime()`, `kill9()`,
@@ -103,8 +106,29 @@ try (RunningApp app =
   bind-mounted at `/argos/run`, port 8080 published, memory 4g unless given. `pid()` is -1,
   `jcmd()` runs inside the container, the temp directory is the tree at the time of the call.
   `ContainerModeTest` runs with `-Pagent.container=true`.
-- `selfDiagnostics()` returns `SelfDiagnostics.notAvailable()` until WO-10/WO-11 add the fields of
-  10 §19 and the command; every value query throws instead of returning 0.
+- `selfDiagnostics()` reads the agent's self-diagnostics snapshot (18 §19, ADR-0010 C-95): a
+  development build with `argos.test.selfdiag-file=<file>` (a harness default) rewrites `<file>`
+  atomically every 2 s on `argos-watch` and at shutdown with `threadlocal_contexts_live`,
+  `active_registry_size`, `weakmap_size`, `agent_threads_cpu_seconds_total`, `direct_memory_bytes`,
+  `premain_ms`, every `argos_agent_*` counter and the state and error count of every module.
+  `awaitSelfDiagnostics(after, timeout)` waits for a snapshot written after an instant (after a GC,
+  for example). A gauge the agent did not measure is absent from the file, and the harness throws
+  `NotAvailableException` for it instead of returning 0 (C-4); a run without the file (release
+  build, harness defaults off, no agent) is `notAvailable` with the reason. The flat fields
+  `sql_outside_tx_total` and `orphan_steps_total` come from the counters
+  `argos_agent_sql_outside_tx_total` and the sum of `argos_agent_orphan_steps_total{type=...}`.
+  Two weak-map gauges (both after the agent expunged collected keys): `weakmap_size` is the 18 §5.9
+  leak gauge and counts only the fallback context-store entries that hold transaction state (a
+  `TraceContext` or `Scope` value, `ContextStore.contextEntries()`), so it must be 0 after GC;
+  `weakmap_entries` (`SelfDiagnostics.WEAKMAP_ENTRIES`, not an 18 §19 field) counts every live
+  entry of every store (`ContextStore.totalEntries()`), including caches keyed by long-lived
+  objects (a connection's database id, per-class-loader state), so it is not 0 after GC and is
+  checked for growth instead (`LoadLeakE2eTest`). Narrowing `weakmap_size` this way awaits a PM
+  decision (WO-10 report).
+  `ExitedApp.selfDiagnostics()` reads the snapshot the agent wrote at shutdown and
+  `ExitedApp.premainClasses()` the sorted list `<file>.premain-classes` (the classes the agent class
+  loader defined on the premain thread, C-79). WO-17 adds the `SELF_DIAGNOSTICS` command as a second
+  source of the same snapshot.
 - Not yet: `collector(...)` with a real agent exporter (WO-11), and the 50 WAR redeploys of
   `TomcatRedeployDriver` against a real Tomcat (manager app, matrix, WO-50).
 
@@ -151,14 +175,17 @@ try (FakeCollector collector = FakeCollector.start()) {           // or startTls
 |---|---|
 | `-Dargos.test.exporter=file:<dir>` | JSONL in `<dir>/argos-transactions.jsonl` (`FileExporterReader`) |
 | `-Dargos.test.exporter=noop` | encode every transaction (the JSONL encoder until WO-11), then drop |
+| `-Dargos.test.exporter=drop` | record and drop without encoding (the WO-02 P-2 baseline, formerly `-Dargos.exporter=noop`; ADR-0009 C-80, C-88) |
 | `-Dargos.test.exporter=grpc` | the default exporter; no transport before WO-11: one WARN, then noop |
 | `-Dargos.test.faults=<spec>,...` | `advice-throw:<module>`, `transform-error:<module>`, `helper-nocdef:<module>` (module unit, see below) |
+| `-Dargos.test.selfdiag-file=<file>` | self-diagnostics snapshot (ADR-0010 C-95, 18 §19): JSON rewritten atomically every 2 s and at shutdown, plus `<file>.premain-classes` once after the start (C-79); `SelfDiagnostics`, `ExitedApp.premainClasses()` |
 | `-Dargos.debug.transform-log=<file>` | transform log (below); a diagnostic key, not test-only |
-| `-Dargos.exporter=noop\|file` | WO-02 PoC keys (D-13 open): `noop` records and drops without encoding (the P-2 baseline) |
 
-`argos.test.*` wins over the PoC keys. Release builds ignore `argos.test.*` and `argos.testing.*`
-(system properties and `ARGOS_TEST_*`) and log one WARN naming them: the gate is in
-`AgentConfig.load`, the single place where the agent reads settings, and the release marker is the
+The WO-02 PoC keys `argos.exporter` and `argos.exporter.file.*` are gone (ADR-0009 C-88): the
+agent reports them as unknown keys and uses the `grpc` slot. Every test key is a `TEST` entry of
+the registry `io.argos.agent.core.config.ConfigKeys`. Release builds ignore `argos.test.*` and
+`argos.testing.*` (system properties and `ARGOS_TEST_*`) and log one WARN naming them: the gate is
+in `ConfigLoader`, the single place where the agent reads settings, and the release marker is the
 jar's `Implementation-Version` without `-SNAPSHOT` (`AgentInfo.isReleaseBuild`; development builds
 are `0.0.0-SNAPSHOT`, tag builds `-Pversion=X.Y.Z`). The check fails closed: a packaged jar without
 that attribute, or whose manifest cannot be read, counts as a release build (`checkManifestVersion`
@@ -211,6 +238,21 @@ missing class prints `[baseline] WARN`. Record with
 combinations) and review the diff in the PR. Recorded: `trivial-release-<jdk>` and
 `trivial-probe-<jdk>` for JDK 8, 11, 17, 21, 25, `shop-boot2-{8,11,17,21}`, `shop-boot3-{17,21,25}`.
 
+Premain class budget (ADR-0009 C-79, N-30, `PremainBudgetAttachTest`): the release agent jar on the
+trivial app with `-Dargos.debug.transform-timing=true`; the agent writes the classes its class
+loader defined on the premain thread to `<selfdiag-file>.premain-classes`, and `PremainClassBudget`
+compares them with `baselines/premain-classes/trivial-release-<jdk>.txt`: more classes than the
+recorded count fail (a class that was not there before is named), fewer print a hint to re-record,
+and any class of the shaded transport (`io.argos.agent.shaded.` + `io.grpc.`, `io.netty.`,
+`io.perfmark.`, `com.google.protobuf.`, `com.google.common.`, `com.google.thirdparty.`,
+`com.google.gson.`, `com.google.rpc.`, `com.google.type.`, `com.google.longrunning.`,
+`com.google.api.`: the transport packages of `AgentShading.RELOCATED_PACKAGES`, kept in step with
+it) on the premain thread fails whatever the budget (10 §4.3 P7: the transport of WO-11 starts on an
+agent thread). ByteBuddy and JCTools are not on the list (premain builds the transformer and may
+create the queues). Until WO-11 the jar has no transport class, so only `PremainClassBudgetTest`
+exercises this rule; `PremainBudgetAttachTest` enforces it on real runs from then on. The same `-Pagent.baseline.record=true` re-records the budgets;
+review the class diff like a transform baseline.
+
 ## Fail-safe, re-entrance, leaks (18 §5.7-§5.9)
 
 - `argos.test.faults` (agent-core `TestFaults`, development builds only): `advice-throw` (the
@@ -230,14 +272,24 @@ combinations) and review the diff in the PR. Recorded: `trivial-release-<jdk>` a
   (`unsupported fault`).
 - Initialization failure (T-AG-044): the probe module throws while the agent builds its transformer
   with `-Dprobe.init-throw=true` (test-only, outside the `argos.` namespace).
-- Re-entrance (T-AG-050): `noneFromThread(startsWith("argos-"))` on transactions, no `io.argos.*`
-  class (own or shaded) in the transform log, at most 6 `argos-` threads (N-26). Step threads and
-  the `sql_outside_tx_total`/`orphan_steps_total` counters need WO-10/WO-11 and are reported as not
-  available (a skipped test with the reason).
+- Re-entrance (T-AG-050): `noneFromThread(startsWith("argos-"))` on transactions and
+  `noStepFromThread(startsWith("argos-"))` on their steps (every step carries its thread name in
+  the JSONL), no `io.argos.*` class (own or shaded) in the transform log, at most 6 `argos-`
+  threads (N-26), and the self-diagnostics counters `sql_outside_tx_total` and
+  `orphan_steps_total` unchanged by the load (the agent's own threads raise neither). The counter
+  part has no producer in the release agent yet (SQL outside a transaction comes with WO-13 jdbc,
+  orphan steps with WO-15/WO-18), so on the current build it cannot fail; the measured evidence is
+  the thread checks and the transform log. The counter path itself is checked with the probe jar:
+  `AgentAttachTest` T-AG-040 (`advice-throw:test-probe`) expects exactly 3
+  `argos_agent_orphan_steps_total{type="async"}` from `test-probe-jdk`'s `ExecuteAdvice`.
 - `LeakProbe.of(app).check()` (T-AG-053): `jcmd GC.run` twice, then ThreadLocal residue, active
-  registry and weak map from the self-diagnostics (NOT_AVAILABLE until WO-10, never passed) and
-  heap residency from `GC.class_histogram` (`io.argos.` bytes <= 64 MB; NOT_AVAILABLE, not PASS,
-  when the histogram has no rows or, for a run with the agent, no `io.argos.agent.` instance).
+  registry and weak map (`weakmap_size`, the context-holding entries) from a self-diagnostics
+  snapshot written after the GC (the agent expunges
+  collected weak keys before it measures; a gauge it does not report is NOT_AVAILABLE, never
+  passed) and heap residency from `GC.class_histogram` (`io.argos.agent.` bytes, shaded classes
+  included, <= 64 MB, ADR-0009 C-87; the sample apps' `io.argos.sample.*` are not counted;
+  NOT_AVAILABLE, not PASS, when the histogram has no rows or, for a run with the agent, no
+  `io.argos.agent.` instance).
   `assertNoFailure()` fails on FAIL; `assertAllPassed()` also fails on NOT_AVAILABLE.
   `isNotFromThread`/`noneFromThread` fail on a transaction without a thread name. `TomcatRedeployDriver` (manager text
   API, `ParallelWebappClassLoader` count, ThreadLocal leak warnings) and `NmtSummary` (`Internal +
@@ -266,6 +318,16 @@ combinations) and review the diff in the PR. Recorded: `trivial-release-<jdk>` a
 |---|---|---|
 | T-AG-001a..d, T-AG-002a..d, T-AG-003a..e, ADV-04 | 19 §5.3 ADV-01..04, 10 §5.3 A-1..A-6, C-9 | `src/archTest/.../AdviceRules.java` |
 | AGT-01..03, B-1..B-4, T-AG-004 | 19 §5.3, 10 §2 | `src/archTest/.../AgentBoundaryRules.java` |
+| LOG-01, A-7 (T-AG-003f), A-9 (T-AG-004a) | 10 §14 (SEC-26), 10 §5.3 A-7, A-9 | `src/archTest/.../AgentCodeRules.java` |
+
+- AGT-02 allows stdout/stderr only in `core.log` (the stderr fallback) and `core.check`, plus one
+  exception: the entry point `AgentPremain` may write the single stderr line `argos: agent
+  disabled: <reason>` of a start that failed before the agent's logger existed (ADR-0009 C-78),
+  never stdout or a stack trace.
+- LOG-01: the arguments of `AgentLogger.info/warn/error/warnOnce` calls are constants, numbers,
+  enums or values from the reviewed producers of `src/archTest/resources/log-argument-allowlist.txt`
+  (identifiers that are not collected data), so collected data cannot reach INFO logs (10 §14
+  static check); DEBUG is not checked.
 
 - Advice classes are classes with `@Advice.OnMethodEnter/OnMethodExit` methods; helpers are
   instrumentation classes whose name contains `Helper` (10 §5.4).
@@ -303,12 +365,13 @@ happens once, as before.
 
 | Class | Tags | Tests (per JDK / combination) |
 |---|---|---|
-| `attach.AgentAttachTest` | F-A31, F-A35 | trivial app on `-Pagent.attach.jdks`: T-BLD-006/T-AG-060/T-AG-005 release jar, T-AG-060 `-Xshare:off`, T-AG-010 probe jar, T-AG-070 preloaded JDK classes, T-AG-043 kill switches (2), T-AG-040 advice fault, F-A35 Unsafe code paths |
+| `attach.AgentAttachTest` | F-A31, F-A35 | trivial app on `-Pagent.attach.jdks`: T-BLD-006/T-AG-060/T-AG-005 release jar, T-AG-060 `-Xshare:off`, T-AG-010 probe jar, T-AG-070 preloaded JDK classes, T-AG-043 kill switches (2), T-AG-040 advice fault (and 3 orphan ASYNC steps counted in the self-diagnostics), F-A35 Unsafe code paths |
 | `attach.ReleaseGateAttachTest` | DSN-18-15 | T-BLD-010 release gate |
-| `attach.FailSafeAttachTest` | F-A15 | T-AG-041 transform errors, T-AG-040 helper-nocdef (plus two specs that inject nothing and are reported), T-AG-044 initialization failure |
+| `attach.FailSafeAttachTest` | F-A15 | T-AG-041 transform errors (WARN and self-diagnostics), T-AG-040 helper-nocdef (plus two specs that inject nothing and are reported), T-AG-044 initialization failure (ERROR in the log although the JVM exits at once, no keep-alive), T-AG-044/C-78 the same without a writable log directory and before the logger exists (exactly one `argos: agent disabled:` stderr line), T-AG-042 `instrumentation.exclude-classes`, T-AG-045 stderr fallback (10 lines, WARN and above) |
+| `attach.PremainBudgetAttachTest` | N-30 | premain class budget and no transport class on the premain thread (C-79), the step timing printed as a reference value |
 | `e2e.SampleAppAgentTest` | F-A01, F-A02, F-A03, F-A05, F-A07, F-A28, F-A31 | per jar combination of `-Pagent.e2e`: T-AG-010/T-AG-070/T-AG-005; first combination: T-BLD-006 baseline |
 | `e2e.FailSafeE2eTest` | F-A15 | first jar combination: T-AG-040 servlet and data-module faults, T-AG-041 jdbc transform errors, T-AG-040 helper-nocdef jdbc |
-| `e2e.LoadLeakE2eTest` | F-A15, N-02 | first jar combination: T-AG-050/T-AG-053 1,000 requests and leak probe, the not-available part (skipped with the reason) |
+| `e2e.LoadLeakE2eTest` | F-A15, N-02 | first jar combination: T-AG-050/T-AG-053 10,000 requests (18 §5.9) in two batches of 5,000: no transaction or step from an `argos-` thread, counters unchanged (no producer before WO-13/15/18), ThreadLocal / registry / weak map (`weakmap_size`) 0 after GC, `weakmap_entries` after GC not higher after batch 2 than after batch 1, heap <= 64 MB (C-87); every check measured (no NOT_AVAILABLE) |
 | `e2e.WarAppAgentTest` | F-A01, DSN-18-03 | per WAR combination of `-Pagent.e2e` (none by default: the class is then skipped): one request to the first context is one transaction (status 200), no agent ERROR, quiet console |
 | `BytecodeVerificationFlagTest` | T-AG-006: the test JVM and the preset on every attach JDK |
 | `collector.FakeCollectorTest` | recording, `latency`, `failNext`, `hang`, `rejectAuth`, session round trips, `closeStream`, `serverRestart`, TLS modes |

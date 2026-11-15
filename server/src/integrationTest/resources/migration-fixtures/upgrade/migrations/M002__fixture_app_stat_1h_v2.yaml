@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# TEST FIXTURE (T-ST-052 path 2, T-SV-002): the four-step replacement of a 1h rollup with the monthly
+# backfill (unit: month, source app_stat_1m, column minute; 13 section 13.2): app_stat_1h ->
+# app_stat_1h_v2 (same columns). No view reads app_stat_1h, so dropping it breaks no cascade. The
+# backfill covers the retention of its source (rollup-1m-days); the generator data of the tests lies
+# within it.
+description: replace app_stat_1h by app_stat_1h_v2 (fixture, monthly backfill)
+steps:
+  - id: create_v2
+    kind: ddl
+    statements:
+      - |
+        CREATE TABLE IF NOT EXISTS {db}.{p}app_stat_1h_v2
+        (
+            app_id            UInt32,
+            env               LowCardinality(String),
+            kind              Enum8('HTTP' = 1, 'BATCH' = 2, 'MESSAGE' = 3),
+            hour              DateTime('UTC'),
+            count             SimpleAggregateFunction(sum, UInt64),
+            error_count       SimpleAggregateFunction(sum, UInt64),
+            sum_elapsed_ms    SimpleAggregateFunction(sum, UInt64),
+            max_elapsed_ms    SimpleAggregateFunction(max, UInt32),
+            sum_sql_time_ms   SimpleAggregateFunction(sum, UInt64),
+            sum_dbc_wait_ms   SimpleAggregateFunction(sum, UInt64),
+            sum_ext_time_ms   SimpleAggregateFunction(sum, UInt64),
+            apdex_satisfied   SimpleAggregateFunction(sum, UInt64),
+            apdex_tolerating  SimpleAggregateFunction(sum, UInt64),
+            q_elapsed         AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32)
+        )
+        ENGINE = AggregatingMergeTree
+        PARTITION BY toYYYYMM(hour)
+        ORDER BY (app_id, kind, hour)
+        TTL hour + INTERVAL {retention.rollup-1h-days} DAY
+        SETTINGS ttl_only_drop_parts = 1,
+                 non_replicated_deduplication_window = 1000,
+                 allow_dimensions_outside_sorting_key = 1
+      - |
+        CREATE MATERIALIZED VIEW IF NOT EXISTS {db}.{p}app_stat_1h_v2_mv TO {db}.{p}app_stat_1h_v2
+        SQL SECURITY DEFINER AS {rollup:app_stat_1h_v2}
+  - id: backfill
+    kind: backfill
+    table: app_stat_1h_v2
+    unit: month
+    days: "{retention.rollup-1m-days}"
+  - id: switch
+    kind: switch
+    alias: app_stat_1h
+    table: app_stat_1h_v2
+  - id: drop_old
+    kind: drop
+    statements:
+      - DROP VIEW IF EXISTS {db}.{p}app_stat_1h_mv
+      - DROP TABLE IF EXISTS {db}.{p}app_stat_1h

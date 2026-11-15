@@ -94,20 +94,59 @@ class AssertionDslTest {
 
   @Test
   @DisplayName(
-      "unsupported on JSONL: env, version, cpu_time_ms, step threads, stats, metrics, dictionary,"
-          + " counters fail with the reason instead of passing")
-  void unsupportedOnJsonl() throws Exception {
+      "JSONL from WO-10: env, version, cpu_time_ms, alloc_bytes, flags, sampler decision and step"
+          + " threads are supported (missing vs present); headers, request id, stats, metrics,"
+          + " dictionary and counters still fail as unsupported")
+  void jsonlFieldsOfWo10() throws Exception {
     Collected collected = jsonl(LINE);
     TransactionAssert tx = assertThat(collected).transactions().first();
+    // Supported now: absent means "not recorded" (missing), never "unsupported".
+    tx.cpuTimeMs().isMissing().allocBytes().isMissing().field("version").isMissing();
     assertThatThrownBy(() -> tx.hasEnv("test"))
         .isInstanceOf(AssertionError.class)
-        .hasMessageStartingWith("unsupported: transaction field 'env'")
+        .hasMessageContaining("env")
+        .hasMessageNotContaining("unsupported");
+    tx.noStepFromThread(startsWith("argos-"));
+    String measured =
+        LINE.replace(
+                "\"thread\":\"http-nio-1\",",
+                "\"thread\":\"http-nio-1\",\"env\":\"test\",\"version\":\"1.2.3\","
+                    + "\"cpu_time_ms\":0.0,\"alloc_bytes\":4096,\"flags\":[\"leaked\"],"
+                    + "\"xlog_flags\":2,\"profile_captured\":true,\"truncated\":false,"
+                    + "\"total_steps\":2,")
+            .replace(
+                "\"type\":\"SQL\",",
+                "\"type\":\"SQL\",\"thread\":\"worker-1\",\"repeat_count\":3,");
+    TransactionAssert full = assertThat(jsonl(measured)).transactions().first();
+    full.hasEnv("test")
+        .hasVersion("1.2.3")
+        .hasFlag("leaked")
+        .doesNotHaveFlag("summarized")
+        .isProfileCaptured()
+        .cpuTimeMs()
+        .isZero()
+        .allocBytes()
+        .isEqualTo(4096L)
+        .steps()
+        .ofType("SQL")
+        .single()
+        .repeatCount()
+        .isEqualTo(3L)
+        .noStepFromThread(startsWith("argos-"));
+    assertThatThrownBy(() -> full.noStepFromThread(startsWith("worker-")))
+        .hasMessageContaining("worker-1");
+    full.totalSteps().isEqualTo(2L).truncated().isEqualTo(false);
+    tx.totalSteps().isMissing().threadName().isMissing();
+    assertThatThrownBy(() -> full.isNotProfileCaptured())
+        .hasMessageContaining("profile_captured=false");
+    // Still not produced by the JSONL exporter: unsupported, never passing silently.
+    assertThatThrownBy(() -> tx.field("headers").isMissing())
+        .hasMessageStartingWith("unsupported: transaction field 'headers'")
         .hasMessageContaining("JSONL exporter");
-    assertThatThrownBy(() -> tx.hasVersion("1.2.3")).hasMessageStartingWith("unsupported");
-    assertThatThrownBy(() -> tx.cpuTimeMs().isMissing()).hasMessageStartingWith("unsupported");
-    assertThatThrownBy(() -> tx.allocBytes().isZero()).hasMessageStartingWith("unsupported");
-    assertThatThrownBy(() -> tx.noStepFromThread(startsWith("argos-")))
-        .hasMessageStartingWith("unsupported: the thread of a step");
+    assertThatThrownBy(() -> tx.field("request_id").isMissing())
+        .hasMessageStartingWith("unsupported");
+    assertThatThrownBy(() -> tx.steps().first().field("batch_size"))
+        .hasMessageStartingWith("unsupported: step field 'batch_size'");
     assertThatThrownBy(() -> assertThat(collected).stats())
         .hasMessageStartingWith("unsupported: SQL statistics");
     assertThatThrownBy(() -> assertThat(collected).metrics())
@@ -116,8 +155,6 @@ class AssertionDslTest {
         .hasMessageStartingWith("unsupported: dictionary");
     assertThatThrownBy(() -> assertThat(collected).counters())
         .hasMessageStartingWith("unsupported: agent counters");
-    assertThatThrownBy(() -> tx.steps().first().field("thread"))
-        .hasMessageStartingWith("unsupported: step field 'thread'");
   }
 
   /** A collector-like source that carries everything (the shape PocProtocol produces). */

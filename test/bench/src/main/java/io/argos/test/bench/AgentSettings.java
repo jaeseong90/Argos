@@ -48,8 +48,13 @@ final class AgentSettings {
    *   <li>{@code noop}: 18 §5.4, {@code argos.test.exporter=noop}: transactions are encoded and
    *       dropped (the instrumentation cost). A test-only key, so a release build of the agent
    *       ignores it (T-BLD-010) and is refused.
-   *   <li>{@code drop}: the WO-02 P-2 setting {@code argos.exporter=noop}: transactions are
-   *       recorded and dropped without encoding. Use it to reproduce the WO-02 numbers.
+   *   <li>{@code drop}: {@code argos.test.exporter=drop}, the WO-02 P-2 setting: transactions are
+   *       recorded and dropped without encoding. Use it to reproduce the WO-02 numbers. The WO-02
+   *       key {@code argos.exporter=noop} is gone (ADR-0009 C-88): {@code drop} is a test-only
+   *       value too, so a release build is refused like {@code noop}. Until WO-11 adds the gRPC
+   *       encoder, the agent's {@code noop} encodes with the JSONL test encoder on {@code
+   *       argos-sender}; {@code drop} skips that step, which C-80 counts as the same
+   *       instrumentation cost.
    *   <li>{@code grpc}: the transport cost (P-3). Refused until the agent jar has the gRPC exporter
    *       (WO-11), and needs {@code --collector host:port}.
    * </ul>
@@ -57,12 +62,7 @@ final class AgentSettings {
   static Exporter exporter(String name, Path agentJar, String collector) throws IOException {
     return switch (name) {
       case "noop" -> noop(agentJar);
-      case "drop" ->
-          new Exporter(
-              "drop",
-              Map.of("exporter", "noop"),
-              "noop",
-              "WO-02 P-2 setting: every transaction is recorded and dropped without encoding");
+      case "drop" -> drop(agentJar);
       case "grpc" -> grpc(agentJar, collector);
       default ->
           throw new UsageException("--exporter must be noop, drop or grpc (got '" + name + "')");
@@ -70,22 +70,45 @@ final class AgentSettings {
   }
 
   private static Exporter noop(Path agentJar) throws IOException {
-    String version = implementationVersion(agentJar);
-    if (isReleaseVersion(version)) {
-      throw new UsageException(
-          "--exporter noop selects the test-only no-op exporter (argos.test.exporter=noop, 18"
-              + " §5.4), which a release build ignores (T-BLD-010); "
-              + agentJar.getFileName()
-              + " is version "
-              + version
-              + ". Measure a development build, or use --exporter drop (argos.exporter=noop).");
-    }
+    requireDevelopmentBuild(agentJar, "noop");
     return new Exporter(
         "noop",
         Map.of("test.exporter", "noop"),
         "noop",
         "no-op exporter of 18 §5.4: every transaction is encoded and dropped (instrumentation"
             + " and encoding cost, no transport)");
+  }
+
+  private static Exporter drop(Path agentJar) throws IOException {
+    requireDevelopmentBuild(agentJar, "drop");
+    return new Exporter(
+        "drop",
+        Map.of("test.exporter", "drop"),
+        "drop",
+        "WO-02 P-2 setting (argos.test.exporter=drop): every transaction is recorded and dropped"
+            + " without encoding");
+  }
+
+  /**
+   * {@code noop} and {@code drop} are values of the test-only key {@code argos.test.exporter} (18
+   * §5.4, ADR-0009 C-88): a release build ignores it (T-BLD-010) and would measure another
+   * exporter, so it is refused. Benchmarks measure the development (SNAPSHOT) build of the same
+   * commit; apart from the release gate its bytecode is the same (C-88).
+   */
+  private static void requireDevelopmentBuild(Path agentJar, String exporter) throws IOException {
+    String version = implementationVersion(agentJar);
+    if (isReleaseVersion(version)) {
+      throw new UsageException(
+          "--exporter "
+              + exporter
+              + " selects the test-only exporter argos.test.exporter="
+              + exporter
+              + " (18 §5.4), which a release build ignores (T-BLD-010); "
+              + agentJar.getFileName()
+              + " is version "
+              + version
+              + ". Measure the development (-SNAPSHOT) build of the same commit (ADR-0009 C-88).");
+    }
   }
 
   private static Exporter grpc(Path agentJar, String collector) throws IOException {
@@ -103,8 +126,8 @@ final class AgentSettings {
           "--exporter grpc needs --collector host:port (a collector server or FakeCollector"
               + " that accepts the agent's batches during the whole set)");
     }
+    // grpc is the default exporter: no exporter key (the WO-02 key argos.exporter is gone, C-88).
     Map<String, String> config = new LinkedHashMap<>();
-    config.put("exporter", "grpc");
     config.put("server.address", collector);
     return new Exporter(
         "grpc", config, "grpc", "gRPC exporter to " + collector + " (transport cost)");

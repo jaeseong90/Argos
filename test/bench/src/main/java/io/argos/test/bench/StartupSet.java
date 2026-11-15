@@ -251,6 +251,7 @@ final class StartupSet {
         Platform.variantOptions(
             variant,
             setup,
+            app,
             setup.binDir().resolve(setup.agentJar().getFileName()).toString(),
             setup.otelJar() == null
                 ? null

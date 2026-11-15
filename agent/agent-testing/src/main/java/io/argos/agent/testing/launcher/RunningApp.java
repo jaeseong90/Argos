@@ -7,8 +7,10 @@ import io.argos.agent.testing.collector.Collected;
 import io.argos.agent.testing.export.FileExporterReader;
 import io.argos.agent.testing.jvm.JcmdClient;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -88,12 +90,63 @@ public interface RunningApp extends AutoCloseable {
     return FileExporterReader.inDirectory(workDir().resolve("out"));
   }
 
+  /**
+   * The agent's self-diagnostics snapshot file ({@code argos.test.selfdiag-file} of the harness
+   * defaults, {@code <workDir>/out/selfdiag.json}, ADR-0010 C-95).
+   */
+  default Path selfDiagnosticsFile() {
+    return workDir().resolve("out").resolve(AppLauncher.SELF_DIAGNOSTICS_FILE);
+  }
+
+  /**
+   * The self-diagnostics of this run read from {@link #selfDiagnosticsFile()}: not available when
+   * no agent is attached, when the run does not set {@code argos.test.selfdiag-file}, or when the
+   * agent wrote no file (a release build ignores {@code argos.test.*}).
+   */
+  default SelfDiagnostics readSelfDiagnostics() {
+    if (!agentAttached()) {
+      return SelfDiagnostics.notAvailable("no Argos agent is attached to this run");
+    }
+    if (command().stream().noneMatch(arg -> arg.startsWith("-Dargos.test.selfdiag-file="))) {
+      return SelfDiagnostics.notAvailable(
+          "the run does not set argos.test.selfdiag-file (harness defaults are off)");
+    }
+    return SelfDiagnostics.read(selfDiagnosticsFile());
+  }
+
+  /**
+   * A self-diagnostics snapshot the agent wrote after {@code after} (it rewrites the file every 2
+   * s): waits up to {@code timeout}, then returns the latest snapshot, or a not-available one that
+   * says no fresh snapshot came.
+   */
+  default SelfDiagnostics awaitSelfDiagnostics(Instant after, Duration timeout) {
+    Path file = selfDiagnosticsFile();
+    boolean fresh =
+        Polling.await(
+            () -> {
+              try {
+                return Files.getLastModifiedTime(file).toInstant().isAfter(after);
+              } catch (IOException e) {
+                return false;
+              }
+            },
+            Boolean::booleanValue,
+            timeout);
+    SelfDiagnostics diagnostics = selfDiagnostics();
+    if (!fresh && diagnostics.available()) {
+      return SelfDiagnostics.notAvailable(
+          "no self-diagnostics snapshot written after " + after + " within " + timeout);
+    }
+    return diagnostics;
+  }
+
   /** {@code jcmd <pid> ...} with the app's own JDK. */
   JcmdClient jcmd();
 
   /**
-   * The agent's self-diagnostics (18 §5.2, 10 §19): not available until WO-10 adds the command; the
-   * returned object says so instead of returning zeros.
+   * The agent's self-diagnostics (18 §5.2, 10 §19): the latest snapshot of {@link
+   * #selfDiagnosticsFile()} ({@link #readSelfDiagnostics()}); a run without one gets a
+   * not-available object that says why instead of returning zeros.
    */
   SelfDiagnostics selfDiagnostics();
 

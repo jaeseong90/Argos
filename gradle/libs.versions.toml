@@ -104,6 +104,23 @@ clickhouse-client = { module = "com.clickhouse:client-v2", version.ref = "clickh
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
 flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
+# Server starters and libraries without a version: managed by spring-boot-bom (WO-20). Boot 4 names
+# the servlet web starter spring-boot-starter-webmvc (spring-boot-starter-web is its deprecated
+# alias). Logback (spring-boot-starter-logging) and jakarta.annotation-api are excluded by
+# argos.java-server (EPL/LGPL, EPL/GPL: ADR-0004 C-43); tomcat-annotations-api (Apache-2.0)
+# provides jakarta.annotation instead.
+server-starter-webmvc = { module = "org.springframework.boot:spring-boot-starter-webmvc" }
+server-starter-actuator = { module = "org.springframework.boot:spring-boot-starter-actuator" }
+server-starter-jdbc = { module = "org.springframework.boot:spring-boot-starter-jdbc" }
+server-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
+server-starter-log4j2 = { module = "org.springframework.boot:spring-boot-starter-log4j2" }
+server-log4j-layout-template-json = { module = "org.apache.logging.log4j:log4j-layout-template-json" }
+server-micrometer-prometheus = { module = "io.micrometer:micrometer-registry-prometheus" }
+server-tomcat-annotations-api = { module = "org.apache.tomcat:tomcat-annotations-api" }
+# Server test modules (Boot 4 splits the test support per technology), versions from spring-boot-bom.
+server-test-starter = { module = "org.springframework.boot:spring-boot-starter-test" }
+server-test-webmvc = { module = "org.springframework.boot:spring-boot-starter-webmvc-test" }
+server-test-actuator = { module = "org.springframework.boot:spring-boot-starter-actuator-test" }
 # tests
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }

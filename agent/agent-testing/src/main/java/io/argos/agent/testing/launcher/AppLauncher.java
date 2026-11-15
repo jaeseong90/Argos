@@ -61,11 +61,14 @@ import java.util.stream.Stream;
  * Spring Boot's banner off; {@code ARGOS_*}, {@code JAVA_TOOL_OPTIONS}, {@code JDK_JAVA_OPTIONS}
  * and {@code _JAVA_OPTIONS} of the harness environment are not inherited.
  *
- * <p>Agent settings with the harness defaults on ({@link #harnessDefaults}): {@code log.dir},
- * {@code debug.transform-list}, {@code debug.transform-log} in the work directory, and {@code
- * test.exporter=file:<workDir>/out} (or the collector's {@code server.*} settings with {@link
- * #collector}); the test's own settings come last and win. Readiness (HTTP apps): the port is bound
- * and the readiness path answers 200 (ADR-0004 C-49 startup is spawn to port binding).
+ * <p>Agent settings with the harness defaults on ({@link #harnessDefaults}): {@code app.name} (the
+ * sample app's name) and {@code app.env=test} (the required keys of 10 §4.3 P4, so that a normal
+ * run logs no configuration ERROR or WARN), {@code log.dir}, {@code debug.transform-list}, {@code
+ * debug.transform-log} and {@code test.selfdiag-file} ({@code out/selfdiag.json}, ADR-0010 C-95) in
+ * the work directory, and {@code test.exporter=file:<workDir>/out} (or the collector's {@code
+ * server.*} settings with {@link #collector}); the test's own settings come last and win. Readiness
+ * (HTTP apps): the port is bound and the readiness path answers 200 (ADR-0004 C-49 startup is spawn
+ * to port binding).
  *
  * <p>WAR apps ({@link SampleApp#isWar}) run in a standalone Tomcat staged for the run ({@link
  * TomcatStaging}: CATALINA_HOME from the sample app's build, CATALINA_BASE {@code
@@ -76,6 +79,12 @@ import java.util.stream.Stream;
  * ({@code app.get("/shop-a/api/orders/1")}).
  */
 public final class AppLauncher {
+  /** {@code app.env} of every harness run (harness defaults). */
+  public static final String HARNESS_ENV = "test";
+
+  /** File name of {@code argos.test.selfdiag-file} in {@code <workDir>/out} (harness defaults). */
+  public static final String SELF_DIAGNOSTICS_FILE = "selfdiag.json";
+
   private final SampleApp app;
   private final Jdk jdk;
   private Path agentJar;
@@ -281,10 +290,14 @@ public final class AppLauncher {
   public AgentSettings agentSettings(Path dir) {
     AgentSettings settings = new AgentSettings();
     if (harnessDefaults) {
+      settings.put("app.name", app.name());
+      settings.put("app.env", HARNESS_ENV);
       settings.put("log.dir", dir.resolve("logs").toString());
       settings.put(
           "debug.transform-list", dir.resolve("out").resolve("transformed.txt").toString());
       settings.put("debug.transform-log", dir.resolve("out").resolve("transform.log").toString());
+      settings.put(
+          "test.selfdiag-file", dir.resolve("out").resolve(SELF_DIAGNOSTICS_FILE).toString());
       if (collector == null) {
         settings.put("test.exporter", "file:" + dir.resolve("out"));
       } else {

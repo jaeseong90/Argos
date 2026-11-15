@@ -33,6 +33,7 @@ org.apiguardian:apiguardian-api:1.1.2=archTestCompileClasspath,testCompileClassp
 org.assertj:assertj-core:3.27.7=archTestCompileClasspath,archTestRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
 org.commonmark:commonmark-ext-gfm-tables:0.29.0=annotationProcessor,archTestAnnotationProcessor,testAnnotationProcessor
 org.commonmark:commonmark:0.29.0=annotationProcessor,archTestAnnotationProcessor,testAnnotationProcessor
+org.jctools:jctools-core:4.0.7=testRuntimeClasspath
 org.jspecify:jspecify:1.0.1=annotationProcessor,archTestAnnotationProcessor,testAnnotationProcessor
 org.junit.jupiter:junit-jupiter-api:5.14.4=archTestCompileClasspath,archTestRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
 org.junit.jupiter:junit-jupiter-engine:5.14.4=archTestRuntimeClasspath,testRuntimeClasspath

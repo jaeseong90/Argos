@@ -224,18 +224,51 @@
 ### Epic A: 에이전트 (10 문서)
 
 **WO-10 에이전트 코어 정식화**
-- 목표: WO-02 구조를 본 구현으로. 10 문서 §2 패키지 전부의 골격, §3 bootstrap API 확정, §9.1~9.2(Transaction·StepBuffer·종료 시 샘플링·요약 모드), §9.5(TxIdGenerator Snowflake·TraceIds), §10.1(큐 삼중 상한 건수·120초·바이트), §14(자기 보호·로그·예산), §15(설정 레퍼런스 전부: ConfigLoader 우선순위 yml → `-Dargos.*` → `ARGOS_*`, `RemoteConfigGate`, `EffectiveConfig`·출처, `ConfigHash`), `Masker`·`MaskPatterns`, `Xxh3`.
-- 입력: 10 §2·§3·§9.1·9.2·9.5·§10.1·§14·§15·§17 DSN-10-01~04·08·09·16~18·20. 02 DSN-02-01·09, C-1·C-4·C-9. 06 SEC-06·26.
-- 산출물: 위 클래스 전부, ArchUnit 규칙 전체 활성(B-1~B-4, Advice 규칙), 설정 레퍼런스 문서(`docs/agent-config.md` 초안, 원격 허용 여부 열 포함), 자가 진단 필드(ThreadLocal 잔존·레지스트리·약참조·에이전트 CPU·직접 메모리·premain_ms).
-- 수락 기준: T-AG-001~006, T-AG-040~046(fail-safe·exclude-classes·킬 스위치 2단·초기화 예외·stderr 폴백·retransform 상한), T-AG-050, T-AG-053(누수 4종), T-AG-060, T-ACC-01(단조 시계), T-ACC-11(tx_id 1,000만 충돌 0·`>> 23` 복원), 설정 우선순위·`EffectiveConfig` 출처 단위 테스트, 큐 삼중 상한 초과 드롭·카운터 테스트, 힙 64MB 상한 테스트(N-02 축소판). 수동: 설정 레퍼런스 표와 실제 키 일치 확인.
-- 확인 작업: 10 U-17(xxh3 자체 구현 vs ZAH Unsafe), U-15.
+
+- **목표**: WO-02 PoC 코어를 10 문서 본 구현으로 바꿔 WO-11~WO-19가 올라설 기반을 만든다. bootstrap API 확정, 트랜잭션·step 모델(종료 시 샘플링·요약 모드·반복 접기), Snowflake `tx_id`·`trace_id`, 큐 삼중 상한, 자기 보호·로그·예산, 설정 레퍼런스 전체(로더·원격 하드 캡 평가·유효 설정·해시), 마스킹·xxh3, 자가 진단 필드를 갖춘다. Gate 0 이월 C-78·C-79·C-87·C-88을 닫는다.
+- **선행**: Gate 0(조건부 통과), WO-02·WO-05 산출물. 병행: WO-20(서버 골격, 경로 분리).
+- **입력**: 10 §2(패키지·B-1~B-4)·§3·§4.3(P0~P8 예산)·§5.2·§5.3·§8(가상 스레드 판별·`ThreadNames`)·§9.1·§9.2·§9.5·§10.1·§12.2 1~4단계(평가만)·§14·§15·§17 DSN-10-01~04·08·09·16~18·20·§18 U-15·U-17·§19. 11 §4.4(결측·상한)·§16(`repeat_count`·`truncated`·`total_steps`). 16 §2.6(토큰 보관·마스킹)·§5.5(allow 평가)·§6.6(마스킹 기본 세트). 02 DSN-02-01·09·17, §7(step 열거·결측 표현), C-1·C-4·C-9·C-16. ADR-0003 C-24·C-25·C-26, ADR-0007 C-69(`flags` 비트), ADR-0008, ADR-0009 C-76·C-77·C-78·C-79·C-80·C-86·C-87·C-88·C-89. 06 SEC-06·23·26. 18 §5.4·§5.7~§5.9·§10(T-ACC-01·11)·§19·부록 A. 01 N-02·N-05·N-26·N-30. WO-02 보고 D-1·D-2·D-3·D-14·E절(WO-10), WO-05 보고 A-2·A-4·C-1.
+- **산출물**
+  - `agent-bootstrap`: `Tracer`·`TraceContext`(C-69 `flags`)·`CaptureConfig`(10 §3 + capture 키 전부)·`CallDepth`·`ContextStore`·`ModuleHealth`(4상태)·`AgentControl` 확정. WO-02 D-1·D-2 차이는 javadoc에 근거와 함께. `StepType`·`DictKind`·`Kind` = C-1·C-16 번호
+  - `agent-core` 10 §2 패키지 전부(`package-info.java`에 책임·담당 WO, 빈 클래스 없음)
+    - `trace`: `TracerImpl`, `Transaction`, `StepBuffer`(SoA·64→2배·상한 1,000·요약 모드·열린 step 스택을 스코프별로(D-14)·연속 반복 접기·`truncated`/`total_steps`), `ActiveRegistry`(키 = `TraceContext`, `WeakReference<Thread>`), `Sampler`, `TxIdGenerator`(10 §9.5), `TraceIds`, `Dictionary`(xxh3), 잔존 컨텍스트 강제 종료(`leaked`)
+    - `context`: `VirtualThreads`(MethodHandle 캐시), `ThreadNames`(정규화·사전 1,000 상한 `_other_`)
+    - `transport`: 큐 5종(건수·120초·바이트 삼중 상한, 오래된 것 1개 버리고 재시도 1회, `argos_agent_dropped_total{queue}`). 송신은 WO-11
+    - `config`: `ConfigKeys` 레지스트리(10 §15 전 키: 타입·기본값·원격 열·검증기·비밀 여부), `ConfigLoader`(yml → `-Dargos.*` → `ARGOS_*`, YAML 부분집합, 토큰 3방식), `RemoteConfigGate`(평가), `EffectiveConfig`(값·출처), `ConfigHash`(토큰 제외)
+    - `masking`(`Masker`·`MaskPatterns`, 16 §6.6), `hash`(`Xxh3`), `guard`(`SelfProtection`·`TransformErrorListener`·`RetransformLimiter`·`AgentCounters`·자가 진단 스냅샷), `log`(C-78), `boot`(`AgentStarter` P0~P8 계측·C-79 개선)
+  - 자가 진단 필드(18 §19): `threadlocal_contexts_live`, `active_registry_size`, `weakmap_size`, `agent_threads_cpu_seconds_total`, `direct_memory_bytes`, `premain_ms`, 모듈 상태·에러 수, 드롭·제외·orphan·`sql_outside_tx_total`. 하네스 노출 경로는 개발 빌드 전용(`argos.test.*`, T-BLD-010)으로 WO가 정해 기록
+  - ArchUnit 규칙 전체 활성: B-1~B-4, ADV-01~04, AGT-01~03, T-AG-001~004, 10 §14 로그 호출 인자 타입 allowlist(INFO PII 0)
+  - `docs/agent-config.md`(영문): 10 §15 전 키·타입·기본값·원격 열·출처 우선순위·알려진 제약 절. C-88로 `argos.exporter`·`exporter.file.*` 공개 키 제거
+  - `agent-testing`: 자가 진단 읽기(`RunningApp.selfDiagnostics()`), `LeakProbe` 접두 `io.argos.agent.`(C-87), `ReleaseGateAttachTest` 기대값(C-88), T-AG-044 시작 실패 로그(C-78), step 스레드·카운터로 T-AG-050·053 NA 해소. `test/bench` `drop` 익스포터를 C-88·C-80에 맞춤
+  - 기동 경로 측정 기록(C-79): 단계별 ms, premain 중 로드된 에이전트 클래스 수, `classdata` 해석 시간의 변경 전후 표
+- **수락 기준**
+  - 자동: T-AG-001~004(위반 픽스처 네거티브 포함), T-AG-005(무변화 또는 재녹화 diff 첨부), T-AG-006, T-AG-040~042·044·045, T-AG-043(로컬 1단·2단), T-AG-046(한도기 단위, 원격 왕복은 WO-17), T-AG-050(트랜잭션·step 모두, NA 0), T-AG-053 4종(1만 요청, NOT_AVAILABLE 0), T-AG-060, T-BLD-010(C-88 반영), T-ACC-01(주입 시계), T-ACC-11(1,000만 건 충돌 0·`tx_id >> 23` 복원 ±1ms·두 인스턴스)
+  - 자동: 설정 우선순위·`EffectiveConfig` 출처·토큰 3방식(SEC-06 설정 측: 평문 WARN 1회·`argos_****`·해시 제외)·`ConfigHash` 단위, `RemoteConfigGate` 평가 단위(SEC-23 기본 불허·`server.*`·`remote-config.*`·`log.dir` 불가·`capture.mask-patterns` 추가만), 큐 삼중 상한 초과 드롭·카운터, 앱 스레드 비대기(N-05), 힙 64MB 상한(N-02 축소판, C-87 정의 + 큐 바이트 추정), `Masker` 16 §6.6 세트, `Xxh3` 기준 벡터, `docs/agent-config.md` ↔ `ConfigKeys` 대조 테스트
+  - 자동: `./gradlew build`, `:agent:agent-testing:integrationTest`(기본 + 부착 JDK 5종·종단 7조합), `verifyAgentJar`, `check-shading.sh` 녹색. 03 §3.1 해당 항목(major 52·Unsafe 0·로그·재진입·누수·fail-safe)
+  - 수동: 설정 레퍼런스 표와 실제 키 일치 확인. C-79 기동 판정(N-04 +2초 heavy 포함, N-30 ≤ 500ms)은 이 PC 참고값(INVALID 표기)만 내고 판정은 전용 장비(WO-19 재측정) → **사람 확인**
+- **확인 작업**: 10 U-17(xxh3 자체 구현, ZAH 불채택 근거), U-15(JDK 25 `BytecodeVerificationLocal`), WO-02 A-2·A-3(요청당 할당 +7.5~8KB, GC 뒤 잔존 `Transaction`·`WeakKey`) 원인·조치
+- **범위 밖**: gRPC 전송·세션·사전 선전송·`ClockSync`·토큰 메타데이터 전송(WO-11), 계측 모듈 기능(WO-12~15·18), 통계 집계기·메트릭 수집(WO-16), 명령·`ConfigPush` 적용·킬 스위치 원격(WO-17), 느린 스택·`--check`·`OverheadMonitor`(WO-19), 매트릭스(WO-50), 정식 벤치(WO-51)
+- **보안 체크**: SEC-06(토큰 3방식·평문 WARN·`argos_****`·`config_hash` 제외), SEC-23(평가: 기본 불허·불변 키), SEC-26(INFO PII 0·로그 디렉터리 0700), F-A35(stdout 0, C-78 한 줄 예외만), T-BLD-010(`argos.test.*` 릴리스 무시, C-89 fail-closed)
+- **보고 특이사항**: C-79 표(단계별 ms·클래스 수 전후, 참고값), 새 의존성(JCTools 등) `jar tf`·`check-shading.sh` 결과, 02 §5.2 분류 요청 표(스레드 이름 등, 02는 PM이 반영), WO-02 D-1·D-2·D-3·D-14 처리 결과, PM 결정 항목 결과.
 
 **WO-11 프로토콜(proto) + 전송**
-- 목표: 11 문서 proto 전체를 `proto/` 모듈로 작성하고(C-1·C-3·C-4·C-16 적용), 10 §10.2~10.4 전송(배치 unary·in-flight 4·deadline 5초·`agent_epoch`·종류별 seq·백오프·`isReady`)·세션 스트림(Hello·heartbeat·ClockSync `prev_t1/prev_t4`·사전 선전송 LRU·InstanceUpdate·AgentBye)·gRPC/Netty 고정 설정(§10.3)·TLS 검증(SEC-08)·토큰 보관 3방식·마스킹(SEC-06)을 구현한다.
-- 입력: 11 §1~§12 전체, 10 §10, 02 DSN-02-11·22, C-3·C-4, 06 SEC-06·07·08·15(클라이언트 측), 19 §3.4(proto 생성, `buf` 린트).
-- 산출물: `proto/argos/v1/*.proto` + `PROTOCOL_VERSION`, `buf.yaml`(lint·breaking), 에이전트·서버 각각 생성 설정, `GrpcTransport`·`SessionClient`·`Sender`·`BatchAssembler`·`Backoff`·`DictionaryCache`·`ClockSync`, `grpc` 익스포터.
-- 수락 기준: T-AG-071(in-flight·백프레셔·드롭·seq 단조·8u252 TLS), T-AG-067(AgentBye 1초 플러시), T-ACC-02(시계 오프셋), T-ACC-06(드롭 가시화), T-SEC-06(평문 WARN·`token-file` 0600·마스킹), T-SEC-07·08 클라이언트 측(호스트명 불일치 실패·skip-verify WARN·평문은 서버 플래그 없으면 거부), `buf breaking` CI, N-01·N-03을 gRPC 전송 포함으로 재측정해 PoC 수치와 비교(WO-05 하네스), 스레드 ≤ 6·직접 메모리 ≤ 8MB(T-NFR-26). FakeCollector 계약 테스트(11 §16 요구).
-- 확인 작업: 11 미결 4(8u252·8u261), A-1·A-14 확정값 적용.
+
+- **목표**: 11 문서 proto를 `:proto` 단일 소스로 만들고(정합 결정 반영) 에이전트 gRPC 전송(배치 unary·세션 스트림·TLS·토큰)과 FakeCollector의 proto 교체를 끝내 에이전트 ↔ 수집기 종단 경로를 연다. 서버(WO-21)가 쓰는 생성 코드 경계(`:proto` 소유·소비 규약)를 확정한다. Gate 0 이월(C-72~C-75, FakeCollector proto 교체, N-01·N-03 gRPC 포함 재측정)을 닫는다.
+- **선행**: WO-10. 병행: WO-24(서버 인증, 경로 분리). 소비자: WO-21(서버 수집, `:proto` 의존), WO-16·17.
+- **입력**: 11 §1~§12·§15·§16, 10 §10.2~§10.4·§14(스레드 6·직접 메모리 8MB)·DSN-10-10·11, 02 DSN-02-11·22, §7(step 열거·결측), C-1·C-3·C-4·C-15·C-16·C-19, ADR-0007 C-67·C-68·C-69, ADR-0005 결정 1~7·"결과"의 WO-11 의무, ADR-0008, ADR-0009 C-72~C-75·C-80·C-81, 13 §3·§18(11에 요구: `buckets[15]`·`delta`·exec/fetch 합)·`deploy/clickhouse/schema/V001__init.sql`, 16 §2.4·§2.6·§3.4·§6.3, 06 SEC-06·07·08·15(클라이언트 측), 19 §2(모듈 그래프)·§3.3·§3.4·§5.6·§6.2, 18 §5.3·§5.4·§19(proto 아티팩트·주입 가능 필드). WO-02 보고 D-4·D-11·D-12·E절(WO-11), WO-05 보고 C-2·C-4, `docs/poc/agent-poc.md` 9장.
+- **산출물**
+  - `proto/src/main/proto/argos/v1/{common,session,data,service}.proto`: 11 §4 + C-1 `StepType`(SQL=1 … SUMMARY=11), C-16 `DictionaryKind`(1~11, `DictKind`와 같은 번호), C-68 `SqlStat.dbc_wait_sum_us` 제거(`reserved`), C-69 `TransactionRecord.flags`, C-15 `MetricSample.delta`, DSN-13-03 `buckets`, D-11 import 정정, PM 승인 시 추가형 항목(`AgentHello.plaintext`·`ServerHello.user_id_salt`·`DictionaryKind.POOL`). `PROTOCOL_VERSION` → 생성 상수. `buf` lint·breaking 스크립트(고정 다이제스트 컨테이너)와 pr.yml `lint` 잡 단계. proto 계약 테스트(필드 번호 스냅샷, bootstrap 상수 대조). `proto/README.md`(소비 규약: 서버 = `project(":proto")`, 에이전트 = `io.argos.proto` relocate)
+  - 에이전트 `io.argos.agent.core.transport`: `GrpcTransport`(10 §10.3 고정 설정·`NettyProps` relocate 이름), `SessionClient`(Hello·heartbeat 30초·`prev_t1`/`prev_t4`·사전 선전송·`DictionaryRequest` 응답·`InstanceUpdate`·`AgentBye`·`SessionClose`·`Throttle`), `Sender`(종류별 seq·`agent_epoch`·in-flight 4·deadline 5/3초·재시도·`SESSION_REQUIRED` 재전송·`ACK_PARTIAL_DROP`·`ACK_DUPLICATE`), `BatchAssembler`(`Limits`·1MiB 분할·gzip > 1KiB), `Backoff`, `DictionaryCache`, `ClockSync`, 토큰 `CallCredentials`·세션 메타데이터, TLS(JDK 공급자·`ca-file`·호스트명 검증·`insecure-skip-verify`·평문 WARN), 8u252 미만 ERROR 1줄 + 전송 비활성, 종료 훅(Bye → 1초 플러시), `grpc` 익스포터
+  - `agent-dist`·`build-logic`: Netty 4.1.139+ BOM(C-73), gRPC minimize 루트, JUL → 에이전트 로거 relocate, `io.argos.proto` relocate, 프로퍼티 문자열 목록 보강, `Unsafe` 제외 목록·`test/agent/unsafe-allowlist.txt`(C-74 증명 테스트)
+  - `agent-testing`: FakeCollector를 `:proto`로 교체(`PocProtocol`·`collectorProto` 제거, 테스트 무변경), `AppLauncher.collector()` 종단, 11 §16 계약 테스트, 독립 실행 FakeCollector(벤치용). `test/bench` `--exporter grpc` 활성화
+- **수락 기준**
+  - 자동: T-AG-071(in-flight ≤ 4·`isReady` 백프레셔·큐 초과 드롭·카운터·`batch_seq` 단조·8u252 TLS), T-AG-067(AgentBye 후 1초 플러시·수신), T-ACC-02(에이전트 측 `prev_t1/prev_t4`와 FakeCollector 오프셋 계산 ≈ +3초, WARN 표시는 WO-22), T-ACC-06(에이전트 측: `hang()` 동안 드롭 카운터 > 0, 복구 후 heartbeat `dropped_total`·자가 진단), T-SEC-06(평문 WARN 1회·`token-file` 권한·로그/자가 진단 grep `argos_****`만), T-SEC-07·08 클라이언트 측(호스트명 불일치 실패·skip-verify 매 접속 WARN·평문 거부 시 재시도 안 함), T-NFR-26 축소판(`argos-` 스레드 ≤ 6·직접 메모리 ≤ 8MB), FakeCollector 계약 테스트(11 §5·§6·§9·§10), proto 계약 테스트, `buf lint`·`buf breaking`(네거티브 포함), T-BLD-001~006(major 52·Unsafe·relocated strings·jar ≤ 15MB·임시 파일), C-74 증명(JDK 25 warn 0줄·deny 동작·클래스 로드 기록), C-75(Windows `socket_<n>`만 예외, Linux 0), T-AG-060(누락 전송 WARN 허용 항목 제거), T-AG-005 무변화, T-BLD-010
+  - 자동(외부 JRE): `-Pagent.jdk8u252=<JRE>`로 TLS 1.2 접속, `-Pagent.jdk8u242=<JRE>`로 ERROR 1줄 + 계측 유지(없으면 skip 표기, 이 PC는 1회 내려받아 실행)
+  - 수동: N-01·N-03 gRPC 포함 재측정(전용 장비 `bench-run.sh --exporter grpc`)과 PoC 비교 → **사람 확인**(이 PC는 `--smoke` 참고값, INVALID). GitHub CI의 `buf breaking`·Linux 잡 → **사람 확인**
+- **확인 작업**: 11 미결 2(javalite 불채택 반영), 4(8u252 ALPN·8u261 TLS 1.3), 6(세션 idle 90초, C-19), A-1·A-14 확정값(C-72) 적용, ADR-0005 "결과"의 제외 목록을 세션·재접속·gzip 경로 클래스 로드 기록으로 재확인
+- **범위 밖**: 서버 gRPC 수신·인터셉터·상한·WAL·중복 제거(WO-21), 서버 세션·인스턴스 상태·시계 WARN(WO-22), 토큰 발급·폐기(WO-26), 명령 실행·`ConfigPush` 적용(WO-17), 메트릭·통계·액티브 스냅샷 배치 생성(WO-16), mTLS(1.x), `server/**` 편집(WO-21이 `project(":proto")` 의존을 추가), 위협 모델 문서(WO-46, 보고서에 항목만)
+- **보안 체크**: SEC-06·07·08·15(클라이언트), 11 §11(토큰은 메타데이터에만, 로그·`reject_message` 금지), DSN-02-22(설정 대상 외 연결 0, 에이전트 네트워크 참조는 gRPC 채널만: T-BLD-011 자리), F-A35(stdout 0·Unsafe·JUL 0), T-BLD-006(C-75 예외 범위)
+- **보고 특이사항**: proto 필드 ↔ V001 열 대조표, jar 크기·클래스 수·메타스페이스 변화, `jar tf`·`check-shading.sh`, 새 의존성·도구(Netty 4.1·buf) 라이선스, PoC(ADR-0005) 수치와 비교한 참고 측정, 위협 모델 반영 항목(WO-46), PM 결정 결과.
 
 **WO-12 servlet·spring-webmvc·servletasync 계측**
 - 목표: 10 §6.1·6.2·6.7·§7(요청 경계 상태 머신, 제외 규칙 평가 순서, 서비스 이름 폴백·사전 상한, 스트리밍·101·max-duration), 헤더 화이트리스트·IP 모드·user_id 모드·쿼리스트링 제거·XFF trusted-proxies, 멀티 웹앱 컨텍스트 경로 접두.
@@ -288,10 +321,26 @@
 ### Epic B: 수집 서버 (12 문서)
 
 **WO-20 서버 골격·설정·마이그레이션 러너**
-- 목표: 12 §1 패키지 골격, `bootstrap`(기동 순서 설정 → 키 → PG Flyway → CH 러너 → WAL 복구 → 리스너, DSN-12-15), `config`(`ArgosProperties` 12 §10 설정 레퍼런스 전부·금지 비밀번호 거부·`*_FILE` 참조·유효 설정 노출), PostgreSQL Flyway `V001__init.sql`(13 §12 스키마 전부 + C-11 계정·권한, `audit_logs` INSERT·SELECT만), ClickHouse 자체 러너(13 §13.2: `ch_schema_history`·체크섬·멱등 정규식·플레이스홀더·`M` 절차 파일·4단계), 관리 포트 8081(127.0.0.1·베어러, C-7), 헬스·readiness(마이그레이션 완료), 구조화 로깅(요청 id·비밀값 마스킹 appender), Micrometer 골격.
-- 입력: 12 §1·§10·DSN-12-15, 13 §12·§13, 17 §6.1(설정 트리)·§17 요구, 06 SEC-55·74·76, 02 C-7·C-11, 01 N-22.
-- 수락 기준: T-SV-001(빈 DB 멱등 2회), T-SV-002(이전 스키마 + 1/100 증분·각 ≤ 10분, nightly), T-ST-052(두 경로·MV 4단계 리허설), T-SV-049(금지 DB 비밀번호 기동 거부), T-SEC-55(`/actuator/env` 404·prometheus 무인증 401·8081 바인딩), 조회 계정 DDL 실패(T-SEC-76), 설정 키 스냅샷 테스트 골격(T-API-009 서버 부분).
-- 확인 작업: 17 미결 11(`management.server.port` 분리), 13 §17 러너 관련 항목.
+
+- **목표**: 수집 서버(`:server`, Java 21, Spring Boot 4.1)의 실행 뼈대를 만든다. 12 §1 패키지 골격, DSN-12-15 기동 순서(설정 → 키 → PG Flyway → CH 러너 → WAL 복구 자리 → 리스너), 12 §10 설정 전부, PostgreSQL V001, ClickHouse 자체 러너, 관리 포트 8081(C-7), 헬스·readiness, 구조화 로깅·마스킹, Micrometer 골격. WO-21~28은 이 기동 경로·설정·DB 접속 위에 기능만 더한다.
+- **선행**: Gate 0(조건부 통과). WO-10과 병행(공유 파일만 겹침).
+- **입력**: 12 §1·§2·§9.3·§9.4(이름 규약)·§10·§11·§14 DSN-12-15·§15, 13 §5~§8·§12·§13·§17, 17 §3.8·§6.1·§7.2·§11.1·§11.3·§16 #11, 16 §7.12·§10.6~10.8, 14 §2.1·§7.2, 19 §3.2·§3.5·§3.6, 06 SEC-55·74·76, 02 C-7·C-11·C-16, ADR-0003 C-28·SRV-01·Jib 비루트 메모, ADR-0004 C-42·C-43(라이선스 선례), ADR-0007 C-56·C-58·C-60, WO-00 보고(U-3 베이스 이미지 다이제스트), WO-03F 보고(기준일 방식 테스트 권고). 기존: `deploy/clickhouse/**`(V001·rollups·config·users·image.properties), `test/storage/clickhouse-support`(렌더러·린트·체크섬·Testcontainers 런처).
+- **산출물**
+  - `server/build.gradle.kts`·`argos.java-server`: 의존성(web·actuator·jdbc·validation·log4j2(Logback 제외)·Flyway·PostgreSQL·ClickHouse client-v2·Micrometer Prometheus), `bootJar` 레이어드, `checkFlywayNames`(C-28, `V<NNN>__<snake>.sql`), UI 정적 자원 빌드 시 복사(19 §3.5, `-Pargos.ui.skip=true`면 생략), Jib(베이스 다이제스트 고정, `container.user=10001:10001`, OCI 라벨). 잠금·검증 메타데이터 갱신.
+  - `bootstrap/`: `ServerApplication`, `StartupSequence`(단계 순서 강제·실패 시 기동 중단·단계별 소요 로그). 키(WO-24·28)·WAL 복구(WO-21) 단계는 확장 지점만. 12 §1 나머지 패키지는 `package-info.java`.
+  - `config/`: `ArgosProperties`(12 §10 전 키, 이름 규칙은 PM 결정 1), 검증, 비밀값 `*-file`·`ARGOS_*_FILE`과 평문 WARN, 금지 DB 비밀번호 기동 거부(12 §10 ∪ 16 §10.6, 12자 미만 포함), 알 수 없는 `argos.*` 키 WARN(O-R03), 17 §3.8 짧은 별칭, `EffectiveServerConfig`(출처·마스킹, 기동 요약). 테스트 훅은 `argos.testing.*`(릴리스 빌드 무시, 18 §15).
+  - PostgreSQL `db/pg/V001__init.sql`: 13 §12 전부 + `dict_kind` C-16 11종 + `pg_trgm` + C-11 권한(`argos_app` DML·`audit_logs` INSERT·SELECT만·`ch_schema_history` SELECT, `argos_audit`, `argos_backup`). 역할 생성 기준 SQL `deploy/postgres/roles.sql`(설치기 실행, WO-40 연결), `deploy/postgres/image.properties`(PG 16 다이제스트). Flyway는 소유자 계정으로 실행 후 데이터소스 종료, 런타임은 `argos_app`.
+  - CH 러너 `ops/migration`: `deploy/clickhouse/{schema,rollups,migrations}`를 jar에 포함, 플레이스홀더 `{db}`·`{p}`·`{where}`·`{retention.*}`·`{rollup:<t>}`만(C-56), 체크섬 → PG `ch_schema_history`, 불일치·비멱등·허용 밖 지시자 기동 거부, 문장 단위·타임아웃 10분, `M<NNN>__*.yaml` 다단계 절차(MV 교체 4단계, `settings.rollup_alias` 전환, 단계별 이력), `argos_migrator` 계정. clickhouse-support와 렌더링·체크섬 동일성 테스트.
+  - 관리·관측: `management.server.port=8081`·`127.0.0.1`, 노출 health·info·prometheus만, health 무인증·상세 숨김, info·prometheus 베어러 + `allow-cidrs`(빈 값 = 거부), readiness = 마이그레이션 완료, 8080에 actuator 없음. `RequestIdFilter`(요청 id·`X-Argos-Server-Version`), Tomcat 상한(헤더 16KB·본문 1MB), 가상 스레드. Log4j2 JSON Lines(17 §11.3)·토큰·비밀번호 마스킹. Micrometer 레지스트리·`argos_` 이름 규약 테스트.
+  - `archTest` SRV-01: JDBC·Flyway·ClickHouse 클라이언트 사용은 `storage`·`ops.migration`만. `contractTest`: 설정 키 스냅샷(T-API-009 서버 골격). `testFixtures` `ServerTestEnvironment`(PG·CH 컨테이너, 역할, 생성 비밀번호; WO-21·23·24 재사용).
+- **수락 기준**
+  - 자동: T-SV-001(빈 PG·CH에 2회 기동 → 두 번째 적용 0, 이력 불변), T-ST-052(빈 DB 경로와 "V001 + 데이터" 증분 경로, 테스트용 M 절차로 MV 4단계 리허설; 체크섬 변경·비멱등·허용 밖 지시자·Flyway 체크섬 변경 각각 기동 거부), T-SV-049(빈·11자·금지 목록 비밀번호 각각 기동 거부, 로그에 값 없음), T-SEC-55(8080·8081 `/actuator/env` 404, prometheus 무토큰·오토큰 401, 허용 밖 IP 거부, health 무인증·상세 없음, 8081은 127.0.0.1만), T-SEC-76(`argos_reader` DDL 실패, `argos_app` DDL·`audit_logs` UPDATE·DELETE·TRUNCATE 실패, `argos_backup` 쓰기 실패), T-API-009 골격(키 제거·이름·타입·기본값 변경 시 실패), readiness가 마이그레이션 전 DOWN, 로그 마스킹, `checkFlywayNames`·SRV-01 네거티브 테스트. 통합 테스트는 실제 PG·CH(Testcontainers, 다이제스트 고정)만.
+  - 자동(nightly 게이트 `-Pserver.nightly=true`): T-SV-002(V001 + 1/100 생성기 데이터 → 테스트용 다음 버전 스크립트, 스크립트별 소요 ≤ 10분, 소요 표). 이 PC 1회 참고 실행, nightly 잡 연결은 WO-50.
+  - 수동: `bootJar` 레이어 4종, Jib 이미지 사용자 10001·베이스 다이제스트(`docker inspect`), 기동 로그의 단계 순서·유효 설정 요약에 비밀값 없음. Compose 기동은 WO-40.
+- **확인 작업**: 17 미결 11(관리 포트 분리와 `management.server.port`), 13 §17 #4(`max_partition_size_to_drop`)·#5(`DateTime64` TTL 캐스트)를 러너 관점에서 재확인, C-28 Flyway 파일명 규칙 확정, ADR-0003 SRV-01(저장소 경유 규칙·`MigrationRunner` 위치) 결정, 19 U-7(Flyway 라이선스) `checkLicenses` 재확인.
+- **범위 밖**: gRPC 수집·WAL·라이터·WAL 복구 본문(WO-21), 인증·`@RequiresRole`·`ErrorBody`·보안 헤더·CSP(WO-24), 세션 레지스트리·실시간(WO-22), 조회 API·`generateOpenApi`(WO-23, C-28), 마스터 키·감사·`argos-admin`·보존 변경 적용(T-ST-040)·저장소 상태 잡(WO-28), 롤업 재구축(WO-27), Compose·설치 스크립트·역할 SQL 연결(WO-40), 멀티 아키텍처 이미지 푸시(WO-44). `deploy/clickhouse/{schema,rollups,config.d,users.d}`는 수정하지 않는다(체크섬·저장소 테스트).
+- **보안 체크**: SEC-74(금지 비밀번호 거부, 자격증명 리터럴 0, gitleaks 0), SEC-76(계정 최소 권한), SEC-55(관리 포트·Actuator), 로그·유효 설정·예외에 비밀값 없음, `:server:runtimeClasspath`에 Logback(EPL/LGPL)·`jakarta.annotation-api`(EPL/GPL) 없음, `checkLicenses` 녹색.
+- **보고 특이사항**: 확정한 설정 키 표(12 §10 대비 추가·이름 변경과 근거 절)와 스냅샷 경로, Flyway·CH 스크립트별 소요(빈 DB·증분·1/100), 기동 단계별 소요, 새 의존성·버전·라이선스, 02 §5.2 분류표 추가 제안 행(사용자 세션 IP·UA, 설정 토큰, JWT 키), WO-21~28이 쓸 기동 단계·설정·`ServerTestEnvironment` 사용법.
 
 **WO-21 gRPC 수집·상한·WAL·중복 제거·배치 라이터**
 - 목표: 12 §3.1~3.9(gRPC 서버·인터셉터 체인 인증 → 상한(해제 후 크기·배치 건수·문자열 길이) → 쿼터 → 레이트, `AgentServiceImpl`, `WalWriter`/`WalSegment`/`WalReader`/`BlockIndex`/`WalRecovery`(INTENT/COMMIT 레코드·그룹 fsync 10ms·상한 10GiB·`ACK_OK + dropped_items`), 중복 제거 윈도 `(instance_id, agent_epoch, kind, seq)` 1,000 + WAL 복원, `IngestPipeline`(Decoder·DictionaryResolver 비동기 upsert·TimestampGuard·ErrorGroupFingerprinter·ApdexStamper·env/kind), `ClickHouseWriter`(테이블별 2초/50,000행·명시 컬럼·`insert_deduplication_token = argos:{table}:{block_id}`·`async_insert=0`·재시도·WAL 재적재), 쿼터 드롭 뒤쪽 항목 제거(DSN-12-04), 실패 모드 표.
@@ -312,10 +361,26 @@
 - 확인 작업: 14 §11 미결 10건(해당 항목을 "확인 작업"으로 수행하고 결과 기록).
 
 **WO-24 인증·세션·CSRF·설정 토큰·RBAC·레이트 리밋**
-- 목표: 12 §7.2~7.4·16 §7(LoginService·SessionCookieService httpOnly·Secure·SameSite=Strict `argos_at/argos_rt`·EdDSA JWT 15분·RefreshRotation 재사용 탐지 → 전체 무효화·`user_sessions` 5초 캐시·즉시 무효화 훅 5종·동시 세션 5·kiosk 긴 세션 조건·CsrfFilter 더블 서브밋 + Origin·세션 고정 방지·SetupTokenBootstrap(32B·로그·`conf/setup-token` 0600·30분·`ARGOS_ADMIN_PASSWORD_FILE`)·PasswordPolicy(12자·금지 목록·bcrypt 12·잠금 10회 15분 누진·강제 변경)·`@RequiresRole` → `x-argos-role` 기동 시 전수 검사·`RoleMatrix`(16 권한 매트릭스 전표·`pii.view`)·객체 수준 권한(명령 결과 요청자·관리자, UUIDv4)·레이트 리밋 5버킷(로그인 IP 20/분·API 50/초·검색/CSV 10/분·429 `Retry-After`)·Actuator 노출·보안 헤더·CSP nonce 주입(index.html).
-- 입력: 12 §7.2~7.4·DSN-12-10·11, 16 §7·§9.5(헤더·CSP 값), 14 인증 엔드포인트, 06 SEC-40~50·55·56·45·46, 01 F-S05.
-- 수락 기준: T-SV-048(부트스트랩·비밀번호·잠금), T-SEC-40~44(Playwright 포함 → WO-30과 공동), T-SEC-45·46(헤더·CSP 위반 0), T-SEC-47~50(토큰 없이 403·재사용 403·관리자 존재 404·경계·누진·cost·권한 매트릭스 생성 실행·객체 권한), T-SEC-55·56, T-API-001·010(권한 표기 전수·매트릭스 생성).
-- 확인 작업: 12 미결 5(EdDSA 라이브러리 허용 목록), 16 §15 미결 중 세션·CSP 항목.
+
+- **목표**: UI·API 인증의 서버 측 전부를 만든다. 쿠키 세션(EdDSA JWT 15분 + `user_sessions`), 리프레시 회전·재사용 탐지, 즉시 무효화 훅, 동시 세션 상한·kiosk, CSRF 더블 서브밋 + Origin, 설정 토큰 부트스트랩·무인 관리자, 비밀번호 정책·잠금, `@RequiresRole` → `x-argos-role`·기동 시 전수 검사·권한 매트릭스 생성 테스트, 객체 수준 권한 도구, 레이트 리밋, 보안 헤더·CSP nonce·CSP 리포트, 표준 에러 본문. 이후 모든 REST WO는 이 위에 엔드포인트만 더하고 권한 표기를 강제받는다.
+- **선행**: WO-20. WO-11과 병행(공유 파일만 겹침).
+- **입력**: 12 §7.2~7.4·§14 DSN-12-10·11·§15 #5, 16 §7.1~7.14·§9.8·§9.9(04 표기 "§9.5")·§10.6·§11.1~11.3(인증 이벤트 이름·레코드만)·§15 #10·11·12·15, 14 §2.2·§2.6·§2.7·§2.8·§4.1·§4.14(`/admin/users*`)·§7.1·§7.3·§7.4·§8 예시 1, 13 §12.1, 06 SEC-40~50·55·56, 18 §12(T-SEC-40~50·55·56)·§15(`argos.testing.*`)·부록 A(T-SV-048·T-API-001·010), ADR-0003 SRV-01(12 기준 `@RequiresRole`), WO-00 보고(favicon `data:` → CSP `img-src data:`), WO-20 보고(기동 단계·설정·`ServerTestEnvironment`·SRV-01).
+- **산출물**
+  - 기반: 의존성(spring-boot-starter-security(stateless), Bucket4j, springdoc 런타임 스펙; JWT는 JDK 내장 Ed25519 기본 — 12 미결 5), `SecurityConfig`·필터 순서 상수, `Role`(PUBLIC ⊂ VIEWER ⊂ OPERATOR ⊂ ADMIN)·`@RequiresRole`·`ArgosPrincipal`·`@Sensitive`, `api/error`(`ErrorBody`·14 §2.6 코드·전역 예외 처리, 16 §7.14), `audit/`(12 §2 `AuditService` + PG 최소 싱크, 16 §11.1 인증·사용자·시스템 이벤트만), PG `V002__auth.sql`(16 §7.3의 `user_sessions` 열, 잠금 누진 단계, `user_permissions`).
+  - 세션: `AccessTokenService`(EdDSA, kid 2개 수용, `conf/jwt.key` 0600·`ARGOS_JWT_KEY`, KEYS 단계), 쿠키 3종(16 §7.1), `LoginService`(bcrypt 12, 잠금 10회 15·30·60분, 동시 세션 5, kiosk 16 §7.5, 로그인마다 sid·CSRF 재발급), `SessionStateCache`(5초 TTL + 무효화 이벤트), `RefreshRotation`(재사용 → family 전체 폐기), 무효화 훅 7종 → `SessionRevokedEvent`(WO-22가 WS close 4401에 사용), `CsrfFilter`, `MustChangePassword` 필터, `SetupTokenBootstrap`(32B·로그 1줄·`conf/setup-token` 0600·30분·무인 `ARGOS_ADMIN_PASSWORD_FILE`), `PasswordPolicy`(12~128, MIT 출처 금지 목록 1만 해시 집합, 사용자명·`argos` 포함 금지).
+  - 엔드포인트: 14 §4.1 전부(`/setup/status|admin`, `/auth/csrf|login|refresh|logout|me|password`), `/admin/users*`(목록·생성·역할·활성·`pii.view`·kiosk 수정·세션 폐기·비밀번호 초기화·잠금 해제).
+  - 경계: `RoleMatrix`(미주석 핸들러 → 기동 실패), springdoc `OperationCustomizer`(`x-argos-role`·`x-argos-pii`·`x-argos-audit`, WO-23이 쓸 `@ArgosCsv`·`@ArgosLimits`·`@ArgosUntrusted` 애너테이션), contractTest 권한 매트릭스 생성기(스펙 → 3역할 + 익명 × operation, 데이터 주도), `ObjectAccessPolicy`(요청자·관리자, UUIDv4)·`AppAccessPolicy` 한 지점, `RateLimitFilter`(로그인·설정·리프레시 20/분/IP, API 50/초 버스트 100/사용자, `@RateLimited(HEAVY)` 10/분, CSP 리포트 60/분/IP, 429 + `Retry-After`), `SecurityHeadersFilter`(16 §9.8), `IndexHtmlController`(요청별 16B nonce, CSP 16 §9.9), `CspReportController`.
+- **수락 기준**
+  - 자동(세션·CSRF, 서버 부분): T-SEC-40(세 쿠키의 Set-Cookie 속성 정확값, `JSESSIONID` 없음, 응답 본문에 토큰 없음), T-SEC-41(액세스 만료 401(주입 Clock), 회전, 재사용 → family 전체 폐기·401 `session_revoked`·감사), T-SEC-42(로그아웃 후 401, 역할 강등 다음 요청 403, 비활성화 401, 6번째 세션 → 가장 오래된 폐기, kiosk는 허용 CIDR에서만), T-SEC-43(CSRF 헤더 없음·불일치·교차 Origin·`Sec-Fetch-Site: cross-site` 403, 로그인 전후 sid·CSRF 상이), T-SEC-44 서버 훅(폐기마다 `SessionRevokedEvent` 1건).
+  - 자동(부트스트랩·비밀번호): T-SV-048, T-SEC-47(토큰 없음·틀림·만료·재사용 403, 관리자 존재 404, 파일 0600(POSIX)·로그 1줄·완료 시 파일 삭제, 무인 생성 `must_change`), T-SEC-48(11자 거부·12자 허용·128/129 경계·금지 목록·사용자명 포함·`$2a$12`·잠금 15·30·60분 누진·관리자 해제·강제 변경 중 다른 API 403), JWT 거부 단위 테스트(alg none·HS256·kid 불명·변조·만료·과대).
+  - 자동(권한): T-SEC-49·T-API-001·T-API-010(현재 전 operation에 `x-argos-role`, 스펙에서 3역할 + 익명 매트릭스 자동 생성·실행, 미주석 컨트롤러 기동 실패 네거티브), T-SEC-50 도구 부분(명령 결과 403은 WO-26).
+  - 자동(경계): T-SEC-45(API 200·401·403·404·429·500, index.html, 정적 파일의 헤더 전수), T-SEC-46 서버 부분(CSP 값 정확, 요청마다 다른 nonce가 태그와 일치, 리포트 8KB·60/분), T-SEC-55 유지, T-SEC-56(버킷별 429 + `Retry-After`, 400~500 에러 본문 스냅샷에 스택·클래스·SQL·경로 없음).
+  - 이관(이 WO에서 FAIL 아님): T-SEC-40 `document.cookie`·localStorage 부재, T-SEC-44 브라우저 WS·close 4401·1초 종료, T-SEC-46 E2E CSP 위반 0 → WO-30(브라우저)·WO-22(WS 서버). 이 WO는 그 테스트가 쓸 서버 동작·훅·테스트 계정 경로를 제공한다.
+  - 수동: 문서화한 `curl` 시나리오(설정 상태 → 로그의 토큰으로 관리자 생성 → CSRF → 로그인 → `/auth/me` → 로그아웃 → 401)를 사람이 1회 재현.
+- **확인 작업**: 12 미결 5(JWT 수단: JDK 내장 Ed25519 vs 라이브러리), 16 §15 #10(금지 목록 출처·라이선스·NOTICE), #11(EdDSA), #12(Bucket4j 버전·라이선스), #15(kiosk 만료 30일).
+- **범위 밖**: WebSocket 핸드셰이크·구독·close 코드(WO-22), 브라우저 E2E·생성 클라이언트(WO-30), 에이전트 토큰 서비스·명령 권한·명령 결과 객체 권한(WO-26), 감사 카탈로그 전체·스냅샷·syslog/JSONL·폴백·보존·마스터 키(WO-28), OpenAPI 파일 커밋·`generateOpenApi`·스펙 린트·oasdiff·조회 엔드포인트(WO-23, C-28), Argon2id 선택 인코더(PM 결정 3), 관리 UI(WO-39), 위협 모델 문서(WO-46, 변경 목록만 보고).
+- **보안 체크**: SEC-40~50·55·56 전부. 토큰·리프레시·설정 토큰·비밀번호·JWT 키 원문이 로그·DB·응답 본문에 없음(해시만, 발급 1회 제외), 상수 시간 비교, `@Sensitive` toString·로그 제외(ArchUnit), 사용자 열거 방지(응답·시간), 에러 본문 마스킹, DB 접근은 `storage` 경유(SRV-01), gitleaks 0(테스트 토큰은 실행 시 생성).
+- **보고 특이사항**: 12·14·16 충돌 항목별 선택과 근거(PM 결정 1), 생성된 엔드포인트 × 역할 표, T-SEC-40~46 분담 표(이 WO / WO-22 / WO-30), 레이트 리밋 실측(초과 시점), 새 의존성·라이선스, 금지 목록 출처와 NOTICE, WO-22·23·26·30이 쓸 훅(세션 폐기 이벤트, `@RequiresRole`, `@RateLimited`, `ObjectAccessPolicy`, 쿠키 상수), 02 §5.2 분류표 추가 제안(세션 IP·UA, 리프레시·설정 토큰, JWT 키).
 
 **WO-25 알림 엔진·채널·템플릿**
 - 목표: 12 §5(RuleModel 전체 필드·`alert_rules(spec jsonb)`·revisions·`MetricProvider` 4종(15분 HdrHistogram 윈도·ClickHouse 1m·레지스트리·자기)·지표 목록 F-S31 전부·10초 평가·상태 머신 OK/PENDING/FIRING/ACKED/RESOLVED/NO_DATA·복구 임계·최소 표본·평가 단위·기동 유예 3분·2단계·재알림·그룹핑·음소거(`mutes`)·ACK·`Notifier`·채널 Email(STARTTLS)·Slack·Webhook(HMAC 서명·`webhook_signing_keys`)·`DestinationValidator`(SSRF 7단계·해석 IP 고정·리다이렉트 금지·allow-cidrs)·재시도 3회·실패 자기 알림·`notification_deliveries`·`TemplateRenderer` 허용 변수만·`DefaultTemplates` 14종·앱 등록 시 적용·차이 표시).

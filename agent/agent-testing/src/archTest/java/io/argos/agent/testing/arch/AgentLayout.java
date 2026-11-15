@@ -110,6 +110,15 @@ public record AgentLayout(
     return List.of(core() + ".log", core() + ".check");
   }
 
+  /**
+   * Classes that may write to stderr only (not stdout, no stack traces): the entry point, which
+   * prints the single {@code argos: agent disabled: <reason>} line of a start that failed before
+   * the agent's logger existed (ADR-0009 C-78).
+   */
+  public List<String> stderrOnlyClasses() {
+    return List.of(root + ".AgentPremain");
+  }
+
   public static boolean inPackage(String className, String packageName) {
     return className.startsWith(packageName + ".");
   }

@@ -1,7 +1,12 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.agent.bootstrap;
 
-/** Tracer that records nothing: installed until the core starts, and after a start failure. */
+/**
+ * Tracer that records nothing: installed until the core starts, and after a start failure. Follows
+ * every method of {@link Tracer}: no context ({@code null}), no step ({@code -1}), id 0 ("no
+ * name"), no propagation headers, and the installed capture modes ({@link
+ * CaptureConfig#current()}).
+ */
 public final class NoopTracer implements Tracer {
   public static final NoopTracer INSTANCE = new NoopTracer();
 
@@ -111,6 +116,6 @@ public final class NoopTracer implements Tracer {
 
   @Override
   public CaptureConfig capture() {
-    return CaptureConfig.DEFAULT;
+    return CaptureConfig.current();
   }
 }

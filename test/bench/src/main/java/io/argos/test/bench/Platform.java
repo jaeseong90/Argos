@@ -108,18 +108,39 @@ interface Platform extends AutoCloseable {
   void close();
 
   /**
-   * JVM options of a variant. {@code agentJar}, {@code otelJar} and {@code logDir} are paths as the
-   * app sees them.
+   * Agent keys of every measured agent variant: {@code log.dir} and the required keys {@code
+   * app.name} (the sample app) and {@code app.env=bench}, so that the agent log has no missing-key
+   * ERROR or WARN (10 §4.3 P4); {@code --agent-config} can override them.
+   */
+  static Map<String, String> requiredAgentKeys(String appName, String logDir) {
+    Map<String, String> config = new LinkedHashMap<>();
+    config.put("log.dir", logDir);
+    if (appName != null && !appName.isBlank()) {
+      config.put("app.name", appName);
+    }
+    config.put("app.env", "bench");
+    return config;
+  }
+
+  /**
+   * JVM options of a variant of the set's app ({@link Setup#appName()}). {@code agentJar}, {@code
+   * otelJar} and {@code logDir} are paths as the app sees them.
    */
   static List<String> variantOptions(
       String variant, Setup setup, String agentJar, String otelJar, String logDir) {
+    return variantOptions(variant, setup, setup.appName(), agentJar, otelJar, logDir);
+  }
+
+  /** JVM options of a variant of {@code appName} (the startup set starts several apps). */
+  static List<String> variantOptions(
+      String variant, Setup setup, String appName, String agentJar, String otelJar, String logDir) {
     List<String> options = new ArrayList<>();
     switch (variant) {
       case "off" -> {}
       case "on" -> {
         options.add("-javaagent:" + agentJar);
         Map<String, String> config = new LinkedHashMap<>();
-        config.put("log.dir", logDir);
+        config.putAll(requiredAgentKeys(appName, logDir));
         config.putAll(setup.agentConfig());
         config.forEach((k, v) -> options.add("-Dargos." + k + "=" + v));
       }
@@ -142,7 +163,7 @@ interface Platform extends AutoCloseable {
         }
         options.add("-javaagent:" + agentJar);
         Map<String, String> config = new LinkedHashMap<>();
-        config.put("log.dir", logDir);
+        config.putAll(requiredAgentKeys(appName, logDir));
         config.putAll(setup.agentConfig());
         config.putAll(extra);
         config.forEach((k, v) -> options.add("-Dargos." + k + "=" + v));

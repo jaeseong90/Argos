@@ -80,6 +80,11 @@ public final class StepAssert {
     return field("rows");
   }
 
+  /** Consecutive identical steps folded into this one (11 {@code repeat_count}). */
+  public ValueAssert<StepAssert> repeatCount() {
+    return field("repeat_count");
+  }
+
   /** Any field by its record name; unsupported fields fail. */
   public ValueAssert<StepAssert> field(String name) {
     if (!step.source().supportsStepField(name)) {

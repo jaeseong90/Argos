@@ -44,9 +44,13 @@ public final class PocSettings {
     this.instanceId = instanceId;
   }
 
-  /** Reads the settings; throws IllegalArgumentException for a missing or bad address. */
+  /**
+   * Reads the settings; throws IllegalArgumentException for a missing or bad address. The typed
+   * accessors of {@link AgentConfig} carry the defaults and ranges of 10 §15 (validated once by
+   * {@code KeySpec}).
+   */
   public static PocSettings from(AgentConfig config) {
-    String address = config.get("server.address", null);
+    String address = config.serverAddress();
     if (address == null) {
       throw new IllegalArgumentException("server.address is not set");
     }
@@ -60,9 +64,9 @@ public final class PocSettings {
     } catch (NumberFormatException e) {
       throw new IllegalArgumentException("server.address must be host:port", e);
     }
-    String ca = config.get("server.tls.ca-file", null);
+    String ca = config.serverTlsCaFile();
     int instance = 0;
-    String instanceText = config.get("app.instance", null);
+    String instanceText = config.appInstance();
     if (instanceText != null) {
       try {
         instance = Integer.parseInt(instanceText);
@@ -73,10 +77,10 @@ public final class PocSettings {
     return new PocSettings(
         address.substring(0, colon),
         port,
-        config.getBoolean("server.tls", true),
+        config.serverTls(),
         ca == null ? null : new File(ca),
-        config.getInt("server.deadline-ms", 5_000, 100, 60_000),
-        config.getInt("server.connect-timeout-ms", 5_000, 100, 60_000),
+        config.serverDeadlineMs(),
+        config.serverConnectTimeoutMs(),
         instance);
   }
 

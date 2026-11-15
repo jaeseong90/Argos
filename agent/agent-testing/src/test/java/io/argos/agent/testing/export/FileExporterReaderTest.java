@@ -66,6 +66,53 @@ class FileExporterReaderTest {
         .hasStepCount("SQL", 1);
   }
 
+  /** A WO-10 line: instance fields, CPU and allocation, C-69 flags, summary, folded steps. */
+  static final String WO10_LINE =
+      "{\"tx_id\":\"1\",\"kind\":\"BATCH\",\"env\":\"prod\",\"version\":\"2.0\","
+          + "\"service\":\"BATCH job\",\"thread\":\"tomcat-handler-12\","
+          + "\"thread_name\":\"tomcat-handler-\",\"thread_name_id\":\"77\","
+          + "\"virtual_thread\":false,\"flags\":[\"summarized\"],\"xlog_flags\":4,"
+          + "\"cpu_time_ms\":1.25,\"alloc_bytes\":2048,\"profile_captured\":false,"
+          + "\"truncated\":true,\"total_steps\":1005,"
+          + "\"steps\":[{\"seq\":0,\"parent\":-1,\"type\":\"SQL\",\"name\":\"select ?\","
+          + "\"thread\":\"tomcat-handler-12\",\"repeat_count\":1000}],"
+          + "\"summary\":[{\"type\":\"SQL\",\"name\":\"select ?\",\"count\":5,"
+          + "\"total_ms\":2.5,\"max_ms\":1.0,\"errors\":1}],\"summary_overflow\":0}";
+
+  @Test
+  @DisplayName(
+      "WO-10 JSONL fields: env, version, CPU, allocation, flags, sampler, summary, repeats")
+  void parsesWo10Fields() {
+    TransactionRecord tx = TransactionRecord.parse(WO10_LINE);
+    assertThat(tx.env()).isEqualTo("prod");
+    assertThat(tx.version()).isEqualTo("2.0");
+    assertThat(tx.threadName()).isEqualTo("tomcat-handler-");
+    assertThat(tx.cpuTimeMs()).isEqualTo(1.25);
+    assertThat(tx.allocBytes()).isEqualTo(2048L);
+    assertThat(tx.xlogFlags()).isEqualTo(4);
+    assertThat(tx.flags()).containsExactly("summarized");
+    assertThat(tx.profileCaptured()).isFalse();
+    assertThat(tx.truncated()).isTrue();
+    assertThat(tx.totalSteps()).isEqualTo(1005L);
+    assertThat(tx.steps().get(0).repeatCount()).isEqualTo(1000);
+    assertThat(tx.steps().get(0).thread()).isEqualTo("tomcat-handler-12");
+    assertThat(tx.summary()).hasSize(1);
+    TransactionRecord.SummaryRecord summary = tx.summary().get(0);
+    assertThat(summary.type()).isEqualTo("SQL");
+    assertThat(summary.name()).isEqualTo("select ?");
+    assertThat(summary.count()).isEqualTo(5L);
+    assertThat(summary.totalMs()).isEqualTo(2.5);
+    assertThat(summary.maxMs()).isEqualTo(1.0);
+    assertThat(summary.errors()).isEqualTo(1L);
+    // The PoC line has none of them: null, not 0.
+    TransactionRecord old = TransactionRecord.parse(LINE);
+    assertThat(old.cpuTimeMs()).isNull();
+    assertThat(old.allocBytes()).isNull();
+    assertThat(old.profileCaptured()).isNull();
+    assertThat(old.totalSteps()).isNull();
+    assertThat(old.steps().get(0).repeatCount()).isNull();
+  }
+
   @Test
   @DisplayName("assertion failures name the expected value and show the line")
   void assertionMessages() {

@@ -1,22 +1,64 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.agent.core.trace;
 
-import java.util.Arrays;
+import io.argos.agent.core.context.ThreadNames;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicIntegerArray;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicLongArray;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 /**
- * Steps of one transaction (10 §9.1, DSN-10-08), stored as parallel arrays (structure of arrays):
- * 64 slots at first, doubled on demand, at most {@code sampling.profile.max-steps} (1,000).
+ * Steps of one transaction (10 §9.1, DSN-10-08), stored as a structure of arrays. Lock-free:
+ * application threads of the transaction (the request thread and async workers) record steps
+ * concurrently with atomics only, and never wait (N-05, "no lock on an advice path").
  *
- * <p>Beyond the limit the buffer switches to summary mode: further steps are only aggregated per
- * (type, name id) into at most {@value #MAX_SUMMARY_KEYS} summary entries (count, total, max,
- * errors), so memory stays bounded however long a batch job runs. Thread-safe (async steps may come
- * from other threads); every method is short and never waits on I/O.
+ * <p><b>Layout and growth.</b> Sequence numbers are handed out by one atomic counter. The slots
+ * live in chunks: the first chunk has {@value #INITIAL_CAPACITY} slots, every further chunk doubles
+ * the capacity (64, 128, 256, 512, 1,024 slots in total), and the last chunk is cut at {@code
+ * sampling.profile.max-steps} (1,000). Growing allocates the next chunk (published with a
+ * compare-and-set) instead of copying arrays, so a writer never sees a moved array. No chunk exists
+ * before the first step: a transaction without steps allocates no step arrays.
+ *
+ * <p><b>Summary mode.</b> Steps beyond {@code max-steps} are not recorded one by one: they are
+ * aggregated per (type, name id) into at most {@value #MAX_SUMMARY_KEYS} summary entries (count,
+ * total time, maximum time, errors; 10 §9.1 {@code SummaryStep}); steps beyond those keys are only
+ * counted ({@link #summaryOverflow()}). {@link #totalSteps()} counts every step that started and
+ * {@link #summarized()} tells that the profile is truncated (11 §4.3 {@code truncated}, {@code
+ * total_steps}). Up to {@value #MAX_PENDING_SUMMARY} summary steps can be open at once; a further
+ * one is counted without a duration.
+ *
+ * <p><b>Parents.</b> The caller passes the parent: the top of the open-step stack of the current
+ * activation scope ({@code TracerImpl}, WO-02 D-14 fixed): an ASYNC step that a worker opened is
+ * never the parent of a request-thread step.
+ *
+ * <p><b>Sealing.</b> {@link #seal()} at the end of the transaction stops new steps, details and
+ * stacks; closing and fetch updates of steps already recorded still apply (fixed-size fields).
+ * {@link #estimatedBytes()} is fixed at that moment, so the queues add and subtract one value.
+ *
+ * <p><b>Memory caps</b> (10 §14, every cap has a test in {@code StepBufferTest}): steps {@code
+ * max-steps} (at most {@value #MAX_SLOTS}, {@value #SLOT_BYTES} bytes each), detail {@value
+ * #DETAIL_MAX_CHARS} characters, stack {@value #MAX_STACK_FRAMES} frame ids, summary {@value
+ * #MAX_SUMMARY_KEYS} keys and {@value #MAX_PENDING_SUMMARY} open summary steps, {@value
+ * #MAX_THREADS} distinct step threads per transaction (names cut at {@value
+ * ThreadNames#MAX_NAME_CHARS} characters; further threads read as {@value ThreadNames#OTHER}).
  */
 public final class StepBuffer {
-  static final int INITIAL_CAPACITY = 64;
+  /** Slots of the first chunk (10 §9.1 "초기 64"). */
+  public static final int INITIAL_CAPACITY = 64;
 
-  /** Depth of the open-step stack used for parent links. */
-  static final int MAX_OPEN = 64;
+  /** Chunks at most: 64 << 9 = 32,768 slots, above every allowed {@code max-steps}. */
+  static final int MAX_CHUNKS = 10;
+
+  /** Upper bound of {@code max-steps} that the buffer accepts. */
+  public static final int MAX_SLOTS = INITIAL_CAPACITY << (MAX_CHUNKS - 1);
+
+  /** Upper bound of a step detail (10 §3 stepDetail: 4 KB). */
+  public static final int DETAIL_MAX_CHARS = 4096;
+
+  /** Upper bound of a step stack (10 §13.1 depth 64; ERROR steps use capture.stack-depth). */
+  public static final int MAX_STACK_FRAMES = 64;
 
   static final int MAX_SUMMARY_KEYS = 256;
 
@@ -24,336 +66,698 @@ public final class StepBuffer {
   static final int MAX_PENDING_SUMMARY = 64;
 
   /** Sequence numbers at or above this value denote open summary steps. */
-  static final int SUMMARY_SEQ_BASE = 1 << 24;
+  public static final int SUMMARY_SEQ_BASE = 1 << 24;
 
-  /** Upper bound of a step detail (10 §3 stepDetail: 4 KB). */
-  public static final int DETAIL_MAX_CHARS = 4096;
+  /** Distinct threads per transaction whose names are kept for step records. */
+  static final int MAX_THREADS = 16;
+
+  /** {@link #parent(int)} of a top-level step. */
+  public static final int NO_PARENT = -1;
+
+  /**
+   * Estimated bytes of one slot in the arrays every chunk has (10 elements and the two lazily
+   * created reference arrays, see {@link Chunk}); rows and fetch time add {@value #LAZY_LONG_BYTES}
+   * bytes per slot each once a step of the chunk has them.
+   */
+  static final int SLOT_BYTES = 58;
+
+  /** Bytes per slot of a lazily created {@code long} array (rows, fetch time). */
+  static final int LAZY_LONG_BYTES = 8;
+
+  private static final int FREE = 0;
+  private static final int OPEN = 1;
+  private static final int CLOSING = 2;
+  private static final int CLOSED = 3;
+
+  private static final int SEALED = 1 << 30;
+  private static final byte NO_THREAD = -1;
+  private static final byte OTHER_THREAD = -2;
+
+  /** Estimated bytes of the buffer object and its atomics, without chunks. */
+  private static final long BASE_BYTES = 256L + 16L * MAX_THREADS;
+
+  /** Estimated bytes of the summary tables. */
+  private static final long SUMMARY_BYTES =
+      512L + MAX_SUMMARY_KEYS * (4L + 4L + 8L + 8L * 4) + MAX_PENDING_SUMMARY * (4L + 4L + 8L);
 
   private final long baseNanos;
   private final int maxSteps;
 
-  private int size;
-  private int[] type;
-  private int[] parent;
-  private int[] status;
-  private long[] nameId;
-  private long[] targetId;
-  private long[] startOffsetNanos;
-  private long[] elapsedNanos;
-  private long[] rows;
-  private long[] fetchNanos;
-  private boolean[] error;
-  private boolean[] ended;
-  private String[] detail;
-  private long[][] stack;
+  /** Next sequence number, with {@link #SEALED} once the transaction ended. */
+  private final AtomicInteger next = new AtomicInteger();
 
-  private final int[] open = new int[MAX_OPEN];
-  private int openCount;
-
-  private boolean summarized;
-  private int summaryKeys;
-  private int[] summaryType;
-  private long[] summaryNameId;
-  private long[] summaryCount;
-  private long[] summaryTotalNanos;
-  private long[] summaryMaxNanos;
-  private long[] summaryErrors;
-  private long summaryOverflow;
-  private final long[] pendingStart = new long[MAX_PENDING_SUMMARY];
-  private final int[] pendingKey = new int[MAX_PENDING_SUMMARY];
-  private final boolean[] pendingUsed = new boolean[MAX_PENDING_SUMMARY];
+  private final AtomicReferenceArray<Chunk> chunks = new AtomicReferenceArray<Chunk>(MAX_CHUNKS);
+  private final AtomicLong total = new AtomicLong();
+  private final AtomicReference<Summary> summary = new AtomicReference<Summary>();
+  private final AtomicReferenceArray<StepThread> threads =
+      new AtomicReferenceArray<StepThread>(MAX_THREADS);
+  private final AtomicInteger threadCount = new AtomicInteger();
+  private volatile long sealedBytes = -1L;
 
   /**
    * @param baseNanos transaction start ({@code System.nanoTime()}), the origin of step offsets
-   * @param maxSteps recorded steps before the summary mode (at least 1)
+   * @param maxSteps recorded steps before the summary mode (1 to {@value #MAX_SLOTS})
    */
   public StepBuffer(long baseNanos, int maxSteps) {
     this.baseNanos = baseNanos;
-    this.maxSteps = Math.max(1, maxSteps);
-    allocate(Math.min(INITIAL_CAPACITY, this.maxSteps));
+    this.maxSteps = Math.max(1, Math.min(MAX_SLOTS, maxSteps));
   }
 
-  private void allocate(int capacity) {
-    type = new int[capacity];
-    parent = new int[capacity];
-    status = new int[capacity];
-    nameId = new long[capacity];
-    targetId = new long[capacity];
-    startOffsetNanos = new long[capacity];
-    elapsedNanos = new long[capacity];
-    rows = new long[capacity];
-    fetchNanos = new long[capacity];
-    error = new boolean[capacity];
-    ended = new boolean[capacity];
+  /** {@code sampling.profile.max-steps} of this buffer. */
+  public int maxSteps() {
+    return maxSteps;
   }
 
-  private void grow() {
-    int capacity = Math.min(maxSteps, type.length * 2);
-    type = Arrays.copyOf(type, capacity);
-    parent = Arrays.copyOf(parent, capacity);
-    status = Arrays.copyOf(status, capacity);
-    nameId = Arrays.copyOf(nameId, capacity);
-    targetId = Arrays.copyOf(targetId, capacity);
-    startOffsetNanos = Arrays.copyOf(startOffsetNanos, capacity);
-    elapsedNanos = Arrays.copyOf(elapsedNanos, capacity);
-    rows = Arrays.copyOf(rows, capacity);
-    fetchNanos = Arrays.copyOf(fetchNanos, capacity);
-    error = Arrays.copyOf(error, capacity);
-    ended = Arrays.copyOf(ended, capacity);
-    if (detail != null) {
-      detail = Arrays.copyOf(detail, capacity);
-    }
-    if (stack != null) {
-      stack = Arrays.copyOf(stack, capacity);
-    }
-  }
+  // --- writes (application threads) ---------------------------------------------------------
 
   /**
-   * Opens a step. Returns its sequence number, a summary handle ({@code >= SUMMARY_SEQ_BASE}) in
-   * summary mode, or -1 when the step is not recorded at all.
+   * Opens a step whose parent is {@code parentSeq} ({@link #NO_PARENT} at the top level), recorded
+   * by {@code thread}. Returns its sequence number, a summary handle ({@code >=} {@link
+   * #SUMMARY_SEQ_BASE}) in summary mode, or -1 when the step is not recorded at all (sealed, or
+   * counted only).
    */
-  public synchronized int start(int stepType, long name, long target, long startNanos) {
-    if (size < maxSteps) {
-      if (size == type.length) {
-        grow();
+  public int start(
+      int stepType, long name, long target, long startNanos, int parentSeq, Thread thread) {
+    int seq;
+    while (true) {
+      int n = next.get();
+      if ((n & SEALED) != 0) {
+        return -1;
       }
-      int seq = size++;
-      type[seq] = stepType;
-      parent[seq] = openCount > 0 ? open[openCount - 1] : -1;
-      nameId[seq] = name;
-      targetId[seq] = target;
-      startOffsetNanos[seq] = startNanos - baseNanos;
-      elapsedNanos[seq] = -1;
-      if (openCount < MAX_OPEN) {
-        open[openCount++] = seq;
+      if (n >= maxSteps) {
+        seq = -1;
+        break;
       }
-      return seq;
-    }
-    summarized = true;
-    int key = summaryKey(stepType, name);
-    if (key < 0) {
-      summaryOverflow++;
-      return -1;
-    }
-    for (int slot = 0; slot < MAX_PENDING_SUMMARY; slot++) {
-      if (!pendingUsed[slot]) {
-        pendingUsed[slot] = true;
-        pendingKey[slot] = key;
-        pendingStart[slot] = startNanos;
-        return SUMMARY_SEQ_BASE + slot;
+      if (next.compareAndSet(n, n + 1)) {
+        seq = n;
+        break;
       }
     }
-    // Too many open summary steps: count without a duration.
-    summaryCount[key]++;
-    return -1;
-  }
-
-  private int summaryKey(int stepType, long name) {
-    if (summaryType == null) {
-      summaryType = new int[MAX_SUMMARY_KEYS];
-      summaryNameId = new long[MAX_SUMMARY_KEYS];
-      summaryCount = new long[MAX_SUMMARY_KEYS];
-      summaryTotalNanos = new long[MAX_SUMMARY_KEYS];
-      summaryMaxNanos = new long[MAX_SUMMARY_KEYS];
-      summaryErrors = new long[MAX_SUMMARY_KEYS];
+    total.incrementAndGet();
+    if (seq < 0) {
+      return startSummary(stepType, name, startNanos);
     }
-    for (int i = 0; i < summaryKeys; i++) {
-      if (summaryType[i] == stepType && summaryNameId[i] == name) {
-        return i;
-      }
-    }
-    if (summaryKeys == MAX_SUMMARY_KEYS) {
-      return -1;
-    }
-    int key = summaryKeys++;
-    summaryType[key] = stepType;
-    summaryNameId[key] = name;
-    return key;
+    Chunk chunk = chunkFor(seq, true);
+    int i = seq - chunk.start;
+    chunk.type[i] = stepType;
+    chunk.parent[i] = parentSeq >= 0 && parentSeq < seq ? parentSeq : NO_PARENT;
+    chunk.nameId[i] = name;
+    chunk.targetId[i] = target;
+    chunk.startOffset[i] = startNanos - baseNanos;
+    chunk.elapsed[i] = -1L;
+    chunk.thread[i] = threadIndex(thread);
+    chunk.state.set(i, OPEN); // publishes the fields above
+    return seq;
   }
 
   /** Closes a step opened by {@link #start}. Unknown or already closed handles are ignored. */
-  public synchronized void end(
-      int seq, int stepStatus, boolean failed, long rowCount, long endNanos) {
+  public void end(int seq, int stepStatus, boolean failed, long rowCount, long endNanos) {
     if (seq < 0) {
       return;
     }
     if (seq >= SUMMARY_SEQ_BASE) {
-      int slot = seq - SUMMARY_SEQ_BASE;
-      if (slot < MAX_PENDING_SUMMARY && pendingUsed[slot]) {
-        pendingUsed[slot] = false;
-        int key = pendingKey[slot];
-        long elapsed = Math.max(0, endNanos - pendingStart[slot]);
-        summaryCount[key]++;
-        summaryTotalNanos[key] += elapsed;
-        if (elapsed > summaryMaxNanos[key]) {
-          summaryMaxNanos[key] = elapsed;
-        }
-        if (failed) {
-          summaryErrors[key]++;
-        }
-      }
+      endSummary(seq - SUMMARY_SEQ_BASE, failed, endNanos);
       return;
     }
-    if (seq >= size || ended[seq]) {
+    Chunk chunk = chunkFor(seq, false);
+    if (chunk == null) {
       return;
     }
-    ended[seq] = true;
-    elapsedNanos[seq] = Math.max(0, endNanos - baseNanos - startOffsetNanos[seq]);
-    status[seq] = stepStatus;
-    error[seq] = failed;
-    rows[seq] += rowCount;
-    for (int i = openCount - 1; i >= 0; i--) {
-      if (open[i] == seq) {
-        System.arraycopy(open, i + 1, open, i, openCount - i - 1);
-        openCount--;
-        break;
-      }
+    int i = seq - chunk.start;
+    if (!chunk.state.compareAndSet(i, OPEN, CLOSING)) {
+      return;
     }
+    chunk.elapsed[i] = Math.max(0L, endNanos - baseNanos - chunk.startOffset[i]);
+    chunk.status[i] = stepStatus;
+    chunk.error[i] = failed ? (byte) 1 : (byte) 0;
+    if (rowCount != 0) {
+      chunk.rows().addAndGet(i, rowCount);
+    }
+    chunk.state.set(i, CLOSED);
   }
 
   /** Adds fetched rows and fetch time to a recorded step (JDBC ResultSet, 10 §6.3). */
-  public synchronized void fetch(int seq, long rowCount, long nanos) {
-    if (seq < 0 || seq >= size) {
+  public void fetch(int seq, long rowCount, long nanos) {
+    Chunk chunk = recorded(seq);
+    if (chunk != null) {
+      int i = seq - chunk.start;
+      if (rowCount != 0) {
+        chunk.rows().addAndGet(i, rowCount);
+      }
+      if (nanos != 0) {
+        chunk.fetch().addAndGet(i, nanos);
+      }
+    }
+  }
+
+  /** Sets the detail of a recorded step (cut to {@link #DETAIL_MAX_CHARS}); not after sealing. */
+  public void detail(int seq, String text) {
+    Chunk chunk = recorded(seq);
+    if (chunk == null || text == null || isSealed()) {
       return;
     }
-    rows[seq] += rowCount;
-    fetchNanos[seq] += nanos;
+    String kept = text.length() > DETAIL_MAX_CHARS ? text.substring(0, DETAIL_MAX_CHARS) : text;
+    AtomicReferenceArray<String> details = chunk.details();
+    int i = seq - chunk.start;
+    details.set(i, kept);
+    if (isSealed()) {
+      // Raced with seal(): the byte estimate may not include it, so it is not kept.
+      details.compareAndSet(i, kept, null);
+    }
   }
 
-  /** Sets the detail of a recorded step (truncated to {@link #DETAIL_MAX_CHARS}). */
-  public synchronized void detail(int seq, String text) {
-    if (seq < 0 || seq >= size || text == null) {
+  /** Sets the stack (frame dictionary ids, at most {@link #MAX_STACK_FRAMES}) of a step. */
+  public void stack(int seq, long[] frameIds) {
+    Chunk chunk = recorded(seq);
+    if (chunk == null || frameIds == null || isSealed()) {
       return;
     }
-    if (detail == null) {
-      detail = new String[type.length];
+    long[] kept =
+        frameIds.length > MAX_STACK_FRAMES
+            ? java.util.Arrays.copyOf(frameIds, MAX_STACK_FRAMES)
+            : frameIds;
+    AtomicReferenceArray<long[]> stacks = chunk.stacks();
+    int i = seq - chunk.start;
+    stacks.set(i, kept);
+    if (isSealed()) {
+      stacks.compareAndSet(i, kept, null);
     }
-    detail[seq] = text.length() > DETAIL_MAX_CHARS ? text.substring(0, DETAIL_MAX_CHARS) : text;
   }
 
-  /** Sets the stack (frame dictionary ids) of a recorded step. */
-  public synchronized void stack(int seq, long[] frameIds) {
-    if (seq < 0 || seq >= size || frameIds == null) {
+  /**
+   * Ends recording (end of the transaction): later {@link #start}, {@link #detail} and {@link
+   * #stack} calls are ignored and {@link #estimatedBytes()} is fixed. Returns false when the buffer
+   * was already sealed.
+   */
+  public boolean seal() {
+    while (true) {
+      int n = next.get();
+      if ((n & SEALED) != 0) {
+        return false;
+      }
+      if (next.compareAndSet(n, n | SEALED)) {
+        sealedBytes = computeBytes();
+        return true;
+      }
+    }
+  }
+
+  public boolean isSealed() {
+    return (next.get() & SEALED) != 0;
+  }
+
+  private Chunk recorded(int seq) {
+    if (seq < 0 || seq >= SUMMARY_SEQ_BASE) {
+      return null;
+    }
+    Chunk chunk = chunkFor(seq, false);
+    if (chunk == null || chunk.state.get(seq - chunk.start) == FREE) {
+      return null;
+    }
+    return chunk;
+  }
+
+  // --- chunks -------------------------------------------------------------------------------
+
+  /** Chunk index of {@code seq}: 0 for 0..63, k for 32 << k .. (64 << k) - 1. */
+  static int chunkIndex(int seq) {
+    return seq < INITIAL_CAPACITY ? 0 : 32 - Integer.numberOfLeadingZeros(seq >>> 6);
+  }
+
+  /** First sequence number of chunk {@code index}. */
+  static int chunkStart(int index) {
+    return index == 0 ? 0 : 32 << index;
+  }
+
+  /** Slots of chunk {@code index} before the {@code max-steps} cut. */
+  static int chunkSize(int index) {
+    return index == 0 ? INITIAL_CAPACITY : 32 << index;
+  }
+
+  private Chunk chunkFor(int seq, boolean create) {
+    if (seq >= maxSteps) {
+      return null;
+    }
+    int index = chunkIndex(seq);
+    Chunk chunk = chunks.get(index);
+    if (chunk != null || !create) {
+      return chunk;
+    }
+    int start = chunkStart(index);
+    Chunk created = new Chunk(start, Math.min(chunkSize(index), maxSteps - start));
+    if (chunks.compareAndSet(index, null, created)) {
+      return created;
+    }
+    return chunks.get(index);
+  }
+
+  private Chunk readChunk(int seq) {
+    if (seq < 0 || seq >= size()) {
+      throw new IndexOutOfBoundsException("step " + seq + " of " + size());
+    }
+    return chunkFor(seq, false);
+  }
+
+  // --- threads ------------------------------------------------------------------------------
+
+  private byte threadIndex(Thread thread) {
+    if (thread == null) {
+      return NO_THREAD;
+    }
+    long id = thread.getId();
+    int known = Math.min(threadCount.get(), MAX_THREADS);
+    for (int i = 0; i < known; i++) {
+      StepThread entry = threads.get(i);
+      if (entry != null && entry.id == id) {
+        return (byte) i;
+      }
+    }
+    int index = threadCount.getAndIncrement();
+    if (index >= MAX_THREADS) {
+      return OTHER_THREAD;
+    }
+    String name = thread.getName();
+    if (name != null && name.length() > ThreadNames.MAX_NAME_CHARS) {
+      name = name.substring(0, ThreadNames.MAX_NAME_CHARS);
+    }
+    threads.set(index, new StepThread(id, name));
+    return (byte) index;
+  }
+
+  /** One thread that recorded steps: its id and name (cut) at its first step. */
+  private static final class StepThread {
+    final long id;
+    final String name;
+
+    StepThread(long id, String name) {
+      this.id = id;
+      this.name = name;
+    }
+  }
+
+  // --- summary mode -------------------------------------------------------------------------
+
+  private Summary summary() {
+    Summary current = summary.get();
+    if (current != null) {
+      return current;
+    }
+    Summary created = new Summary();
+    return summary.compareAndSet(null, created) ? created : summary.get();
+  }
+
+  private int startSummary(int stepType, long name, long startNanos) {
+    Summary s = summary();
+    int key = s.key(stepType, name);
+    if (key < 0) {
+      s.overflow.incrementAndGet();
+      return -1;
+    }
+    for (int slot = 0; slot < MAX_PENDING_SUMMARY; slot++) {
+      if (s.pending.get(slot) == 0 && s.pending.compareAndSet(slot, 0, 1)) {
+        s.pendingKey.set(slot, key);
+        s.pendingStart.set(slot, startNanos);
+        return SUMMARY_SEQ_BASE + slot;
+      }
+    }
+    s.count.incrementAndGet(key); // too many open summary steps: counted without a duration
+    return -1;
+  }
+
+  private void endSummary(int slot, boolean failed, long endNanos) {
+    Summary s = summary.get();
+    if (s == null || slot >= MAX_PENDING_SUMMARY || s.pending.get(slot) != 1) {
       return;
     }
-    if (stack == null) {
-      stack = new long[type.length][];
+    int key = s.pendingKey.get(slot);
+    long elapsed = Math.max(0L, endNanos - s.pendingStart.get(slot));
+    if (!s.pending.compareAndSet(slot, 1, 0)) {
+      return;
     }
-    stack[seq] = frameIds;
+    s.count.incrementAndGet(key);
+    s.sumNanos.addAndGet(key, elapsed);
+    while (true) {
+      long max = s.maxNanos.get(key);
+      if (elapsed <= max || s.maxNanos.compareAndSet(key, max, elapsed)) {
+        break;
+      }
+    }
+    if (failed) {
+      s.errors.incrementAndGet(key);
+    }
   }
 
-  // --- read access for exporters (after the transaction ended) ---------------------------------
+  /** The summary tables (created when the summary mode starts). */
+  private static final class Summary {
+    /** 0 free, 2 ready; a key is written before its state becomes 2. */
+    final AtomicIntegerArray keyState = new AtomicIntegerArray(MAX_SUMMARY_KEYS);
 
-  public synchronized int size() {
-    return size;
+    final AtomicInteger keys = new AtomicInteger();
+    final int[] type = new int[MAX_SUMMARY_KEYS];
+    final long[] nameId = new long[MAX_SUMMARY_KEYS];
+    final AtomicLongArray count = new AtomicLongArray(MAX_SUMMARY_KEYS);
+    final AtomicLongArray sumNanos = new AtomicLongArray(MAX_SUMMARY_KEYS);
+    final AtomicLongArray maxNanos = new AtomicLongArray(MAX_SUMMARY_KEYS);
+    final AtomicLongArray errors = new AtomicLongArray(MAX_SUMMARY_KEYS);
+    final AtomicLong overflow = new AtomicLong();
+    final AtomicIntegerArray pending = new AtomicIntegerArray(MAX_PENDING_SUMMARY);
+    final AtomicIntegerArray pendingKey = new AtomicIntegerArray(MAX_PENDING_SUMMARY);
+    final AtomicLongArray pendingStart = new AtomicLongArray(MAX_PENDING_SUMMARY);
+
+    /**
+     * The key of (type, name), added if new; -1 when all keys are taken. Two threads adding the
+     * same new key at once may create two entries; readers merge them ({@code ProfileSteps}).
+     */
+    int key(int stepType, long name) {
+      int known = Math.min(keys.get(), MAX_SUMMARY_KEYS);
+      for (int k = 0; k < known; k++) {
+        if (keyState.get(k) == 2 && type[k] == stepType && nameId[k] == name) {
+          return k;
+        }
+      }
+      while (true) {
+        int k = keys.get();
+        if (k >= MAX_SUMMARY_KEYS) {
+          return -1;
+        }
+        if (keys.compareAndSet(k, k + 1)) {
+          type[k] = stepType;
+          nameId[k] = name;
+          keyState.set(k, 2);
+          return k;
+        }
+      }
+    }
   }
 
-  public synchronized int type(int seq) {
-    return type[seq];
+  /** One chunk of slots ({@link #SLOT_BYTES} bytes per slot). */
+  private static final class Chunk {
+    final int start;
+    final AtomicIntegerArray state;
+    final int[] type;
+    final int[] parent;
+    final int[] status;
+    final byte[] thread;
+    final byte[] error;
+    final long[] nameId;
+    final long[] targetId;
+    final long[] startOffset;
+    final long[] elapsed;
+
+    /**
+     * Rows and fetch time, created by the first step that has them (WO-02 A-2: most steps of an
+     * HTTP transaction have neither, and two eager arrays cost about 1 KB per transaction).
+     */
+    final AtomicReference<AtomicLongArray> rows = new AtomicReference<AtomicLongArray>();
+
+    final AtomicReference<AtomicLongArray> fetch = new AtomicReference<AtomicLongArray>();
+    final AtomicReference<AtomicReferenceArray<String>> details =
+        new AtomicReference<AtomicReferenceArray<String>>();
+    final AtomicReference<AtomicReferenceArray<long[]>> stacks =
+        new AtomicReference<AtomicReferenceArray<long[]>>();
+
+    Chunk(int start, int length) {
+      this.start = start;
+      this.state = new AtomicIntegerArray(length);
+      this.type = new int[length];
+      this.parent = new int[length];
+      this.status = new int[length];
+      this.thread = new byte[length];
+      this.error = new byte[length];
+      this.nameId = new long[length];
+      this.targetId = new long[length];
+      this.startOffset = new long[length];
+      this.elapsed = new long[length];
+    }
+
+    int length() {
+      return type.length;
+    }
+
+    AtomicLongArray rows() {
+      return longs(rows);
+    }
+
+    AtomicLongArray fetch() {
+      return longs(fetch);
+    }
+
+    private AtomicLongArray longs(AtomicReference<AtomicLongArray> holder) {
+      AtomicLongArray current = holder.get();
+      if (current != null) {
+        return current;
+      }
+      AtomicLongArray created = new AtomicLongArray(length());
+      return holder.compareAndSet(null, created) ? created : holder.get();
+    }
+
+    AtomicReferenceArray<String> details() {
+      AtomicReferenceArray<String> current = details.get();
+      if (current != null) {
+        return current;
+      }
+      AtomicReferenceArray<String> created = new AtomicReferenceArray<String>(length());
+      return details.compareAndSet(null, created) ? created : details.get();
+    }
+
+    AtomicReferenceArray<long[]> stacks() {
+      AtomicReferenceArray<long[]> current = stacks.get();
+      if (current != null) {
+        return current;
+      }
+      AtomicReferenceArray<long[]> created = new AtomicReferenceArray<long[]>(length());
+      return stacks.compareAndSet(null, created) ? created : stacks.get();
+    }
   }
 
-  public synchronized int parent(int seq) {
-    return parent[seq];
+  // --- read access (exporters after the end; tests) -----------------------------------------
+
+  /** Recorded steps (sequence numbers 0 .. size-1); summary steps are not included. */
+  public int size() {
+    return Math.min(next.get() & ~SEALED, maxSteps);
   }
 
-  public synchronized long nameId(int seq) {
-    return nameId[seq];
+  /** Every step that started, recorded or summarized or only counted (11 {@code total_steps}). */
+  public long totalSteps() {
+    return total.get();
   }
 
-  public synchronized long targetId(int seq) {
-    return targetId[seq];
+  /** True when the step {@code seq} was written (a slot can be taken but not yet written). */
+  public boolean isRecorded(int seq) {
+    Chunk chunk = readChunk(seq);
+    return chunk != null && chunk.state.get(seq - chunk.start) != FREE;
   }
 
-  public synchronized long startOffsetNanos(int seq) {
-    return startOffsetNanos[seq];
+  /** True when the step {@code seq} was closed by {@link #end}. */
+  public boolean isClosed(int seq) {
+    if (seq < 0 || seq >= SUMMARY_SEQ_BASE) {
+      return true;
+    }
+    Chunk chunk = chunkFor(seq, false);
+    return chunk == null || chunk.state.get(seq - chunk.start) == CLOSED;
+  }
+
+  public int type(int seq) {
+    Chunk chunk = readChunk(seq);
+    return chunk == null ? 0 : chunk.type[seq - chunk.start];
+  }
+
+  /** Sequence number of the parent step, {@link #NO_PARENT} at the top level. */
+  public int parent(int seq) {
+    Chunk chunk = readChunk(seq);
+    return chunk == null ? NO_PARENT : chunk.parent[seq - chunk.start];
+  }
+
+  public long nameId(int seq) {
+    Chunk chunk = readChunk(seq);
+    return chunk == null ? 0 : chunk.nameId[seq - chunk.start];
+  }
+
+  public long targetId(int seq) {
+    Chunk chunk = readChunk(seq);
+    return chunk == null ? 0 : chunk.targetId[seq - chunk.start];
+  }
+
+  public long startOffsetNanos(int seq) {
+    Chunk chunk = readChunk(seq);
+    return chunk == null ? 0 : chunk.startOffset[seq - chunk.start];
   }
 
   /** Elapsed nanoseconds, -1 for a step that was never closed. */
-  public synchronized long elapsedNanos(int seq) {
-    return elapsedNanos[seq];
+  public long elapsedNanos(int seq) {
+    Chunk chunk = readChunk(seq);
+    if (chunk == null) {
+      return -1L;
+    }
+    int i = seq - chunk.start;
+    return chunk.state.get(i) == CLOSED ? chunk.elapsed[i] : -1L;
   }
 
-  public synchronized int status(int seq) {
-    return status[seq];
+  public int status(int seq) {
+    Chunk chunk = readChunk(seq);
+    return chunk == null ? 0 : chunk.status[seq - chunk.start];
   }
 
-  public synchronized boolean error(int seq) {
-    return error[seq];
+  public boolean error(int seq) {
+    Chunk chunk = readChunk(seq);
+    return chunk != null && chunk.error[seq - chunk.start] != 0;
   }
 
-  public synchronized long rows(int seq) {
-    return rows[seq];
+  public long rows(int seq) {
+    Chunk chunk = readChunk(seq);
+    AtomicLongArray rows = chunk == null ? null : chunk.rows.get();
+    return rows == null ? 0 : rows.get(seq - chunk.start);
   }
 
-  public synchronized long fetchNanos(int seq) {
-    return fetchNanos[seq];
+  public long fetchNanos(int seq) {
+    Chunk chunk = readChunk(seq);
+    AtomicLongArray fetch = chunk == null ? null : chunk.fetch.get();
+    return fetch == null ? 0 : fetch.get(seq - chunk.start);
   }
 
-  public synchronized String detail(int seq) {
-    return detail == null ? null : detail[seq];
+  public String detail(int seq) {
+    Chunk chunk = readChunk(seq);
+    AtomicReferenceArray<String> details = chunk == null ? null : chunk.details.get();
+    return details == null ? null : details.get(seq - chunk.start);
   }
 
-  public synchronized long[] stack(int seq) {
-    return stack == null ? null : stack[seq];
+  public long[] stack(int seq) {
+    Chunk chunk = readChunk(seq);
+    AtomicReferenceArray<long[]> stacks = chunk == null ? null : chunk.stacks.get();
+    return stacks == null ? null : stacks.get(seq - chunk.start);
   }
 
-  /** True once a step was aggregated instead of recorded. */
-  public synchronized boolean summarized() {
-    return summarized;
+  /**
+   * Name of the thread that opened the step {@code seq} (cut at {@value ThreadNames#MAX_NAME_CHARS}
+   * characters), {@value ThreadNames#OTHER} beyond {@value #MAX_THREADS} threads, null when
+   * unknown.
+   */
+  public String threadName(int seq) {
+    Chunk chunk = readChunk(seq);
+    if (chunk == null) {
+      return null;
+    }
+    byte index = chunk.thread[seq - chunk.start];
+    if (index == OTHER_THREAD) {
+      return ThreadNames.OTHER;
+    }
+    if (index < 0) {
+      return null;
+    }
+    StepThread entry = threads.get(index);
+    return entry == null ? null : entry.name;
   }
 
-  public synchronized int summaryKeys() {
-    return summaryKeys;
+  /** True once a step was aggregated instead of recorded (the profile is truncated). */
+  public boolean summarized() {
+    return summary.get() != null;
   }
 
-  public synchronized int summaryType(int key) {
-    return summaryType[key];
+  /** Summary keys taken (a key may appear twice after a race; readers merge). */
+  public int summaryKeys() {
+    Summary s = summary.get();
+    return s == null ? 0 : Math.min(s.keys.get(), MAX_SUMMARY_KEYS);
   }
 
-  public synchronized long summaryNameId(int key) {
-    return summaryNameId[key];
+  /** True when the summary key {@code key} is fully written. */
+  public boolean summaryReady(int key) {
+    Summary s = summary.get();
+    return s != null && s.keyState.get(key) == 2;
   }
 
-  public synchronized long summaryCount(int key) {
-    return summaryCount[key];
+  public int summaryType(int key) {
+    return summaryOrFail().type[key];
   }
 
-  public synchronized long summaryTotalNanos(int key) {
-    return summaryTotalNanos[key];
+  public long summaryNameId(int key) {
+    return summaryOrFail().nameId[key];
   }
 
-  public synchronized long summaryMaxNanos(int key) {
-    return summaryMaxNanos[key];
+  public long summaryCount(int key) {
+    return summaryOrFail().count.get(key);
   }
 
-  public synchronized long summaryErrors(int key) {
-    return summaryErrors[key];
+  public long summaryTotalNanos(int key) {
+    return summaryOrFail().sumNanos.get(key);
+  }
+
+  public long summaryMaxNanos(int key) {
+    return summaryOrFail().maxNanos.get(key);
+  }
+
+  public long summaryErrors(int key) {
+    return summaryOrFail().errors.get(key);
   }
 
   /** Steps dropped entirely (more than {@value #MAX_SUMMARY_KEYS} distinct summary keys). */
-  public synchronized long summaryOverflow() {
-    return summaryOverflow;
+  public long summaryOverflow() {
+    Summary s = summary.get();
+    return s == null ? 0 : s.overflow.get();
   }
 
-  /** Rough heap size of this buffer in bytes (export queue byte bound, 10 §10.1). */
-  public synchronized long estimatedBytes() {
-    long bytes = 64L + (long) type.length * 70L;
-    if (detail != null) {
-      for (int i = 0; i < size; i++) {
-        if (detail[i] != null) {
-          bytes += 40L + 2L * detail[i].length();
+  private Summary summaryOrFail() {
+    Summary s = summary.get();
+    if (s == null) {
+      throw new IndexOutOfBoundsException("no summary steps");
+    }
+    return s;
+  }
+
+  /**
+   * Estimated heap bytes of this buffer (queue byte bounds, 10 §10.1, N-02): fixed when sealed.
+   * Covers the buffer, its chunks ({@value #SLOT_BYTES} bytes per slot), details, stacks, step
+   * thread names and the summary tables.
+   */
+  public long estimatedBytes() {
+    long sealed = sealedBytes;
+    return sealed >= 0 ? sealed : computeBytes();
+  }
+
+  private long computeBytes() {
+    long bytes = BASE_BYTES;
+    for (int index = 0; index < MAX_CHUNKS; index++) {
+      Chunk chunk = chunks.get(index);
+      if (chunk == null) {
+        continue;
+      }
+      int length = chunk.length();
+      bytes += 64L + 13L * 16L + (long) length * SLOT_BYTES;
+      if (chunk.rows.get() != null) {
+        bytes += 32L + (long) length * LAZY_LONG_BYTES;
+      }
+      if (chunk.fetch.get() != null) {
+        bytes += 32L + (long) length * LAZY_LONG_BYTES;
+      }
+      AtomicReferenceArray<String> details = chunk.details.get();
+      if (details != null) {
+        bytes += 16L + 4L * length;
+        for (int i = 0; i < length; i++) {
+          String text = details.get(i);
+          if (text != null) {
+            bytes += 40L + 2L * text.length();
+          }
+        }
+      }
+      AtomicReferenceArray<long[]> stacks = chunk.stacks.get();
+      if (stacks != null) {
+        bytes += 16L + 4L * length;
+        for (int i = 0; i < length; i++) {
+          long[] frames = stacks.get(i);
+          if (frames != null) {
+            bytes += 16L + 8L * frames.length;
+          }
         }
       }
     }
-    if (stack != null) {
-      for (int i = 0; i < size; i++) {
-        if (stack[i] != null) {
-          bytes += 16L + 8L * stack[i].length;
-        }
+    int known = Math.min(threadCount.get(), MAX_THREADS);
+    for (int i = 0; i < known; i++) {
+      StepThread entry = threads.get(i);
+      if (entry != null) {
+        bytes += 32L + 40L + (entry.name == null ? 0 : 2L * entry.name.length());
       }
     }
-    if (summaryType != null) {
-      bytes += MAX_SUMMARY_KEYS * 44L;
+    if (summary.get() != null) {
+      bytes += SUMMARY_BYTES;
     }
     return bytes;
   }

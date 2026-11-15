@@ -39,7 +39,11 @@ class AgentArchitectureTest {
 
   static List<ArchRule> productionRules() {
     AgentLayout layout = AgentLayout.production();
-    return Stream.concat(AdviceRules.all(layout).stream(), AgentBoundaryRules.all(layout).stream())
+    return Stream.of(
+            AdviceRules.all(layout),
+            AgentBoundaryRules.all(layout),
+            AgentCodeRules.all(layout, LogAllowlist.production()))
+        .flatMap(List::stream)
         .toList();
   }
 

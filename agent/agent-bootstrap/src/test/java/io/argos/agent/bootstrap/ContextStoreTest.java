@@ -130,4 +130,30 @@ class ContextStoreTest {
     }
     assertThat(store.size()).isZero();
   }
+
+  static final class Pooled {}
+
+  @Test
+  @Tag("req:N-02")
+  @DisplayName(
+      "contextEntries (weakmap_size, 18 §5.9) counts entries holding a TraceContext or Scope,"
+          + " not caches of long-lived objects; totalEntries counts both")
+  void contextEntries() {
+    long contexts = ContextStore.contextEntries();
+    long total = ContextStore.totalEntries();
+    Pooled connection = new Pooled();
+    Pooled task = new Pooled();
+    Pooled worker = new Pooled();
+    ContextStore.of(Pooled.class, Long.class).put(connection, Long.valueOf(42));
+    ContextStore.of(Pooled.class, TraceContext.class)
+        .put(task, new TraceContext(1, 1, 1, 1, 0, Kind.HTTP, 0, 0, null, false, -1, -1));
+    ContextStore.of(Pooled.class, Scope.class).put(worker, Scope.NOOP);
+    assertThat(ContextStore.contextEntries()).isEqualTo(contexts + 2);
+    assertThat(ContextStore.totalEntries()).isEqualTo(total + 3);
+    ContextStore.of(Pooled.class, TraceContext.class).remove(task);
+    ContextStore.of(Pooled.class, Scope.class).remove(worker);
+    assertThat(ContextStore.contextEntries()).isEqualTo(contexts);
+    assertThat(ContextStore.totalEntries()).isEqualTo(total + 1);
+    ContextStore.of(Pooled.class, Long.class).remove(connection);
+  }
 }

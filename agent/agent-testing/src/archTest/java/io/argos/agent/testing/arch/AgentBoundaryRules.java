@@ -15,6 +15,8 @@ import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.Dependency;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaField;
+import com.tngtech.archunit.core.domain.JavaParameterizedType;
+import com.tngtech.archunit.core.domain.JavaType;
 import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
@@ -206,7 +208,11 @@ public final class AgentBoundaryRules {
         .because("logging frameworks clash with the application's (CLAUDE.md, 19 §5.3 AGT-02)");
   }
 
-  /** AGT-02: no stdout/stderr outside the logger's stderr fallback and the --check output. */
+  /**
+   * AGT-02: no stdout/stderr outside the logger's stderr fallback and the --check output; the entry
+   * point may use stderr for the single line of a start that failed before the logger existed
+   * (ADR-0009 C-78), never stdout or a stack trace.
+   */
   public static ArchRule noConsoleOutput(AgentLayout layout) {
     return noClasses()
         .that(agentClasses(layout))
@@ -218,15 +224,34 @@ public final class AgentBoundaryRules {
                         .noneMatch(p -> AgentLayout.inPackage(c.getName(), p))))
         .should()
         .accessField("java.lang.System", "out")
-        .orShould()
-        .accessField("java.lang.System", "err")
+        .orShould(
+            new ArchCondition<JavaClass>(
+                "access field <java.lang.System.err> outside " + layout.stderrOnlyClasses()) {
+              @Override
+              public void check(JavaClass item, ConditionEvents events) {
+                if (layout.stderrOnlyClasses().contains(AgentLayout.topLevel(item.getName()))) {
+                  return;
+                }
+                item.getFieldAccessesFromSelf().stream()
+                    .filter(
+                        access ->
+                            access.getTarget().getOwner().getName().equals("java.lang.System")
+                                && access.getTarget().getName().equals("err"))
+                    .forEach(
+                        access ->
+                            events.add(
+                                SimpleConditionEvent.satisfied(access, access.getDescription())));
+              }
+            })
         .orShould()
         .callMethodWhere(
             callTo(
                 "Throwable.printStackTrace()",
                 (owner, name) ->
                     name.equals("printStackTrace") && assignableTo(owner, "java.lang.Throwable")))
-        .as("AGT-02 agent code writes nothing to stdout/stderr (except core.log, core.check)")
+        .as(
+            "AGT-02 agent code writes nothing to stdout/stderr (except core.log, core.check; the"
+                + " entry point's C-78 stderr line)")
         .because("the agent must not write to the application's console (F-A35, T-AG-060)");
   }
 
@@ -242,6 +267,46 @@ public final class AgentBoundaryRules {
         .haveFullyQualifiedName("jdk.internal.misc.Unsafe")
         .as("AGT-03 agent code does not reference sun.misc.Unsafe")
         .because("JDK 25 denies Unsafe memory access by default (F-A35)");
+  }
+
+  /** Atomic holders of primitives: they cannot hold an object. */
+  private static final Set<String> ATOMIC_PRIMITIVES =
+      Set.of(
+          "java.util.concurrent.atomic.AtomicBoolean",
+          "java.util.concurrent.atomic.AtomicInteger",
+          "java.util.concurrent.atomic.AtomicLong",
+          "java.util.concurrent.atomic.AtomicIntegerArray",
+          "java.util.concurrent.atomic.AtomicLongArray");
+
+  /** Atomic holders of references: allowed when their type argument is. */
+  private static final Set<String> ATOMIC_REFERENCES =
+      Set.of(
+          "java.util.concurrent.atomic.AtomicReference",
+          "java.util.concurrent.atomic.AtomicReferenceArray");
+
+  /**
+   * True when a field of {@code type} cannot hold an application object: primitives, String, boxed
+   * primitives, {@code WeakReference}, bootstrap types (core types for core.trace owners), arrays
+   * of those, atomic holders of primitives, and {@code AtomicReference}/{@code
+   * AtomicReferenceArray} of an allowed type argument (a raw one is not allowed).
+   */
+  static boolean traceStateType(AgentLayout layout, JavaType type, boolean coreOwner, int level) {
+    JavaClass raw = base(type.toErasure());
+    String name = raw.getName();
+    if (ATOMIC_REFERENCES.contains(name)) {
+      return level < 4
+          && type instanceof JavaParameterizedType parameterized
+          && parameterized.getActualTypeArguments().size() == 1
+          && traceStateType(
+              layout, parameterized.getActualTypeArguments().get(0), coreOwner, level + 1);
+    }
+    return raw.isPrimitive()
+        || name.equals("java.lang.String")
+        || BOXED.contains(name)
+        || ATOMIC_PRIMITIVES.contains(name)
+        || name.equals("java.lang.ref.WeakReference")
+        || AgentLayout.inPackage(name, layout.bootstrap())
+        || (coreOwner && AgentLayout.inPackage(name, layout.core()));
   }
 
   /**
@@ -277,19 +342,11 @@ public final class AgentBoundaryRules {
                 "have a primitive, String, boxed primitive or bootstrap type") {
               @Override
               public void check(JavaField field, ConditionEvents events) {
-                JavaClass type = base(field.getRawType());
-                String name = type.getName();
                 boolean coreOwner = AgentLayout.inPackage(field.getOwner().getName(), trace);
                 boolean allowed =
-                    type.isPrimitive()
-                        || name.equals("java.lang.String")
-                        || BOXED.contains(name)
-                        || name.equals("java.lang.ref.WeakReference")
-                        || (name.equals("java.lang.Object")
-                            && field.getName().equals("coreRef")
-                            && !field.getRawType().isArray())
-                        || AgentLayout.inPackage(name, layout.bootstrap())
-                        || (coreOwner && AgentLayout.inPackage(name, layout.core()));
+                    (field.getName().equals("coreRef")
+                            && field.getRawType().getName().equals("java.lang.Object"))
+                        || traceStateType(layout, field.getType(), coreOwner, 0);
                 if (!allowed) {
                   events.add(
                       SimpleConditionEvent.violated(

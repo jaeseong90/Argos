@@ -20,6 +20,9 @@ dependencies {
   implementation(pluginMarker(libs.plugins.license.report))
   implementation(pluginMarker(libs.plugins.protobuf))
   implementation(pluginMarker(libs.plugins.maven.publish))
+  // argos.java-server (WO-20): boot jar and server image.
+  implementation(pluginMarker(libs.plugins.spring.boot))
+  implementation(pluginMarker(libs.plugins.jib))
 }
 
 // Tests of the build logic itself (part of the root `check`): license policy and checks (TestKit),

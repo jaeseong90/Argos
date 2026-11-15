@@ -91,7 +91,8 @@ class AgentAttachTest {
                             "T-AG-043 kill switch 1st stage (argos.enabled=false) records nothing",
                             () -> killSwitchFirstStage(jdk)),
                         DynamicTest.dynamicTest(
-                            "T-AG-040 (PoC) advice fault injection: application unaffected",
+                            "T-AG-040 (PoC) advice fault injection: application unaffected,"
+                                + " orphan steps counted in the self-diagnostics",
                             () -> adviceFault(jdk)),
                         DynamicTest.dynamicTest(
                             "F-A35 ByteBuddy Unsafe code paths are never loaded (-verbose:class)",
@@ -291,6 +292,12 @@ class AgentAttachTest {
     assertThat(run.agentLog())
         .contains("argos.test.faults: advice of module test-probe throws")
         .contains("advice error in module 60");
+    // The orphan counter path behind T-AG-050 (LoadLeakE2eTest): without the test-probe
+    // transaction, test-probe-jdk's ExecuteAdvice counts each of the 3 pool.execute calls as an
+    // orphan ASYNC step, and the self-diagnostics snapshot written at shutdown carries the count.
+    assertThat(run.selfDiagnostics().counter("argos_agent_orphan_steps_total{type=\"async\"}"))
+        .as(run.describe())
+        .isEqualTo(3);
   }
 
   void unsafePathsNotLoaded(int jdk) throws Exception {

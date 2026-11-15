@@ -446,7 +446,8 @@ class SampleAppAgentTest {
     flags =
         flags
             .replaceAll(
-                "-D(argos\\.(?:log\\.dir|debug\\.transform-list|debug\\.transform-log))=[^ ]*",
+                "-D(argos\\.(?:log\\.dir|debug\\.transform-list|debug\\.transform-log"
+                    + "|test\\.selfdiag-file))=[^ ]*",
                 "-D$1=<run>/..")
             .replaceAll(
                 "-Dargos\\.test\\.exporter=file:[^ ]*", "-Dargos.test.exporter=file:<run>/out")

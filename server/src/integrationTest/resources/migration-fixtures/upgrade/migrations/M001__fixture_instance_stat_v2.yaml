@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# TEST FIXTURE (T-ST-052 path 2, T-SV-002): the four-step replacement of a 1m rollup and its view
+# (13 section 13.2): instance_stat_1m -> instance_stat_1m_v2 (adds max_cpu_time_ms). instance_stat_1m
+# has no 1h cascade, so no other view reads it.
+description: replace instance_stat_1m by instance_stat_1m_v2 (fixture)
+steps:
+  - id: create_v2
+    kind: ddl
+    statements:
+      - |
+        CREATE TABLE IF NOT EXISTS {db}.{p}instance_stat_1m_v2
+        (
+            app_id            UInt32,
+            env               LowCardinality(String),
+            instance_id       UInt32,
+            kind              Enum8('HTTP' = 1, 'BATCH' = 2, 'MESSAGE' = 3),
+            minute            DateTime('UTC'),
+            count             SimpleAggregateFunction(sum, UInt64),
+            error_count       SimpleAggregateFunction(sum, UInt64),
+            sum_elapsed_ms    SimpleAggregateFunction(sum, UInt64),
+            max_elapsed_ms    SimpleAggregateFunction(max, UInt32),
+            sum_sql_time_ms   SimpleAggregateFunction(sum, UInt64),
+            sum_dbc_wait_ms   SimpleAggregateFunction(sum, UInt64),
+            sum_ext_time_ms   SimpleAggregateFunction(sum, UInt64),
+            apdex_satisfied   SimpleAggregateFunction(sum, UInt64),
+            apdex_tolerating  SimpleAggregateFunction(sum, UInt64),
+            max_cpu_time_ms   SimpleAggregateFunction(max, Int32),
+            q_elapsed         AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32)
+        )
+        ENGINE = AggregatingMergeTree
+        PARTITION BY toDate(minute)
+        ORDER BY (app_id, instance_id, kind, minute)
+        TTL minute + INTERVAL {retention.rollup-1m-days} DAY
+        SETTINGS ttl_only_drop_parts = 1,
+                 non_replicated_deduplication_window = 1000,
+                 allow_dimensions_outside_sorting_key = 1
+      - |
+        CREATE MATERIALIZED VIEW IF NOT EXISTS {db}.{p}instance_stat_1m_v2_mv TO {db}.{p}instance_stat_1m_v2
+        SQL SECURITY DEFINER AS {rollup:instance_stat_1m_v2}
+  - id: backfill
+    kind: backfill
+    table: instance_stat_1m_v2
+    unit: day
+    days: "{retention.xlog-days}"
+  - id: switch
+    kind: switch
+    alias: instance_stat_1m
+    table: instance_stat_1m_v2
+  - id: drop_old
+    kind: drop
+    statements:
+      - DROP VIEW IF EXISTS {db}.{p}instance_stat_1m_mv
+      - DROP TABLE IF EXISTS {db}.{p}instance_stat_1m

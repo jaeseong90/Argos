@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# LOG-01 allow-list (10 §14 "정적 검사", SEC-26; AgentCodeRules.logArgumentsAreSafe, LogAllowlist).
+# The agent's INFO, WARN and ERROR log calls take constants, numbers, enums, classes, files, paths
+# and throwables. A string argument needs one of the entries below:
+#   producer <class>#<method or field>  <why its strings are identifiers or operator settings>
+#   site <class>#<method>               <why every string logged in that method is safe>
+# A new line is reviewed like code: say where the value comes from. Collected data (SQL,
+# parameters, headers, URL queries, user ids) never qualifies.
+
+# --- Identity, configuration and agent-internal identifiers --------------------------------------
+producer io.argos.agent.core.export.AgentInfo#version  Implementation-Version of the agent jar manifest
+producer io.argos.agent.core.export.AgentInfo#commit  Argos-Commit of the agent jar manifest
+producer io.argos.agent.core.export.AgentInfo#protocolVersion  Argos-Protocol-Version of the agent jar manifest
+producer io.argos.agent.core.config.AgentConfig#appName  app.name, operator configuration (10 §15)
+producer io.argos.agent.core.config.AgentConfig#appEnv  app.env, operator configuration (10 §15)
+producer io.argos.agent.core.config.LoadedConfig#configHash  16 hex digits of xxh3 over the configuration without the token (SEC-06)
+producer io.argos.agent.core.config.TokenHolder#masked  always argos_**** (C-94)
+producer io.argos.agent.core.export.Exporters#configuredName  exporter name of test.exporter (noop, drop, file, grpc)
+producer io.argos.agent.instrumentation.api.InstrumentationModule#id  module id of 10 §5.1 (servlet, jdbc, ...)
+producer io.argos.agent.core.boot.TransformRecorder#loaderName  bootstrap, app, platform or a class loader class name
+producer io.argos.agent.core.boot.StartTimer#format  a number of milliseconds
+producer io.argos.agent.core.boot.StartTimer#describe  start step timings and class counts (C-79)
+producer io.argos.agent.core.log.AgentLogger#destination  the log file path or the stderr fallback description
+producer io.argos.agent.bootstrap.ModuleHealth#stateName  ENABLED, DISABLED_BY_* (10 §5.2)
+producer io.argos.agent.core.boot.Jpms#name  a JPMS module name (java.base, an automatic module name)
+producer io.argos.agent.core.boot.TransformRecorder#modules  instrumentation module ids of a transformed class
+producer net.bytebuddy.description.type.TypeDescription#getName  the binary name of a class being transformed (an identifier)
+producer io.argos.agent.core.guard.SelfProtection#label  an instrumentation module id or its number
+producer io.argos.agent.core.guard.TransformErrorListener$Recorder#loaderName  bootstrap, app, platform or a class loader class name
+producer io.argos.agent.core.export.Exporter#describe  exporter name and, for the test file exporter, its file path
+producer io.argos.agent.core.export.Exporters#testArgument  the directory of argos.test.exporter=file:<dir> (development builds)
+
+# --- Reviewed call sites ---------------------------------------------------------------------------
+site io.argos.agent.core.boot.AgentStarter#reportConfiguration  notes, warnings and errors of ConfigLoader: key names, sources, value checks; the token is never part of them (SEC-06, ConfigLoader contract)
+site io.argos.agent.core.boot.AgentStarter#installMasker  MaskPatterns.compileUser warnings: a pattern position and a limit, never the pattern text
+site io.argos.agent.core.boot.AgentStarter#run  the start banner: module ids joined by commas and the log destination of AgentLogger.configure (a path)
+site io.argos.agent.core.boot.ModuleRegistry#classNames  URLs of the module index inside the agent jar (inst/META-INF/services)
+site io.argos.agent.core.boot.ModuleRegistry#instantiate  class names listed in the agent jar's module index
+site io.argos.agent.core.boot.ModuleRegistry#load  module ids and class names of the agent jar's module index
+site io.argos.agent.core.boot.TestFaults#announce  module ids of argos.test.faults (development builds only, T-BLD-010)
+site io.argos.agent.core.boot.TestFaults#from  fault specs of argos.test.faults (development builds only, T-BLD-010)
+site io.argos.agent.core.boot.TestFaults#reportUnmatched  fault specs and module ids of argos.test.faults (development builds only)
+site io.argos.agent.core.boot.TransformRecorder#write  the debug.transform-list or debug.transform-log path (operator setting)
+site io.argos.agent.core.guard.TransformErrorListener#onError  the binary name of the class whose transformation failed (an identifier)
+site io.argos.agent.core.export.ExportWorker#failed  the exporter description and a batch kind constant

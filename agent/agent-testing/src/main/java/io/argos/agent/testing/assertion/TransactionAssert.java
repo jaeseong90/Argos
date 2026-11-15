@@ -14,13 +14,14 @@ import org.assertj.core.api.AbstractAssert;
  * <pre>
  * assertThatTransaction(tx)
  *     .hasKind("HTTP").hasService("GET /api/orders/{id}").hasStatus(200).isNotError()
- *     .cpuTimeMs().isMissing()                  // unsupported on JSONL: fails with the reason
+ *     .cpuTimeMs().isMissing()                  // virtual thread: missing, not 0 (D-23)
  *     .steps().ofType("SQL").hasSize(1)
  *     .transaction().noStepFromThread(startsWith("argos-"));
  * </pre>
  *
- * Fields the record's source cannot carry ({@code env}, {@code version}, {@code cpu_time_ms} on the
- * JSONL exporter; step threads) fail as {@link Unsupported} instead of passing.
+ * Fields the record's source cannot carry (on the JSONL exporter: headers, request id, connection
+ * wait; on the WO-02 PoC protocol: env, version, step threads) fail as {@link Unsupported} instead
+ * of passing.
  */
 public final class TransactionAssert extends AbstractAssert<TransactionAssert, TransactionRecord> {
 
@@ -101,6 +102,43 @@ public final class TransactionAssert extends AbstractAssert<TransactionAssert, T
     return field("version").isEqualTo(version);
   }
 
+  /** The C-69 flag name ({@code virtual_thread}, {@code leaked}, {@code summarized}) is set. */
+  public TransactionAssert hasFlag(String flag) {
+    field("flags");
+    if (!actual.flags().contains(flag)) {
+      failWithMessage(
+          "expected flag <%s> but the flags were %s in%n%s", flag, actual.flags(), actual);
+    }
+    return this;
+  }
+
+  /** The flag name is not set. */
+  public TransactionAssert doesNotHaveFlag(String flag) {
+    field("flags");
+    if (actual.flags().contains(flag)) {
+      failWithMessage("expected no flag <%s> in%n%s", flag, actual);
+    }
+    return this;
+  }
+
+  /** The sampler chose to send the profile (10 §9.2 step 3, {@code profile_captured}). */
+  public TransactionAssert isProfileCaptured() {
+    field("profile_captured");
+    if (!Boolean.TRUE.equals(actual.profileCaptured())) {
+      failWithMessage("expected profile_captured=true in%n%s", actual);
+    }
+    return this;
+  }
+
+  /** The sampler did not send the profile. */
+  public TransactionAssert isNotProfileCaptured() {
+    field("profile_captured");
+    if (!Boolean.FALSE.equals(actual.profileCaptured())) {
+      failWithMessage("expected profile_captured=false in%n%s", actual);
+    }
+    return this;
+  }
+
   /** Elapsed time present and not negative (D-01). */
   public TransactionAssert hasElapsed() {
     isNotNull();
@@ -143,6 +181,21 @@ public final class TransactionAssert extends AbstractAssert<TransactionAssert, T
   /** Allocated bytes; missing (not 0) when the agent cannot measure it (D-23). */
   public ValueAssert<TransactionAssert> allocBytes() {
     return field("alloc_bytes");
+  }
+
+  /** Every step that started (11 {@code total_steps}), including summarized ones. */
+  public ValueAssert<TransactionAssert> totalSteps() {
+    return field("total_steps");
+  }
+
+  /** {@code truncated} (11): steps beyond {@code max-steps} were summarized. */
+  public ValueAssert<TransactionAssert> truncated() {
+    return field("truncated");
+  }
+
+  /** The normalized thread name behind {@code thread_name_id} (10 §8 {@code ThreadNames}). */
+  public ValueAssert<TransactionAssert> threadName() {
+    return field("thread_name");
   }
 
   /** Any field by its record name; unsupported fields fail. */
@@ -247,8 +300,10 @@ public final class TransactionAssert extends AbstractAssert<TransactionAssert, T
 
   static String arrivesWith(String field) {
     return switch (field) {
-      case "env", "version" -> "WO-10 (app.env/app.version) and WO-11 (gRPC exporter)";
-      case "cpu_time_ms", "alloc_bytes" -> "WO-10 (CPU and allocation deltas)";
+      case "env", "version" -> "the gRPC exporter of WO-11 (instance metadata)";
+      case "cpu_time_ms", "alloc_bytes" -> "the gRPC exporter of WO-11";
+      case "headers", "request_id", "dispatch_count" -> "WO-12 (servlet) and WO-11";
+      case "dbc_wait_ms", "sql_ids", "batch_size" -> "WO-13 (jdbc) and WO-11";
       default -> "the gRPC exporter of WO-11";
     };
   }

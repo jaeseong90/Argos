@@ -36,7 +36,7 @@ public final class OverheadBench {
                  [--label TEXT] [--k6-ssh user@loadhost --app-address <this host's IP> [--k6 k6]]
             A-B-A-B-A-B load set (01 §7.3 items 2-7, 18 §7.3; --mode container: item 9; --vt: item
             10; --k6-ssh: k6 on a separate load machine, item 1). --exporter noop is 18 §5.4's no-op
-            exporter (argos.test.exporter=noop), drop is the WO-02 setting (argos.exporter=noop),
+            exporter (argos.test.exporter=noop), drop is the WO-02 setting (argos.test.exporter=drop),
             grpc is refused until the agent has a transport (WO-11).
         startup  --out DIR [--apps shop-boot3,shop-heavy] [--runs 10] [--cds default,off]
                  [--variants off,on] [--jvm-opts "-Xms2g -Xmx2g -XX:+UseG1GC"] [--java PATH]

@@ -15,8 +15,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 /**
- * One measured JVM: the host application on one JDK with no agent, the base agent (exporter noop)
- * or a comparison jar (exporter grpc to the fake collector), and what came out of it.
+ * One measured JVM: the host application on one JDK with no agent, the base agent ({@code
+ * test.exporter=noop}) or a comparison jar (the default grpc exporter to the fake collector), and
+ * what came out of it.
  */
 final class HostRun {
   /**
@@ -137,12 +138,16 @@ final class HostRun {
           spec.agent().equals("base") ? options.baseAgent() : options.variants().get(spec.agent());
       command.add("-javaagent:" + jar);
       command.add("-Dargos.log.dir=" + dir.resolve("logs"));
+      command.add("-Dargos.app.name=transport-poc");
+      command.add("-Dargos.app.env=bench");
       command.add("-Dargos.app.instance=" + instance);
       if (spec.agent().equals("base")) {
-        command.add("-Dargos.exporter=noop");
+        // P-3 baseline: encode, then drop (ADR-0009 C-88 moved the PoC key exporter to the
+        // development-only test.exporter; noop, not drop, keeps the encoding cost comparable).
+        command.add("-Dargos.test.exporter=noop");
       } else {
+        // grpc is the exporter of a configuration without test keys (C-88).
         int port = spec.agent().startsWith("http1") ? collector.httpPort : collector.grpcPort;
-        command.add("-Dargos.exporter=grpc");
         command.add("-Dargos.server.address=localhost:" + port);
         command.add("-Dargos.server.tls=true");
         command.add("-Dargos.server.tls.ca-file=" + collector.caFile);

@@ -7,4 +7,8 @@ public final class PrintsToConsole {
     System.out.println(message);
     error.printStackTrace();
   }
+
+  public void warn(String message) {
+    System.err.println(message);
+  }
 }

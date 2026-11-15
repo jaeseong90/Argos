@@ -57,12 +57,18 @@ class AgentBoundaryRulesTest {
     }
 
     @Test
-    @DisplayName("T-AG-004 rejects a step builder field that can hold an application object")
+    @DisplayName(
+        "T-AG-004 rejects a step builder field that can hold an application object (also in an"
+            + " atomic reference or a raw atomic array)")
     void rejectsApplicationTypeInStepBuilder() {
       assertViolation(
-          AgentBoundaryRules.traceStateFieldTypes(VIOLATING),
-          classes(StepBuffer.class),
-          "StepBuffer.lastOrder has type io.argos.agent.testing.arch.fixture.app.Order");
+              AgentBoundaryRules.traceStateFieldTypes(VIOLATING),
+              classes(StepBuffer.class),
+              "StepBuffer.lastOrder has type io.argos.agent.testing.arch.fixture.app.Order")
+          .hasMessageContaining(
+              "StepBuffer.pendingOrder has type java.util.concurrent.atomic.AtomicReference")
+          .hasMessageContaining(
+              "StepBuffer.anything has type java.util.concurrent.atomic.AtomicReferenceArray");
     }
 
     @Test
@@ -196,18 +202,37 @@ class AgentBoundaryRulesTest {
     }
 
     @Test
-    @DisplayName("AGT-02 rejects System.out and printStackTrace() outside core.log/core.check")
+    @DisplayName(
+        "AGT-02 rejects System.out, System.err and printStackTrace() outside core.log/core.check")
     void rejectsConsole() {
       assertViolation(
           AgentBoundaryRules.noConsoleOutput(VIOLATING),
           classes(PrintsToConsole.class),
           "PrintsToConsole.report",
           "gets field <java.lang.System.out>",
-          "calls method <java.lang.Exception.printStackTrace()>");
+          "calls method <java.lang.Exception.printStackTrace()>",
+          "PrintsToConsole.warn",
+          "gets field <java.lang.System.err>");
     }
 
     @Test
-    @DisplayName("AGT-02 accepts the stderr fallback sink and the --check report")
+    @DisplayName(
+        "AGT-02 / C-78 the entry point may print its stderr line, never stdout or a stack trace")
+    void rejectsEntryPointStdout() {
+      assertViolation(
+              AgentBoundaryRules.noConsoleOutput(VIOLATING),
+              classes(io.argos.agent.testing.arch.fixture.violating.AgentPremain.class),
+              "AgentPremain.premain",
+              "gets field <java.lang.System.out>",
+              "calls method <java.lang.Exception.printStackTrace()>")
+          .message()
+          .doesNotContain("System.err");
+    }
+
+    @Test
+    @DisplayName(
+        "AGT-02 accepts the stderr fallback sink, the --check report and the entry point's C-78"
+            + " stderr line")
     void acceptsConsolePackages() {
       assertPassesOnCompliant(AgentBoundaryRules.noConsoleOutput(COMPLIANT));
     }

@@ -1,0 +1,39 @@
+{
+  "ts": {
+    "$resolver": "timestamp",
+    "pattern": {
+      "format": "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+      "timeZone": "UTC"
+    }
+  },
+  "level": {
+    "$resolver": "level",
+    "field": "name"
+  },
+  "logger": {
+    "$resolver": "logger",
+    "field": "name"
+  },
+  "thread": {
+    "$resolver": "thread",
+    "field": "name"
+  },
+  "request_id": {
+    "$resolver": "mdc",
+    "key": "request_id"
+  },
+  "message": {
+    "$resolver": "message",
+    "stringified": true
+  },
+  "error": {
+    "class": {
+      "$resolver": "mdc",
+      "key": "argos.error.class"
+    },
+    "stack": {
+      "$resolver": "mdc",
+      "key": "argos.error.stack"
+    }
+  }
+}

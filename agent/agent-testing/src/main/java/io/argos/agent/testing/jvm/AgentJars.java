@@ -42,10 +42,26 @@ public final class AgentJars {
    * entry and manifest attribute is copied unchanged.
    */
   public static Path withVersion(Path jar, Path target, String version) {
+    return copy(jar, target, version, null);
+  }
+
+  /**
+   * Copies {@code jar} to {@code target} without the entry {@code entryName} (for example a core
+   * class of {@code inst/}, to make the agent fail before its logger exists, ADR-0009 C-78); the
+   * manifest and every other entry are copied unchanged.
+   */
+  public static Path withoutEntry(Path jar, Path target, String entryName) {
+    return copy(jar, target, null, entryName);
+  }
+
+  private static Path copy(Path jar, Path target, String version, String omittedEntry) {
     try (JarFile source = new JarFile(jar.toFile(), false)) {
       Manifest manifest = new Manifest(source.getManifest());
-      manifest.getMainAttributes().put(Attributes.Name.IMPLEMENTATION_VERSION, version);
+      if (version != null) {
+        manifest.getMainAttributes().put(Attributes.Name.IMPLEMENTATION_VERSION, version);
+      }
       Files.createDirectories(target.toAbsolutePath().getParent());
+      boolean omitted = false;
       try (OutputStream file = Files.newOutputStream(target);
           JarOutputStream out = new JarOutputStream(file, manifest)) {
         Enumeration<JarEntry> entries = source.entries();
@@ -54,12 +70,19 @@ public final class AgentJars {
           if (entry.getName().equalsIgnoreCase(JarFile.MANIFEST_NAME)) {
             continue;
           }
+          if (entry.getName().equals(omittedEntry)) {
+            omitted = true;
+            continue;
+          }
           out.putNextEntry(new JarEntry(entry.getName()));
           try (InputStream in = source.getInputStream(entry)) {
             in.transferTo(out);
           }
           out.closeEntry();
         }
+      }
+      if (omittedEntry != null && !omitted) {
+        throw new IllegalArgumentException(jar + " has no entry " + omittedEntry);
       }
       return target;
     } catch (IOException e) {

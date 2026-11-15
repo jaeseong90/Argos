@@ -4,7 +4,6 @@ package io.argos.agent.core.boot;
 import io.argos.agent.bootstrap.AgentControl;
 import io.argos.agent.bootstrap.ModuleHealth;
 import io.argos.agent.core.config.AgentConfig;
-import io.argos.agent.core.config.ConfigKeys;
 import io.argos.agent.core.log.AgentLogger;
 import io.argos.agent.instrumentation.api.InstrumentationModule;
 import io.argos.agent.instrumentation.api.ModuleIds;
@@ -52,7 +51,7 @@ final class ModuleRegistry {
   /** {@link #load(ClassLoader, AgentConfig, AgentControl)} with already parsed test faults. */
   static List<InstrumentationModule> load(
       ClassLoader agentLoader, AgentConfig config, AgentControl control, TestFaults faults) {
-    Set<String> disabled = new HashSet<String>(config.getList(ConfigKeys.INSTRUMENTATION_DISABLED));
+    Set<String> disabled = new HashSet<String>(config.instrumentationDisabled());
     List<InstrumentationModule> modules = new ArrayList<InstrumentationModule>();
     Set<String> ids = new HashSet<String>();
     List<String> installed = new ArrayList<String>();

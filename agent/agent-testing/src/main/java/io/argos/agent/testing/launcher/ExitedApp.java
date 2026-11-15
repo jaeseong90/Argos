@@ -127,6 +127,32 @@ public record ExitedApp(
     return TransformLog.read(out().resolve("transform.log"));
   }
 
+  /**
+   * The agent's last self-diagnostics snapshot ({@code out/selfdiag.json} of {@code
+   * argos.test.selfdiag-file}, rewritten at shutdown, ADR-0010 C-95); not available when the run
+   * wrote none.
+   */
+  public SelfDiagnostics selfDiagnostics() {
+    return SelfDiagnostics.read(out().resolve(AppLauncher.SELF_DIAGNOSTICS_FILE));
+  }
+
+  /**
+   * The classes the agent class loader defined on the premain thread ({@code
+   * out/selfdiag.json.premain-classes}, ADR-0009 C-79), without the header; empty when absent.
+   */
+  public List<String> premainClasses() {
+    Path file = out().resolve(AppLauncher.SELF_DIAGNOSTICS_FILE + ".premain-classes");
+    try {
+      return Files.exists(file)
+          ? Files.readAllLines(file, StandardCharsets.UTF_8).stream()
+              .filter(line -> !line.isBlank() && !line.startsWith("#"))
+              .toList()
+          : List.of();
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
   /** A properties file the app wrote ({@code out/<name>}). */
   public Properties properties(String name) {
     Properties properties = new Properties();

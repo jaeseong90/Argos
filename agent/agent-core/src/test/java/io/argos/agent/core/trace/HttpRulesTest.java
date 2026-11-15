@@ -4,6 +4,9 @@ package io.argos.agent.core.trace;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.argos.agent.bootstrap.CaptureConfig;
+import io.argos.agent.bootstrap.Kind;
+import io.argos.agent.bootstrap.TraceContext;
+import io.argos.agent.core.guard.AgentCounters;
 import java.util.Arrays;
 import java.util.Collections;
 import org.junit.jupiter.api.DisplayName;
@@ -123,6 +126,86 @@ class HttpRulesTest {
     assertThat(names.admit("c")).isEqualTo(ServiceNames.OTHER);
     assertThat(names.size()).isEqualTo(2);
     assertThat(names.overflowCount()).isEqualTo(1);
+  }
+
+  @Test
+  @Tag("req:N-02")
+  @Tag("req:F-A29")
+  @DisplayName(
+      "service name byte bound: 1,024-character names stop at 4 MiB, the next new name becomes"
+          + " _other_ and is counted, known names still pass")
+  void serviceNameByteBound() {
+    AgentCounters counters = new AgentCounters();
+    TracerImpl tracer = TracerImpl.builder().counters(counters).build();
+    ServiceNames names = tracer.serviceNames();
+    assertThat(names.maxBytes()).isEqualTo(ServiceNames.DEFAULT_MAX_BYTES);
+    long perName = ServiceNames.bytesOf(TracerImpl.MAX_SERVICE_NAME_CHARS);
+    int fit = (int) (ServiceNames.DEFAULT_MAX_BYTES / perName);
+    for (int i = 0; i < fit; i++) {
+      TraceContext ctx = tracer.begin(Kind.BATCH, longName(i), 0);
+      tracer.end(ctx, 0, null, null, null, 1);
+      assertThat(ctx.serviceName).isEqualTo(longName(i));
+    }
+    assertThat(names.size()).isEqualTo(fit).isLessThan(ServiceNames.DEFAULT_MAX);
+    assertThat(names.estimatedBytes())
+        .isEqualTo(fit * perName)
+        .isLessThanOrEqualTo(ServiceNames.DEFAULT_MAX_BYTES);
+    assertThat(counters.serviceDictionaryOverflow()).isZero();
+
+    TraceContext next = tracer.begin(Kind.BATCH, longName(fit), 0);
+    tracer.end(next, 0, null, null, null, 1);
+    assertThat(next.serviceName).isEqualTo(ServiceNames.OTHER);
+    assertThat(counters.serviceDictionaryOverflow()).isEqualTo(1);
+    assertThat(names.overflowCount()).isEqualTo(1);
+    assertThat(names.estimatedBytes()).isLessThanOrEqualTo(ServiceNames.DEFAULT_MAX_BYTES);
+
+    TraceContext known = tracer.begin(Kind.BATCH, longName(0), 0);
+    tracer.end(known, 0, null, null, null, 1);
+    assertThat(known.serviceName).isEqualTo(longName(0));
+    // Longer names are cut to 1,024 characters before they are admitted (not new names).
+    TraceContext cut = tracer.begin(Kind.BATCH, longName(1) + "-tail", 0);
+    tracer.end(cut, 0, null, null, null, 1);
+    assertThat(cut.serviceName).isEqualTo(longName(1));
+    assertThat(counters.serviceDictionaryOverflow()).isEqualTo(1);
+  }
+
+  @Test
+  @Tag("req:F-A29")
+  @DisplayName(
+      "service name byte bound keeps the F-A29 count cap for names of up to 128 characters, also"
+          + " for a raised service-dictionary-max")
+  void serviceNameByteBoundKeepsCountCap() {
+    for (int max : new int[] {ServiceNames.DEFAULT_MAX, 20_000}) {
+      ServiceNames names = new ServiceNames(max);
+      for (int i = 0; i < max; i++) {
+        String name = name128(i);
+        assertThat(names.admit(name)).isEqualTo(name);
+      }
+      assertThat(names.size()).isEqualTo(max);
+      assertThat(names.admit(name128(max))).isEqualTo(ServiceNames.OTHER);
+      assertThat(names.overflowCount()).isEqualTo(1);
+      assertThat(names.estimatedBytes()).isLessThanOrEqualTo(names.maxBytes());
+    }
+    assertThat(new ServiceNames(ServiceNames.DEFAULT_MAX).maxBytes())
+        .isEqualTo(ServiceNames.DEFAULT_MAX_BYTES);
+  }
+
+  /** A distinct 1,024-character name. */
+  private static String longName(int number) {
+    return padded("BATCH job-" + number + "-", TracerImpl.MAX_SERVICE_NAME_CHARS);
+  }
+
+  /** A distinct 128-character name. */
+  private static String name128(int number) {
+    return padded("GET /api/v" + number + "/", ServiceNames.TYPICAL_NAME_CHARS);
+  }
+
+  private static String padded(String prefix, int length) {
+    StringBuilder text = new StringBuilder(length).append(prefix);
+    while (text.length() < length) {
+      text.append('x');
+    }
+    return text.toString();
   }
 
   @Test

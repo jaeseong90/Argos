@@ -22,8 +22,9 @@ import net.bytebuddy.matcher.ElementMatcher;
  *       ThreadPoolExecutor}, P-6); no initialization or injection strategy ({@link
  *       ArgosAgentBuilder}: no auxiliary types, no {@code Nexus}, ByteBuddy never injects classes
  *       and never reaches its {@code sun.misc.Unsafe} code);
- *   <li>the ignore list ({@link IgnoreMatchers}), JPMS read edges ({@link ModuleReadEdgeListener}),
- *       transformation recording and error accounting;
+ *   <li>the ignore list ({@link IgnoreMatchers#matcher}: an ignored loader <em>or</em> an ignored
+ *       name), JPMS read edges ({@link ModuleReadEdgeListener}), transformation recording and error
+ *       accounting;
  *   <li>per module and type instrumentation: the module's witness, evaluated once per class loader
  *       ({@link WitnessMatcher}), then {@link ModuleTransformer}.
  * </ul>
@@ -46,8 +47,7 @@ final class InstrumentationInstaller {
     AgentBuilder builder =
         ArgosAgentBuilder.create(
                 new ByteBuddy().with(TypeValidation.DISABLED),
-                new AgentBuilder.RawMatcher.ForElementMatchers(
-                    IgnoreMatchers.types(excludeClasses), IgnoreMatchers.loaders(agentLoader)))
+                IgnoreMatchers.matcher(excludeClasses, agentLoader))
             .disableClassFormatChanges()
             .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
             .with(new PremainDiscovery())

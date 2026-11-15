@@ -1,28 +1,43 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.agent.core.trace;
 
+import io.argos.agent.bootstrap.CaptureConfig;
 import io.argos.agent.bootstrap.TraceContext;
+import io.argos.agent.core.transport.QueueItem;
 
 /**
- * Core side of a transaction (10 §9.1), reachable from {@link TraceContext#coreRef}. Written by the
- * application threads of the transaction, read by an exporter on the sender thread after {@link
- * #finish}. Keeps strings, primitives, bootstrap and core types only (T-AG-004).
+ * Core side of a transaction (10 §9.1), reachable from {@link TraceContext#coreRef} while it runs,
+ * and the item of the transaction queue once it ended (10 §9.2 step 2, the XLog point of 11 {@code
+ * TransactionRecord}). Keeps strings, primitives, bootstrap and core types only (T-AG-004).
+ *
+ * <p>Threads: the request fields ({@link #http}) are written while the transaction runs; the end
+ * fields are written once by the thread that ends it ({@code TracerImpl.end}) before the item is
+ * handed to a queue, and read after that hand-over (the queue orders the two).
+ *
+ * <p>Missing is not zero (C-4, D-23): {@link #cpuNanos()} and {@link #allocatedBytes()} are -1 when
+ * not measured (platform without support, virtual thread, transaction ended on another thread);
+ * exporters then leave the field out.
+ *
+ * <p>Memory: the strings are cut (method 16, path 2,048, remote IP 64, user id 128, error class
+ * 1,024 characters; 10 §14, 11 §4.4); {@link #estimatedBytes()} is fixed at the end and includes
+ * the step buffer only while the transaction still holds it ({@link #steps()}).
  */
-public final class Transaction {
-  public static final int FLAG_STREAMING = 1;
-  public static final int FLAG_TIMEOUT = 1 << 1;
-  public static final int FLAG_LEAKED = 1 << 2;
-  public static final int FLAG_PROFILE_CAPTURED = 1 << 3;
-  public static final int FLAG_SUMMARIZED = 1 << 4;
-
-  /** Upper bounds of captured strings (10 §14). */
+public final class Transaction implements QueueItem {
+  /** Upper bounds of captured strings (10 §14, 11 §4.4). */
   static final int PATH_MAX_CHARS = 2048;
 
   static final int VALUE_MAX_CHARS = 1024;
+  static final int METHOD_MAX_CHARS = 16;
+  static final int IP_MAX_CHARS = 64;
+
+  /** Estimated bytes of the transaction and its context without strings and steps. */
+  static final long BASE_BYTES = 512L;
 
   private final TraceContext context;
-  private final StepBuffer steps;
   private final String threadName;
+  private final String threadNameNormalized;
+  private final long threadNameId;
+  private volatile StepBuffer steps;
 
   private volatile String httpMethod;
   private volatile String path;
@@ -31,38 +46,82 @@ public final class Transaction {
 
   private String errorClass;
   private String errorMessage;
-  private long endNanos = -1;
+  private long endNanos = -1L;
   private long endEpochMs;
-  private int flags;
-  private long finishedBytes = -1;
+  private long cpuNanos = -1L;
+  private long allocatedBytes = -1L;
+  private boolean profileCaptured;
+  private int samplerReason;
+  private long totalSteps;
+  private boolean truncated;
+  private long estimatedBytes = -1L;
+  private long createdNanos;
 
-  Transaction(TraceContext context, int maxSteps, String threadName) {
+  /**
+   * @param threadName raw name of the thread that began the transaction (cut at 256 characters)
+   * @param threadNameNormalized its {@code ThreadNames} form (after the 1,000-name cap)
+   * @param threadNameId dictionary id of the normalized name ({@code thread_name_id})
+   */
+  Transaction(
+      TraceContext context,
+      int maxSteps,
+      String threadName,
+      String threadNameNormalized,
+      long threadNameId) {
     this.context = context;
     this.steps = new StepBuffer(context.startNanos, maxSteps);
     this.threadName = threadName;
+    this.threadNameNormalized = threadNameNormalized;
+    this.threadNameId = threadNameId;
   }
 
   void http(String method, String requestPath, String ip, String user) {
-    httpMethod = truncate(method, 16);
+    httpMethod = truncate(method, METHOD_MAX_CHARS);
     path = truncate(requestPath, PATH_MAX_CHARS);
-    remoteIp = truncate(ip, 64);
-    userId = truncate(user, VALUE_MAX_CHARS);
+    remoteIp = truncate(ip, IP_MAX_CHARS);
+    userId = truncate(user, CaptureConfig.USER_ID_MAX_LENGTH);
   }
 
-  synchronized void finish(String error, String message, long nanos, long epochMs) {
+  /** Called once by the ending thread, after the step buffer was sealed. */
+  void finish(
+      String error,
+      String message,
+      long nanos,
+      long epochMs,
+      long cpu,
+      long allocated,
+      long createdAtNanos) {
     errorClass = truncate(error, VALUE_MAX_CHARS);
     errorMessage = message;
     endNanos = nanos;
     endEpochMs = epochMs;
-    if (steps.summarized()) {
-      flags |= FLAG_SUMMARIZED;
+    cpuNanos = cpu < 0 ? -1L : cpu;
+    allocatedBytes = allocated < 0 ? -1L : allocated;
+    StepBuffer buffer = steps;
+    if (buffer != null) {
+      totalSteps = buffer.totalSteps();
+      truncated = buffer.summarized();
     }
-    finishedBytes = computeBytes();
+    createdNanos = createdAtNanos;
   }
 
-  /** Adds a flag ({@link #FLAG_STREAMING}, ...). */
-  public synchronized void addFlag(int flag) {
-    flags |= flag;
+  /** Records the sampler decision ({@code Sampler.NONE} ... ) of 10 §9.2 step 3. */
+  void sampled(int reason) {
+    samplerReason = reason;
+    profileCaptured = reason != Sampler.NONE;
+  }
+
+  /**
+   * Drops the step buffer (the profile, if captured, holds it) and fixes {@link #estimatedBytes()}:
+   * a transaction record in the queue then costs its own fields only.
+   */
+  void detachSteps() {
+    steps = null;
+  }
+
+  /** Fixes {@link #estimatedBytes()}; called last before the item is offered. */
+  void fixEstimate() {
+    estimatedBytes = computeBytes();
   }
 
   static String truncate(String value, int max) {
@@ -76,13 +135,27 @@ public final class Transaction {
     return context;
   }
 
+  /**
+   * The steps; null once the transaction ended without keeping them (the steps then travel with the
+   * profile, if the sampler captured it).
+   */
   public StepBuffer steps() {
     return steps;
   }
 
-  /** Name of the thread that began the transaction (normalisation arrives with WO-10/15). */
+  /** Raw name of the thread that began the transaction (cut at 256 characters). */
   public String threadName() {
     return threadName;
+  }
+
+  /** {@code ThreadNames} form of {@link #threadName()} ({@code _other_} beyond the cap). */
+  public String threadNameNormalized() {
+    return threadNameNormalized;
+  }
+
+  /** Dictionary id of {@link #threadNameNormalized()} ({@code thread_name_id}), 0 if unknown. */
+  public long threadNameId() {
+    return threadNameId;
   }
 
   public String httpMethod() {
@@ -101,49 +174,94 @@ public final class Transaction {
     return userId;
   }
 
-  public synchronized String errorClass() {
+  public String errorClass() {
     return errorClass;
   }
 
-  public synchronized String errorMessage() {
+  public String errorMessage() {
     return errorMessage;
   }
 
   /** {@code System.nanoTime()} at the end, -1 while running. */
-  public synchronized long endNanos() {
+  public long endNanos() {
     return endNanos;
   }
 
-  public synchronized long endEpochMs() {
+  public long endEpochMs() {
     return endEpochMs;
   }
 
-  /** Elapsed nanoseconds (D-01: nanoTime difference), -1 while running. */
-  public synchronized long elapsedNanos() {
-    return endNanos < 0 ? -1 : Math.max(0, endNanos - context.startNanos);
+  /** Elapsed nanoseconds (D-01: nanoTime difference only), -1 while running. */
+  public long elapsedNanos() {
+    return endNanos < 0 ? -1L : Math.max(0L, endNanos - context.startNanos);
   }
 
-  public synchronized int flags() {
-    return flags;
+  /** CPU nanoseconds of the transaction's thread, -1 when not measured (missing, D-23). */
+  public long cpuNanos() {
+    return cpuNanos;
+  }
+
+  /** Bytes allocated by the transaction's thread, -1 when not measured (missing, D-23). */
+  public long allocatedBytes() {
+    return allocatedBytes;
+  }
+
+  /** {@code xlog.flags} bits of ADR-0007 C-69 ({@link TraceContext#flags()}). */
+  public int flags() {
+    return context.flags();
   }
 
   /**
-   * Rough heap size in bytes (export queue byte bound, 10 §10.1); fixed when the transaction ends
-   * so that the queue adds and subtracts the same value.
+   * True when the sampler chose to send the profile (10 §9.2 step 3). Stays true when the profile
+   * queue then dropped it ({@code profile_dropped_total}, D-07 "LOST").
    */
-  public synchronized long estimatedBytes() {
-    return finishedBytes >= 0 ? finishedBytes : computeBytes();
+  public boolean profileCaptured() {
+    return profileCaptured;
+  }
+
+  /** {@code Sampler.NONE}, {@code ERROR}, {@code SLOW} or {@code RANDOM}. */
+  public int samplerReason() {
+    return samplerReason;
+  }
+
+  /** Steps that started in this transaction (11 {@code total_steps}). */
+  public long totalSteps() {
+    return totalSteps;
+  }
+
+  /** True when steps beyond {@code max-steps} were summarized (11 {@code truncated}). */
+  public boolean truncated() {
+    return truncated;
+  }
+
+  @Override
+  public long createdNanos() {
+    return createdNanos;
+  }
+
+  /**
+   * Rough heap size in bytes (transaction queue byte bound, 10 §10.1, N-02): fixed at the end so
+   * that the queue adds and subtracts the same value.
+   */
+  @Override
+  public long estimatedBytes() {
+    long fixed = estimatedBytes;
+    return fixed >= 0 ? fixed : computeBytes();
   }
 
   private long computeBytes() {
-    long bytes = 400L + steps.estimatedBytes();
-    String p = path;
-    if (p != null) {
-      bytes += 2L * p.length();
-    }
-    if (errorMessage != null) {
-      bytes += 2L * errorMessage.length();
+    long bytes = BASE_BYTES;
+    bytes += chars(context.serviceName) + chars(threadNameNormalized);
+    bytes += chars(threadName) + chars(httpMethod) + chars(path) + chars(remoteIp);
+    bytes += chars(userId) + chars(errorClass) + chars(errorMessage);
+    StepBuffer buffer = steps;
+    if (buffer != null) {
+      bytes += buffer.estimatedBytes();
     }
     return bytes;
+  }
+
+  private static long chars(String value) {
+    return value == null ? 0L : 40L + 2L * value.length();
   }
 }

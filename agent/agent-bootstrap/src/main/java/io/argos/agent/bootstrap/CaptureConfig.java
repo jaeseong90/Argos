@@ -2,10 +2,28 @@
 package io.argos.agent.bootstrap;
 
 /**
- * Immutable snapshot of the data capture modes that helpers read on every request (10 §3, §15
- * {@code capture.*}). The core replaces the whole object when the configuration changes, so a
- * helper sees one consistent set of modes per call. Arrays returned by the accessors are shared:
- * callers must not modify them.
+ * Immutable snapshot of the data capture modes that helpers read on every request (10 §3, every
+ * {@code capture.*} key of 10 §15 and {@code async.step}). The core builds a new object from the
+ * configuration and installs it with {@link AgentControl#setCapture} whenever the configuration
+ * changes (start, {@code ConfigPush}, reload), so a helper sees one consistent set of modes per
+ * call. Arrays returned by the accessors are shared: callers must not modify them.
+ *
+ * <p>Fields (10 §15 key, default): {@link #queryStringMode()} ({@code capture.query-string}, off),
+ * {@link #queryStringWhitelist()} ({@code capture.query-string.whitelist}, empty), {@link
+ * #headerWhitelist()} ({@code capture.http-headers}, empty), {@link #remoteIpMode()} ({@code
+ * capture.remote-ip}, masked), {@link #trustedProxies()} ({@code capture.trusted-proxies}, empty),
+ * {@link #userIdMode()} ({@code capture.user-id.mode}, off), {@link #userIdSource()} ({@code
+ * capture.user-id.source}, none), {@link #userIdMaxLength()} (128, SEC-32), {@link #sqlParamMode()}
+ * ({@code capture.sql-parameters}, masked), {@link #sqlParamWhitelistColumns()} ({@code
+ * capture.sql-parameters.whitelist-columns}, empty), {@link #errorMessageMax()} ({@code
+ * capture.error-message-max-length}, 1024), {@link #stackDepth()} ({@code capture.stack-depth}, 30)
+ * and {@link #asyncStep()} ({@code async.step}, false). {@code capture.mask-patterns} stays in the
+ * core ({@code Masker}): helpers never mask, the core does (16 §6.6).
+ *
+ * <p>Additions to the field list of 10 §3 (WO-02 report item D-2, ADR-0010 C-93): {@link
+ * #asyncStep()} (the executor advice runs inside JDK classes and can read bootstrap state only),
+ * {@link #queryStringWhitelist()} and {@link #userIdMaxLength()} (16 §6.1 lists both next to their
+ * modes); the user id length is the fixed 128 of SEC-32 because 10 §15 has no key for it.
  */
 public final class CaptureConfig {
   /** {@code capture.query-string}: off (default), whitelist, full. */
@@ -32,22 +50,22 @@ public final class CaptureConfig {
   public static final int SQL_PARAMS_PARTIAL = 1;
   public static final int SQL_PARAMS_FULL = 2;
 
+  /** Maximum length of a captured user id (SEC-32, 16 §6.1). */
+  public static final int USER_ID_MAX_LENGTH = 128;
+
+  /** Default of {@code capture.error-message-max-length} (10 §15). */
+  public static final int DEFAULT_ERROR_MESSAGE_MAX = 1024;
+
+  /** Default of {@code capture.stack-depth} (10 §15). */
+  public static final int DEFAULT_STACK_DEPTH = 30;
+
   private static final String[] NONE = new String[0];
 
   /** The documented defaults (10 §15). */
-  public static final CaptureConfig DEFAULT =
-      new CaptureConfig(
-          QUERY_STRING_OFF,
-          NONE,
-          NONE,
-          REMOTE_IP_MASKED,
-          NONE,
-          USER_ID_OFF,
-          null,
-          SQL_PARAMS_MASKED,
-          NONE,
-          1024,
-          30);
+  public static final CaptureConfig DEFAULT = new Builder().build();
+
+  /** The snapshot installed by the core ({@link AgentControl#setCapture}); never null. */
+  private static volatile CaptureConfig current = DEFAULT;
 
   private final int queryStringMode;
   private final String[] queryStringWhitelist;
@@ -56,12 +74,17 @@ public final class CaptureConfig {
   private final String[] trustedProxies;
   private final int userIdMode;
   private final String userIdSource;
+  private final int userIdMaxLength;
   private final int sqlParamMode;
   private final String[] sqlParamWhitelistColumns;
   private final int errorMessageMax;
   private final int stackDepth;
   private final boolean asyncStep;
 
+  /**
+   * The WO-02 constructor (no query-string whitelist, user id length 128, {@code async.step} off);
+   * new code uses {@link #builder()}.
+   */
   public CaptureConfig(
       int queryStringMode,
       String[] queryStringWhitelist,
@@ -81,6 +104,7 @@ public final class CaptureConfig {
     this.trustedProxies = copy(trustedProxies);
     this.userIdMode = userIdMode;
     this.userIdSource = userIdSource;
+    this.userIdMaxLength = USER_ID_MAX_LENGTH;
     this.sqlParamMode = sqlParamMode;
     this.sqlParamWhitelistColumns = copy(sqlParamWhitelistColumns);
     this.errorMessageMax = errorMessageMax;
@@ -88,28 +112,65 @@ public final class CaptureConfig {
     this.asyncStep = false;
   }
 
-  private CaptureConfig(CaptureConfig base, boolean asyncStep) {
-    this.queryStringMode = base.queryStringMode;
-    this.queryStringWhitelist = base.queryStringWhitelist;
-    this.headerWhitelist = base.headerWhitelist;
-    this.remoteIpMode = base.remoteIpMode;
-    this.trustedProxies = base.trustedProxies;
-    this.userIdMode = base.userIdMode;
-    this.userIdSource = base.userIdSource;
-    this.sqlParamMode = base.sqlParamMode;
-    this.sqlParamWhitelistColumns = base.sqlParamWhitelistColumns;
-    this.errorMessageMax = base.errorMessageMax;
-    this.stackDepth = base.stackDepth;
-    this.asyncStep = asyncStep;
+  private CaptureConfig(Builder b) {
+    this.queryStringMode = b.queryStringMode;
+    this.queryStringWhitelist = copy(b.queryStringWhitelist);
+    this.headerWhitelist = copy(b.headerWhitelist);
+    this.remoteIpMode = b.remoteIpMode;
+    this.trustedProxies = copy(b.trustedProxies);
+    this.userIdMode = b.userIdMode;
+    this.userIdSource = b.userIdSource;
+    this.userIdMaxLength = b.userIdMaxLength;
+    this.sqlParamMode = b.sqlParamMode;
+    this.sqlParamWhitelistColumns = copy(b.sqlParamWhitelistColumns);
+    this.errorMessageMax = b.errorMessageMax;
+    this.stackDepth = b.stackDepth;
+    this.asyncStep = b.asyncStep;
+  }
+
+  /** A builder with the documented defaults. */
+  public static Builder builder() {
+    return new Builder();
+  }
+
+  /** A builder that starts from this snapshot. */
+  public Builder toBuilder() {
+    Builder b = new Builder();
+    b.queryStringMode = queryStringMode;
+    b.queryStringWhitelist = queryStringWhitelist;
+    b.headerWhitelist = headerWhitelist;
+    b.remoteIpMode = remoteIpMode;
+    b.trustedProxies = trustedProxies;
+    b.userIdMode = userIdMode;
+    b.userIdSource = userIdSource;
+    b.userIdMaxLength = userIdMaxLength;
+    b.sqlParamMode = sqlParamMode;
+    b.sqlParamWhitelistColumns = sqlParamWhitelistColumns;
+    b.errorMessageMax = errorMessageMax;
+    b.stackDepth = stackDepth;
+    b.asyncStep = asyncStep;
+    return b;
+  }
+
+  /**
+   * The snapshot the core installed ({@link AgentControl#setCapture}), {@link #DEFAULT} before the
+   * core started or after a failed start. One volatile read.
+   */
+  public static CaptureConfig current() {
+    return current;
+  }
+
+  /** {@link AgentControl#setCapture}: null restores {@link #DEFAULT}. */
+  static void install(CaptureConfig value) {
+    current = value == null ? DEFAULT : value;
   }
 
   /**
    * A copy with {@code async.step} set (10 §6.6, §15: the executor module records an ASYNC step per
-   * propagated task only when it is on; default off for cost). Addition to the fields of 10 §3: the
-   * executor advice runs in JDK classes and can read bootstrap state only.
+   * propagated task only when it is on; default off for cost).
    */
   public CaptureConfig withAsyncStep(boolean on) {
-    return on == asyncStep ? this : new CaptureConfig(this, on);
+    return on == asyncStep ? this : toBuilder().asyncStep(on).build();
   }
 
   private static String[] copy(String[] values) {
@@ -120,6 +181,9 @@ public final class CaptureConfig {
     return queryStringMode;
   }
 
+  /**
+   * Query parameter names kept in {@code whitelist} mode ({@code capture.query-string.whitelist}).
+   */
   public String[] queryStringWhitelist() {
     return queryStringWhitelist;
   }
@@ -147,6 +211,11 @@ public final class CaptureConfig {
     return userIdSource;
   }
 
+  /** Characters of a user id kept before hashing or sending (SEC-32: 128). */
+  public int userIdMaxLength() {
+    return userIdMaxLength;
+  }
+
   public int sqlParamMode() {
     return sqlParamMode;
   }
@@ -168,5 +237,93 @@ public final class CaptureConfig {
   /** {@code async.step}: record an ASYNC step for each task that carries a transaction. */
   public boolean asyncStep() {
     return asyncStep;
+  }
+
+  /** Builder of a {@link CaptureConfig}; starts from the documented defaults. Not thread-safe. */
+  public static final class Builder {
+    private int queryStringMode = QUERY_STRING_OFF;
+    private String[] queryStringWhitelist = NONE;
+    private String[] headerWhitelist = NONE;
+    private int remoteIpMode = REMOTE_IP_MASKED;
+    private String[] trustedProxies = NONE;
+    private int userIdMode = USER_ID_OFF;
+    private String userIdSource;
+    private int userIdMaxLength = USER_ID_MAX_LENGTH;
+    private int sqlParamMode = SQL_PARAMS_MASKED;
+    private String[] sqlParamWhitelistColumns = NONE;
+    private int errorMessageMax = DEFAULT_ERROR_MESSAGE_MAX;
+    private int stackDepth = DEFAULT_STACK_DEPTH;
+    private boolean asyncStep;
+
+    Builder() {}
+
+    public Builder queryStringMode(int mode) {
+      this.queryStringMode = mode;
+      return this;
+    }
+
+    public Builder queryStringWhitelist(String[] names) {
+      this.queryStringWhitelist = names;
+      return this;
+    }
+
+    public Builder headerWhitelist(String[] names) {
+      this.headerWhitelist = names;
+      return this;
+    }
+
+    public Builder remoteIpMode(int mode) {
+      this.remoteIpMode = mode;
+      return this;
+    }
+
+    public Builder trustedProxies(String[] cidrs) {
+      this.trustedProxies = cidrs;
+      return this;
+    }
+
+    public Builder userIdMode(int mode) {
+      this.userIdMode = mode;
+      return this;
+    }
+
+    public Builder userIdSource(String source) {
+      this.userIdSource = source;
+      return this;
+    }
+
+    public Builder userIdMaxLength(int length) {
+      this.userIdMaxLength = length;
+      return this;
+    }
+
+    public Builder sqlParamMode(int mode) {
+      this.sqlParamMode = mode;
+      return this;
+    }
+
+    public Builder sqlParamWhitelistColumns(String[] columns) {
+      this.sqlParamWhitelistColumns = columns;
+      return this;
+    }
+
+    public Builder errorMessageMax(int length) {
+      this.errorMessageMax = length;
+      return this;
+    }
+
+    public Builder stackDepth(int depth) {
+      this.stackDepth = depth;
+      return this;
+    }
+
+    public Builder asyncStep(boolean on) {
+      this.asyncStep = on;
+      return this;
+    }
+
+    public CaptureConfig build() {
+      return new CaptureConfig(this);
+    }
   }
 }

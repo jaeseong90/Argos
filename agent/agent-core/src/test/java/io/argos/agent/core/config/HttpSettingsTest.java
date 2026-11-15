@@ -6,9 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.argos.agent.bootstrap.CaptureConfig;
 import io.argos.agent.core.trace.IgnoreRules;
 import io.argos.agent.core.trace.ServiceNames;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,11 +21,10 @@ class HttpSettingsTest {
     IgnoreRules rules = HttpSettings.ignoreRules(config);
     assertThat(rules.reason("GET", "/actuator/health", null)).isEqualTo("path");
     assertThat(rules.reason("OPTIONS", "/x", null)).isEqualTo("method");
-    List<String> warnings = new ArrayList<String>();
-    CaptureConfig capture = HttpSettings.capture(config, warnings);
+    CaptureConfig capture = HttpSettings.capture(config);
     assertThat(capture.remoteIpMode()).isEqualTo(CaptureConfig.REMOTE_IP_MASKED);
     assertThat(capture.errorMessageMax()).isEqualTo(1024);
-    assertThat(warnings).isEmpty();
+    assertThat(config.warnings()).isEmpty();
     ServiceNames names = HttpSettings.serviceNames(config);
     for (int i = 0; i < ServiceNames.DEFAULT_MAX; i++) {
       names.admit("GET /" + i);
@@ -53,8 +50,7 @@ class HttpSettingsTest {
     assertThat(rules.reason("OPTIONS", "/x", null)).isNull();
     assertThat(rules.reason("GET", "/x.css", null)).isEqualTo("extension");
     assertThat(rules.reason("GET", "/x", "kube-probe/1.30")).isEqualTo("user_agent");
-    List<String> warnings = new ArrayList<String>();
-    CaptureConfig capture = HttpSettings.capture(config, warnings);
+    CaptureConfig capture = HttpSettings.capture(config);
     assertThat(capture.remoteIpMode()).isEqualTo(CaptureConfig.REMOTE_IP_OFF);
     assertThat(capture.errorMessageMax()).isEqualTo(16);
     ServiceNames names = HttpSettings.serviceNames(config);
@@ -67,9 +63,9 @@ class HttpSettingsTest {
   void invalidRemoteIpMode() {
     Map<String, String> values = new HashMap<String, String>();
     values.put("capture.remote-ip", "partial");
-    List<String> warnings = new ArrayList<String>();
-    CaptureConfig capture = HttpSettings.capture(AgentConfig.of(values), warnings);
+    AgentConfig config = AgentConfig.of(values);
+    CaptureConfig capture = HttpSettings.capture(config);
     assertThat(capture.remoteIpMode()).isEqualTo(CaptureConfig.REMOTE_IP_MASKED);
-    assertThat(warnings).singleElement().asString().contains("capture.remote-ip");
+    assertThat(config.warnings()).singleElement().asString().contains("capture.remote-ip");
   }
 }

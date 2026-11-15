@@ -9,10 +9,17 @@ import io.argos.agent.bootstrap.StepType;
 import io.argos.agent.bootstrap.TestControls;
 import io.argos.agent.bootstrap.TraceContext;
 import io.argos.agent.core.config.AgentConfig;
+import io.argos.agent.core.context.ThreadNames;
+import io.argos.agent.core.guard.AgentCounters;
 import io.argos.agent.core.trace.Dictionary;
+import io.argos.agent.core.trace.TestMeters;
+import io.argos.agent.core.trace.TraceRuntime;
 import io.argos.agent.core.trace.TracerImpl;
 import io.argos.agent.core.trace.Transaction;
 import io.argos.agent.core.trace.TxIdGenerator;
+import io.argos.agent.core.transport.AgentQueue;
+import io.argos.agent.core.transport.QueueItem;
+import io.argos.agent.core.transport.Queues;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -21,6 +28,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -88,12 +96,133 @@ class ExportTest {
         .contains("\"rows\":2")
         .contains("\"detail\":\"line1\\nline2\\t\\\"quoted\\\" \\\\ \\u0001\"")
         .contains("\"summary\":[]")
+        .contains("\"repeat_count\":1")
+        .contains("\"thread\":\"" + Thread.currentThread().getName() + "\"")
+        .contains("\"profile_captured\":false")
+        .contains("\"truncated\":false,\"total_steps\":1")
+        .contains("\"flags\":[],\"xlog_flags\":0")
         .endsWith("\"summary_overflow\":0}");
+    assertThat(line).as("not measured: absent, not 0 (D-23)").doesNotContain("cpu_time_ms");
+    assertThat(line).doesNotContain("alloc_bytes").doesNotContain("\"env\"");
     assertThat(line).doesNotContain("\n");
   }
 
   @Test
-  @DisplayName("JSONL exporter stops at exporter.file.max-mb and keeps the file valid")
+  @Tag("req:D-23")
+  @DisplayName(
+      "JSONL fields of WO-10: env, version, cpu/alloc when measured, C-69 flags, thread names,"
+          + " folded repeats, summary steps, truncated and total_steps")
+  void jsonlFields() throws Exception {
+    final long[] meter = {1_000_000L, 2_000L};
+    TracerImpl measured =
+        TracerImpl.builder()
+            .dictionary(dictionary)
+            .sink(
+                new TracerImpl.Sink() {
+                  @Override
+                  public void accept(Transaction tx) {
+                    ended.add(tx);
+                  }
+                })
+            .maxSteps(4)
+            .threadMeter(new FixedMeter(meter))
+            .build();
+    TraceContext ctx = measured.begin(Kind.HTTP, "GET /loop", 0);
+    long sql = measured.dict(DictKind.SQL, "select * from item where id = 1");
+    for (int i = 0; i < 6; i++) {
+      int seq = measured.stepStart(ctx, StepType.SQL, sql, 0, 10 + i);
+      measured.stepEnd(ctx, seq, 0, false, 1, 12 + i);
+    }
+    meter[0] = 3_500_000L;
+    meter[1] = 9_000L;
+    measured.end(ctx, 200, null, null, null, 100);
+    File file = new File(dir, "fields.jsonl");
+    JsonlFileExporter exporter = new JsonlFileExporter(file, 1 << 20, dictionary, "test", "1.2.3");
+    exporter.export(Collections.singletonList(ended.get(ended.size() - 1)));
+    exporter.close();
+    String line = Files.readAllLines(file.toPath(), StandardCharsets.UTF_8).get(0);
+    String threadName = ThreadNames.normalize(Thread.currentThread().getName());
+    assertThat(line)
+        .contains("\"env\":\"test\",\"version\":\"1.2.3\"")
+        .contains("\"thread_name\":\"" + threadName + "\"")
+        .contains("\"cpu_time_ms\":2.500")
+        .contains("\"alloc_bytes\":7000")
+        .contains("\"flags\":[\"summarized\"],\"xlog_flags\":4")
+        .contains("\"truncated\":true,\"total_steps\":6")
+        .contains("\"repeat_count\":4")
+        .contains("\"name\":\"select * from item where id = ?\"")
+        .contains(
+            "\"summary\":[{\"type\":\"SQL\",\"name\":\"select * from item where id = ?\","
+                + "\"count\":2");
+  }
+
+  /** A thread meter with values set by the test. */
+  static final class FixedMeter extends TestMeters.Base {
+    private final long[] values;
+
+    FixedMeter(long[] values) {
+      this.values = values;
+    }
+
+    @Override
+    public long cpuNanos() {
+      return values[0];
+    }
+
+    @Override
+    public long allocatedBytes() {
+      return values[1];
+    }
+  }
+
+  @Test
+  @Tag("req:D-07")
+  @DisplayName(
+      "the sender drains the runtime's queues: records to the JSONL file with every transaction's"
+          + " steps, profiles counted; the after-premain work runs on the sender thread")
+  void exportWorkerOnRuntime() throws Exception {
+    Map<String, String> values = new HashMap<String, String>();
+    values.put("test.exporter", "file:" + dir.getPath());
+    values.put("sampling.profile.normal-rate", "0");
+    AgentConfig config = AgentConfig.of(values);
+    TraceRuntime runtime = TraceRuntime.create(config, new AgentCounters());
+    TracerImpl agent = runtime.tracerImpl();
+    ExportWorker worker =
+        new ExportWorker(
+            runtime,
+            new ExporterContext(config, runtime.dictionary(), new AgentInfo("1", "c", "1")),
+            dir,
+            10,
+            10);
+    worker.start();
+    for (int i = 0; i < 3; i++) {
+      TraceContext ctx = agent.begin(Kind.HTTP, "GET /r" + i, 0);
+      int seq = agent.stepStart(ctx, StepType.SQL, agent.dict(DictKind.SQL, "select 1"), 0, 1);
+      agent.stepEnd(ctx, seq, 0, false, 0, 2);
+      agent.end(ctx, i == 2 ? 500 : 200, null, null, null, 3);
+    }
+    long deadline = System.currentTimeMillis() + 10_000;
+    while ((worker.exported() < 3 || worker.exportedProfiles() < 1)
+        && System.currentTimeMillis() < deadline) {
+      Thread.sleep(10);
+    }
+    worker.stop(2000);
+    assertThat(worker.exported()).isEqualTo(3);
+    assertThat(worker.exportedProfiles()).as("only the error transaction").isEqualTo(1);
+    assertThat(agent.txIds().nodeSource()).isEqualTo(TxIdGenerator.NODE_SECURE_RANDOM);
+    List<String> lines =
+        Files.readAllLines(
+            new File(dir, Exporters.DEFAULT_FILE_NAME).toPath(), StandardCharsets.UTF_8);
+    assertThat(lines).hasSize(3);
+    assertThat(lines.get(0))
+        .contains("\"profile_captured\":false")
+        .contains("\"type\":\"SQL\"")
+        .contains("\"env\":\"default\"");
+    assertThat(lines.get(2)).contains("\"profile_captured\":true");
+  }
+
+  @Test
+  @DisplayName("JSONL exporter stops at its size cap and keeps the file valid")
   void jsonlSizeCap() throws Exception {
     File file = new File(dir, "capped.jsonl");
     JsonlFileExporter exporter = new JsonlFileExporter(file, 1500, dictionary);
@@ -110,34 +239,54 @@ class ExportTest {
 
   @Test
   @Tag("req:N-05")
-  @DisplayName("TransactionQueue drops the oldest entry when full (count and byte bounds)")
+  @DisplayName(
+      "the transaction queue drops the oldest entry when full (count and byte bounds), counted")
   void queueBounds() {
-    TransactionQueue queue = new TransactionQueue(3, 1L << 30);
+    AgentCounters counters = new AgentCounters();
+    Queues queues = Queues.create(3, 1L << 30, 1L << 30, 0, counters, null);
     List<Transaction> all = new ArrayList<Transaction>();
     for (int i = 0; i < 5; i++) {
       Transaction tx = transaction("GET /" + i, "select 1");
       all.add(tx);
-      queue.offer(tx);
+      queues.transaction().offer(tx);
     }
-    assertThat(queue.size()).isEqualTo(3);
-    assertThat(queue.dropped()).isEqualTo(2);
-    List<Transaction> drained = new ArrayList<Transaction>();
-    assertThat(queue.drainTo(drained, 10)).isEqualTo(3);
+    assertThat(queues.transaction().size()).isEqualTo(3);
+    assertThat(counters.dropped(Queues.TRANSACTION)).isEqualTo(2);
+    List<Transaction> drained = drain(queues.transaction());
     assertThat(drained).containsExactly(all.get(2), all.get(3), all.get(4));
-    assertThat(queue.size()).isZero();
+    assertThat(queues.transaction().size()).isZero();
 
-    Transaction one = transaction("GET /bytes", "select 1");
-    TransactionQueue small = new TransactionQueue(100, one.estimatedBytes() * 2 + 1);
-    small.offer(one);
-    small.offer(transaction("GET /bytes2", "select 1"));
-    small.offer(transaction("GET /bytes3", "select 1"));
-    assertThat(small.size()).isEqualTo(2);
-    assertThat(small.dropped()).isEqualTo(1);
+    Transaction one = transaction("GET /bytes1", "select 1");
+    Transaction two = transaction("GET /bytes2", "select 1");
+    Transaction three = transaction("GET /bytes3", "select 1");
+    assertThat(two.estimatedBytes()).isEqualTo(one.estimatedBytes());
+    AgentCounters small = new AgentCounters();
+    Queues tight =
+        Queues.create(
+            100, one.estimatedBytes() + two.estimatedBytes() + 1, 1L << 30, 0, small, null);
+    tight.transaction().offer(one);
+    tight.transaction().offer(two);
+    tight.transaction().offer(three);
+    assertThat(tight.transaction().size()).isEqualTo(2);
+    assertThat(small.dropped(Queues.TRANSACTION)).isEqualTo(1);
+  }
+
+  private static List<Transaction> drain(AgentQueue<QueueItem> queue) {
+    final List<Transaction> drained = new ArrayList<Transaction>();
+    queue.drain(
+        100,
+        new Consumer<QueueItem>() {
+          @Override
+          public void accept(QueueItem item) {
+            drained.add((Transaction) item);
+          }
+        });
+    return drained;
   }
 
   @Test
   @DisplayName(
-      "exporter registry: noop, file (default path in the log directory), grpc slot, unknown")
+      "exporter registry: test noop, test file (default path in the log directory), grpc, unknown")
   void registry() throws Exception {
     AgentInfo info = new AgentInfo("1.0", "abc", "1");
     Exporter noop = Exporters.create(context("noop"), dir);
@@ -157,43 +306,48 @@ class ExportTest {
   @Test
   @DisplayName("sender thread exports queued transactions and drains the rest at stop")
   void exportWorker() throws Exception {
-    File file = new File(dir, "worker.jsonl");
+    File file = new File(dir, Exporters.DEFAULT_FILE_NAME);
     Map<String, String> values = new HashMap<String, String>();
-    values.put("exporter", "file");
-    values.put("exporter.file.path", file.getPath());
-    TransactionQueue queue = new TransactionQueue(100, 1L << 30);
+    values.put("test.exporter", "file:" + dir.getPath());
+    Queues queues = Queues.create(100, 1L << 30, 1L << 30, 0, new AgentCounters(), null);
+    final int[] before = {0};
     ExportWorker worker =
         new ExportWorker(
-            queue,
+            queues,
             new ExporterContext(AgentConfig.of(values), dictionary, new AgentInfo("1", "c", "1")),
             dir,
             2,
-            10);
+            10,
+            new Runnable() {
+              @Override
+              public void run() {
+                before[0]++;
+              }
+            });
     worker.start();
     for (int i = 0; i < 5; i++) {
-      queue.offer(transaction("GET /w" + i, "select 1"));
+      queues.transaction().offer(transaction("GET /w" + i, "select 1"));
     }
     long deadline = System.currentTimeMillis() + 10_000;
     while (worker.exported() < 5 && System.currentTimeMillis() < deadline) {
       Thread.sleep(10);
     }
-    queue.offer(transaction("GET /late", "select 1"));
+    queues.transaction().offer(transaction("GET /late", "select 1"));
     worker.stop(2000);
     assertThat(worker.exported()).isEqualTo(6);
+    assertThat(before[0]).as("the after-premain work ran once on the sender thread").isEqualTo(1);
     assertThat(Files.readAllLines(file.toPath(), StandardCharsets.UTF_8)).hasSize(6);
     assertThat(worker.exporter().describe()).startsWith("file ");
   }
 
   private ExporterContext context(String exporter) {
     Map<String, String> values = new HashMap<String, String>();
-    values.put("exporter", exporter);
+    values.put("test.exporter", exporter);
     return new ExporterContext(AgentConfig.of(values), dictionary, new AgentInfo("1", "c", "1"));
   }
 
   private ExporterContext testContext(String testExporter) {
     Map<String, String> values = new HashMap<String, String>();
-    // test.exporter wins over the PoC key.
-    values.put("exporter", "grpc");
     values.put("test.exporter", testExporter);
     return new ExporterContext(AgentConfig.of(values), dictionary, new AgentInfo("1", "c", "1"));
   }
@@ -231,15 +385,23 @@ class ExportTest {
     assertThat(((NoopExporter) noop).exported()).isEqualTo(1);
     assertThat(((NoopExporter) noop).encodedChars())
         .isEqualTo(JsonlFileExporter.encode(tx, dictionary).length());
-    // exporter=noop (P-2 baseline) does not encode.
-    NoopExporter plain = (NoopExporter) Exporters.create(context("noop"), dir);
+    // test.exporter=drop (the P-2 baseline, formerly exporter=noop) does not encode.
+    NoopExporter plain = (NoopExporter) Exporters.create(testContext("drop"), dir);
     plain.export(Collections.singletonList(tx));
     assertThat(plain.encodedChars()).isZero();
-    assertThat(plain.describe()).isEqualTo("noop");
+    assertThat(plain.describe()).isEqualTo("drop");
 
     // grpc is the default name; this build has no transport (WO-11): one WARN, noop.
     assertThat(Exporters.create(testContext("grpc"), dir)).isInstanceOf(NoopExporter.class);
     assertThat(Exporters.create(testContext("kafka:x"), dir)).isInstanceOf(NoopExporter.class);
+
+    // C-88: the PoC key exporter=noop is gone: an unknown key, the exporter stays grpc.
+    AgentConfig poc = AgentConfig.of(Collections.singletonMap("exporter", "noop"));
+    assertThat(poc.warnings())
+        .singleElement()
+        .asString()
+        .contains("unknown configuration key 'exporter'");
+    assertThat(Exporters.configuredName(poc)).isEqualTo("grpc");
   }
 
   @Test

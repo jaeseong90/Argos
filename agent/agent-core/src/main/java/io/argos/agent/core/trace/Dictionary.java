@@ -2,49 +2,123 @@
 package io.argos.agent.core.trace;
 
 import io.argos.agent.bootstrap.DictKind;
+import io.argos.agent.core.guard.AgentCounters;
+import io.argos.agent.core.hash.Xxh3;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicIntegerArray;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
 
 /**
- * Dictionary of names (DSN-02-10, 10 §10.4): {@code id = hash64(UTF-8 text)} plus a bounded
- * id-to-text cache per {@link DictKind} so that exporters can resolve ids. A full kind still
- * returns ids; only the text is not kept ({@link #overflow(int)}).
+ * Dictionary of names (DSN-02-10, DSN-10-18, 10 §10.4, ADR-0010 C-91): {@code id = xxh3_64(UTF-8
+ * text)} ({@link Xxh3#hash64(String)}, 0 remapped to 1, so 0 always means "no name"), plus a
+ * bounded cache of the texts so that exporters (and the dictionary pre-send of WO-11) can resolve
+ * ids. Ids depend on the text only: the same text has the same id in every instance and after every
+ * restart (T-ACC-08). The placeholders {@value #UNPARSED}, {@value #OVERFLOW} and {@value #OTHER}
+ * are hashed like any other text.
  *
- * <p>WO-02 uses FNV-1a 64 as the content hash. DSN-10-18 requires xxh3_64 (shared with the server);
- * {@code core.hash.Xxh3} replaces {@link #hash64(String)} in WO-10, before any id is persisted.
+ * <p>Bounds (N-02, 10 §14 "사전 캐시 8MB"):
+ *
+ * <ul>
+ *   <li>per {@link DictKind}: the {@code DictionaryCache} sizes of 10 §10.4 ({@link
+ *       #capacity(int)}: service 10,000, SQL 10,000, class and method 20,000, host 1,000, thread
+ *       1,000, frame 50,000; the kinds 10 §10.4 does not size: metric 1,000, error group 10,000, DB
+ *       target 1,000, app version 100);
+ *   <li>all kinds together: {@value #MAX_BYTES} estimated bytes ({@link #estimatedBytes()});
+ *   <li>one text: {@value #MAX_TEXT_CHARS} characters; a longer text keeps its id (the hash of the
+ *       whole text) and only its first {@value #MAX_TEXT_CHARS} characters ({@link
+ *       #truncated(long)}).
+ * </ul>
+ *
+ * The placeholders are always kept, outside these counts (three entries at most), because they are
+ * what a full name cap maps to and must stay resolvable. A text that does not fit still gets its
+ * id; only the text is not kept, and {@code argos_agent_dictionary_overflow_total{kind}} counts it
+ * ({@link #overflow(int)}). Lock-free: two {@link ConcurrentHashMap}s (text to id for hits without
+ * hashing, id to text for exporters) and atomic counters; an application thread never waits here.
  */
 public final class Dictionary {
-  private static final long FNV_OFFSET = 0xcbf29ce484222325L;
-  private static final long FNV_PRIME = 0x100000001b3L;
+  /** SQL that could not be normalized (10 §9.4, DSN-10-17). */
+  public static final String UNPARSED = "<unparsed>";
 
-  /** Text cache size per kind (10 §10.4 DictionaryCache sizes). */
+  /** Key of statistics beyond {@code stats.max-keys} (10 §9.3). */
+  public static final String OVERFLOW = "<overflow>";
+
+  /** Name beyond a name cap (F-A29 services, 10 §8 threads). */
+  public static final String OTHER = "_other_";
+
+  /** Estimated bytes of all kept texts (10 §14 heap budget: dictionary caches 8 MB). */
+  public static final long MAX_BYTES = 8L * 1024 * 1024;
+
+  /** Characters of one kept text. */
+  public static final int MAX_TEXT_CHARS = 65_536;
+
+  /** Estimated fixed bytes of one kept entry: two map nodes, a boxed id, the String header. */
+  static final long ENTRY_BYTES = 136L;
+
+  /** Text cache size per kind (10 §10.4 {@code DictionaryCache}). */
   static int capacity(int kind) {
     switch (kind) {
       case DictKind.SERVICE:
       case DictKind.SQL:
+      case DictKind.ERROR_GROUP:
         return 10_000;
       case DictKind.CLASS:
       case DictKind.METHOD:
         return 20_000;
       case DictKind.HOST:
       case DictKind.THREAD:
+      case DictKind.METRIC:
+      case DictKind.DB_TARGET:
         return 1_000;
       case DictKind.FRAME:
         return 50_000;
+      case DictKind.APP_VERSION:
+        return 100;
       default:
-        return 10_000;
+        return 1_000;
     }
   }
 
-  private final ConcurrentHashMap<Long, String> texts = new ConcurrentHashMap<Long, String>();
+  /** A kept text that was cut to {@link #MAX_TEXT_CHARS}. */
+  private static final class Truncated {
+    final String text;
+
+    Truncated(String text) {
+      this.text = text;
+    }
+  }
+
+  private final AgentCounters counters;
+  private final ConcurrentHashMap<String, Long> ids = new ConcurrentHashMap<String, Long>();
+  private final ConcurrentHashMap<Long, Object> texts = new ConcurrentHashMap<Long, Object>();
   private final AtomicIntegerArray sizes = new AtomicIntegerArray(DictKind.COUNT);
   private final AtomicLongArray overflows = new AtomicLongArray(DictKind.COUNT);
+  private final AtomicLong bytes = new AtomicLong();
+  private final long maxBytes;
 
-  /** The id of {@code text} (0 for null), remembering the text while the kind has room. */
+  /** A dictionary that does not report overflows to agent counters (tests, tools). */
+  public Dictionary() {
+    this(null, MAX_BYTES);
+  }
+
+  /** A dictionary that counts overflows in {@code counters} (may be null). */
+  public Dictionary(AgentCounters counters) {
+    this(counters, MAX_BYTES);
+  }
+
+  Dictionary(AgentCounters counters, long maxBytes) {
+    this.counters = counters;
+    this.maxBytes = maxBytes;
+  }
+
+  /** The id of {@code text} (0 for null), keeping the text while its kind and the budget allow. */
   public long id(int kind, String text) {
     if (text == null) {
       return 0;
+    }
+    Long known = ids.get(text);
+    if (known != null) {
+      return known.longValue();
     }
     long id = hash64(text);
     Long key = Long.valueOf(id);
@@ -52,56 +126,108 @@ public final class Dictionary {
       return id;
     }
     int slot = kind > 0 && kind < DictKind.COUNT ? kind : 0;
-    if (sizes.get(slot) >= capacity(kind)) {
-      overflows.incrementAndGet(slot);
+    boolean cut = text.length() > MAX_TEXT_CHARS;
+    String kept = cut ? text.substring(0, MAX_TEXT_CHARS) : text;
+    long cost = ENTRY_BYTES + 2L * kept.length();
+    if (isPlaceholder(text)) {
+      // The three placeholders are what a full name cap maps to: they are always kept (outside
+      // the per-kind counts, three entries at most), so they stay resolvable.
+      if (texts.putIfAbsent(key, text) == null) {
+        bytes.addAndGet(cost);
+        ids.put(text, key);
+      }
       return id;
     }
-    if (texts.putIfAbsent(key, text) == null) {
-      sizes.incrementAndGet(slot);
+    if (!reserve(slot, kind, cost)) {
+      overflows.incrementAndGet(slot);
+      if (counters != null) {
+        counters.incDictionaryOverflow(kind);
+      }
+      return id;
+    }
+    if (texts.putIfAbsent(key, cut ? new Truncated(kept) : kept) != null) {
+      release(slot, cost); // another thread kept it first
+      return id;
+    }
+    if (!cut) {
+      ids.put(text, key);
     }
     return id;
   }
 
-  /** The text of {@code id}, or null when unknown or evicted. */
-  public String text(long id) {
-    return id == 0 ? null : texts.get(Long.valueOf(id));
+  /** {@value #UNPARSED}, {@value #OVERFLOW} or {@value #OTHER}. */
+  static boolean isPlaceholder(String text) {
+    return UNPARSED.equals(text) || OVERFLOW.equals(text) || OTHER.equals(text);
   }
 
-  /** Ids whose text was not kept because the kind was full. */
+  private boolean reserve(int slot, int kind, long cost) {
+    int limit = capacity(kind);
+    while (true) {
+      int size = sizes.get(slot);
+      if (size >= limit) {
+        return false;
+      }
+      if (sizes.compareAndSet(slot, size, size + 1)) {
+        break;
+      }
+    }
+    while (true) {
+      long used = bytes.get();
+      if (used + cost > maxBytes) {
+        sizes.decrementAndGet(slot);
+        return false;
+      }
+      if (bytes.compareAndSet(used, used + cost)) {
+        return true;
+      }
+    }
+  }
+
+  private void release(int slot, long cost) {
+    sizes.decrementAndGet(slot);
+    bytes.addAndGet(-cost);
+  }
+
+  /** The text of {@code id} (its first {@value #MAX_TEXT_CHARS} characters), or null. */
+  public String text(long id) {
+    if (id == 0) {
+      return null;
+    }
+    Object value = texts.get(Long.valueOf(id));
+    if (value instanceof Truncated) {
+      return ((Truncated) value).text;
+    }
+    return (String) value;
+  }
+
+  /** True when the kept text of {@code id} is only the start of the text that was hashed. */
+  public boolean truncated(long id) {
+    return id != 0 && texts.get(Long.valueOf(id)) instanceof Truncated;
+  }
+
+  /** Ids whose text was not kept because the kind or the byte budget was full. */
   public long overflow(int kind) {
     return kind > 0 && kind < DictKind.COUNT ? overflows.get(kind) : 0;
   }
 
-  /** FNV-1a 64 over the UTF-8 encoding of {@code text}, never 0 (0 means "no name"). */
+  /** Texts kept for {@code kind}. */
+  public int size(int kind) {
+    return kind > 0 && kind < DictKind.COUNT ? sizes.get(kind) : 0;
+  }
+
+  /**
+   * Estimated heap bytes of the kept texts: at most {@value #MAX_BYTES}, plus the three
+   * placeholders (under 1 KB together) when they arrive after the budget is used up.
+   */
+  public long estimatedBytes() {
+    return bytes.get();
+  }
+
+  /**
+   * The dictionary id of {@code text}: XXH3-64 of its UTF-8 bytes, never 0 ({@link
+   * Xxh3#hash64(String)}). The same function as {@link #id(int, String)}, without the cache.
+   */
   public static long hash64(String text) {
-    long hash = FNV_OFFSET;
-    int length = text.length();
-    for (int i = 0; i < length; i++) {
-      int c = text.charAt(i);
-      if (c < 0x80) {
-        hash = (hash ^ c) * FNV_PRIME;
-      } else if (c < 0x800) {
-        hash = (hash ^ (0xC0 | (c >> 6))) * FNV_PRIME;
-        hash = (hash ^ (0x80 | (c & 0x3F))) * FNV_PRIME;
-      } else if (Character.isHighSurrogate((char) c)
-          && i + 1 < length
-          && Character.isLowSurrogate(text.charAt(i + 1))) {
-        int cp = Character.toCodePoint((char) c, text.charAt(++i));
-        hash = (hash ^ (0xF0 | (cp >> 18))) * FNV_PRIME;
-        hash = (hash ^ (0x80 | ((cp >> 12) & 0x3F))) * FNV_PRIME;
-        hash = (hash ^ (0x80 | ((cp >> 6) & 0x3F))) * FNV_PRIME;
-        hash = (hash ^ (0x80 | (cp & 0x3F))) * FNV_PRIME;
-      } else {
-        if (Character.isSurrogate((char) c)) {
-          c = '?'; // unpaired surrogate: encoded as '?' like String.getBytes(UTF_8)
-          hash = (hash ^ c) * FNV_PRIME;
-          continue;
-        }
-        hash = (hash ^ (0xE0 | (c >> 12))) * FNV_PRIME;
-        hash = (hash ^ (0x80 | ((c >> 6) & 0x3F))) * FNV_PRIME;
-        hash = (hash ^ (0x80 | (c & 0x3F))) * FNV_PRIME;
-      }
-    }
-    return hash == 0 ? 1 : hash;
+    return Xxh3.hash64(text);
   }
 }

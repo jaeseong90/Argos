@@ -106,7 +106,59 @@ public record TransactionRecord(Map<String, Object> fields, String line, RecordS
     return Boolean.TRUE.equals(fields.get("virtual_thread"));
   }
 
-  /** {@code streaming}, {@code timeout}, {@code leaked}, {@code summarized}. */
+  /** The normalized thread name ({@code thread_name_id}, 10 §8), null while absent. */
+  public String threadName() {
+    return string("thread_name");
+  }
+
+  /** {@code app.env} of the instance, null while absent. */
+  public String env() {
+    return string("env");
+  }
+
+  /** {@code app.version} of the instance, null while absent. */
+  public String version() {
+    return string("version");
+  }
+
+  /** CPU milliseconds of the transaction's thread; null when not measured (D-23, not 0). */
+  public Double cpuTimeMs() {
+    Number value = number("cpu_time_ms");
+    return value == null ? null : value.doubleValue();
+  }
+
+  /** Bytes allocated by the transaction's thread; null when not measured (D-23, not 0). */
+  public Long allocBytes() {
+    Number value = number("alloc_bytes");
+    return value == null ? null : value.longValue();
+  }
+
+  /**
+   * The C-69 {@code xlog.flags} bits (1 virtual thread, 2 leaked, 4 summarized), null if absent.
+   */
+  public Integer xlogFlags() {
+    Number value = number("xlog_flags");
+    return value == null ? null : value.intValue();
+  }
+
+  /** The sampler decision (10 §9.2 step 3), null while absent. */
+  public Boolean profileCaptured() {
+    Object value = fields.get("profile_captured");
+    return value instanceof Boolean b ? b : null;
+  }
+
+  /** True when steps beyond {@code max-steps} were summarized (11 {@code truncated}). */
+  public boolean truncated() {
+    return Boolean.TRUE.equals(fields.get("truncated"));
+  }
+
+  /** Every step that started (11 {@code total_steps}), null while absent. */
+  public Long totalSteps() {
+    Number value = number("total_steps");
+    return value == null ? null : value.longValue();
+  }
+
+  /** {@code virtual_thread}, {@code leaked}, {@code summarized}, {@code streaming}, ... */
   public List<String> flags() {
     List<String> flags = new ArrayList<>();
     if (fields.get("flags") instanceof List<?> values) {
@@ -127,6 +179,18 @@ public record TransactionRecord(Map<String, Object> fields, String line, RecordS
       }
     }
     return steps;
+  }
+
+  /** The summary-mode entries (10 §9.1 {@code SummaryStep}) in the order of the record. */
+  @SuppressWarnings("unchecked")
+  public List<SummaryRecord> summary() {
+    List<SummaryRecord> entries = new ArrayList<>();
+    if (fields.get("summary") instanceof List<?> values) {
+      for (Object value : values) {
+        entries.add(new SummaryRecord((Map<String, Object>) value));
+      }
+    }
+    return entries;
   }
 
   /** The steps of a {@code StepType} name ({@code SQL}, {@code HTTP}, {@code ASYNC}, ...). */
@@ -221,6 +285,11 @@ public record TransactionRecord(Map<String, Object> fields, String line, RecordS
       return text("thread");
     }
 
+    /** Consecutive identical steps folded into this one (11 {@code repeat_count}), or null. */
+    public Integer repeatCount() {
+      return integer("repeat_count");
+    }
+
     /** A field by its name. */
     public Object field(String name) {
       return fields.get(name);
@@ -238,6 +307,35 @@ public record TransactionRecord(Map<String, Object> fields, String line, RecordS
     @Override
     public String toString() {
       return fields.toString();
+    }
+  }
+
+  /** One summary-mode entry: steps of one (type, name) aggregated beyond {@code max-steps}. */
+  public record SummaryRecord(Map<String, Object> fields) {
+    public String type() {
+      Object value = fields.get("type");
+      return value == null ? null : String.valueOf(value);
+    }
+
+    public String name() {
+      Object value = fields.get("name");
+      return value == null ? null : String.valueOf(value);
+    }
+
+    public Long count() {
+      return fields.get("count") instanceof Number n ? n.longValue() : null;
+    }
+
+    public Double totalMs() {
+      return fields.get("total_ms") instanceof Number n ? n.doubleValue() : null;
+    }
+
+    public Double maxMs() {
+      return fields.get("max_ms") instanceof Number n ? n.doubleValue() : null;
+    }
+
+    public Long errors() {
+      return fields.get("errors") instanceof Number n ? n.longValue() : null;
     }
   }
 }

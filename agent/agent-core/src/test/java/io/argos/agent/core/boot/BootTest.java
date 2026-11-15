@@ -7,6 +7,9 @@ import io.argos.agent.bootstrap.AgentControl;
 import io.argos.agent.bootstrap.ModuleHealth;
 import io.argos.agent.bootstrap.TestControls;
 import io.argos.agent.core.config.AgentConfig;
+import io.argos.agent.core.guard.AgentCounters;
+import io.argos.agent.core.guard.SelfProtection;
+import io.argos.agent.core.guard.TransformErrorListener;
 import io.argos.agent.instrumentation.api.InstrumentationModule;
 import io.argos.agent.instrumentation.api.TypeInstrumentation;
 import java.io.File;
@@ -188,6 +191,39 @@ class BootTest {
   }
 
   @Test
+  @Tag("req:N-27")
+  @DisplayName(
+      "T-AG-042 the agent builder ignores a type when its loader OR its name is ignored (not only"
+          + " when both are), exclude-classes apply to allow-listed JDK classes too")
+  void ignoreMatcherIsADisjunction() throws IOException {
+    try (URLClassLoader agentLoader = new URLClassLoader(new URL[0], null);
+        URLClassLoader appLoader = new URLClassLoader(new URL[0], null)) {
+      AgentBuilder.RawMatcher ignore =
+          IgnoreMatchers.matcher(
+              Arrays.asList("com.example.legacy.*", "java.util.concurrent.ForkJoinPool"),
+              agentLoader);
+      TypeDescription jdk = TypeDescription.ForLoadedType.of(String.class);
+      TypeDescription pool =
+          TypeDescription.ForLoadedType.of(java.util.concurrent.ForkJoinPool.class);
+      TypeDescription executor =
+          TypeDescription.ForLoadedType.of(java.util.concurrent.ThreadPoolExecutor.class);
+      TypeDescription app = new TypeDescription.Latent("com.example.OrderController", 1, null);
+      TypeDescription legacy = new TypeDescription.Latent("com.example.legacy.Old", 1, null);
+      // A JDK class from the bootstrap loader: ignored by name although the loader is not.
+      assertThat(ignore.matches(jdk, null, null, null, null)).isTrue();
+      // Allow-listed JDK classes are transformable unless an exclude glob names them.
+      assertThat(ignore.matches(executor, null, null, null, null)).isFalse();
+      assertThat(ignore.matches(pool, null, null, null, null)).isTrue();
+      // Application classes: transformable, unless excluded by name; any class of the agent
+      // class loader is ignored whatever its name.
+      assertThat(ignore.matches(app, appLoader, null, null, null)).isFalse();
+      assertThat(ignore.matches(legacy, appLoader, null, null, null)).isTrue();
+      assertThat(ignore.matches(app, agentLoader, null, null, null)).isTrue();
+      assertThat(ignore.toString()).contains("loaders or types");
+    }
+  }
+
+  @Test
   @DisplayName("C-25 module discovery: service files, id checks, instrumentation.disabled, faults")
   void moduleRegistry() throws IOException {
     File services = new File(dir, ModuleRegistry.SERVICE_FILE);
@@ -300,8 +336,11 @@ class BootTest {
     String[] names = new String[64];
     names[7] = "probe";
     TransformRecorder recorder = new TransformRecorder(null, log, false, names);
+    AgentCounters counters = new AgentCounters();
     TransformErrorListener errors =
-        new TransformErrorListener(TestControls.newControl(), 1_000_000, names, recorder);
+        new TransformErrorListener(
+            new SelfProtection(TestControls.newControl(), counters, 100, 1_000_000),
+            recorder.errorRecorder());
     recorder.onDiscovery("java.lang.String", null, null, true);
     TransformRecorder.markModule(7);
     recorder.onTransformation(
@@ -328,6 +367,9 @@ class BootTest {
     assertThat(recorder.circularityCount()).isEqualTo(2);
     assertThat(errors.errors()).isEqualTo(2);
     assertThat(errors.circularityErrors()).isEqualTo(1);
+    // 10 §14 transform_errors_total{reason}: one plain failure, one ClassCircularityError.
+    assertThat(counters.transformErrors("error")).isEqualTo(1);
+    assertThat(counters.transformErrors("circularity")).isEqualTo(1);
   }
 
   @Test

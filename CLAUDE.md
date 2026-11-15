@@ -23,7 +23,7 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
 
 - **지시받은 WO(또는 이슈) 범위만** 구현한다. 범위 밖 변경은 보고서·PR에 제안만 남기고 하지 않는다.
 - **완성 기준은 03 문서가 유일한 기준**이다. 테스트 없이 "동작한다"고 보고하지 않는다. 테스트는 수락 기준을 직접 검증해야 한다.
-- 모호한 점은 가정을 명시하고 진행한 뒤 보고서 "가정과 미해결"에 남긴다. 단, **02 문서의 전역 설계 결정(DSN)이나 설계 문서를 바꿔야 하면 멈추고 묻는다.** 바뀌면 ADR을 남긴다. 설계 문서끼리 어긋날 때의 정합 결정은 02 §13(C-1~C-20)과 `docs/adr/0003`(C-21~C-36)·`docs/adr/0004`(C-37~C-49)·`docs/adr/0007`(C-50~C-71)·`docs/adr/0009`(C-72~C-90)가 우선한다. 전송·셰이딩·저장소 결정은 `docs/adr/0005`·`0006`·`0008`에 있다.
+- 모호한 점은 가정을 명시하고 진행한 뒤 보고서 "가정과 미해결"에 남긴다. 단, **02 문서의 전역 설계 결정(DSN)이나 설계 문서를 바꿔야 하면 멈추고 묻는다.** 바뀌면 ADR을 남긴다. 설계 문서끼리 어긋날 때의 정합 결정은 02 §13(C-1~C-20)과 `docs/adr/0003`(C-21~C-36)·`docs/adr/0004`(C-37~C-49)·`docs/adr/0007`(C-50~C-71)·`docs/adr/0009`(C-72~C-90)·`docs/adr/0010`(C-91~)가 우선한다. 전송·셰이딩·저장소 결정은 `docs/adr/0005`·`0006`·`0008`에 있다.
 - **배포물에 포함되는 의존성은 Apache-2.0 호환 허용 목록만**(Apache-2.0, MIT, MIT-0, BSD, ISC, 0BSD, PostgreSQL. 전체 목록은 `build-logic/allowed-licenses.json`, MIT-0은 ADR-0004 C-42). GPL·LGPL·AGPL·SSPL·BSL은 금지. 테스트 전용 드라이버는 배포물에 들어가지 않는 조건으로 허용하고 `docs/licenses/dev-only.md`에 기록한다.
 - **에이전트 모듈에 의존성을 추가할 때는** 셰이딩 규칙·SBOM·버전 매니페스트에 넣고 보고서에 `jar tf`와 `check-shading.sh` 결과를 첨부한다.
 - 외부 오픈소스 코드(OpenTelemetry·Pinpoint·Scouter·SkyWalking 등 Apache-2.0)를 차용·개작하면 원 저작권 헤더를 유지하고 `NOTICE`에 출처를 적는다. 상용 제품(Jennifer·Datadog 등)의 코드·에셋·문구는 참고만 하고 복사하지 않는다.
@@ -56,15 +56,20 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
 ./gradlew :agent:agent-dist:agentJar              # 에이전트 단일 jar → agent/agent-dist/build/libs/argos-agent-<버전>.jar
 ./gradlew :agent:agent-dist:check verifyAgentJar  # checkShading, checkMajorVersion(자체 52·셰이딩 ≤ 52), checkRelocatedStrings·checkOwnRelocatedLiterals(C-23), checkModuleIndex,
                                                   # checkManifestVersion(Implementation-Version = 프로젝트 버전, T-BLD-010 릴리스 판정 fail-closed)
-./gradlew :agent:agent-testing:archTest           # Advice·패키지 경계 규칙(T-AG-001~004, ADV-04, B-1~B-4, AGT-01~03)
+./gradlew :agent:agent-testing:archTest           # Advice·패키지 경계·코드 규칙(T-AG-001~004, ADV-01~04, A-1~A-9, B-1~B-4, AGT-01~03, 10 §14 로그 인자 allowlist LOG-01).
+                                                  # 규칙마다 위반 픽스처(src/archFixtures)가 실제로 잡혀야 통과. INFO 이상 로그의 문자열 인자는 src/archTest/resources/log-argument-allowlist.txt에 근거와 함께
 ./gradlew checkLicenses checkDevOnlyLicenses      # 라이선스 허용 목록(테스트 전용 예외: docs/licenses/dev-only.md)
 ./gradlew integrationTest                         # Testcontainers(Docker), 샘플 앱 shop-boot3 스모크 3변형·시드 센티널, 저장소 스키마·생성기·쿼리(실제 ClickHouse). check에 포함되지 않음
 ./gradlew integrationTest -Pqueries.profile=ci    # CI와 같다: 저장소 정합 T-ST-030~033·053을 생성기 1/100 프로파일로(12스레드 개발 머신에서 전체 약 7분)
+./gradlew :agent:agent-core:integrationTest       # T-ACC-11(tx_id 1,000만 건 충돌 0·tx_id >> 23 ±1ms·두 인스턴스·begin 경로 start_ts 일치)과 N-02 축소판 힙 예산(포크 JVM, 큐·사전 상한, io.argos.agent. ≤ 64MB). 약 1.5~2분
 ./gradlew :agent:agent-testing:integrationTest -Pagent.attach.jdks=8,11,17,21,25 -Pagent.e2e=shop-boot2@8,shop-boot2@11,shop-boot2@17,shop-boot2@21,shop-boot3@17,shop-boot3@21,shop-boot3@25
                                                   # 에이전트 하네스(agent/agent-testing/README.md) 위의 부착(JDK별)·샘플 앱 종단 매트릭스와 FakeCollector
-                                                  # (T-AG-005·010·040·041·044·050·053·070, T-BLD-006·010, C-27 플래그, JDK 25는 deny).
+                                                  # (T-AG-005·010·040~045·050·053·060·070, T-BLD-006·010, T-NFR-30a premain 클래스 예산, C-27 플래그, JDK 25는 deny).
                                                   # 기본은 부착 JDK 8·21 + shop-boot3@21, -Pagent.e2e=none이면 종단 생략. 결과 agent/agent-testing/build/reports/agent-e2e/(<app>-jdk<N>-transform.log 포함).
-                                                  # -Pagent.baseline.record=true는 변환 베이스라인(agent/agent-testing/baselines/transformed-classes) 재녹화(계측을 바꾸는 WO는 diff를 PR에),
+                                                  # 자가 진단(18 §19)은 개발 빌드 전용 키 -Dargos.test.selfdiag-file=<파일>(C-95)로 하네스가 읽는다(RunningApp.selfDiagnostics(),
+                                                  # 에이전트가 보고하지 않은 값은 0이 아니라 NOT_AVAILABLE). 기동 단계별 ms·클래스 수는 -Dargos.debug.transform-timing=true(C-79)
+                                                  # -Pagent.baseline.record=true는 변환 베이스라인(agent/agent-testing/baselines/transformed-classes)과 premain 클래스 예산
+                                                  # (baselines/premain-classes/trivial-release-<jdk>.txt, 부착 JDK별) 재녹화(계측·기동 경로를 바꾸는 WO는 diff를 PR에),
                                                   # -Pagent.e2e에 WAR 조합(shop-war-javax@8·11·17·21, shop-war-jakarta@17·21·25)을 넣으면 독립 Tomcat(127.0.0.1)에서 WarAppAgentTest
                                                   # (조합당 약 30~50초, 기본에는 WAR 조합이 없어 skip). 예: -Pagent.e2e=shop-war-jakarta@21 --tests '*WarAppAgentTest'
                                                   # -Pagent.container=true는 컨테이너 모드 테스트 추가(Docker, JDK 이미지는 다이제스트 고정, -Pagent.container.image.<jdk>=<image>@sha256:<digest>로 교체)
@@ -72,6 +77,13 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
                                                   # P-3 전송 비교 jar 9종·보고서, proto 테스트, 스모크(JDK 8·21). 알려진 발견(ADR-0005 P1·P3)은 단언하고 -Ptransport.poc.strict=true면 실패로 셈
 ./gradlew :test:agent:transport-poc:transportPocBench -Ptransport.poc.jdk8u242=<JRE> -Ptransport.poc.jdk8u252=<JRE>
                                                   # P-3 측정 매트릭스(약 35분) → test/agent/transport-poc/build/poc/bench/<시각>/summary.md. 조용한 머신에서
+./gradlew :server:bootJar                         # 서버 실행 jar → server/build/libs/argos-server-<버전>.jar(레이어 4종: java -Djarmode=tools -jar <jar> list-layers).
+                                                  # -Pargos.ui.skip=true가 없으면 ui/dist를 static/에 넣는다. :server:checkFlywayNames(check 포함)는 db/pg 파일명 규칙(C-28)
+./gradlew :server:integrationTest                 # 서버 기동 순서·설정·관리 포트·PG/CH 마이그레이션·DB 권한(실제 PostgreSQL 16·ClickHouse 26.8, Testcontainers, 약 1.5분).
+                                                  # 소요 표 server/build/reports/migration/timings.md. -Pserver.nightly=true면 T-SV-002(V001 + 생성기 1/100 → 다음 버전, 약 2분) 추가, 없으면 SKIPPED.
+                                                  # 두 Gradle 실행이 같은 :server:integrationTest를 동시에 돌리면 결과 파일이 깨진다
+./gradlew :server:jibDockerBuild                  # 로컬 이미지 argos-server:<버전>(베이스 다이제스트 고정, user 10001:10001, 포트 8080·9100). Jib은 구성 캐시 미호환.
+                                                  # 로그 /logs/server·WAL /data/wal: 두 볼륨은 uid 10001 소유 0700으로 미리 준비(server/README.md)
 test/storage/bench/bench-server.sh start          # 저장소 PoC 벤치용 단독 ClickHouse(127.0.0.1:18123, 비밀번호는 test/storage/bench/build/). 절차는 test/storage/bench/README.md
 ./gradlew :test:storage:generator:storageBench -Pbench.machine-profile=<id> -Pstorage.profile=local -Pstorage.target=url:http://127.0.0.1:18123/ -Pstorage.apply-schema=true
                                                   # 저장소 PoC 벌크 생성·적재(13 §15, 18 §9; profile ci 1/100, local 1/20, full). 리플레이는 storageGenerate -Pstorage.mode=replay
@@ -85,7 +97,9 @@ test/storage/bench/bench-server.sh start          # 저장소 PoC 벤치용 단�
 ./gradlew serverLoadTest -Pbench.machine-profile=<id>   # soakTest·chaosTest도 같다. 러너는 WO-29·WO-52 몫이라 지금은 담당 WO를 밝히고 실패(측정 없음).
                                                   # benchTest·serverLoadTest·storageBench·soakTest·chaosTest는 프로필이 없으면 아무것도 빌드하기 전에 실패
 test/bench/bench-run.sh --app shop-boot3 --jdk 21 --rounds 3 --exporter noop
-                                                  # 18 §7.3 A-B-A-B-A-B 세트 + 보고서 docs/bench/<날짜>-<커밋7>.md(--exporter drop은 WO-02 P-2 설정 재현). 전용 장비 절차는 docs/poc/agent-overhead.md 9장
+                                                  # 18 §7.3 A-B-A-B-A-B 세트 + 보고서 docs/bench/<날짜>-<커밋7>.md. 전용 장비 절차는 docs/poc/agent-overhead.md 9장.
+                                                  # --exporter noop = -Dargos.test.exporter=noop(인코딩 후 버림, 18 §5.4), drop = -Dargos.test.exporter=drop(인코딩 없이 버림,
+                                                  # WO-02 P-2 설정 재현, C-80). 옛 키 argos.exporter는 없다(C-88). 둘 다 테스트 키라 개발(-SNAPSHOT) jar만 받는다(릴리스 jar는 거부)
 test/bench/bench-run.sh --smoke --startup --exporter drop --machine-profile <이름>
                                                   # 공유 머신에서 측정 체인만 확인(약 7분, 보고서는 항상 INVALID)
 test/bench/bench.sh <load|startup|report|publish> ...   # 벤치 하네스 직접 실행(k6는 test/bench/fetch-k6.sh). 사용법 test/bench/README.md

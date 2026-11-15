@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
@@ -98,6 +99,35 @@ final class AttachRuns {
       launcher.withAgent(agentJar);
     }
     ExitedApp run = launcher.runToExit(Duration.ofMinutes(2));
+    assertThat(run.timedOut()).as("JDK %d %s finished within 120 s", jdk, name).isFalse();
+    return run;
+  }
+
+  /**
+   * {@link #launch} with agent settings that replace the harness defaults of the same key ({@code
+   * log.dir}, ...); JVM options cannot, because the harness defaults follow them on the command
+   * line.
+   */
+  static ExitedApp launchWithSettings(
+      Path work,
+      int jdk,
+      String name,
+      Path agentJar,
+      Map<String, String> settings,
+      List<String> options,
+      String... extraArgs)
+      throws Exception {
+    Path dir = work.resolve("jdk" + jdk + "-" + name);
+    SampleApp app = SampleApp.mainClass("trivial", MAIN, required("argos.test.trivialAppClasses"));
+    ExitedApp run =
+        AppLauncher.of(app, Jdk.of(jdk))
+            .withJvmOptions(options.toArray(String[]::new))
+            .watchSystemTemp(true)
+            .args(dir.resolve("out").resolve("results.properties").toString())
+            .args(extraArgs)
+            .workDir(dir)
+            .withAgent(agentJar, settings)
+            .runToExit(Duration.ofMinutes(2));
     assertThat(run.timedOut()).as("JDK %d %s finished within 120 s", jdk, name).isFalse();
     return run;
   }

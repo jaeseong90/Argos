@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
@@ -56,14 +57,15 @@ class AgentSettingsTest {
         .isInstanceOf(UsageException.class)
         .hasMessageContaining("--collector");
     AgentSettings.Exporter e = AgentSettings.exporter("grpc", jar, "10.0.0.5:7600");
-    assertThat(e.agentConfig())
-        .containsEntry("exporter", "grpc")
-        .containsEntry("server.address", "10.0.0.5:7600");
+    // grpc is the agent's default exporter: only the collector address (no PoC key, C-88).
+    assertThat(e.agentConfig()).isEqualTo(Map.of("server.address", "10.0.0.5:7600"));
     assertThat(e.bannerExporter()).isEqualTo("grpc");
   }
 
   @Test
-  @DisplayName("--exporter noop is 18 §5.4's test exporter; a release build is refused")
+  @DisplayName(
+      "--exporter noop and drop are values of the test key argos.test.exporter (C-88); a release"
+          + " build is refused")
   void noopIsTheTestExporter(@TempDir Path dir) throws IOException {
     AgentSettings.Exporter e =
         AgentSettings.exporter("noop", agentJar(dir, "0.0.0-SNAPSHOT", false), null);
@@ -73,10 +75,18 @@ class AgentSettingsTest {
     assertThatThrownBy(() -> AgentSettings.exporter("noop", release, null))
         .isInstanceOf(UsageException.class)
         .hasMessageContaining("T-BLD-010")
-        .hasMessageContaining("--exporter drop");
-    // drop: the WO-02 P-2 setting, also on a release build
-    assertThat(AgentSettings.exporter("drop", release, null).agentConfig())
-        .isEqualTo(Map.of("exporter", "noop"));
+        .hasMessageContaining("-SNAPSHOT");
+    // drop: the WO-02 P-2 setting through the test key (C-88, C-80): no encoding, banner "drop",
+    // and like noop refused for a release build, which ignores argos.test.*.
+    AgentSettings.Exporter drop =
+        AgentSettings.exporter("drop", agentJar(dir, "0.0.0-SNAPSHOT", false), null);
+    assertThat(drop.agentConfig()).isEqualTo(Map.of("test.exporter", "drop"));
+    assertThat(drop.bannerExporter()).isEqualTo("drop");
+    assertThat(drop.agentConfig()).doesNotContainKey("exporter");
+    assertThatThrownBy(() -> AgentSettings.exporter("drop", release, null))
+        .isInstanceOf(UsageException.class)
+        .hasMessageContaining("argos.test.exporter=drop")
+        .hasMessageContaining("T-BLD-010");
     assertThatThrownBy(() -> AgentSettings.exporter("file", release, null))
         .isInstanceOf(UsageException.class);
     assertThat(AgentSettings.isReleaseVersion("1.0.0-rc.1")).isTrue();
@@ -123,5 +133,47 @@ class AgentSettingsTest {
         .containsEntry("test.exporter", "noop")
         .containsEntry("sampling.profile.normal-rate", "0.5")
         .containsEntry("log.level", "info");
+  }
+
+  @Test
+  @DisplayName(
+      "agent variants set the required keys app.name and app.env (10 §4.3 P4); --agent-config wins")
+  void agentVariantsSetRequiredKeys() {
+    Platform.Setup setup =
+        new Platform.Setup(
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "shop-boot3",
+            null,
+            null,
+            null,
+            null,
+            List.of(),
+            Map.of(),
+            Map.of("test.exporter", "drop", "app.env", "lab"),
+            Map.of(),
+            null,
+            null,
+            null,
+            null,
+            2,
+            "2g",
+            null);
+    assertThat(Platform.variantOptions("on", setup, "/agent.jar", null, "/logs"))
+        .containsExactly(
+            "-javaagent:/agent.jar",
+            "-Dargos.log.dir=/logs",
+            "-Dargos.app.name=shop-boot3",
+            "-Dargos.app.env=lab",
+            "-Dargos.test.exporter=drop");
+    assertThat(Platform.variantOptions("off", setup, "/agent.jar", null, "/logs")).isEmpty();
+    // The startup set starts several apps with one setup: the started app names the agent.
+    assertThat(Platform.variantOptions("on", setup, "shop-heavy", "/agent.jar", null, "/logs"))
+        .contains("-Dargos.app.name=shop-heavy")
+        .doesNotContain("-Dargos.app.name=shop-boot3");
   }
 }

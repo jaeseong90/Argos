@@ -108,9 +108,12 @@ class HarnessPartsTest {
             "-Xmx512m",
             "-Djava.io.tmpdir=" + work.resolve("tmp"),
             "-javaagent:" + work.resolve("agent").resolve("argos-agent.jar"),
+            "-Dargos.app.name=shop-boot3",
+            "-Dargos.app.env=test",
             "-Dargos.log.dir=" + work.resolve("logs"),
             "-Dargos.debug.transform-list=" + work.resolve("out").resolve("transformed.txt"),
             "-Dargos.debug.transform-log=" + work.resolve("out").resolve("transform.log"),
+            "-Dargos.test.selfdiag-file=" + work.resolve("out").resolve("selfdiag.json"),
             "-Dargos.test.exporter=noop",
             "-Dargos.async.step=true",
             "-jar")
@@ -242,11 +245,13 @@ class HarnessPartsTest {
 
   @Test
   @Tag("req:N-02")
-  @DisplayName("self-diagnostics: not available until WO-10, never a default value")
+  @DisplayName(
+      "self-diagnostics: a run without the argos.test.selfdiag-file snapshot is not available, never"
+          + " a default value")
   void selfDiagnostics() {
     SelfDiagnostics none = SelfDiagnostics.notAvailable();
     assertThat(none.available()).isFalse();
-    assertThat(none.reason()).contains("WO-10");
+    assertThat(none.reason()).contains("argos.test.selfdiag-file");
     assertThatThrownBy(() -> none.value("weakmap_size"))
         .isInstanceOf(SelfDiagnostics.NotAvailableException.class)
         .hasMessageContaining("weakmap_size");

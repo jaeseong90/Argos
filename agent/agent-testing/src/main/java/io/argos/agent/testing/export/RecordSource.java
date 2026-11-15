@@ -22,7 +22,12 @@ public record RecordSource(String name, Set<String> transactionFields, Set<Strin
 
   /**
    * The JSONL exporter ({@code -Dargos.test.exporter=file:<dir>}, field reference in {@code
-   * JsonlFileExporter.write}). No {@code env}, {@code version}, CPU, allocation or per-step thread.
+   * JsonlFileExporter.write}). From WO-10 on it carries {@code env}, {@code version} (when set),
+   * CPU time and allocated bytes (absent when not measured, D-23), the C-69 flags, the normalized
+   * thread name, the sampler decision ({@code profile_captured}), {@code truncated}/{@code
+   * total_steps}, and per step the recording thread and {@code repeat_count}. Not carried (they
+   * arrive with later work orders and fail as unsupported): headers, request id, connection wait,
+   * dispatch count, SQL ids, statistics, metrics, dictionary and counters.
    */
   public static final RecordSource JSONL =
       new RecordSource(
@@ -46,8 +51,18 @@ public record RecordSource(String name, Set<String> transactionFields, Set<Strin
               "remote_ip",
               "user_id",
               "thread",
+              "thread_name",
+              "thread_name_id",
               "virtual_thread",
               "flags",
+              "xlog_flags",
+              "env",
+              "version",
+              "cpu_time_ms",
+              "alloc_bytes",
+              "profile_captured",
+              "truncated",
+              "total_steps",
               "steps",
               "summary",
               "summary_overflow"),
@@ -66,7 +81,9 @@ public record RecordSource(String name, Set<String> transactionFields, Set<Strin
               "rows",
               "fetch_ms",
               "detail",
-              "stack"));
+              "stack",
+              "thread",
+              "repeat_count"));
 
   public boolean supportsTransactionField(String field) {
     return transactionFields.contains(field);

@@ -13,29 +13,28 @@ The only instrumentation project the core references is `agent-instrumentation:a
 are discovered at runtime from `META-INF/services/io.argos.agent.instrumentation.api.InstrumentationModule`
 (ADR-0003 C-25). Third-party libraries are shaded below `io.argos.agent.shaded` by `agent-dist`.
 
-| Package | Contents (WO-02) |
+| Package | Contents (WO-02, WO-10) |
 |---|---|
-| `core.boot` | `AgentStarter` (P3-P8), `ArgosAgentBuilder` (ByteBuddy builder without class injection, ADR-0008), `InstrumentationInstaller`, `ModuleRegistry` (C-25), `ModuleTransformer`, `AdviceFactory` (inline advice + `Argos.adviceError` handler), `HelperInjector`, `ModuleReadEdgeListener`, `Jpms`, `IgnoreMatchers` (10 §4.5), `PremainDiscovery`, `TransformRecorder` (`debug.transform-list`), `TransformErrorListener`, `WatchThread` |
-| `core.config` | `AgentConfig` (`-Dargos.<key>`, then `ARGOS_<KEY>`; YAML in WO-10), `ConfigKeys`, `HttpSettings` (exclusion rules, service name cap, `capture.remote-ip`) |
-| `core.masking` | `Masker`: SEC-36 default set (16 §6.6: email, Korean mobile, RRN, card with Luhn, IPv4, JWT) applied to exception messages before the length cut |
+| `core.boot` | `AgentStarter` (P3-P8 of 10 §4.3, entered through `AgentStarter.Handoff` without `Method.invoke`; shutdown hook registered at P3; a failed start flushes the log or prints the single C-78 line), `StartTimer` (`debug.transform-timing`: ms and agent classes per step, C-79), `Recording` (P5 runtime, P7 `argos-sender`), `ArgosAgentBuilder` (ByteBuddy builder without class injection, ADR-0008), `InstrumentationInstaller`, `ModuleRegistry` (C-25), `ModuleTransformer`, `AdviceFactory` (inline advice + `Argos.adviceError` handler), `HelperInjector`, `ModuleReadEdgeListener`, `Jpms`, `IgnoreMatchers` (10 §4.5: an ignored loader or an ignored name, cheapest test first), `PremainDiscovery`, `TransformRecorder` (`debug.transform-list`, `debug.transform-log`), `TestFaults` (C-86), `WatchThread` |
+| `core.guard` | `SelfProtection` (advice errors >= `instrumentation.error-threshold` and transformation errors >= `instrumentation.transform-error-threshold` disable a module, one WARN), `TransformErrorListener` (`circularity` reason), `RetransformLimiter` (50 classes, one request per minute, injected clock; executed by WO-17), `AgentCounters` (including the scope chain cut counter `argos_agent_scope_chain_cut_total`: 64 unclosed activations on one thread), `SelfDiagnostics` + `SelfDiagnosticsCollector` (18 §19: missing is absent, never 0) + `SelfDiagnosticsFile` (`test.selfdiag-file`, development builds, C-95) |
+| `core.config` | `ConfigLoader` (defaults < `argos-agent.yml` < `-Dargos.<key>` < `ARGOS_<KEY>`, release gate for `test.*`, required keys, never throws), `YamlSubset` (own bounded YAML subset parser), `TokenHolder`/`TokenFile` (`server.token` > `server.token-file` > `ARGOS_TOKEN`, shown as `argos_****`, SEC-06), `ConfigKeys`/`KeySpec` (every key of 10 §15), `AgentConfig` (typed snapshot), `EffectiveConfig` (value and source), `ConfigHash` (xxh3, token excluded), `RemoteConfigGate` + `AllowList` (16 §5.5 evaluation, C-92 defaults; applied by WO-17), `HttpSettings`. Reference: [docs/agent-config.md](../../docs/agent-config.md) |
+| `core.masking` | `Masker` + `MaskPatterns`: 16 §6.6 default set (email, Korean mobile, RRN, card with Luhn, IPv4, JWT) then `capture.mask-patterns` (32 x 512 chars, read budget, fail closed), input cut to 64 KiB, message limit applied after masking |
+| `core.hash` | `Xxh3` (own XXH3-64, no `Unsafe`, reference vectors; 10 U-17, C-91) |
+| `core.context` | `VirtualThreads` (cached `MethodHandle`), `ThreadNames` (normalization, 1,000-name dictionary cap, `_other_`) |
+| `core.transport` | `Queues`: five bounded queues (JCTools `MpscAtomicArrayQueue`; count, 120 s age and shared byte budget; drop the oldest once and retry once; `argos_agent_dropped_total{queue}`), `LatestSlot` (active snapshot); the gRPC sender is WO-11 |
+| `core.stats`, `core.metric`, `core.command`, `core.watch` | `package-info.java` only: owners WO-16, WO-16, WO-17, WO-19 |
 | `core.sql` | `SqlNormalizer` (10 §9.4, SEC-35, WO-02 subset): literals become `?` (strings, prefixed, dollar-quoted, numbers), comments and whitespace collapse, `IN (?, ?)` and multi-row `VALUES` collapse, `<unparsed>` on failure; `TracerImpl.dict(DictKind.SQL, raw)` goes through it (`core.trace.SqlIds`, bounded raw-text cache), so no SQL literal is kept or exported |
-| `core.log` | `AgentLogger` (async `argos-logger` thread, `log.dir/argos-agent.log` rolled 10 MB x 5, stderr fallback 10 lines/min, nothing on stdout) |
-| `core.trace` | `TracerImpl`, `Transaction`, `StepBuffer` (bounded, summary mode), `TxIdGenerator`, `TraceIds`, `Dictionary` (FNV-1a 64 until WO-10's xxh3), `IgnoreRules` (10 §7.2, `Tracer.ignoreReason`), `ServiceNames` (F-A29 fallback normalization, 10,000-name cap), `HttpPaths` (path parameters, extensions, `{*}` segments), `RemoteIps` (SEC-31 masked/full/off) |
-| `core.export` | Exporter SPI (`Exporter`, `ExporterFactory`, `ExporterContext`), `NoopExporter`, `JsonlFileExporter`, the `grpc` slot (`io.argos.agent.core.transport.GrpcExporterFactory`), bounded `TransactionQueue`, `ExportWorker` (`argos-sender`) |
+| `core.log` | `AgentLogger` (async `argos-logger` thread, `log.dir/argos-agent.log` rolled `log.max-file-mb` x `log.max-files` (10 MB x 5), directory created 0700 on POSIX, `<jar dir>/../logs` else `java.io.tmpdir/argos-agent-<pid>` without `log.dir` (C-76), stderr fallback 10 lines/min and the same message once a minute, held until the start completes, nothing on stdout; a failed start without a log file prints only `argos: agent disabled: <reason>`, C-78) |
+| `core.trace` | `TraceRuntime` (P5 wiring), `TracerImpl`, `Transaction`, `StepBuffer` (SoA, 64 doubling to the step cap, summary mode, open-step stack per activation scope, repeat folding, `truncated`/`total_steps`), `ProfileSteps`/`ProfileRecord`, `ActiveRegistry`, `ThreadSlots`, `Sampler`, `TxIdGenerator` (10 §9.5, C-91), `TraceIds`, `Dictionary` (xxh3 ids, per-kind caps), `IgnoreRules` (10 §7.2, `Tracer.ignoreReason`), `ServiceNames` (F-A29 fallback normalization, 10,000-name cap), `HttpPaths` (path parameters, extensions, `{*}` segments), `RemoteIps` (SEC-31 masked/full/off) |
+| `core.export` | Exporter SPI (`Exporter`, `ExporterFactory`, `ExporterContext`), `NoopExporter`, `JsonlFileExporter`, the `grpc` slot (`io.argos.agent.core.transport.GrpcExporterFactory`), `ExportWorker` (`argos-sender`, the only consumer of the queues) |
 | `core.check` | `CheckCommand` (`--version`; `--check` JDK item, the rest in WO-19) |
 
-Agent settings read in WO-02: `enabled`, `log.level`, `log.dir`, `log.max-file-mb`,
-`log.max-files`, `instrumentation.disabled`, `instrumentation.exclude-classes`,
-`instrumentation.error-threshold`, `instrumentation.transform-error-threshold`,
-`sampling.profile.max-steps`, `buffer.transaction.capacity`, `buffer.max-bytes`,
-`sender.batch-size`, `sender.flush-interval-ms`, `debug.transform-timing`,
-`instrumentation.ignore-paths`, `instrumentation.ignore-extensions`,
-`instrumentation.ignore-user-agents`, `instrumentation.ignore-methods` (unset: 10 §15 defaults,
-empty: rule off), `instrumentation.service-dictionary-max`, `capture.remote-ip`,
-`capture.error-message-max-length`, `capture.stack-depth`, `async.step` (executor ASYNC steps,
-default off; carried to advice in `CaptureConfig.asyncStep()`), and the PoC keys
-`exporter` (`grpc` default, `file`, `noop`), `exporter.file.path`, `exporter.file.max-mb`,
-`debug.transform-list`, `test.faults` (`advice-throw:<module id>`, tests only).
+Settings: every key of the 10 §15 table is registered in `core.config.ConfigKeys` (`KeySpec`:
+type, default, the "remote" column, bounds, secrecy, kind PUBLIC/DIAGNOSTIC/TEST) and read through
+the typed snapshot `AgentConfig` (WO-10). Diagnostics keys: `debug.transform-timing`,
+`debug.transform-log`, `debug.transform-list`; test keys (development builds only):
+`test.exporter`, `test.faults`, `test.selfdiag-file`. The WO-02 PoC keys `exporter` and
+`exporter.file.*` were removed (ADR-0009 C-88).
 
 Tests (`./gradlew :agent:agent-core:test`, run on Java 8): step buffer and summary mode, tracer,
 ids and dictionary, JSONL export and queue bounds, configuration, logger (format, rolling, stderr

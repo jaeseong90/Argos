@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Spring Boot extension points of the server. One entry per line group; add new keys below.
+
+# A failed start phase is logged once by StartupSequence; this reporter keeps Spring Boot from
+# logging it again (WO-20, DSN-12-15).
+org.springframework.boot.SpringBootExceptionReporter=\
+io.argos.server.bootstrap.StartupFailureReporter
+
+# Packaged application.yml: unset short environment names (17 §3.8) and keys set by default
+# properties are removed, so neither hides a lower-precedence setting (WO-20, ADR-0010 C-96).
+org.springframework.boot.EnvironmentPostProcessor=\
+io.argos.server.config.PackagedSettingsPostProcessor

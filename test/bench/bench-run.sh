@@ -14,9 +14,10 @@
 #                           $JAVA_HOME (when it is release N), ~/.gradle/jdks, ~/.jdks
 #   --java PATH             java executable of the app (instead of --jdk)
 #   --rounds N              off/on rounds (3)
-#   --exporter X            noop (18 §5.4: argos.test.exporter=noop, encode and drop), drop (WO-02:
-#                           argos.exporter=noop) or grpc (refused until the agent has a transport, WO-11;
-#                           then needs --collector HOST:PORT)                                  (noop)
+#   --exporter X            noop (18 §5.4: argos.test.exporter=noop, encode and drop), drop (WO-02
+#                           setting: argos.test.exporter=drop, record and drop; both need a -SNAPSHOT
+#                           agent build, C-88) or grpc (refused until the agent has a transport,
+#                           WO-11; then needs --collector HOST:PORT)                         (noop)
 #   --collector HOST:PORT   collector for --exporter grpc
 #   --profile P             default | worst (every normal request profiled, 18 §7.5)       (default)
 #   --vt                    virtual threads (SAMPLE_VT=true, Boot 3.2+, N-28)
