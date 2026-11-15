@@ -66,9 +66,9 @@ maven-publish = "0.37.0"
 # dependency (checkDemoLoadDependencies). Library versions not listed here come from the Spring
 # Boot BOM of each app (platform dependency).
 # 2.7.18 is the last open-source 2.7 release (Java 8, javax, Tomcat 9, Hibernate 5).
-sample-boot2 = "2.7.18"
+sample-boot2 = "4.1.2"
 # Last 3.x line (Java 17, jakarta, Tomcat 10.1, Hibernate 6).
-sample-boot3 = "3.5.16"
+sample-boot3 = "4.1.2"
 # Java 17 baseline, Framework 7, Tomcat 11; same release as the server (spring-boot above).
 sample-boot4 = "4.1.2"
 # Spring Cloud release train for Boot 3.5 (shop-heavy).
