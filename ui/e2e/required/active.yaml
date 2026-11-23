@@ -13,9 +13,11 @@
 # first (the screen itself, no running transaction); the check then opens the feed's application.
 # Inside the Playwright image of e2e:docker there is no JVM for the feed: those checks skip with
 # the reason; 2.6-6 drives the WebSocket stub and runs everywhere.
-# This thread's stack and the instance thread dump need the remote command API (server WO-26,
-# agent WO-17; dump viewer WO-37): until then the screen shows both disabled with the reason
-# (T-E2E-active-27) and these entries are test.fixme naming WO-26.
+# This thread's stack and the instance thread dump (2.6-4, WO-37 on the command API of WO-26) run
+# as the operator on the command feed's application (e2e/fixtures/commandFeed.ts, app e2e-cmd, the
+# same active scenario, answering remote commands until WO-17's agent is in the stack): their
+# checks live in e2e/required/dumpsChecks.ts; a viewer sees both disabled with the reason
+# (T-E2E-active-27).
 screen: active
 title: Active transactions
 source: docs/05 §2.6
@@ -95,16 +97,26 @@ items:
       - check: activeFilters
 
   - id: 2.6-4
-    title: a selected row shows this thread's stack (single-thread stack command)
+    title: the operator's this-thread stack action on a row of 8 s or more shows the thread's stack within 30 s with its state and the transaction match of the command's result
     req: [F-U04]
-    owner: WO-26
-    coverage: disabled with the reason "remote commands not available" until the command API (server WO-26, agent WO-17), E2E T-E2E-active-27 and component ActivePage.test.tsx; the stack within 30 s (T-ACPT-02) is specs/active.spec.ts fixme T-E2E-active-30
+    owner: WO-37
+    coverage: E2E (T-E2E-active-8, T-E2E-active-30, viewer disabled with the reason T-E2E-active-27); component ActivePage.test.tsx
+    role: operator
+    route: /apps/{primary_app_id}/active?kind=ALL
+    assert:
+      - visible: active-page
+      - check: activeThreadStack
 
   - id: 2.6-4
-    title: a selected row offers the thread dump of its instance
+    title: the operator's thread dump action on a selected row takes the instance's dump and opens it in the dumps tab of the instance detail, equal to the command's result
     req: [F-U04]
-    owner: WO-26
-    coverage: disabled with the reason "remote commands not available" until the command API and the dump viewer (WO-26, WO-17, WO-37), E2E T-E2E-active-27 and component ActivePage.test.tsx
+    owner: WO-37
+    coverage: E2E (T-E2E-active-9, T-E2E-active-30, viewer disabled with the reason T-E2E-active-27); component ActivePage.test.tsx
+    role: operator
+    route: /apps/{primary_app_id}/active?kind=ALL
+    assert:
+      - visible: active-page
+      - check: activeThreadDump
 
   - id: 2.6-4
     title: a selected row opens the recent completed transactions of the same service in the XLog (service key, last 15 minutes, its kind)

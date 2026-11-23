@@ -587,9 +587,35 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   seconds with an "as of N s ago" age computed on the server clock, can be paused, shows "Updates
   stopped" when snapshots stop arriving and recovers by itself after a reconnect; filters for
   instance (also by clicking a bar), service, kind and state are kept in the URL. A selected row
-  links to the recent completed transactions of the same service in XLog; the thread stack and
-  thread dump actions are shown disabled until remote commands exist. The screen loads as its own
-  route chunk.
+  links to the recent completed transactions of the same service in XLog. Operators can show the
+  thread stack of a running transaction (state, frames and whether the thread still runs that
+  transaction) and take a thread dump that opens in the instance's dump viewer; viewers see both
+  actions disabled with the reason. Instance names link to the instance detail. The screen loads
+  as its own route chunk.
+- Instance detail screen (`/apps/:appId/instances/:instanceId`) and instance list
+  (`/apps/:appId/instances`): a header with state, application, environment, version, agent
+  version (old or unsupported warning), JVM, OS, host, PID, cgroup, start time, uptime, restarts in
+  the selected range, clock skew, drops, disabled modules, IP capture mode and virtual threads;
+  links to the instance's XLog (coloured by instance), active transactions, alert history and
+  configuration history. The metrics tab draws heap, memory pools, GC count and pause per
+  collector, threads, classes, process and system CPU (with the container limit), file
+  descriptors, Tomcat per connector, connection pools per pool, system memory, disk and network
+  with a synchronised cursor, deployment and instance event markers and an optional baseline from
+  the same range seven days earlier; series the agent does not report show "Not measured". The
+  environment tab shows the effective configuration with the source of each key, the remotely
+  changeable keys, module status, the public self-diagnosis summary, and for administrators the
+  masked environment dump (environment, system properties, JVM arguments). The commands tab
+  offers thread dump, thread stack and self diagnosis to operators and reload config and
+  environment dump to administrators, with a confirmation, live status, error and expiry reasons
+  and the command history (requester, time, duration, size; results open only for the requester
+  and administrators). The thread dump viewer groups threads by state with counts, collapses
+  identical stacks, shows lock owners and waiters and deadlocks, marks virtual threads, searches
+  thread names, classes and methods, links threads to their running transaction, keeps the last
+  20 dumps, warns when a dump was cut and downloads the dump as `.txt` generated in the browser.
+  The screen loads as its own route chunk with its own `instance` and `commands` locales.
+- Command history (`GET /api/v1/commands/{id}`, `GET /api/v1/instances/{id}/commands`) returns
+  `requested_by_name`. The development-only active feeder answers remote commands with
+  `--commands` for end-to-end tests.
 - Alert engine: rules per application, environment and target (application, service, instance,
   external host) over latency percentiles, error rate, throughput, active transactions, JVM and
   pool metrics, batch runs, instance state and the server's own health, evaluated every 10 seconds
@@ -663,6 +689,79 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   older events have none) in the alert events; `rule.metric` and `rule.unit` (the unit of value and
   threshold) on alert events, `GET /overview/alerts` and the dashboard's firing alerts; and
   `changed_by_name` in a rule's revision history.
+- Agent token API (administrators): issue (`POST /api/v1/admin/apps/{appId}/tokens`, the token is
+  shown once, 365 days by default, 1 to 3650), list, rotate (the previous token stays valid for a
+  7-day grace period) and revoke with a reason. At most 5 active tokens per application. Revoking
+  a token ends the agent sessions that use it at once with `UNAUTHENTICATED`; a job marks expired
+  tokens and ends their sessions too, and `argos_agent_token_expiry_seconds{token_prefix}` shows the
+  time left. PostgreSQL migration V010 (`agent_tokens.revoked_by`, `revoke_reason`).
+- `argos-admin token create --app --env [--expires-days] [--actor] [--json]` issues an agent token
+  through the server's token service (creating the application when missing).
+- Remote commands (`POST /api/v1/commands`, `GET /api/v1/commands/{id}`, `/result`): thread dump,
+  thread stack and self diagnostics for operators, reload config and environment dump for
+  administrators. A command must reach the agent within 60 seconds, one command runs per instance
+  at a time, at most 10 per instance per minute, and a command ends as expired when its session
+  ends or no result arrives within 120 seconds. Results (up to 1 MiB) are stored compressed and
+  encrypted with the master key for 30 days, readable only by the requester and administrators,
+  with thread dumps parsed into threads and deadlocks.
+  PostgreSQL migration V011 (`commands` columns, `config_changes` columns, `app_config`).
+- Agent configuration changes (administrators): propose a change with a required reason and see the
+  diff and, per instance, the keys its `remote-config.allow` refuses; apply it to the connected
+  instances (each receives only the keys it allows) with per-instance results (applied, partial,
+  rejected, offline, pending), hand pending values to instances in their next hello, revert a change,
+  and see configuration drift. Server-side validation follows the agent key reference (unknown,
+  immutable, out-of-range values and masking reductions are refused). The kill switch turns an
+  application's agents off or on with a reason. Operators see an instance's effective configuration
+  (`GET /api/v1/instances/{id}/effective-config`).
+- Application management: create (`POST /api/v1/apps`), update group, Apdex T, registration policy
+  and `app_packages` (`PATCH`), delete with name confirmation (tokens revoked, sessions closed,
+  alert rules removed), archive and delete instances, per-service Apdex overrides
+  (`PUT`/`DELETE /api/v1/apps/{appId}/services/{serviceId}/apdex`), and the pending registration
+  queue (`/api/v1/admin/pending-registrations`, approve or reject). `GET /apps/{appId}` returns
+  `app_packages`, and the transaction and error screens show the application's own stack frames in
+  bold. PostgreSQL migration V012 (`apps.app_packages`, soft delete of applications and users).
+- Deployment and custom events: `POST /api/v1/events` with a session or with an application's agent
+  token as `Authorization: Bearer` (for deployment scripts, 60 per application per minute), and
+  `DELETE /api/v1/events/{eventId}` for administrators.
+- Own sessions: `GET /api/v1/auth/sessions` and `DELETE /api/v1/auth/sessions/{id}`, shown on the
+  account page with an end-session button; administrators can delete users
+  (`DELETE /api/v1/admin/users/{id}`). The setup wizard has an optional first-application step that
+  registers the application, shows its agent token once and the `-javaagent` options.
+- The realtime `alert` push carries `rule` as `{id, name, metric, unit}` like the REST API.
+- Async work joins its transaction: tasks handed to `ThreadPoolExecutor`,
+  `ScheduledThreadPoolExecutor`, `ForkJoinPool` (including parallel streams), the JDK 21+
+  `ThreadPerTaskExecutor` (`Executors.newVirtualThreadPerTaskExecutor()`), Tomcat's executor and
+  Spring's `ThreadPoolTaskExecutor`, `ThreadPoolTaskScheduler` and `SimpleAsyncTaskExecutor`
+  (so `@Async` methods), and the eight `CompletableFuture.*Async` methods carry the request's
+  transaction, so their SQL, HTTP calls and steps show in the same transaction (with
+  `async.step=true` under one ASYNC step per task). Tasks are never wrapped: `remove()`,
+  `cancel()` and the queue stay the application's own, executors outside the allow-list are not
+  transformed, and a pooled thread that runs a task without a transaction sees none. Application
+  task classes defined after the agent started carry the transaction in an added field, other
+  tasks in a weak map.
+- Virtual threads (JDK 21+): transactions on virtual threads (Spring Boot
+  `spring.threads.virtual.enabled`, Tomcat `tomcat-handler-N`) are flagged, their thread names
+  are normalized to one dictionary entry, CPU time and allocated bytes are sent as missing instead
+  of a wrong value, and the agent reports virtual thread use to the server once per session.
+- The agent answers remote commands: thread dump (JSON with locks and deadlocks on every JDK,
+  virtual threads on JDK 21+ through `HotSpotDiagnosticMXBean.dumpThreads`, the running
+  transaction of each thread, cut at 1 MiB), thread stack of a running transaction or thread, self
+  diagnostics (version, effective configuration with sources, allow list, queues, agent threads),
+  environment dump (environment, system properties and JVM arguments masked inside the agent by
+  fixed key and value rules, including `-Dkey=value` items of `JAVA_TOOL_OPTIONS` and similar
+  variables; `commands.env-dump.mask-patterns` only adds patterns and no setting turns masking off)
+  and config reload (re-reads the local configuration and lists the keys that need a restart).
+  Commands are a closed list run one at a time on one agent thread, with a time to live counted
+  from receipt and per-type cooldowns. The self diagnostics list each instrumentation module with
+  its state and, when it does not run, the reason.
+- The agent applies remote configuration changes and the `ServerHello` configuration: only keys in
+  its local `remote-config.allow` are applied (a hard cap; an allowed remote value wins over the
+  local one), other keys are refused with a reason and keep their local value, keys the running
+  agent cannot change are refused as `restart_required`, and the result carries the applied keys,
+  the refused keys and the new configuration hash. The remote kill switch turns instrumentation off
+  and on while the session and metrics continue. Custom method patterns that start with a forbidden
+  prefix (`java.`, `io.argos.` and others) are ignored, a pattern matching more than 500 classes is
+  disabled, and a change retransforms at most 50 classes once per minute.
 
 ### Changed
 
@@ -742,6 +841,10 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   states: the worst state of its instances that are not archived (DOWN, then STALE, WARN, UP; DOWN
   without instances), and `instances.up` / `instances_up` count the instances that are UP or WARN,
   instead of counting live agent sessions.
+- `argos-compose.sh token create` runs `argos-admin token create` inside the healthy server
+  container instead of writing PostgreSQL directly: the server's token service creates the token,
+  keeps the limit of 5 active tokens and writes the audit row. Without `--expires-days` the token
+  now expires after 365 days (previously never).
 
 ### Removed
 
@@ -751,6 +854,18 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
 
 ### Fixed
 
+- The overview's firing alerts panel draws only as many alerts as fit next to the application table
+  and links the rest as "+N more" to the alert history, so the overview no longer scrolls at
+  1366x768 when many alerts fire.
+- The instance environment tab reads the agent's environment dump format (environment, system
+  properties and JVM arguments as tables, masked values marked, cut and unavailable sections
+  named) and the agent's self-diagnosis format (effective configuration as a map with sources,
+  module state with the reason a module does not run, shown in the module status).
+- The instance environment tab no longer opens the latest self-diagnosis result by itself: it is
+  read (and audited) only when the user selects "Show latest self-diagnosis".
+- The agent's environment dump no longer masks long paths that mix `/` with `-` or `_` (such as
+  `JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64`): a long run counts as a secret only within one
+  alphabet (standard base64, URL-safe base64 or hex).
 - The overview's firing alerts panel no longer truncates the rule name to its first letter, and the
   dashboard's firing alerts show value and threshold with their units.
 - The acknowledged rows of the overview's firing alerts open the alert history on acknowledged
@@ -769,6 +884,13 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   `C:\Users\<name>`) with `~`, so no user name is sent.
 - The alert screens no longer add the application and environment selects as a separate chunk to
   the first screen's download.
+- A transaction's SQL count and SQL and connection wait times no longer lose updates when its
+  async work runs SQL on several threads at once.
+- The agent no longer drops a statistics window while the flush is running but late (a delayed
+  flush thread under load could lose a whole window).
+- A JDK `HttpClient.sendAsync` step is closed before the application's future completes on every
+  JDK, also when the JDK completes the exchange's dependents in first-in order (JDK 21+).
+- On Java 8 the agent's shutdown wait no longer depends on the wall clock.
 
 ### Security
 
@@ -818,5 +940,10 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   returned masked. Without a master key the server starts and channel changes answer
   409 `secret_unavailable`. Plaintext SMTP is refused unless `argos.alert.smtp.insecure` is set,
   which logs a warning at startup.
+- Agent tokens are stored only as SHA-256 hashes with a 14-character prefix, returned once with
+  `Cache-Control: no-store` and never logged; the revoke reason is not written to the audit log.
+  Remote command results are encrypted at rest (AES-256-GCM envelopes) and their bodies never
+  logged; their identifiers are random UUIDs and other users' results answer 403. Remote
+  configuration keys outside an instance's `remote-config.allow` are never pushed to it.
 
 [Unreleased]: https://github.com/argos-apm/argos/commits/main

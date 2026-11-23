@@ -4,8 +4,8 @@
 // transaction side by side, one column per capture with its frames (top of the stack first, as the
 // agent records Thread.getStackTrace), the frames present in every capture highlighted, and the
 // deepest of them marked as the point where the thread was stuck. Application frames are bold only
-// when the application's packages are known: `app_packages` is not in the API yet (ADR-0010
-// C-207 (3), WO-26), so the screen passes none and highlights nothing rather than guessing.
+// for the packages an administrator set (`app_packages` of GET /apps/{appId}, ADR-0010 C-207 (3));
+// with none set the screen highlights nothing rather than guessing.
 import type { Untrusted } from '../../../api/untrusted';
 import type { TransactionStep } from '../data/transactionApi';
 

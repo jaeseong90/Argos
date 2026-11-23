@@ -12,7 +12,7 @@ import type { App } from '../../../api/apps';
 import { errorInfo } from '../../../api/errors';
 import { ErrorState } from '../../../components/ErrorState';
 import { SafeText } from '../../../components/SafeText';
-import { AppSelect, EnvSelect  } from '../../../routes/Shell';
+import { AppSelect, EnvSelect } from '../../../routes/Shell';
 import { AlertDialog } from '../common/AlertDialog';
 
 export interface CloneRuleDialogProps {

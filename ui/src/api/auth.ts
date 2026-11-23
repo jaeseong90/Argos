@@ -10,6 +10,7 @@ export type MeResponse = components['schemas']['MeResponse'];
 export type LoginResponse = components['schemas']['LoginResponse'];
 export type SetupStatus = components['schemas']['SetupStatusResponse'];
 export type UserView = components['schemas']['UserView'];
+export type OwnSession = components['schemas']['OwnSession'];
 
 /**
  * IP collection modes of the setup wizard (docs/14 §4.1, SEC-31). The contract types ip_mode as a
@@ -50,6 +51,27 @@ export async function changePassword(current: string, next: string): Promise<voi
     api().client.PUT('/api/v1/auth/password', { body: { current, new: next } }),
   );
   await fetchCsrfToken();
+}
+
+/**
+ * The caller's live sessions, most recently used first, `current` marking this one (docs/16
+ * §7.10, ADR-0010 C-136 (3)). No token or refresh value is part of the answer.
+ */
+export async function listOwnSessions(): Promise<OwnSession[]> {
+  return (
+    await unwrap<EnvelopeOf<'/api/v1/auth/sessions', 'get'>>(
+      api().client.GET('/api/v1/auth/sessions'),
+    )
+  ).data;
+}
+
+/** Ends one of the caller's sessions at once (204; 404 when it is not one of theirs). */
+export async function revokeOwnSession(sessionId: string): Promise<void> {
+  await expectNoContent(
+    api().client.DELETE('/api/v1/auth/sessions/{sessionId}', {
+      params: { path: { sessionId } },
+    }),
+  );
 }
 
 /** Whether the first administrator still has to be created (docs/14 §4.1). */

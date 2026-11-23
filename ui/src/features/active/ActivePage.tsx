@@ -5,8 +5,8 @@
 // instance, alert rule link), "as of N s ago", pause and the "updates stopped" badge. Then the
 // per-instance bars with the four elapsed bands (thresholds per browser), and the list of running
 // transactions with the nine required columns, sorted by elapsed (longest first) by default. A
-// selected row offers this thread's stack, the instance's thread dump (both need remote commands:
-// disabled until WO-26/WO-17) and the recent completions of the same service (XLog).
+// selected row offers this thread's stack and the instance's thread dump (remote commands, operator
+// role; WO-37), the instance detail and the recent completions of the same service (XLog).
 //
 // Data: `GET /apps/{appId}/active?kind=ALL`, then the `active` topic replaces the snapshot every
 // 5 s (useActiveSnapshot). Filters (URL, docs/14 §6): `f.instance`, `f.service` (service key),
@@ -57,7 +57,7 @@ import {
   type InstanceBands,
   type Thresholds,
 } from './model';
-import { RowActions } from './RowActions';
+import { instanceHref, RowActions } from './RowActions';
 import { readThresholds, writeThresholds } from './thresholdPreference';
 import { ThresholdSettings } from './ThresholdSettings';
 import { useActiveSnapshot } from './useActiveSnapshot';
@@ -229,9 +229,27 @@ export function ActivePage() {
   );
   const selectedItem = selectedNow ?? selection?.item ?? null;
 
+  // Instance names link to the instance detail (WO-37), keeping the carried keys (docs/15 §5).
+  const { time, live, kind: carriedKind, env, kiosk } = state;
+  const instanceLink = useMemo(
+    () =>
+      appId === null
+        ? undefined
+        : (instanceId: number) =>
+            instanceHref(appId, instanceId, { time, live, kind: carriedKind, env, kiosk }),
+    [appId, time, live, carriedKind, env, kiosk],
+  );
+
   const columns = useMemo(
-    () => activeColumns({ t, format, thresholds, instances: instanceMap }),
-    [t, format, thresholds, instanceMap],
+    () =>
+      activeColumns({
+        t,
+        format,
+        thresholds,
+        instances: instanceMap,
+        ...(instanceLink === undefined ? {} : { instanceHref: instanceLink }),
+      }),
+    [t, format, thresholds, instanceMap, instanceLink],
   );
 
   const currentState = selectedState(filters);
@@ -301,6 +319,7 @@ export function ActivePage() {
             thresholds={thresholds}
             selected={instanceSelection}
             onToggle={toggleInstance}
+            {...(instanceLink === undefined ? {} : { instanceHref: instanceLink })}
           />
         </section>
         <div

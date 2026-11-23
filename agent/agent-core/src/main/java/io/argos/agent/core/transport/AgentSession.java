@@ -2,6 +2,8 @@
 package io.argos.agent.core.transport;
 
 import io.argos.proto.ProtocolLimits;
+import io.argos.proto.v1.AgentEvent;
+import io.argos.proto.v1.AgentEventType;
 import io.argos.proto.v1.AgentHello;
 import io.argos.proto.v1.InstanceUpdate;
 import java.util.ArrayList;
@@ -13,8 +15,9 @@ import java.util.List;
  * whether a session is established, its {@code instance_id}, the app's {@code user_id} salt of
  * {@code capture.user-id.mode: hashed} (16 §6.3, memory only, never logged), and {@code
  * InstanceUpdate} (11 §4.2): the connector port once Tomcat knows it (WO-13), the use of virtual
- * threads (WO-15), a new {@code app.version} or configuration hash (WO-17). {@link #current()} is
- * null until the gRPC transport started (test exporters, disabled transport).
+ * threads (WO-15), a new {@code app.version} or configuration hash (WO-17), and {@code AgentEvent}
+ * (kill switch, configuration reload; WO-17). {@link #current()} is null until the gRPC transport
+ * started (test exporters, disabled transport).
  *
  * <p>What reaches the server, and when (11 §4.2):
  *
@@ -50,6 +53,9 @@ import java.util.List;
 public final class AgentSession {
   /** Connector names one {@code InstanceUpdate} carries. */
   static final int MAX_CONNECTORS = 32;
+
+  /** {@code AgentEvent.detail} cap (11 §4.2: at most 1 KiB). */
+  static final int MAX_EVENT_DETAIL_BYTES = 1024;
 
   private static volatile AgentSession current;
 
@@ -174,6 +180,23 @@ public final class AgentSession {
     lastConfigHash = value;
     identity.configHash(value);
     session.update(InstanceUpdate.newBuilder().setConfigHash(value).build());
+  }
+
+  /**
+   * One {@code AgentEvent} (11 §4.2: kill switch on or off, configuration file reloaded, ...): sent
+   * at once while a session is established, otherwise neither sent nor kept. {@code module} and
+   * {@code detail} are constants or identifiers chosen by the caller (no collected data, no token);
+   * {@code detail} is cut to 1 KiB. Any thread, no blocking or network.
+   */
+  public void event(AgentEventType type, String module, String detail) {
+    session.event(
+        AgentEvent.newBuilder()
+            .setType(type)
+            .setModule(
+                module == null ? "" : Utf8.cut(module, ProtocolLimits.DEFAULT_MAX_STRING_BYTES))
+            .setDetail(detail == null ? "" : Utf8.cut(detail, MAX_EVENT_DETAIL_BYTES))
+            .setAtMs(System.currentTimeMillis())
+            .build());
   }
 
   /**

@@ -231,6 +231,48 @@ public class UserAdministration {
     return after;
   }
 
+  /**
+   * Deletes a user (16 §11.1 {@code USER_DELETED}, ADR-0010 C-136 (3)): the row is anonymised and
+   * disabled ({@link UserRepository#markDeleted}; it stays for the tokens it issued and the
+   * commands it requested), every session is revoked (reason {@code account_disabled}), and the
+   * audit record keeps the name it had. The user name can be given to a new user afterwards.
+   *
+   * @throws ApiException 404 {@code not_found}; 409 {@code invalid_state} for the caller's own
+   *     account or the last enabled administrator
+   */
+  public void delete(UUID id, ArgosPrincipal admin, HttpServletRequest request) {
+    if (id.equals(admin.userId())) {
+      throw new ApiException(ErrorCode.INVALID_STATE, "Administrators cannot delete themselves")
+          .detail("id", "self");
+    }
+    String unusable = hasher.hash(SecureTokens.newToken());
+    Instant now = clock.instant();
+    UserRecord[] deleted = new UserRecord[1];
+    List<RevokedRows> revoked =
+        transactions.inTransaction(
+            () -> {
+              List<UUID> admins = users.enabledAdminIdsForUpdate();
+              UserRecord old = lockedUser(id);
+              if (old.role() == Role.ADMIN && old.enabled() && admins.size() <= 1) {
+                throw new ApiException(ErrorCode.INVALID_STATE, "The last administrator must stay")
+                    .detail("id", "last_admin");
+              }
+              users.markDeleted(id, "deleted-" + id, unusable, now);
+              deleted[0] = old;
+              return sessions.revokeUserSessions(
+                  id, RevocationReason.ACCOUNT_DISABLED.code(), now, null, false);
+            });
+    Actor actor = Actor.user(admin, request);
+    invalidation.announce(revoked, RevocationReason.ACCOUNT_DISABLED, actor);
+    audit.record(
+        AuditEvent.USER_DELETED,
+        actor,
+        Target.user(id, deleted[0].username()),
+        AuditResult.success(),
+        Map.of("role", deleted[0].role().name(), "enabled", deleted[0].enabled()),
+        null);
+  }
+
   /** Ends every session of a user (reason {@code admin_terminated}). */
   public void revokeSessions(UUID id, ArgosPrincipal admin, HttpServletRequest request) {
     required(id);

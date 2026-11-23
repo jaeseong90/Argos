@@ -14,3 +14,5 @@ defineRequiredTests('overview');
 defineRequiredTests('stats');
 defineRequiredTests('active');
 defineRequiredTests('alerts');
+defineRequiredTests('instance');
+defineRequiredTests('dumps');

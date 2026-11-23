@@ -49,10 +49,12 @@ class MigrationStartupIT {
    * (pending_registrations.home_app_id, WO-22), V005 ({@code reconcile_results}, WO-27) and V006
    * ({@code service_apdex_overrides}, WO-27), V007 (alert engine: {@code alert_states}, {@code
    * mutes}, WO-25), V008 (alert channels: {@code webhook_signing_keys}, WO-25) and V009 ({@code
-   * alert_events.reason}, ADR-0010 C-227 (3), WO-38).
+   * alert_events.reason}, ADR-0010 C-227 (3), WO-38), V010 (agent token revocation columns), V011
+   * (commands and config changes) and V012 (app management: {@code apps.app_packages}, soft delete,
+   * WO-26).
    */
   static final List<String> PG_VERSIONS =
-      List.of("001", "002", "003", "004", "005", "006", "007", "008", "009");
+      List.of("001", "002", "003", "004", "005", "006", "007", "008", "009", "010", "011", "012");
 
   /**
    * The bundled ClickHouse scripts: V001, V002 (ingest columns, ADR-0010 C-144, WO-21) and V003
@@ -64,7 +66,7 @@ class MigrationStartupIT {
    * The 13 §12 tables of V001 (ADR-0010 C-98) and {@code user_permissions} and {@code
    * login_failures_unknown} of V002 (WO-24), {@code reconcile_results} of V005 and {@code
    * service_apdex_overrides} of V006 (WO-27), {@code alert_states} and {@code mutes} of V007 and
-   * {@code webhook_signing_keys} of V008 (WO-25).
+   * {@code webhook_signing_keys} of V008 (WO-25) and {@code app_config} of V011 (WO-26).
    */
   static final List<String> PG_TABLES =
       List.of(
@@ -73,6 +75,7 @@ class MigrationStartupIT {
           "alert_rule_history",
           "alert_rules",
           "alert_states",
+          "app_config",
           "apps",
           "audit_logs",
           "ch_schema_history",
@@ -260,6 +263,13 @@ class MigrationStartupIT {
             "ix_alert_states_active",
             "ix_audit_actor_ts",
             "ix_audit_ts",
+            // V011 (WO-26): commands and config changes.
+            "ix_commands_inflight",
+            "ix_commands_instance_requested",
+            "ix_commands_requested",
+            "ix_config_change_results_awaiting",
+            "ix_config_change_results_instance",
+            "ix_config_changes_app_requested",
             "ix_deliveries_channel_sent",
             "ix_deliveries_event",
             "ix_deliveries_sent",

@@ -73,7 +73,7 @@
       "unavailable": "사용할 수 없음: 이 서버는 아직 알림을 평가하지 않습니다.",
       "none": "발생 중인 알림이 없습니다.",
       "summary": "심각 {{critical, number}} · 경고 {{warn, number}}",
-      "more_other": "알림 {{count, number}}건 더 있음",
+      "more_other": "+{{count, number}}건 더 보기",
       "all": "발생 중 알림 보기",
       "loading": "발생 중 알림을 불러오는 중…"
     },

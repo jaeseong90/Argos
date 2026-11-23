@@ -156,11 +156,13 @@ class PostgresV002BackfillIT {
       // V002 (WO-24), the later V003 (dict_kind 'pool', ADR-0010 C-101, WO-21) and V004
       // (pending_registrations.home_app_id, C-155 (3), WO-22), V005 (reconcile_results) and V006
       // (service_apdex_overrides, both WO-27), V007 (alert engine) and V008 (alert channels, both
-      // WO-25) and V009 (alert_events.reason, WO-38).
+      // WO-25), V009 (alert_events.reason, WO-38) and V010 to V012 (agent token lifecycle, commands
+      // and config changes, app management, WO-26).
       assertThat(v002.applied())
           .extracting(PostgresMigrationPhase.Applied::version)
-          .containsExactly("002", "003", "004", "005", "006", "007", "008", "009");
-      assertThat(v002.schemaVersion()).isEqualTo("009");
+          .containsExactly(
+              "002", "003", "004", "005", "006", "007", "008", "009", "010", "011", "012");
+      assertThat(v002.schemaVersion()).isEqualTo("012");
       TIMINGS.flyway("V001 + 2 users, 3 sessions -> start", v002);
     }
 

@@ -33,6 +33,8 @@ public final class AppViews {
    * @param kinds transaction kinds ({@code HTTP}, {@code BATCH}, {@code MESSAGE}) recorded in the
    *     last 7 days, sorted ({@code GET /apps/{appId}} only, ADR-0010 C-205 (4), C-191 (2)); null
    *     in the list and when ClickHouse cannot answer (unknown, never "none")
+   * @param appPackages the Java packages of the application's own code, set by an administrator
+   *     ({@code PATCH /apps/{appId}}, ADR-0010 C-207 (3)); empty when none is set
    */
   @Schema(name = "App")
   public record App(
@@ -55,7 +57,15 @@ public final class AppViews {
                       + " Only GET /apps/{appId} fills it; null in the list and when ClickHouse"
                       + " cannot answer (unknown, not none). The UI disables the batch kind filter"
                       + " for an application whose kinds lack BATCH (ADR-0010 C-191 (2)).")
-          @Nullable List<String> kinds) {}
+          @Nullable List<String> kinds,
+      @Schema(
+              description =
+                  "The Java packages of the application's own code (at most 50), set by an"
+                      + " administrator with PATCH /apps/{appId}. Stack frames of these packages"
+                      + " are the application's frames (ADR-0010 C-207 (3)); empty when none is"
+                      + " set.")
+          @JsonProperty("app_packages")
+          List<String> appPackages) {}
 
   /**
    * The application of an instance.

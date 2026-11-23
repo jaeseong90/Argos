@@ -77,6 +77,52 @@ class MetricsThreadTest {
     assertThat(batch.getWindowLenS()).isEqualTo(10);
   }
 
+  @Test
+  @DisplayName(
+      "T-AG-069 the active snapshot period follows the running configuration (WO-17): a remote"
+          + " active.snapshot-interval-seconds applies from the next tick")
+  void periodsFollowRunningConfiguration() {
+    TraceRuntime runtime =
+        TraceRuntime.create(
+            AgentConfig.of(Collections.<String, String>emptyMap()), new AgentCounters());
+    final AtomicInteger snapshots = new AtomicInteger();
+    MetricsThread thread =
+        new MetricsThread(
+            AgentConfig.of(Collections.<String, String>emptyMap()),
+            runtime,
+            null,
+            new MetricsThread.ActiveTask() {
+              @Override
+              public void snapshot(long nowMs) {
+                snapshots.incrementAndGet();
+              }
+            });
+    io.argos.agent.core.config.LoadedConfig loaded =
+        new io.argos.agent.core.config.LoadedConfig(
+            AgentConfig.of(Collections.<String, String>emptyMap()),
+            new io.argos.agent.core.config.EffectiveConfig(
+                Collections.<String, io.argos.agent.core.config.EffectiveConfig.Entry>emptyMap()),
+            null,
+            Collections.<String>emptyList());
+    io.argos.agent.core.config.RuntimeConfig running =
+        new io.argos.agent.core.config.RuntimeConfig(loaded);
+    io.argos.agent.core.config.RuntimeConfig.install(running);
+    try {
+      running.publish(
+          io.argos.agent.core.config.RuntimeConfig.State.of(
+              loaded.config(),
+              loaded.effective(),
+              Collections.singletonMap("active.snapshot-interval-seconds", "2")));
+      long base = (System.currentTimeMillis() / 10_000L) * 10_000L + 200L;
+      thread.tick(base);
+      assertThat(snapshots.get()).isEqualTo(1);
+      thread.tick(base + 2_000L);
+      assertThat(snapshots.get()).as("2 s period from the running configuration").isEqualTo(2);
+    } finally {
+      io.argos.agent.core.config.RuntimeConfig.install(null);
+    }
+  }
+
   private static List<QueueItem> drain(TraceRuntime runtime, BatchKind kind) {
     List<QueueItem> out = new ArrayList<QueueItem>();
     if (kind == BatchKind.METRICS) {

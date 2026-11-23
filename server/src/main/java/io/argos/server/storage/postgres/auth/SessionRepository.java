@@ -128,6 +128,58 @@ public class SessionRepository {
         sid);
   }
 
+  /** Most sessions {@link #liveSessions} returns (16 §7.4 caps a user at 5 regular sessions). */
+  public static final int MAX_LISTED_SESSIONS = 100;
+
+  /**
+   * The user's live sessions at {@code now}, most recently used first (at most {@value
+   * #MAX_LISTED_SESSIONS}): one entry per family whose current row is neither revoked nor expired
+   * (WO-26, ADR-0010 C-136 (3), {@code GET /auth/sessions}).
+   */
+  public List<LiveSession> liveSessions(UUID userId, Instant now) {
+    return jdbc.query(
+        "SELECT s.family_id, COALESCE(f.issued_at, s.issued_at) AS login_at, s.last_seen_at,"
+            + " LEAST(s.idle_expires_at, s.absolute_expires_at) AS expires_at, s.user_agent,"
+            + " host(s.ip) AS ip, s.kiosk"
+            + " FROM argos.user_sessions s LEFT JOIN argos.user_sessions f ON f.id = s.family_id"
+            + " WHERE s.user_id = ? AND s.revoked_at IS NULL AND s.rotated_at IS NULL"
+            + " AND s.idle_expires_at > ? AND s.absolute_expires_at > ?"
+            + " ORDER BY s.last_seen_at DESC, s.family_id LIMIT ?",
+        (rs, n) ->
+            new LiveSession(
+                rs.getObject("family_id", UUID.class),
+                instant(rs, "login_at"),
+                instant(rs, "last_seen_at"),
+                instant(rs, "expires_at"),
+                rs.getString("user_agent"),
+                rs.getString("ip"),
+                rs.getBoolean("kiosk")),
+        userId,
+        timestamp(now),
+        timestamp(now),
+        MAX_LISTED_SESSIONS);
+  }
+
+  /**
+   * A live session of a user (one family).
+   *
+   * @param familyId the session's id (its family: stable across refresh rotations)
+   * @param loginAt the login
+   * @param lastSeenAt the last refresh
+   * @param expiresAt the earlier of the idle and the absolute expiry
+   * @param userAgent client {@code User-Agent} (cut to 256 characters)
+   * @param ip client address
+   * @param kiosk whether it is a kiosk session
+   */
+  public record LiveSession(
+      UUID familyId,
+      Instant loginAt,
+      Instant lastSeenAt,
+      Instant expiresAt,
+      String userAgent,
+      String ip,
+      boolean kiosk) {}
+
   /**
    * Revokes every not yet revoked row of one family.
    *

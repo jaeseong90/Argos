@@ -75,8 +75,8 @@
       "unavailable": "Not available: alerts are not evaluated yet on this server.",
       "none": "No alerts are firing.",
       "summary": "Critical {{critical, number}} · warning {{warn, number}}",
-      "more_one": "{{count, number}} more alert",
-      "more_other": "{{count, number}} more alerts",
+      "more_one": "+{{count, number}} more alert",
+      "more_other": "+{{count, number}} more alerts",
       "all": "View firing alerts",
       "loading": "Loading firing alerts…"
     },

@@ -79,6 +79,34 @@ public final class SelfDiagnostics {
     public long errors() {
       return errors;
     }
+
+    /**
+     * Why the module does not run (ADR-0010 C-234 (1), 05 §2.7-3 module status): a fixed text per
+     * {@link ModuleHealth} state naming the setting or rule that disabled it, null while enabled.
+     * Names of settings only, never collected data.
+     */
+    public String reason() {
+      return reasonOf(state);
+    }
+  }
+
+  /** {@link Module#reason()} of a {@link ModuleHealth} state; null for {@code ENABLED}. */
+  public static String reasonOf(int state) {
+    switch (state) {
+      case ModuleHealth.ENABLED:
+        return null;
+      case ModuleHealth.DISABLED_BY_CONFIG:
+        return "instrumentation.disabled (agent configuration at start)";
+      case ModuleHealth.DISABLED_BY_ERRORS:
+        return "error threshold reached (instrumentation.error-threshold or"
+            + " instrumentation.transform-error-threshold)";
+      case ModuleHealth.DISABLED_BY_REMOTE:
+        return "instrumentation.disabled (remote configuration)";
+      case ModuleHealth.TEST_FAULT:
+        return "test fault injection (argos.test.faults, development builds only)";
+      default:
+        return "unknown state";
+    }
   }
 
   private final Long threadLocalContextsLive;
@@ -152,7 +180,7 @@ public final class SelfDiagnostics {
   /**
    * The snapshot as one JSON object: the measured gauges by their 18 §19 names (absent when not
    * measured), {@code "counters"} (OpenMetrics name to value) and {@code "modules"} (id, name,
-   * state, errors). No collected data.
+   * state, errors, and {@code reason} for a module that is not enabled). No collected data.
    */
   public String toJson() {
     StringBuilder out = new StringBuilder(256 + 64 * counters.size());
@@ -179,7 +207,13 @@ public final class SelfDiagnostics {
       string(out, module.name);
       out.append(",\"state\":");
       string(out, module.stateName());
-      out.append(",\"errors\":").append(module.errors).append('}');
+      out.append(",\"errors\":").append(module.errors);
+      String reason = module.reason();
+      if (reason != null) {
+        out.append(",\"reason\":");
+        string(out, reason);
+      }
+      out.append('}');
       first = false;
     }
     return out.append("]}").toString();

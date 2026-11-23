@@ -3,6 +3,8 @@ package io.argos.agent.core.context;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -12,7 +14,9 @@ import org.junit.jupiter.api.Test;
 class ThreadNamesTest {
 
   @Test
-  @DisplayName("normalize: trailing -digits, UUIDs and hex runs >= 8 are removed")
+  @DisplayName(
+      "T-AG-054 normalize: trailing -digits (tomcat-handler-1234), UUIDs and hex runs >= 8 are"
+          + " removed")
   void normalize() {
     assertThat(ThreadNames.normalize("tomcat-handler-1234")).isEqualTo("tomcat-handler-");
     assertThat(ThreadNames.normalize("http-nio-8080-exec-12")).isEqualTo("http-nio-8080-exec-");
@@ -39,7 +43,9 @@ class ThreadNamesTest {
 
   @Test
   @Tag("req:N-02")
-  @DisplayName("the name dictionary is capped at 1,000: later names become _other_ and are counted")
+  @DisplayName(
+      "T-AG-054 the name dictionary is capped at 1,000: later names become _other_ and are"
+          + " counted")
   void cap() {
     ThreadNames names = new ThreadNames(ThreadNames.DEFAULT_MAX);
     for (int i = 0; i < ThreadNames.DEFAULT_MAX; i++) {
@@ -50,6 +56,47 @@ class ThreadNamesTest {
     assertThat(names.admit("two-more")).isEqualTo(ThreadNames.OTHER);
     assertThat(names.size()).isEqualTo(ThreadNames.DEFAULT_MAX);
     assertThat(names.overflowCount()).isEqualTo(2);
+  }
+
+  @Test
+  @Tag("req:N-02")
+  @DisplayName(
+      "T-AG-054 the cap holds under concurrent first uses (8 threads, 2,000 distinct names each):"
+          + " exactly 1,000 names kept, every other new name counted once per call")
+  void capUnderConcurrency() throws Exception {
+    final ThreadNames names = new ThreadNames(ThreadNames.DEFAULT_MAX);
+    final int threads = 8;
+    final int perThread = 2_000;
+    final CountDownLatch start = new CountDownLatch(1);
+    final AtomicLong others = new AtomicLong();
+    Thread[] workers = new Thread[threads];
+    for (int t = 0; t < threads; t++) {
+      final int id = t;
+      workers[t] =
+          new Thread(
+              () -> {
+                try {
+                  start.await();
+                } catch (InterruptedException e) {
+                  Thread.currentThread().interrupt();
+                  return;
+                }
+                for (int i = 0; i < perThread; i++) {
+                  if (ThreadNames.OTHER.equals(names.admit("w" + id + "-n" + i + "x"))) {
+                    others.incrementAndGet();
+                  }
+                }
+              });
+      workers[t].start();
+    }
+    start.countDown();
+    for (Thread worker : workers) {
+      worker.join(30_000);
+      assertThat(worker.isAlive()).isFalse();
+    }
+    assertThat(names.size()).isEqualTo(ThreadNames.DEFAULT_MAX);
+    assertThat(names.overflowCount()).isEqualTo(others.get());
+    assertThat(others.get()).isEqualTo((long) threads * perThread - ThreadNames.DEFAULT_MAX);
   }
 
   @Test

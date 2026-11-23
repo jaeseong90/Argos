@@ -114,4 +114,36 @@ class ApiTest {
     assertThat(ModuleIds.MAX).isEqualTo(63);
     assertThat(ModuleIds.TEST_FIRST).isLessThanOrEqualTo(ModuleIds.MAX);
   }
+
+  @Test
+  @DisplayName(
+      "TypeTransformer.injectContextField is a default no-op (DSN-02-05): transformers written"
+          + " before field injection still compile and run, and a module may always ask for it")
+  void injectContextFieldDefault() {
+    final List<String> applied = new ArrayList<String>();
+    TypeTransformer transformer =
+        new TypeTransformer() {
+          @Override
+          public void applyAdvice(
+              ElementMatcher<? super net.bytebuddy.description.method.MethodDescription> methods,
+              String adviceClassName) {
+            applied.add(adviceClassName);
+          }
+        };
+    TypeInstrumentation task =
+        new TypeInstrumentation() {
+          @Override
+          public ElementMatcher<TypeDescription> typeMatcher() {
+            return named("x.Task");
+          }
+
+          @Override
+          public void transform(TypeTransformer t) {
+            t.applyAdvice(named("run"), "x.RunAdvice");
+            t.injectContextField();
+          }
+        };
+    task.transform(transformer);
+    assertThat(applied).containsExactly("x.RunAdvice");
+  }
 }

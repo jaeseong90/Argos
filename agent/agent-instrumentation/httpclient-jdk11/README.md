@@ -49,14 +49,24 @@ values unchanged). Instead:
    `responseAsync(Executor)` synchronously on the caller thread; `MultiExchangeAdvice` reads the
    `userRequest` field (present in JDK 11-25) and, when it is the wrapper, gives it the returned
    internal future.
-2. At the exit of `sendAsync` the wrapper registers itself (`whenComplete`) on that internal
-   future, after the JDK's own dependent. `CompletableFuture` runs dependents last-in first-out, so
-   the step ends before the JDK's dependent chain completes the future the application holds: a
-   transaction that waits for the response (`join()`, `get()`) always contains the closed step.
-   When the exchange is already complete, the step ends right there, before `sendAsync` returns.
+2. The wrapper registers itself (`whenComplete`) on that internal future twice: in
+   `MultiExchangeAdvice`, before the JDK registers its own dependents (`whenComplete(requestUnreference)`,
+   on JDK 21+ also `registerPending`), and again at the exit of `sendAsync`, after them. The step
+   ends once, at whichever registration runs first. `CompletableFuture` runs the dependents of a
+   future that completes by itself (`complete`) newest first, but those of a future that completes
+   as the dependent of another future oldest first (`postComplete` of the source moves all but the
+   oldest dependent to its own stack and runs the oldest right away). The internal future is the
+   last stage of the JDK's `thenCompose` chain, so the JDK completes it the second way; with one
+   registration at each end, the step ends before the JDK's first dependent, and so before the
+   future the application holds completes, in either order: a transaction that waits for the
+   response (`join()`, `get()`) always contains the closed step. When the exchange is already
+   complete, the step ends right there, before `sendAsync` returns. (Until ADR-0010 C-230 (2) only
+   the second registration existed; on JDK 21 the step was then sometimes still open when `join()`
+   returned. `Jdk11CompletionOrderTest` reproduces both orders without HTTP or threads.)
 3. `send` uses the same internal path; its step ends at the exit of `send`.
 
-Verified by `Jdk11AdviceTest` on JDK 11 and JDK 21: 20 `sendAsync(..).join()` calls, each with one
+Verified by `Jdk11CompletionOrderTest` (both completion orders, success and failure) and
+`Jdk11AdviceTest` on JDK 11 and JDK 21: 20 `sendAsync(..).join()` calls, each with one
 closed step when `join()` returns; the returned future's class is the JDK's; the three-argument
 `sendAsync` records one step too. Edge: a client that fails before creating an exchange (closed
 client) returns an already failed future, which the wrapper reads with `isDone`/`getNow` only. No

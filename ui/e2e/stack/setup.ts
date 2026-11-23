@@ -15,7 +15,10 @@
 //   7. the server's CSP violation counter at the start (one-sided run-level check,
 //      e2e/stack/cspCounter.ts: a growth beyond the positive controls' reports fails the run; no
 //      growth makes no claim, ADR-0010 C-188)
+// A new stack holds the working tree's server-it lock (e2e/stack/lock.ts, ADR-0010 C-235 (8)) from
+// before step 1 until its teardown, also when the setup fails; a reused stack takes no lock.
 // Environment:
+//   ARGOS_LOCK_WAIT_SECONDS  bounded wait for the server-it lock (default 1200)
 //   ARGOS_E2E_STACK_URL  reuse a running stack (its seed manifest and secrets must be in
 //                        ui/e2e/.stack, e.g. from `node e2e/stack/cli.ts up`); never torn down here
 //   ARGOS_E2E_MGMT_URL   management URL of a reused stack (CSP counter); default from run.json
@@ -34,6 +37,14 @@ import {
 } from './cspCounter.ts';
 import { removeRun } from './docker.ts';
 import {
+  acquireLock,
+  inheritedTokenVariable,
+  inspectLock,
+  releaseLock,
+  SERVER_IT_LOCK,
+  type ReleaseResult,
+} from './lock.ts';
+import {
   manifestApp,
   readManifest,
   recordAlert,
@@ -41,7 +52,13 @@ import {
   type SeedManifest,
 } from './manifest.ts';
 import { runDir, secretsDir } from './paths.ts';
-import { newRunId, readRunState, writeRunState, type RunState } from './runState.ts';
+import {
+  DETACHED_OWNER,
+  newRunId,
+  readRunState,
+  writeRunState,
+  type RunState,
+} from './runState.ts';
 import { seedAlert, type SeedAlert } from './seed/alerts.ts';
 import { runOutage, type SeedOutage } from './seed/outage.ts';
 import { loadQueryData } from './seed/querydata.ts';
@@ -107,10 +124,21 @@ export async function setUpStack(
     return reuse(url, env, log);
   }
   const begin = Date.now();
-  await removeLeftovers(log);
   const runId = newRunId();
+  // ADR-0010 C-235 (8): a stack of this tree runs the real server from the tree's boot jar, so it
+  // holds the server-it lock from before the jars are read until its teardown (waits, bounded,
+  // while another live run holds it). Owner = the process that tears the stack down; a detached
+  // `cli.ts up` stack holds it only while it starts (no process of it lives on).
+  const lock = await acquireLock(SERVER_IT_LOCK, {
+    purpose: `ui e2e stack ${runId} (start, seed and run the E2E stack with the server boot jar)`,
+    pid: ownerPid === DETACHED_OWNER ? process.pid : ownerPid,
+    token: stackLockToken(runId),
+    log,
+    env,
+  });
   let state: RunState | null = null;
   try {
+    await removeLeftovers(log);
     const started = await startStack(runId, log);
     state = { ...started.state, owner_pid: ownerPid };
     writeRunState(state);
@@ -243,20 +271,57 @@ export async function setUpStack(
     };
     writeSession(session);
     log(`stack ready in ${session.setup_seconds.toFixed(1)} s: ${JSON.stringify(timings)}`);
+    if (ownerPid === DETACHED_OWNER) {
+      logRelease(lock.release(), log, 'the detached stack keeps running without it');
+    }
     return session;
   } catch (error) {
-    if (keepStack(env)) {
-      log(`ARGOS_E2E_KEEP=1: the failed stack ${runId} is left running for inspection`);
-    } else if (state !== null) {
-      await stopStack(state, false, log).catch((e: unknown) => {
-        log(`teardown after the failed setup: ${String(e)}`);
-      });
-    } else {
-      await removeRun(runId).catch(() => []);
-      rmSync(secretsDir(runId), { recursive: true, force: true });
+    try {
+      if (keepStack(env)) {
+        log(`ARGOS_E2E_KEEP=1: the failed stack ${runId} is left running for inspection`);
+      } else if (state !== null) {
+        await stopStack(state, false, log).catch((e: unknown) => {
+          log(`teardown after the failed setup: ${String(e)}`);
+        });
+      } else {
+        await removeRun(runId).catch(() => []);
+        rmSync(secretsDir(runId), { recursive: true, force: true });
+      }
+    } finally {
+      logRelease(lock.release(), log, 'after the failed setup');
     }
     throw error;
   }
+}
+
+/** The token of the server-it lock a stack run holds (the teardown releases it by its run id). */
+export function stackLockToken(runId: string): string {
+  return `e2e-stack-${runId}`;
+}
+
+function logRelease(result: ReleaseResult | 'inherited', log: Log, when: string): void {
+  if (result === 'released') {
+    log(`lock ${SERVER_IT_LOCK} released (${when})`);
+  } else if (result === 'foreign') {
+    log(`lock ${SERVER_IT_LOCK} is not this run's any more: left as it is (${when})`);
+  }
+}
+
+/**
+ * Releases the server-it lock of the stack run `runId` (only when its owner file has this run's
+ * token; a lock of another run, or of an enclosing `argos-lock.sh run`, stays).
+ */
+export function releaseStackLock(runId: string, log: Log, env: Env = process.env): void {
+  const inspection = inspectLock(SERVER_IT_LOCK, { env });
+  const inherited = env[inheritedTokenVariable(SERVER_IT_LOCK)]?.trim();
+  if (
+    inspection.owner !== null &&
+    inherited !== undefined &&
+    inspection.owner.token === inherited
+  ) {
+    return; // The enclosing run releases it.
+  }
+  logRelease(releaseLock(SERVER_IT_LOCK, stackLockToken(runId), { env }), log, 'teardown');
 }
 
 export interface TeardownResult {
@@ -307,9 +372,14 @@ export async function tearDownStack(
   // Read before the stack (and with it ui/e2e/.stack/<run>/csp-control.json) is removed.
   const cspControl = readCspControl(session.run_id);
   if (!session.reused) {
-    const state = readRunState();
-    if (state?.run_id === session.run_id) {
-      await stopStack(state, keepStack(env), log);
+    try {
+      const state = readRunState();
+      if (state?.run_id === session.run_id) {
+        await stopStack(state, keepStack(env), log);
+      }
+    } finally {
+      // Also with ARGOS_E2E_KEEP=1: no process of this run holds the kept stack.
+      releaseStackLock(session.run_id, log, env);
     }
   }
   return {

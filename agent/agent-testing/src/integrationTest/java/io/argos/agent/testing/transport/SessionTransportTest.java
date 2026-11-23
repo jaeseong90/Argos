@@ -172,9 +172,10 @@ class SessionTransportTest {
   @Tag("req:SEC-23")
   @Tag("req:SEC-24")
   @DisplayName(
-      "11 §8, C-103, C-118: a ConfigPush is answered NOT_ALLOWED for every key and a Command"
-          + " REJECTED; nothing is applied or run; the session stays up")
-  void remoteCommandsAreRejected() throws Exception {
+      "T-AG-069 11 §8, C-103, C-118: on the session a ConfigPush applies the allow-listed key and"
+          + " rejects the others (NOT_ALLOWED, local value kept), a THREAD_DUMP Command is run and"
+          + " answered OK with JSON, an unknown command type is REJECTED; the session stays up")
+  void remoteConfigAndCommandsOnTheSession() throws Exception {
     try (FakeCollector collector = FakeCollector.builder().tls(true).tlsDirectory(work).start();
         RunningApp app =
             app(collector, "remote")
@@ -190,27 +191,40 @@ class SessionTransportTest {
                       "capture.user-id.mode", "plain",
                       "server.address", "attacker.example:1"))
               .get(20, TimeUnit.SECONDS);
-      assertThat(outcome.appliedKeys()).isEmpty();
+      assertThat(outcome.appliedKeys()).containsExactly("sampling.profile.normal-rate");
       assertThat(outcome.rejected())
-          .containsOnlyKeys(
-              "sampling.profile.normal-rate", "capture.user-id.mode", "server.address")
+          .containsOnlyKeys("capture.user-id.mode", "server.address")
           .allSatisfy((key, code) -> assertThat(code).isEqualTo("NOT_ALLOWED"));
+      assertThat(outcome.effectiveConfigHash()).hasSize(16);
 
       CommandOutcome dump = collector.command("THREAD_DUMP", Map.of()).get(20, TimeUnit.SECONDS);
-      assertThat(dump.status()).isEqualTo("REJECTED");
-      assertThat(dump.payload().isEmpty()).isTrue();
-      assertThat(dump.chunks()).isEqualTo(1);
+      assertThat(dump.status()).isEqualTo("OK");
+      assertThat(dump.contentType()).startsWith("application/json");
+      assertThat(dump.payloadText()).contains("\"threads\"");
+      CommandOutcome unknown = collector.commandRaw(99, Map.of()).get(20, TimeUnit.SECONDS);
+      assertThat(unknown.status()).isEqualTo("REJECTED");
+      assertThat(unknown.payload().isEmpty()).isTrue();
 
+      // normal-rate 0 is in force: a normal transaction is sent without a profile.
+      java.time.Instant applied = java.time.Instant.now();
       assertThat(app.get(PATH).status()).isEqualTo(200);
       assertThat(
               TransportRuns.await(
-                  () -> !collector.batches(BatchKind.PROFILES).isEmpty(), Duration.ofSeconds(20)))
-          .as("sampling is unchanged: the push was not applied")
+                  () ->
+                      !collector.batchesAfter(applied).isEmpty()
+                          && collector.batchesAfter(applied).stream()
+                              .anyMatch(b -> b.kind() == BatchKind.TRANSACTIONS),
+                  Duration.ofSeconds(20)))
           .isTrue();
+      Thread.sleep(2_000L);
+      assertThat(
+              collector.batchesAfter(applied).stream().filter(b -> b.kind() == BatchKind.PROFILES))
+          .as("the push was applied: no profile batch")
+          .isEmpty();
       assertThat(collector.sessions()).hasSize(1);
       assertThat(app.agentLog())
           .doesNotContain("attacker.example")
-          .contains("collector pushed a remote configuration change");
+          .contains("remote configuration change: 1 key(s) applied, 2 rejected");
     }
   }
 

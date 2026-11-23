@@ -155,16 +155,36 @@ public final class AgentConfig {
    * server.token}. Validation and warnings as in {@link #of(Map)}; the kept token is masked in the
    * warnings too.
    *
-   * <p>Open (WO-17, PM decision pending): {@code overrides} win over every local value here, also
-   * over a key the operator set locally. 10 §15 orders the local sources yml &lt; {@code -D} &lt;
-   * {@code ARGOS_*}, while 16 §5.5 step 7 says the local yml wins over a pushed value ("file &gt;
-   * env &gt; remote"); whether a push may replace a locally set key is decided with the apply path
-   * of WO-17, and this method does not change before that.
+   * <p>{@code overrides} win over every local value here, also over a key the operator set locally:
+   * ADR-0010 C-118 (3) lets a remote value win over the local one for the keys of the local {@code
+   * remote-config.allow}. The caller ({@code RuntimeConfig}, WO-17) passes only keys that {@link
+   * RemoteConfigGate} accepted against that list, so the allow list stays the hard cap (an operator
+   * pins a key by leaving it out of the list).
    */
   public AgentConfig withValues(Map<String, String> overrides) {
     Map<String, String> merged = new LinkedHashMap<String, String>(explicit);
     merged.putAll(overrides);
     AgentConfig next = of(merged, token.reveal());
+    if (next.token.isPresent() || !token.isPresent()) {
+      return next;
+    }
+    return new AgentConfig(
+        next.values,
+        next.explicit,
+        next.serviceThresholds,
+        token,
+        next.warnings,
+        next.missingRequired);
+  }
+
+  /**
+   * A new snapshot of exactly the explicit values {@code explicitValues} (no merge with this one;
+   * {@code CONFIG_RELOAD}, WO-17): keys left out return to their defaults. The token of this
+   * snapshot is kept unless {@code explicitValues} sets {@code server.token}. Validation and
+   * warnings as in {@link #of(Map)}.
+   */
+  public AgentConfig withExplicitValues(Map<String, String> explicitValues) {
+    AgentConfig next = of(explicitValues, token.reveal());
     if (next.token.isPresent() || !token.isPresent()) {
       return next;
     }

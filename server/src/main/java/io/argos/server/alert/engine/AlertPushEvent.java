@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.server.alert.engine;
 
+import io.argos.server.alert.metric.AlertMetric;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.UUID;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
@@ -22,6 +24,8 @@ import tools.jackson.databind.node.ObjectNode;
  * @param targetName the target's name, null when unknown
  * @param ruleId the rule
  * @param ruleName the rule's name
+ * @param ruleMetric the rule's metric (F-S31 wire name); the push names it and its unit like the
+ *     REST {@code AlertRuleRef} (ADR-0010 C-230 (5), C-227 (4))
  * @param severity {@code warn} or {@code critical}, null when the transition has none
  * @param state the state after the transition
  * @param value the evaluated value, null without one (no data, target gone)
@@ -41,6 +45,7 @@ public record AlertPushEvent(
     String targetName,
     UUID ruleId,
     String ruleName,
+    String ruleMetric,
     String severity,
     String state,
     Double value,
@@ -71,6 +76,8 @@ public record AlertPushEvent(
     ObjectNode rule = e.putObject("rule");
     rule.put("id", ruleId.toString());
     rule.put("name", ruleName);
+    rule.put("metric", ruleMetric);
+    rule.put("unit", unit(ruleMetric));
     e.put("severity", severity);
     e.put("state", state);
     if (value == null) {
@@ -87,5 +94,14 @@ public record AlertPushEvent(
     e.put("reason", reason);
     e.put("deeplink", deeplink);
     return JSON.writeValueAsString(e);
+  }
+
+  /**
+   * The unit of a rule's value and threshold, as the REST {@code AlertRuleRef} names it ({@code
+   * AlertViews.unit}): the lower-case {@link AlertMetric.Unit}; null for an unknown metric.
+   */
+  static String unit(String metric) {
+    AlertMetric m = AlertMetric.of(metric);
+    return m == null ? null : m.unit().name().toLowerCase(Locale.ROOT);
   }
 }

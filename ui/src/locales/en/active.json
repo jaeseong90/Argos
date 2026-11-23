@@ -53,7 +53,9 @@
     "max": "Longest",
     "approximate": "approx.",
     "approximateTitle": "Estimated split: the agent sent only its longest running transactions, and the others may fall into more than the first band.",
-    "truncated": "The agent sent only its 500 longest"
+    "truncated": "The agent sent only its 500 longest",
+    "detail": "Details",
+    "detailOf": "Instance {{id}} detail"
   },
   "band": {
     "legend": "Elapsed time colours",
@@ -100,15 +102,19 @@
     "virtualThread": "VT",
     "virtualThreadTitle": "Runs on a virtual thread",
     "notCollected": "Not collected",
-    "notCollectedTitle": "The agent of this instance does not collect this value."
+    "notCollectedTitle": "The agent of this instance does not collect this value.",
+    "instanceLink": "Open the instance detail"
   },
   "actions": {
     "label": "Actions for the selected transaction",
     "selected": "Selected:",
     "stack": "This thread's stack",
     "dump": "Thread dump of this instance",
+    "stackHint": "Record this thread's current stack (single-thread stack command).",
+    "dumpHint": "Take a thread dump of this instance and open it in the dump viewer.",
+    "instance": "Instance detail",
+    "operatorRequired": "Requires the operator role (remote commands)",
     "recent": "Recent completions of this service",
-    "commandsUnavailable": "Requires remote commands, not available in this version",
     "noService": "The transaction has no service yet.",
     "finished": "No longer running in the latest snapshot",
     "clear": "Clear selection"

@@ -5,8 +5,10 @@
 // elapsed bands with their numbers in text; the instance state of the session (UP, WARN, STALE,
 // DOWN; ADR-0010 C-218 (4)) as a StatusBadge when it is not UP; "approx." when the split is an
 // estimate and the hint when the agent sent only its longest transactions. A click or Enter on a
-// bar toggles the list's `f.instance` filter; the bars themselves never filter.
+// bar toggles the list's `f.instance` filter; the bars themselves never filter. The link next to
+// the name opens the instance detail (WO-37).
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router';
 
 import type { ActiveInstance } from '../../api/active';
 import { SafeText } from '../../components/SafeText';
@@ -23,6 +25,8 @@ export interface InstanceBarsProps {
   readonly thresholds: Thresholds;
   readonly selected: ReadonlySet<string>;
   readonly onToggle: (instanceId: number) => void;
+  /** The instance detail link of an instance (WO-37); absent: no link. */
+  readonly instanceHref?: (instanceId: number) => string;
 }
 
 export function InstanceBars({
@@ -31,6 +35,7 @@ export function InstanceBars({
   thresholds,
   selected,
   onToggle,
+  instanceHref,
 }: InstanceBarsProps) {
   const { t } = useTranslation(['common', 'active']);
   const format = useFormat();
@@ -87,6 +92,16 @@ export function InstanceBars({
                 {t('active:bars.count', { count })}
               </span>
             </button>
+            {instanceHref === undefined ? null : (
+              <Link
+                to={instanceHref(id)}
+                className="active-bar__detail"
+                data-testid={`active-bar-detail-${String(id)}`}
+              >
+                {t('active:bars.detail')}
+                <span className="visually-hidden"> {t('active:bars.detailOf', { id })}</span>
+              </Link>
+            )}
             <span className="active-bar__numbers" data-testid={`active-bar-numbers-${String(id)}`}>
               {BANDS.map((band) => (
                 <span

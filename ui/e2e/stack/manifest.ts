@@ -114,6 +114,22 @@ export const ManifestHopTrace = z.object({
 });
 export type ManifestHopTrace = z.infer<typeof ManifestHopTrace>;
 
+/**
+ * A GET /api/async/executor?work=sql call of the traffic seed (WO-15, e2e/stack/seed/traffic.ts
+ * ASYNC_SERVICE): host clock times around the call and the app's answer (`async_sql`: SQL
+ * statements run off the request thread, one per async branch; null with `problem` when the call
+ * or its answer failed). specs/async.spec.ts finds the call's transaction through the API.
+ */
+export const ManifestAsyncCall = z.object({
+  sent_at: Iso,
+  done_at: Iso,
+  status: z.number().int().nullable(),
+  async_sql: z.number().int().nonnegative().nullable(),
+  virtual_per_task_thread: z.string().nullable(),
+  problem: z.string().nullable(),
+});
+export type ManifestAsyncCall = z.infer<typeof ManifestAsyncCall>;
+
 /** A rule the server created from a default template (F-S24 recommended rules, WO-25). */
 export const ManifestTemplateRule = z.object({
   rule_id: z.string().min(1),
@@ -208,6 +224,11 @@ export const SeedManifest = z.object({
    * Absent in a manifest written before WO-14 (read as none).
    */
   hop_traces: z.array(ManifestHopTrace).optional(),
+  /**
+   * The async seed calls of the traffic agent (WO-15), in the order sent. Absent in a manifest
+   * written before WO-15 (the async spec then fails naming it).
+   */
+  async_calls: z.array(ManifestAsyncCall).optional(),
   /**
    * The real FIRING alert of the seed (WO-25, e2e/stack/seed/alerts.ts) and the template rules the
    * server applied to the primary app, or null when the setup could not make it (missing_optional

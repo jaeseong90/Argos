@@ -15,8 +15,10 @@ import java.util.concurrent.ConcurrentMap;
  * Every store is bounded ({@link #maxEntries()}); a full store drops new entries and counts them
  * ({@link #droppedEntries()}).
  *
- * <p>This is the weak-map fallback of 10 §3. Field injection (a generated field plus accessor
- * interface on not-yet-loaded types) replaces it per type in WO-10/WO-15 behind the same API.
+ * <p>Field injection (DSN-02-05, 10 §6.6): for task keys ({@code Runnable}, {@code Callable},
+ * {@code ForkJoinTask}) with {@link TraceContext} values the store is field backed: a key whose
+ * class the core gave a {@code argos$ctx} field while it was first defined ({@link ContextCarrier})
+ * keeps the value in that field, every other key in the weak map. The API is the same either way.
  *
  * @param <K> key type
  * @param <V> value type
@@ -73,7 +75,10 @@ public abstract class ContextStore<K, V> {
     }
     ContextStore<?, ?> store = byValue.get(valueName);
     if (store == null) {
-      ContextStore<?, ?> created = new WeakContextStore<Object, Object>();
+      ContextStore<Object, Object> created = new WeakContextStore<Object, Object>();
+      if (FieldBackedContextStore.appliesTo(keyName, valueName)) {
+        created = new FieldBackedContextStore<Object, Object>(created);
+      }
       ContextStore<?, ?> raced = byValue.putIfAbsent(valueName, created);
       store = raced == null ? created : raced;
     }

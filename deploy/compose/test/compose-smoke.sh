@@ -12,7 +12,8 @@
 #   argos-compose.sh up (project argos-wo40-smoke) -> smoke.sh -> mode-specific checks ->
 #   argos-compose.sh down --volumes.
 # Wizard mode adds: smoke.sh --complete-setup; argos-compose.sh token create, a real agent (the
-# shop-boot3 sample app) connecting over TLS with the printed token in a server.token-file (the
+# shop-boot3 sample app) connecting over TLS with the printed token (issued by argos-admin token
+# create in the server container, C-173 (4)) in a server.token-file (the
 # guide's pattern), its transactions in ClickHouse (reader account, and the query API of a
 # logged-in session), the token absent from every log and file, the limit of 5 active tokens (the
 # 6th is refused, exit 4) and one audit row per token; the management port published with
@@ -27,10 +28,19 @@
 #   ARGOS_SMOKE_JAVA        java executable for the sample app (JDK 17 or later)
 #   ARGOS_SMOKE_MODES       modes to run (default "wizard unattended")
 #   ARGOS_SMOKE_APP_PORT    host port of the sample app (default 18093)
+#   ARGOS_LOCK_WAIT_SECONDS bounded wait for the server-it lock (default 1800)
+# The whole run holds the working tree's server-it lock (test/lock/argos-lock.sh run, ADR-0010
+# C-235 (8)): the script re-executes itself under it, or uses the lock of an enclosing
+# `argos-lock.sh run server-it` (e.g. around ./gradlew :deploy:composeSmoke, whose image build
+# rebuilds the server boot jar before this script starts).
 # Nothing secret is printed: tokens appear as argos_****.
 set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+if [[ "${ARGOS_SMOKE_UNDER_LOCK:-}" != 1 ]]; then
+  ARGOS_SMOKE_UNDER_LOCK=1 exec bash "$here/../../../test/lock/argos-lock.sh" run server-it \
+    --purpose "deploy/compose/test/compose-smoke.sh (:deploy:composeSmoke)" -- bash "$here/compose-smoke.sh" "$@"
+fi
 # shellcheck source=deploy/compose/test/lib.sh
 source "$here/lib.sh"
 
@@ -223,7 +233,7 @@ never_written() {
 }
 
 wizard_extra() {
-  local t0 token token_hash prefix rows audit app_id
+  local t0 token token_hash prefix rows audit refused app_id
   # --- token create (C-173) ---------------------------------------------------------------------
   t0=$(now)
   token=$(token_create wo40-smoke smoke) || fail "token create failed"
@@ -320,13 +330,17 @@ EOF
   rc=0
   ./argos-compose.sh token create --app wo40-smoke --env smoke >"$work/sixth.txt" 2>&1 || rc=$?
   [[ $rc -eq 4 ]] || { redact <"$work/sixth.txt" >&2; fail "the 6th active token: exit $rc, expected 4"; }
-  grep -q 'already has 5 active agent tokens' "$work/sixth.txt" || fail "the 6th token refusal does not name the limit"
+  grep -q 'maximum of 5 active agent tokens' "$work/sixth.txt" || fail "the 6th token refusal does not name the limit"
   grep -qE 'argos_[A-Za-z0-9_-]{43}' "$work/sixth.txt" && fail "the refused 6th run printed a token"
   rm -f "$work/sixth.txt"
   rows=$(psql_owner "SELECT count(*) FROM argos.agent_tokens WHERE app_id = $app_id")
-  audit=$(psql_owner "SELECT count(*) FROM argos.audit_logs WHERE action = 'TOKEN_ISSUED' AND actor_id = 'argos-compose'")
-  [[ "$rows" == 5 && "$audit" == 5 ]] || fail "expected 5 tokens and 5 audit rows, found $rows and $audit"
-  log "ok: 5 active tokens per app; the 6th is refused (exit 4); one TOKEN_ISSUED audit row per token"
+  # The server's token service audits the refused 6th attempt too (TOKEN_ISSUED, result rejected,
+  # reason token_limit; WO-26).
+  audit=$(psql_owner "SELECT count(*) FROM argos.audit_logs WHERE action = 'TOKEN_ISSUED' AND actor_id = 'argos-compose' AND result = 'success'")
+  refused=$(psql_owner "SELECT count(*) FROM argos.audit_logs WHERE action = 'TOKEN_ISSUED' AND actor_id = 'argos-compose' AND result = 'rejected' AND reason = 'token_limit'")
+  [[ "$rows" == 5 && "$audit" == 5 && "$refused" == 1 ]] ||
+    fail "expected 5 tokens, 5 successful and 1 refused audit rows, found $rows, $audit and $refused"
+  log "ok: 5 active tokens per app; the 6th is refused (exit 4) and audited as rejected; one successful TOKEN_ISSUED audit row per token"
   rm -f "$work"/token-create-*.txt
   never_written "no token in a file, the container logs or the agent log" "${tokens[@]}"
   tokens=()

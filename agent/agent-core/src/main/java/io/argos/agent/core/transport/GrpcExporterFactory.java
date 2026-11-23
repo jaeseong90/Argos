@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.agent.core.transport;
 
+import io.argos.agent.core.command.CommandDispatcher;
+import io.argos.agent.core.command.RemoteWiring;
 import io.argos.agent.core.config.LoadedConfig;
 import io.argos.agent.core.config.TokenHolder;
 import io.argos.agent.core.export.Exporter;
@@ -12,6 +14,10 @@ import io.argos.agent.core.guard.SelfDiagnosticsCollector;
 import io.argos.agent.core.log.AgentLogger;
 import io.argos.agent.core.trace.TraceRuntime;
 import java.security.SecureRandom;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 
 /**
  * The {@code grpc} slot of the exporter SPI ({@code Exporters.GRPC_FACTORY_CLASS}): builds the
@@ -22,6 +28,17 @@ import java.security.SecureRandom;
  * server.tls.ca-file} (one ERROR).
  */
 public final class GrpcExporterFactory implements ExporterFactory {
+  /** Session values for the self-diagnostics command (no token, no collected data). */
+  static Map<String, Object> sessionExtras(TransportCounters counters) {
+    Map<String, Object> extras = new LinkedHashMap<String, Object>();
+    AgentSession session = AgentSession.current();
+    extras.put("session_established", session != null && session.established());
+    extras.put("instance_id", session == null ? 0L : session.instanceId());
+    extras.put("transport_up", counters.up());
+    extras.put("session_messages_dropped", counters.sessionMessagesDropped());
+    return extras;
+  }
+
   @Override
   public Exporter create(ExporterContext context) throws Exception {
     LoadedConfig loaded = context.loaded();
@@ -82,6 +99,33 @@ public final class GrpcExporterFactory implements ExporterFactory {
     parts.configHash = loaded == null ? "" : loaded.configHash();
     parts.modules = context.modules();
     parts.agentEpoch = epoch;
+    // WO-17: the command executor and the remote configuration path, built here on argos-sender.
+    try {
+      RemoteWiring remote =
+          RemoteWiring.create(
+              context,
+              new LongSupplier() {
+                @Override
+                public long getAsLong() {
+                  Long offset = transportCounters.snapshot().get(TransportCounters.CLOCK_OFFSET);
+                  return offset == null ? 0L : offset.longValue();
+                }
+              },
+              new Supplier<Map<String, Object>>() {
+                @Override
+                public Map<String, Object> get() {
+                  return sessionExtras(transportCounters);
+                }
+              });
+      parts.dispatcher = remote.dispatcher();
+      parts.sampling = remote.sampling();
+    } catch (RuntimeException | LinkageError e) {
+      // The transport still runs; commands are REJECTED and pushed keys NOT_ALLOWED.
+      AgentLogger.error(
+          "remote commands and remote configuration unavailable ({}); the transport keeps running",
+          e.getClass().getName());
+      parts.dispatcher = new CommandDispatcher(null, null, null, null, null);
+    }
     return GrpcExporter.create(parts, ids);
   }
 }

@@ -23,7 +23,8 @@ import org.springframework.context.ConfigurableApplicationContext;
  *
  * <p>Commands (WO-27): {@code rollup rebuild} ({@link RollupRebuildCommand}), {@code consistency
  * check} ({@link ConsistencyCheckCommand}), {@code apdex reapply} ({@link ApdexReapplyCommand}).
- * The other commands of 17 §4.4 are added by WO-28.
+ * WO-26 adds {@code token create} ({@link TokenCreateCommand}, ADR-0010 C-173 (4)). The other
+ * commands of 17 §4.4 are added by WO-28.
  *
  * <p>Arguments of the form {@code --spring.<key>=<value>}, {@code --argos.<key>=<value>} or {@code
  * --logging.<key>=<value>} are configuration (as for the server), every other argument belongs to
@@ -45,6 +46,9 @@ public final class AdminCli {
   /** Invalid arguments. */
   public static final int EXIT_USAGE = 2;
 
+  /** Refused by a limit ({@code token create}: 5 active agent tokens per app, 16 §2.1). */
+  public static final int EXIT_LIMIT = 4;
+
   static final String USAGE =
       """
       Usage: argos-admin <command> [options] [--argos.<key>=<value>]...
@@ -52,7 +56,8 @@ public final class AdminCli {
         rollup rebuild --date <yyyy-MM-dd> [--table <rollup>]... [--json]
         consistency check --date <yyyy-MM-dd> [--rebuild] [--json]
         apdex reapply --app <id> [--service <id>] --from <yyyy-MM-dd> --to <yyyy-MM-dd> [--json]
-      Exit codes: 0 success, 1 failure, 2 invalid arguments.
+        token create --app <name> --env <env> [--expires-days <n>] [--actor <name>] [--json]
+      Exit codes: 0 success, 1 failure, 2 invalid arguments, 4 refused by a limit.
       """;
 
   private static final List<String> CONFIG_PREFIXES =
@@ -95,6 +100,7 @@ public final class AdminCli {
           case "rollup rebuild" -> RollupRebuildCommand.USAGE;
           case "consistency check" -> ConsistencyCheckCommand.USAGE;
           case "apdex reapply" -> ApdexReapplyCommand.USAGE;
+          case "token create" -> TokenCreateCommand.USAGE;
           default -> null;
         };
     if (usage != null) {
@@ -152,6 +158,10 @@ public final class AdminCli {
       case "apdex reapply" -> {
         ApdexReapplyCommand.Options o = ApdexReapplyCommand.parse(options);
         yield (p, out, err) -> ApdexReapplyCommand.execute(o, p, out, err);
+      }
+      case "token create" -> {
+        TokenCreateCommand.Options o = TokenCreateCommand.parse(options);
+        yield (p, out, err) -> TokenCreateCommand.execute(o, p, out, err);
       }
       default -> throw new CliUsageException("Unknown command: " + CliArgs.shorten(name));
     };

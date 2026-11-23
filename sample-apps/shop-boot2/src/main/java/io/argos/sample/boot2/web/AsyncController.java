@@ -2,34 +2,48 @@
 package io.argos.sample.boot2.web;
 
 import io.argos.sample.boot2.config.SampleExecutors;
+import io.argos.sample.common.async.AsyncSqlWork;
 import io.argos.sample.common.async.ExecutorProbe;
+import io.argos.sample.common.db.JdbcAccess;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import javax.sql.DataSource;
+import org.springframework.beans.factory.DisposableBean;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.context.request.async.DeferredResult;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * Servlet 3.0+ async variants of 18 §4.2: DeferredResult (completed by a timer after 200 ms),
- * Callable (MVC async executor), {@code @Async} + executors (F-A07), and SseEmitter (3 events, then
- * end).
+ * Callable (MVC async executor), {@code @Async} + executors (F-A07, WO-15 {@code
+ * work=sql|detached}), and SseEmitter (3 events, then end).
  */
 @RestController
-public class AsyncController {
+public class AsyncController implements DisposableBean {
 
   private final SampleExecutors executors;
   private final AsyncWorker worker;
+  private final AsyncSqlWork sqlWork;
 
-  public AsyncController(SampleExecutors executors, AsyncWorker worker) {
+  public AsyncController(SampleExecutors executors, AsyncWorker worker, DataSource dataSource) {
     this.executors = executors;
     this.worker = worker;
+    // Created with the singleton at startup: its dispatcher thread never runs inside a request.
+    this.sqlWork = new AsyncSqlWork(JdbcAccess.of(dataSource));
+  }
+
+  @Override
+  public void destroy() {
+    sqlWork.close();
   }
 
   @GetMapping("/api/async/deferred")
@@ -62,12 +76,25 @@ public class AsyncController {
   }
 
   @GetMapping("/api/async/executor")
-  public Map<String, Object> executor()
+  public Map<String, Object> executor(
+      @RequestParam(name = "work", required = false) String work,
+      @RequestParam(name = "count", defaultValue = "5") int count)
       throws InterruptedException, ExecutionException, TimeoutException {
+    if ("detached".equals(work)) {
+      return sqlWork.detached(count);
+    }
+    if (work != null && !"sql".equals(work)) {
+      throw new IllegalArgumentException("work must be sql or detached");
+    }
+    // work=sql: the @Async statement starts first, the other branches run while it runs.
+    Future<String> asyncSql = work == null ? null : worker.sql(sqlWork);
     String asyncThread = worker.threadName().get(10, TimeUnit.SECONDS);
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("asyncThread", asyncThread);
     result.putAll(ExecutorProbe.run(executors.custom()));
+    if (asyncSql != null) {
+      result.putAll(sqlWork.run(executors.custom(), asyncSql));
+    }
     return result;
   }
 

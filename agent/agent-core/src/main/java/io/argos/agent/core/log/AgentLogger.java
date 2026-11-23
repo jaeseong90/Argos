@@ -119,6 +119,15 @@ public final class AgentLogger {
     return new File(System.getProperty("java.io.tmpdir"), "argos-agent-" + pid());
   }
 
+  /**
+   * A new {@code log.level} at run time (remote configuration or {@code CONFIG_RELOAD}, WO-17); an
+   * unknown name keeps INFO, as at start. The destination does not change ({@code log.dir} and the
+   * file limits are read only at start).
+   */
+  public static void setLevel(String level) {
+    PIPELINE.setLevel(LogLevel.parse(level, LogLevel.INFO));
+  }
+
   /** The directory chosen by {@link #configure} (null before). */
   public static File logDirectory() {
     return resolvedDirectory;

@@ -177,4 +177,25 @@ class CsrfFilterTest {
   void cspReports() throws Exception {
     assertThat(passes(withHeaders("POST", "/api/v1/csp-report"))).isTrue();
   }
+
+  @Test
+  @DisplayName(
+      "T-SEC-43a POST /api/v1/events with an agent token (Bearer) skips CSRF; nothing else does")
+  void agentTokenEvents() throws Exception {
+    String bearer = "Bearer argos_" + "a".repeat(43);
+    assertThat(passes(withHeaders("POST", "/api/v1/events", "Authorization", bearer))).isTrue();
+    assertThat(passes(withHeaders("POST", "/api/v1/events"))).as("no header").isFalse();
+    assertThat(passes(withHeaders("POST", "/api/v1/events", "Authorization", "Basic eDp5")))
+        .as("another scheme")
+        .isFalse();
+    assertThat(passes(withHeaders("DELETE", "/api/v1/events", "Authorization", bearer)))
+        .as("another method")
+        .isFalse();
+    assertThat(passes(withHeaders("POST", "/api/v1/events/x", "Authorization", bearer)))
+        .as("another path")
+        .isFalse();
+    assertThat(passes(withHeaders("POST", "/api/v1/apps", "Authorization", bearer)))
+        .as("another endpoint")
+        .isFalse();
+  }
 }

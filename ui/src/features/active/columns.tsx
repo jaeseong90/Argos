@@ -5,7 +5,9 @@
 // called host, the database of a connection wait), thread, user id, IP, kind and start. Every
 // collected string renders through SafeText (SEC-60); a user id or IP the instance does not
 // collect says so ("Not collected"), apart from a value that is simply absent (the dash, D-23).
+// The instance name links to the instance detail (WO-37).
 import type { TFunction } from 'i18next';
+import { Link } from 'react-router';
 
 import type { ActiveInstance, ActiveItem } from '../../api/active';
 import type { Untrusted } from '../../api/untrusted';
@@ -29,6 +31,8 @@ export interface ColumnContext {
   readonly format: Formatter;
   readonly thresholds: Thresholds;
   readonly instances: ReadonlyMap<number, ActiveInstance>;
+  /** The instance detail link of an instance (WO-37); absent: the name is plain text. */
+  readonly instanceHref?: (instanceId: number) => string;
 }
 
 /** The name of an item's instance (collected), or null when the server has none. */
@@ -87,7 +91,7 @@ export function StateCell({
 }
 
 export function activeColumns(context: ColumnContext): DataTableColumn<ActiveItem>[] {
-  const { t, format, thresholds, instances } = context;
+  const { t, format, thresholds, instances, instanceHref } = context;
   return [
     {
       id: 'instance',
@@ -100,12 +104,27 @@ export function activeColumns(context: ColumnContext): DataTableColumn<ActiveIte
       width: 120,
       render: (item) => {
         const name = instanceName(instances, item.instance_id);
-        return name === null ? (
-          <span data-testid={cellTestId('instance', item)}>
-            {t('active:bars.unnamed', { id: item.instance_id })}
-          </span>
-        ) : (
-          <SafeText value={name} data-testid={cellTestId('instance', item)} />
+        const label =
+          name === null ? (
+            <span data-testid={cellTestId('instance', item)}>
+              {t('active:bars.unnamed', { id: item.instance_id })}
+            </span>
+          ) : (
+            <SafeText value={name} data-testid={cellTestId('instance', item)} />
+          );
+        if (instanceHref === undefined) {
+          return label;
+        }
+        // The instance detail (WO-37); a click on the link opens it, the rest of the row selects.
+        return (
+          <Link
+            to={instanceHref(item.instance_id)}
+            className="active-instance-link"
+            title={t('active:table.instanceLink')}
+            data-testid={`active-instance-link-${item.tx_id}`}
+          >
+            {label}
+          </Link>
         );
       },
     },

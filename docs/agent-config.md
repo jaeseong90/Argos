@@ -1,8 +1,10 @@
 # Argos agent configuration reference
 
-The Argos Java agent reads its configuration once at start, from up to three sources plus the
-documented defaults. This page lists every key, how the sources combine, how the agent token is
-stored, which keys a collector may change remotely, and the known limitations.
+The Argos Java agent reads its configuration at start, from up to three sources plus the
+documented defaults; while it runs, a collector may change the keys that `remote-config.allow`
+names. This page lists every key, how the sources combine, how the agent token is stored, which
+keys a collector may change remotely, the kill switch and remote commands, and the known
+limitations.
 
 The key tables are checked against the agent's key registry by a unit test
 (`AgentConfigDocTest`): a key, default or "Remote" value that differs fails the build.
@@ -204,6 +206,118 @@ A flow sequence (`[a, b]`) must stay on one line; write longer lists as a block 
 
 Writing `remote-config.allow` replaces the default list; repeat the default patterns you want to
 keep.
+
+### How a pushed change is applied
+
+- **Remote wins for allowed keys only.** A value the collector pushes for a key that
+  `remote-config.allow` names replaces the local value (from the yml, `-Dargos.*` or `ARGOS_*`)
+  while the agent runs; self-diagnostics shows it with the source `remote`. A key outside the list
+  keeps its local value, whatever the collector sends. The list itself comes from the local
+  configuration only.
+- **Partial apply.** Each key of a change is decided on its own: the accepted keys take effect
+  together, the rejected ones keep the value in force. The answer to the collector lists the
+  applied keys, each rejected key with its reason, the new configuration hash, the number of
+  classes retransformed and the time the agent took. The agent logs one WARN naming the rejected
+  keys and their reasons, never the values.
+- **Reasons.** On top of the checks above, a key is rejected with `restart_required` when the
+  running agent cannot apply it (see the next list), with `forbidden_pattern` for a custom method
+  item with a forbidden class prefix, and with `retransform_limit` when a custom methods change
+  would retransform too many classes or comes too soon (see [Custom methods](#custom-methods)).
+- **Keys applied while the agent runs:** `enabled`, `log.level`, every `sampling.profile.*` key,
+  every `capture.*` key and `async.step`, every `commands.*` key, `instrumentation.disabled`,
+  `instrumentation.ignore-paths`, `instrumentation.ignore-extensions`,
+  `instrumentation.ignore-user-agents`, `instrumentation.ignore-methods`,
+  `instrumentation.custom-methods` and its `max-classes-per-pattern`, `metrics.interval-seconds`,
+  `active.snapshot-interval-seconds`, `transaction.max-duration-ms` and the
+  `transaction.slow-stack.*` keys. `instrumentation.disabled` can turn off any module and turn
+  back on a module the agent installed at start; a module that was already off at start was never
+  installed, so a change that would turn it on is rejected `restart_required`.
+- **Keys read only at start.** Every other key (for example the `buffer.*`, `sender.*`, `sql.*`,
+  `propagation.*` and `stats.*` keys) is rejected `restart_required: read only at agent start`
+  even when `remote-config.allow` names it, so a collector is never told that a value is in force
+  when it is not. Change these keys locally and restart the application.
+- **A new session.** Each time the agent connects, the collector's hello carries the values it
+  keeps for this application. They replace all remote values in force: a key the collector no
+  longer keeps goes back to its local value. They pass the same checks as a push; rejected keys
+  give the same WARN, and nothing is reported back. `enabled: false` in a hello turns the kill
+  switch on at once, before the agent records anything on that connection.
+
+### Custom methods
+
+`instrumentation.custom-methods` items name classes and methods to record. Whether set locally or
+pushed (only when `remote-config.allow` names the key; the default list does not):
+
+- An item whose class pattern starts with `java.`, `javax.`, `jakarta.`, `jdk.`, `sun.`,
+  `com.sun.`, `io.argos.` (the agent's own classes, shaded libraries included) or `net.bytebuddy.`
+  is ignored. Locally the agent logs one WARN per item at start, naming its position and the
+  prefix; a pushed value with such an item is rejected as a whole (`forbidden_pattern`).
+- No pattern can reach those classes another way: a pattern that starts with `*` or `**` never
+  matches a class under one of those prefixes, nor a generated class (lambdas, CGLIB and Spring
+  CGLIB classes, JDK and other runtime proxies).
+- An item that matches more than `instrumentation.custom-methods.max-classes-per-pattern` loaded
+  classes (default 500) is turned off with one WARN; self-diagnostics counts such items
+  (`custom_methods_items_disabled`) and the ignored ones (`custom_methods_items_ignored`).
+- A pushed change retransforms the loaded classes its items match, together with the classes the
+  previous value matched: at most 50 classes per change and one change per minute. A change over
+  either limit is rejected `retransform_limit` and the previous value stays in force; a change
+  over 50 classes does not use up the minute. Self-diagnostics counts the requests, the refused
+  ones and the retransformed classes (`retransform_requests`, `retransform_rejected`,
+  `retransformed_classes`).
+- A local change takes effect at the next start; a `CONFIG_RELOAD` reports it `restart_required`.
+
+## Kill switch
+
+The kill switch has two stages:
+
+1. `enabled: false` turns every instrumentation point into a no-op at once. The application runs
+   as before; metrics, self-diagnostics and the collector session keep running, so the switch can
+   be turned back with `enabled: true`. The key is in the default `remote-config.allow`, so a
+   collector can turn it off and on with a push or with the values of its hello. The agent sends
+   the collector a `KILL_SWITCH_ON` or `KILL_SWITCH_OFF` event and logs one line.
+2. `-Dargos.agent.disabled=true` (system property only) makes the agent install nothing at all,
+   for when `-javaagent` cannot be removed. It is never changed remotely and takes effect at the
+   next start.
+
+## Commands
+
+A collector can ask a connected agent to run one of five commands, which an operator or
+administrator starts from the server. The list is closed: the agent rejects any other command
+type, and no command runs code that the collector sends.
+
+| Command | Result | Cooldown | Size limit |
+|---|---|---|---|
+| Thread dump | JSON: every thread with its state, locks and up to 64 frames, the transaction it runs, deadlocks. On JDK 21 and later virtual threads are included. | `commands.thread-dump.cooldown-seconds` (5 s) | `commands.thread-dump.max-bytes` (1 MiB) |
+| Thread stack | JSON: one thread, by transaction id or thread id | 1 s | 1 MiB |
+| Self-diagnostics | JSON: version, effective configuration with sources (the token shown as `argos_****`), `remote-config.allow`, module states, counters, queues | 1 s | 256 KiB |
+| Environment dump | Text: environment variables, system properties and JVM arguments, masked | 60 s | 256 KiB |
+| Configuration reload | JSON: applied keys, rejected keys, configuration hash, keys that need a restart | 60 s | - |
+
+- The agent runs one command at a time and queues at most 8; a further command is rejected
+  `busy`. A command that waits longer than its time to live (60 seconds unless the collector says
+  otherwise), counted from when the agent received it, expires. A command within its cooldown is
+  answered `COOLDOWN`.
+- A result is sent in pieces of at most 256 KiB, at most 1 MiB in all; a longer result is cut and
+  marked truncated. A failed command answers with a one-line reason, never a stack trace or
+  collected data. The agent logs one INFO line per command (type, status, milliseconds), never
+  its result.
+- **The environment dump is always masked, in the agent, before it is sent.** Values of keys that
+  look like secrets (password, secret, token, credential, private keys and the other names of the
+  built-in list) and values that look like secrets (JWTs, cloud access keys, runs of 32 or more
+  characters within one alphabet — standard base64, URL-safe base64 or hex —, URL and JDBC
+  credentials, PEM private keys) are replaced by `****(len=N)`, including each
+  `-Dkey=value` inside `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS`, `CATALINA_OPTS` and the JVM
+  arguments. No key turns this masking off: `commands.env-dump.mask-patterns` only adds patterns,
+  and a push that would remove one is rejected `reduce_masking`. A long path that mixes `/` with
+  `-` or `_` (`JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64`) is not a base64 run and stays
+  readable.
+- The thread dump on JDK 21 and later writes the JVM's own dump to a file in the agent log
+  directory (owner-only where the file system allows) and deletes it as soon as it is read.
+- The configuration reload reads the same sources as at start. Changed keys that can change while
+  the agent runs take effect (local keys are not limited by `remote-config.allow`); the others
+  keep their running value and are listed as needing a restart (`server.*`, the token, `app.*`,
+  `log.dir`, `agent.disabled`, custom methods and every key read only at start). The refreshed
+  `remote-config.allow` applies at once: a remote value it no longer allows goes back to the local
+  value. The agent sends the collector a `CONFIG_FILE_RELOADED` event.
 
 ## Masking
 
@@ -532,6 +646,13 @@ characters including dots, `?` one character. An IPv6 address is written without
 | `propagation.argos-state.hosts` | list (<= 256 items) | `[]` | N | Host globs that get the Argos `tracestate` entry. |
 | `propagation.preserve-incoming` | bool | `true` | N | Keeps a `traceparent` the application already set on an outgoing request. |
 | `async.step` | bool | `false` | Y | Records an ASYNC step for every task handed to an executor. |
+
+With `async.step=true`, every task counts, including the subtasks a parallel stream forks on the
+common ForkJoin pool: each one gets its own ASYNC step. A request that runs a parallel stream can
+therefore carry many ASYNC steps (about 62 per request of the sample apps'
+`GET /api/async/executor`). They count towards `sampling.profile.max-steps` like any other step,
+so the profile stays bounded and further steps are summarized. The key is off by default; turn it
+on for a limited time when you need to see where executor tasks start.
 
 ### Buffers and sending
 

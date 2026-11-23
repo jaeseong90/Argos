@@ -14,12 +14,6 @@ import io.argos.proto.ProtocolVersion;
 import io.argos.proto.v1.ActiveTransactionSnapshot;
 import io.argos.proto.v1.AgentHello;
 import io.argos.proto.v1.BatchHeader;
-import io.argos.proto.v1.Command;
-import io.argos.proto.v1.CommandResult;
-import io.argos.proto.v1.CommandStatus;
-import io.argos.proto.v1.CommandType;
-import io.argos.proto.v1.ConfigApplyResult;
-import io.argos.proto.v1.ConfigPush;
 import io.argos.proto.v1.DictionaryEntries;
 import io.argos.proto.v1.DictionaryEntry;
 import io.argos.proto.v1.DictionaryKind;
@@ -31,7 +25,6 @@ import io.argos.proto.v1.IpMode;
 import io.argos.proto.v1.MetricBatch;
 import io.argos.proto.v1.ProfileBatch;
 import io.argos.proto.v1.QueryStringMode;
-import io.argos.proto.v1.RejectCode;
 import io.argos.proto.v1.SqlParamMode;
 import io.argos.proto.v1.StatBatch;
 import io.argos.proto.v1.TransactionBatch;
@@ -513,63 +506,6 @@ class TransportPartsTest {
     assertThat(AgentIdentity.sqlParamMode("masked")).isEqualTo(SqlParamMode.SQL_PARAM_MASKED);
     assertThat(AgentIdentity.hostName()).isNotEmpty();
     assertThat(AgentIdentity.pid(null)).isZero();
-  }
-
-  // --- Rejecting dispatcher
-  // ------------------------------------------------------------------------
-
-  @Test
-  @Tag("req:SEC-23")
-  @DisplayName(
-      "C-118 (WO-11 dispatcher): an allowed key is 'not applied', a forbidden one names the gate's"
-          + " reason; never the pushed value; bounded")
-  void rejectingConfig() {
-    Map<String, String> values = new HashMap<String, String>();
-    values.put("app.name", "orders");
-    RejectingDispatcher dispatcher = new RejectingDispatcher(AgentConfig.of(values), "hash");
-    ConfigApplyResult result =
-        dispatcher.configPush(
-            ConfigPush.newBuilder()
-                .setChangeId("c")
-                .putValues("sampling.profile.normal-rate", "0.2")
-                .putValues("capture.user-id.mode", "plain")
-                .putValues("no.such.key", "secret-value")
-                .build());
-    assertThat(result.getAppliedKeysList()).isEmpty();
-    assertThat(result.getEffectiveConfigHash()).isEqualTo("hash");
-    assertThat(result.getRejectedCount()).isEqualTo(3);
-    Map<String, String> messages = new HashMap<String, String>();
-    for (io.argos.proto.v1.RejectedKey key : result.getRejectedList()) {
-      assertThat(key.getCode()).isEqualTo(RejectCode.NOT_ALLOWED);
-      messages.put(key.getKey(), key.getMessage());
-    }
-    assertThat(messages.get("sampling.profile.normal-rate"))
-        .isEqualTo(RejectingDispatcher.NOT_APPLIED);
-    assertThat(messages.get("capture.user-id.mode")).startsWith("rejected by the agent's hard cap");
-    assertThat(result.toString()).doesNotContain("secret-value");
-
-    ConfigPush.Builder many = ConfigPush.newBuilder().setChangeId("m");
-    for (int i = 0; i < RejectingDispatcher.MAX_REJECTED_KEYS + 10; i++) {
-      many.putValues("k" + i, "v");
-    }
-    assertThat(dispatcher.configPush(many.build()).getRejectedCount())
-        .isEqualTo(RejectingDispatcher.MAX_REJECTED_KEYS);
-  }
-
-  @Test
-  @Tag("req:SEC-24")
-  @DisplayName("11 §8.2: every command type, known or not, is REJECTED with one chunk, no payload")
-  void rejectingCommand() {
-    RejectingDispatcher dispatcher =
-        new RejectingDispatcher(AgentConfig.of(Collections.<String, String>emptyMap()), null);
-    for (int type : new int[] {CommandType.THREAD_DUMP_VALUE, CommandType.ENV_DUMP_VALUE, 42}) {
-      List<CommandResult> results =
-          dispatcher.command(Command.newBuilder().setCommandId("c").setTypeValue(type).build());
-      assertThat(results).hasSize(1);
-      assertThat(results.get(0).getStatus()).isEqualTo(CommandStatus.REJECTED);
-      assertThat(results.get(0).getChunkCount()).isEqualTo(1);
-      assertThat(results.get(0).getPayload().isEmpty()).isTrue();
-    }
   }
 
   @Test

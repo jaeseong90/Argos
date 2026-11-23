@@ -4,8 +4,11 @@ package io.argos.sample.common;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.argos.sample.common.async.AsyncSqlWork;
 import io.argos.sample.common.async.ExecutorProbe;
 import io.argos.sample.common.async.SeedThreadPoolExecutor;
+import io.argos.sample.common.datasource.SampleDataSource;
+import io.argos.sample.common.datasource.SampleDataSources;
 import io.argos.sample.common.http.OutboundClient;
 import io.argos.sample.common.http.OutboundOutcome;
 import io.argos.sample.common.http.OutboundResponse;
@@ -17,15 +20,99 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /** Outgoing-call targets and failure classes, executor probes (no network). */
 class OutboundAndExecutorTest {
+
+  /** An in-memory H2 shop database (SampleDataSources) with statement recording. */
+  private static SampleDataSource shopDatabase(String name) {
+    return SampleDataSources.create(
+        SampleConfig.from(
+            Collections.singletonMap("SAMPLE_POOL_MAX", "4"),
+            new Properties(),
+            new BuildInfo(name, "test")));
+  }
+
+  @Test
+  @DisplayName(
+      "GET /api/async/executor?work=sql (WO-15): one statement of its own per branch, each off"
+          + " the request thread; asyncSql counts them")
+  void asyncSqlWork() throws Exception {
+    SampleDataSource database = shopDatabase("async-sql-test");
+    CountingDataSource counting = new CountingDataSource(database.dataSource());
+    AsyncSqlWork work = new AsyncSqlWork(counting);
+    try {
+      // The web layer's @Async method: here a plain thread of its own.
+      CompletableFuture<String> asyncMethod =
+          CompletableFuture.supplyAsync(() -> work.query(AsyncSqlWork.ASYNC_METHOD_SQL));
+      Map<String, Object> result = work.run(null, asyncMethod);
+      int branches = AsyncSqlWork.virtualPerTaskSupported() ? 5 : 4;
+      String request = Thread.currentThread().getName();
+      assertThat(result)
+          .containsEntry("work", "sql")
+          .containsEntry("requestThread", request)
+          .containsEntry("asyncSql", branches)
+          .containsEntry("sqlBranches", branches)
+          .containsEntry("poolSqlThread", AsyncSqlWork.POOL_THREAD);
+      assertThat(result.get("scheduledSqlThread").toString())
+          .startsWith(AsyncSqlWork.SCHEDULER_THREAD_PREFIX);
+      assertThat(result.get("supplyAsyncSqlThread")).isNotEqualTo(request);
+      assertThat(result.containsKey("virtualPerTaskThread"))
+          .as("virtualPerTaskThread only on JDK 21+")
+          .isEqualTo(AsyncSqlWork.virtualPerTaskSupported());
+      List<String> expected =
+          new ArrayList<>(
+              Arrays.asList(
+                  AsyncSqlWork.ASYNC_METHOD_SQL,
+                  AsyncSqlWork.SUPPLY_ASYNC_SQL,
+                  AsyncSqlWork.SCHEDULED_SQL,
+                  AsyncSqlWork.POOL_SQL));
+      if (AsyncSqlWork.virtualPerTaskSupported()) {
+        expected.add(AsyncSqlWork.VIRTUAL_SQL);
+      }
+      assertThat(counting.executed())
+          .as("exactly one statement per branch, all different")
+          .containsExactlyInAnyOrderElementsOf(expected);
+      assertThat(new HashSet<>(expected)).hasSize(branches);
+    } finally {
+      work.close();
+      database.close();
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "GET /api/async/executor?work=detached&count=N (WO-15): N statements on the app pool thread,"
+          + " submitted by the dispatcher; count is bounded")
+  void detachedSqlWork() throws Exception {
+    SampleDataSource database = shopDatabase("async-detached-test");
+    CountingDataSource counting = new CountingDataSource(database.dataSource());
+    AsyncSqlWork work = new AsyncSqlWork(counting);
+    try {
+      Map<String, Object> result = work.detached(7);
+      assertThat(result)
+          .containsEntry("work", "detached")
+          .containsEntry("detachedSql", 7)
+          .containsEntry("detachedThreads", Collections.singletonList(AsyncSqlWork.POOL_THREAD));
+      assertThat(counting.executed())
+          .hasSize(7)
+          .allMatch(sql -> sql.equals(AsyncSqlWork.DETACHED_SQL));
+      assertThatThrownBy(() -> work.detached(0)).isInstanceOf(IllegalArgumentException.class);
+      assertThatThrownBy(() -> work.detached(AsyncSqlWork.MAX_DETACHED + 1))
+          .isInstanceOf(IllegalArgumentException.class);
+    } finally {
+      work.close();
+      database.close();
+    }
+  }
 
   /** Records the target and answers with a scripted response or failure. */
   private static final class FakeClient implements OutboundClient {

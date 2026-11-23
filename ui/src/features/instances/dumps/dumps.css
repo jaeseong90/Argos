@@ -1,0 +1,281 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* Thread dumps tab, dump viewer and single-thread stack (docs/15 §9.8, §13). The list of recent
+   dumps sits beside the viewer on wide screens and above it below 1100 px; nothing scrolls
+   sideways at 1366x768 (frames wrap in CodeBlock, names are clamped). Thread states carry their
+   name in text next to the colour. */
+.dump-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  min-width: 0;
+}
+
+.dump-tab__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.dump-tab__layout {
+  display: grid;
+  grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+  gap: var(--space-3, 12px);
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .dump-tab__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.dump-tab__list,
+.dump-tab__main {
+  min-width: 0;
+}
+
+.dump-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dump-list__item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: var(--space-1, 4px) var(--space-2, 8px);
+  border: 1px solid var(--color-border, #e2e5ea);
+  border-radius: var(--radius, 6px);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--fs-sm, 12px);
+  text-align: left;
+  cursor: pointer;
+}
+
+.dump-list__item--current {
+  border-color: var(--color-primary, #2f6fe4);
+  background: var(--color-selected, #e8f0fe);
+}
+
+.dump-list__item[aria-disabled='true'] {
+  color: var(--color-text-muted, #5f6774);
+  cursor: not-allowed;
+}
+
+.dump-list__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1, 4px);
+  max-width: 100%;
+}
+
+.dump-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  min-width: 0;
+}
+
+.dump-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.dump-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1, 4px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dump-state {
+  display: inline-block;
+  padding: 0 var(--space-1, 4px);
+  border-left: 4px solid var(--status-unknown, #8c939d);
+  font-size: var(--fs-sm, 12px);
+  font-variant-numeric: tabular-nums;
+}
+
+.dump-state--RUNNABLE {
+  border-left-color: var(--status-up, #2e9d4f);
+}
+
+.dump-state--BLOCKED {
+  border-left-color: var(--status-down, #d93838);
+}
+
+.dump-state--WAITING {
+  border-left-color: var(--status-warn, #e0a100);
+}
+
+.dump-state--TIMED_WAITING {
+  border-left-color: var(--status-stale, #8c939d);
+}
+
+.dump-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 4px);
+  min-width: 0;
+  padding: var(--space-2, 8px);
+  border: 1px solid var(--color-border, #e2e5ea);
+  border-radius: var(--radius, 6px);
+}
+
+.dump-panel--error {
+  border-color: var(--color-error-text, #a8071a);
+  background: var(--color-error-bg, #fdecec);
+}
+
+.dump-panel__title {
+  margin: 0;
+  font-size: var(--fs-sm, 12px);
+  font-weight: 600;
+}
+
+.dump-cycles,
+.dump-cycle,
+.dump-tx-list,
+.dump-locks {
+  margin: 0;
+  padding-left: var(--space-4, 16px);
+  font-size: var(--fs-sm, 12px);
+}
+
+.dump-waiters {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1, 4px);
+  min-width: 0;
+}
+
+.dump-waiter {
+  max-width: 200px;
+}
+
+.dump-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.dump-search__input {
+  width: min(360px, 100%);
+}
+
+.dump-section {
+  min-width: 0;
+  border-top: 1px solid var(--color-border, #e2e5ea);
+}
+
+.dump-section__title {
+  margin: 0;
+  font-size: var(--fs-md, 14px);
+}
+
+.dump-section__toggle {
+  width: 100%;
+  padding: var(--space-1, 4px) 0;
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dump-section__toggle::before {
+  display: inline-block;
+  width: 1em;
+  content: '▸';
+}
+
+.dump-section__toggle[aria-expanded='true']::before {
+  content: '▾';
+}
+
+.dump-section__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  padding-bottom: var(--space-2, 8px);
+}
+
+.dump-stack-entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 4px);
+  min-width: 0;
+  padding: var(--space-2, 8px);
+  border: 1px solid var(--color-border, #e2e5ea);
+  border-radius: var(--radius, 6px);
+}
+
+.dump-stack-entry__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1, 4px);
+}
+
+.dump-names {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm, 12px);
+}
+
+.dump-names li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 8px);
+  min-width: 0;
+}
+
+.dump-names__wait {
+  display: inline-flex;
+  gap: var(--space-1, 4px);
+  min-width: 0;
+}
+
+.dump-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  min-width: 0;
+}
+
+.dump-stack__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.dump-stack__match,
+.dump-stack__lock {
+  margin: 0;
+  font-size: var(--fs-sm, 12px);
+}
+
+.dump-stack__match--other,
+.dump-stack__match--unknown {
+  color: var(--color-warning-text, #6f5400);
+}

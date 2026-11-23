@@ -1,0 +1,307 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* Commands tab, latest-result panels and the command dialog (docs/15 §9.8, §13). Everything wraps
+   within the content box at 1366x768: tables scroll inside their own box, long collected values
+   are clamped by SafeText, buttons wrap. Status colours always come with text. */
+.cmd-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  min-width: 0;
+}
+
+.cmd-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  min-width: 0;
+  padding: var(--space-3, 12px);
+  border: 1px solid var(--color-border, #e2e5ea);
+  border-radius: var(--radius, 6px);
+  background: var(--color-bg);
+}
+
+.cmd-panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  min-width: 0;
+}
+
+.cmd-panel__title {
+  margin: 0;
+  margin-right: auto;
+  font-size: var(--fs-md, 14px);
+  font-weight: 600;
+}
+
+.cmd-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 8px);
+}
+
+.cmd-run {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.cmd-muted {
+  margin: 0;
+  color: var(--color-text-muted, #5f6774);
+  font-size: var(--fs-sm, 12px);
+}
+
+.cmd-notice {
+  margin: 0;
+  padding: var(--space-1, 4px) var(--space-2, 8px);
+  border-radius: var(--radius, 6px);
+  background: var(--color-info-bg, #eaf1fd);
+  color: var(--color-info-text, #1f4f99);
+}
+
+.cmd-feedback {
+  margin: 0;
+  font-size: var(--fs-sm, 12px);
+}
+
+.cmd-feedback--info {
+  color: var(--color-info-text, #1f4f99);
+}
+
+.cmd-feedback--ok {
+  color: var(--status-up-text, #1d6b34);
+}
+
+.cmd-feedback--error {
+  color: var(--color-error-text, #a8071a);
+}
+
+.cmd-status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1, 4px);
+}
+
+.cmd-status--failed,
+.cmd-status--expired {
+  color: var(--color-error-text, #a8071a);
+}
+
+.cmd-badge {
+  display: inline-block;
+  padding: 0 var(--space-1, 4px);
+  border: 1px solid var(--color-border, #e2e5ea);
+  border-radius: var(--radius, 6px);
+  font-size: var(--fs-xs, 11px);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cmd-badge--info {
+  background: var(--color-info-bg, #eaf1fd);
+  color: var(--color-info-text, #1f4f99);
+}
+
+.cmd-badge--warn {
+  background: var(--color-warning-bg, #fff7e0);
+  color: var(--color-warning-text, #6f5400);
+}
+
+.cmd-badge--error {
+  background: var(--color-error-bg, #fdecec);
+  color: var(--color-error-text, #a8071a);
+}
+
+.cmd-badge--muted {
+  margin-left: var(--space-1, 4px);
+  color: var(--color-text-muted, #5f6774);
+}
+
+.cmd-link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-primary-text, #1f5bd1);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.cmd-input {
+  min-width: 0;
+  padding: 2px var(--space-2, 8px);
+  border: 1px solid var(--color-border-strong, #b9bfc9);
+  border-radius: var(--radius, 6px);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.cmd-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 4px);
+}
+
+.cmd-field__kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3, 12px);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.cmd-field__kind {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+}
+
+.cmd-report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  min-width: 0;
+}
+
+.cmd-report__heading {
+  margin: 0 0 var(--space-1, 4px);
+  font-size: var(--fs-sm, 12px);
+  font-weight: 600;
+}
+
+.cmd-gauges {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-1, 4px) var(--space-3, 12px);
+  margin: 0;
+}
+
+.cmd-gauges__item {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2, 8px);
+  min-width: 0;
+}
+
+.cmd-gauges__item dt {
+  color: var(--color-text-muted, #5f6774);
+}
+
+.cmd-gauges__item dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.cmd-kv {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: var(--fs-sm, 12px);
+}
+
+.cmd-kv__caption {
+  padding-bottom: var(--space-1, 4px);
+  font-weight: 600;
+  text-align: left;
+}
+
+.cmd-kv th,
+.cmd-kv td {
+  min-width: 0;
+  padding: 2px var(--space-2, 8px);
+  border-bottom: 1px solid var(--color-border, #e2e5ea);
+  font-weight: normal;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.cmd-kv thead th {
+  color: var(--color-text-muted, #5f6774);
+  font-weight: 600;
+}
+
+.cmd-kv__key {
+  width: 35%;
+}
+
+.cmd-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.cmd-args {
+  margin: 0;
+  padding-left: var(--space-4, 16px);
+  font-size: var(--fs-sm, 12px);
+}
+
+.cmd-raw {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 4px);
+  min-width: 0;
+}
+
+/* Dialog */
+.cmd-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1040;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4, 16px);
+  background: rgb(0 0 0 / 35%);
+}
+
+.cmd-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  max-height: calc(100vh - 32px);
+  padding: var(--space-4, 16px);
+  border-radius: var(--radius, 6px);
+  background: var(--color-bg);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 20%);
+  color: var(--color-text);
+  overflow-y: auto;
+}
+
+.cmd-dialog--narrow {
+  width: min(460px, 100%);
+}
+
+.cmd-dialog--wide {
+  width: min(880px, 100%);
+}
+
+.cmd-dialog__title {
+  margin: 0;
+  font-size: var(--fs-lg, 15px);
+  font-weight: 600;
+}
+
+.cmd-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  min-width: 0;
+}
+
+.cmd-dialog__body p {
+  margin: 0;
+}
+
+.cmd-dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2, 8px);
+}

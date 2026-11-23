@@ -15,6 +15,9 @@ import java.nio.charset.StandardCharsets;
  * @param error the error text (empty when none)
  * @param truncated whether the agent cut the payload
  * @param chunks chunks received
+ * @param durationMs {@code duration_ms} of the last chunk (the agent's own run time)
+ * @param roundTripMs measured by the collector: from sending the {@code Command} to receiving the
+ *     last chunk
  */
 public record CommandOutcome(
     String commandId,
@@ -23,10 +26,17 @@ public record CommandOutcome(
     String contentType,
     String error,
     boolean truncated,
-    int chunks) {
+    int chunks,
+    long durationMs,
+    long roundTripMs) {
 
   /** The payload as UTF-8 text. */
   public String payloadText() {
     return payload.toString(StandardCharsets.UTF_8);
+  }
+
+  /** Whether the agent answered {@code OK}. */
+  public boolean ok() {
+    return "OK".equals(status);
   }
 }

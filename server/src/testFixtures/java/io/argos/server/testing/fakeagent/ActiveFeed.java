@@ -3,6 +3,8 @@ package io.argos.server.testing.fakeagent;
 
 import io.argos.proto.v1.ActiveTransaction;
 import io.argos.proto.v1.ActiveTransactionSnapshot;
+import io.argos.proto.v1.Command;
+import io.argos.proto.v1.CommandResult;
 import io.grpc.ManagedChannel;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -42,7 +44,7 @@ import java.util.regex.Pattern;
  * <pre>
  * java -jar server/build/active-feed/active-feed.jar --target 127.0.0.1:9100 --token-file F
  *     [--instances e2e-active-1,e2e-active-2] [--ready-file R] [--duration 30m] [--interval 5s]
- *     [--app e2e-active] [--env e2e]
+ *     [--app e2e-active] [--env e2e] [--commands]
  * </pre>
  *
  * Per instance: connect (Hello with the profile's user id and address modes, {@code plaintext}),
@@ -53,6 +55,17 @@ import java.util.regex.Pattern;
  * ActiveFeedScenario#toJson}) with the instance ids. The feed stops after {@code --duration} or on
  * a shutdown signal and cancels its sessions (no Bye: the instances go STALE and DOWN by the
  * server's rules). The token is read from the file and never printed.
+ *
+ * <p>With {@code --commands} (WO-37, off by default) every instance also answers remote commands as
+ * an agent does (11 §8.2), deterministically from the scenario: {@code THREAD_DUMP} is the JSON
+ * dump of {@link ActiveFeedScenario#dumpThreads} for the newest snapshot (running transactions with
+ * their {@code tx_id}, collapsed idle pool threads, one deadlock, virtual threads, a 64-frame
+ * stack, XSS payloads), the second instance reporting it {@code truncated}; {@code THREAD_STACK} is
+ * the one thread of {@code args.tx_id} or {@code args.thread_id} (of the last two snapshots),
+ * {@code FAILED} for an unknown one; {@code SELF_DIAGNOSTICS} is {@link
+ * ActiveFeedScenario#selfDiagnosisJson}; {@code ENV_DUMP} is the masked {@link
+ * ActiveFeedScenario#envDumpText} ({@code text/plain}, the agent's sections); {@code CONFIG_RELOAD}
+ * a short text. The ready file then has {@code commands} and per instance {@code dump_truncated}.
  */
 public final class ActiveFeed implements AutoCloseable {
 
@@ -64,7 +77,8 @@ public final class ActiveFeed implements AutoCloseable {
 
   private static final String USAGE =
       "usage: active-feed --target HOST:PORT --token-file FILE [--instances A,B] [--ready-file"
-          + " FILE] [--duration 30m] [--interval 5s] [--app e2e-active] [--env e2e]";
+          + " FILE] [--duration 30m] [--interval 5s] [--app e2e-active] [--env e2e]"
+          + " [--commands]";
 
   /**
    * Options.
@@ -78,6 +92,7 @@ public final class ActiveFeed implements AutoCloseable {
    * @param interval snapshot interval
    * @param app application name
    * @param env environment
+   * @param commands answer remote commands (WO-37)
    */
   public record Options(
       String host,
@@ -88,7 +103,8 @@ public final class ActiveFeed implements AutoCloseable {
       Duration duration,
       Duration interval,
       String app,
-      String env) {
+      String env,
+      boolean commands) {
 
     private static final Pattern NAME = Pattern.compile("[A-Za-z0-9._:-]{1,128}");
 
@@ -134,6 +150,7 @@ public final class ActiveFeed implements AutoCloseable {
       Duration interval = Duration.ofSeconds(5);
       String app = ActiveFeedScenario.APP;
       String env = ActiveFeedScenario.ENV;
+      boolean commands = false;
       for (int i = 0; i < args.length; i++) {
         String key = args[i];
         String value;
@@ -141,6 +158,8 @@ public final class ActiveFeed implements AutoCloseable {
         if (key.startsWith("--") && eq > 0) {
           value = key.substring(eq + 1);
           key = key.substring(0, eq);
+        } else if (key.equals("--commands")) {
+          value = "true";
         } else {
           if (i + 1 >= args.length) {
             throw new IllegalArgumentException("missing value of " + key);
@@ -161,6 +180,7 @@ public final class ActiveFeed implements AutoCloseable {
           case "--interval" -> interval = duration(value);
           case "--app" -> app = value;
           case "--env" -> env = value;
+          case "--commands" -> commands = flag(value);
           default -> throw new IllegalArgumentException("unknown option " + key);
         }
       }
@@ -181,7 +201,16 @@ public final class ActiveFeed implements AutoCloseable {
       if (host.startsWith("[") && host.endsWith("]")) {
         host = host.substring(1, host.length() - 1);
       }
-      return new Options(host, port, token, instances, ready, duration, interval, app, env);
+      return new Options(
+          host, port, token, instances, ready, duration, interval, app, env, commands);
+    }
+
+    private static boolean flag(String value) {
+      return switch (value.strip().toLowerCase(Locale.ROOT)) {
+        case "true" -> true;
+        case "false" -> false;
+        default -> throw new IllegalArgumentException("--commands is true or false: " + value);
+      };
     }
 
     private static final Pattern SHORT = Pattern.compile("(\\d{1,9})(ms|s|m|h)");
@@ -219,7 +248,7 @@ public final class ActiveFeed implements AutoCloseable {
       this.profile = profile;
       this.records = records;
       this.agent = agent;
-      this.threadIdBase = 1_000 * (profile.index() + 1);
+      this.threadIdBase = ActiveFeedScenario.threadIdBase(profile.index());
     }
   }
 
@@ -242,6 +271,9 @@ public final class ActiveFeed implements AutoCloseable {
   private final AtomicLong nextNumber = new AtomicLong();
   private volatile Round lastRound;
 
+  /** The rounds whose transactions the command answers know: newest first, at most two. */
+  private volatile List<Round> recentRounds = List.of();
+
   private ActiveFeed(Options options, Consumer<String> log, String token, long feedStartMs) {
     this.options = options;
     this.log = log;
@@ -263,6 +295,7 @@ public final class ActiveFeed implements AutoCloseable {
               .plaintextFlag(true)
               .maxRecorded(1_000)
               .hello(h -> h.setUserIdMode(p.userIdMode()).setIpMode(p.ipMode()))
+              .onCommand(options.commands() ? c -> answer(p.index(), c) : null)
               .build();
       instances.add(new Instance(p, records, agent));
     }
@@ -342,7 +375,13 @@ public final class ActiveFeed implements AutoCloseable {
             + instanceIds());
     if (options.readyFile() != null) {
       writeReady(
-          options.readyFile(), scenario.toJson(options.interval().toMillis(), instanceIds()));
+          options.readyFile(),
+          scenario.toJson(
+              options.interval().toMillis(),
+              instanceIds(),
+              options.app(),
+              options.env(),
+              options.commands()));
     }
   }
 
@@ -383,6 +422,11 @@ public final class ActiveFeed implements AutoCloseable {
   private String round() {
     long number = nextNumber.getAndIncrement();
     long ts = System.currentTimeMillis();
+    List<Round> recent = recentRounds;
+    recentRounds =
+        recent.isEmpty()
+            ? List.of(new Round(number, ts))
+            : List.of(new Round(number, ts), recent.get(0));
     String first = null;
     for (Instance i : instances) {
       if (i.needsConnect || !i.agent.sessionOpen()) {
@@ -418,6 +462,75 @@ public final class ActiveFeed implements AutoCloseable {
     }
     lastRound = new Round(number, ts);
     return first;
+  }
+
+  // --- Remote commands (--commands, WO-37) ----------------------------------------------------
+
+  /** Milliseconds a thread dump answer reports as its run time ({@code duration_ms}). */
+  static final int DUMP_DURATION_MS = 12;
+
+  /** The answer of instance {@code index} to {@code command} (gRPC thread of its session). */
+  List<CommandResult> answer(int index, Command command) {
+    try {
+      return switch (command.getType()) {
+        case THREAD_DUMP -> {
+          Round r = newestRound();
+          List<ActiveFeedScenario.Item> items = scenario.items(index, r.number(), r.snapshotTsMs());
+          yield CommandReplies.json(
+              command,
+              ActiveFeedScenario.dumpJson(
+                  scenario.dumpThreads(index, items), ActiveFeedScenario.dumpDeadlocks(index)),
+              ActiveFeedScenario.dumpTruncated(index),
+              DUMP_DURATION_MS);
+        }
+        case THREAD_STACK -> threadStack(index, command);
+        case SELF_DIAGNOSTICS ->
+            CommandReplies.json(
+                command,
+                scenario.selfDiagnosisJson(
+                    index, System.currentTimeMillis() - scenario.feedStartMs()),
+                false,
+                8);
+        case ENV_DUMP -> CommandReplies.text(command, ActiveFeedScenario.envDumpText(), 4);
+        case CONFIG_RELOAD ->
+            CommandReplies.text(command, "Configuration reloaded: 0 local keys changed", 3);
+        default -> CommandReplies.rejected(command);
+      };
+    } catch (RuntimeException e) {
+      log.accept("[active-feed] answering a command failed: " + e);
+      return CommandReplies.failed(command, "The feed could not answer this command");
+    }
+  }
+
+  private Round newestRound() {
+    List<Round> recent = recentRounds;
+    return recent.isEmpty() ? new Round(0, System.currentTimeMillis()) : recent.get(0);
+  }
+
+  /** {@code THREAD_STACK}: the thread of {@code args.tx_id} or {@code args.thread_id}. */
+  private List<CommandResult> threadStack(int index, Command command) {
+    String txId = command.getArgsMap().get("tx_id");
+    String threadId = command.getArgsMap().get("thread_id");
+    if ((txId == null) == (threadId == null)) {
+      return CommandReplies.failed(command, "Exactly one of tx_id and thread_id is required");
+    }
+    List<Round> rounds = recentRounds.isEmpty() ? List.of(newestRound()) : recentRounds;
+    for (Round r : rounds) {
+      List<ActiveFeedScenario.Item> items = scenario.items(index, r.number(), r.snapshotTsMs());
+      for (ActiveFeedScenario.DumpThread t : scenario.dumpThreads(index, items)) {
+        boolean match =
+            txId != null
+                ? txId.strip().equals(t.txId())
+                : threadId.strip().equals(Long.toString(t.id()));
+        if (match) {
+          return CommandReplies.json(
+              command, ActiveFeedScenario.dumpJson(List.of(t), List.of()), false, 2);
+        }
+      }
+    }
+    return CommandReplies.failed(
+        command,
+        txId != null ? "No running transaction with this tx_id" : "No thread with this thread_id");
   }
 
   private void report(Instance i, String problem) {

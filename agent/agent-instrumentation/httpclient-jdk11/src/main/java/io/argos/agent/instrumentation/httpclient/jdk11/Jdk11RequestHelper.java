@@ -39,11 +39,16 @@ import java.util.function.BiPredicate;
  *   <li>{@code send}: at the exit of {@code send}, with the response status or the exception;
  *   <li>{@code sendAsync}: on the completion of the exchange's internal future ({@code
  *       MultiExchange.responseAsync}, handed over by {@link MultiExchangeAdvice}). This object is
- *       registered on that future (as a {@link BiConsumer}, after the JDK's own dependent) at the
- *       exit of {@code sendAsync}, so it runs before the future returned to the application
- *       completes: a transaction that waits for the response always has the closed step (U-10). An
- *       exchange that completes while this is being registered is ended at the exit of {@code
- *       sendAsync} instead (once, whichever thread is first). The returned future is never touched.
+ *       registered on that future (as a {@link BiConsumer}) twice: when the exchange starts, before
+ *       the JDK's own dependents, and at the exit of {@code sendAsync}, after them. {@code
+ *       CompletableFuture} runs the dependents of a future that completes by itself newest first,
+ *       and those of a future completed as another future's dependent (the JDK's {@code
+ *       thenCompose} chain) oldest first; with both registrations one of them runs before the JDK
+ *       dependent that leads to the future returned to the application, in either order: a
+ *       transaction that waits for the response always has the closed step (U-10, ADR-0010 C-230
+ *       (2)). An exchange that completes while this is being registered is ended at the exit of
+ *       {@code sendAsync} instead. The step ends once, whichever comes first. The returned future
+ *       is never touched.
  * </ul>
  *
  * <p>Helper rules (10 §5.4): injected into the platform class loader (where {@code java.net.http}
@@ -146,10 +151,20 @@ public final class Jdk11RequestHelper extends HttpRequest
     return map;
   }
 
-  /** {@link MultiExchangeAdvice}: the exchange of this request started. */
+  /**
+   * {@link MultiExchangeAdvice}: the exchange of this request started. For {@code sendAsync} this
+   * object is registered on the exchange's future right away, before the JDK registers its own
+   * dependents (see {@link #end}), and kept for the second registration at the exit of {@code
+   * sendAsync}.
+   */
   public void exchangeStarted(CompletableFuture<?> future) {
-    if (async) {
+    if (async && future != null) {
       exchange = future;
+      // The oldest dependent: it runs first when the JDK completes the future as the last stage of
+      // its thenCompose chain (FIFO). The dependent future is dropped on purpose: accept() never
+      // throws.
+      @SuppressWarnings("FutureReturnValueIgnored")
+      Object unused = future.whenComplete(this);
     }
   }
 
@@ -167,7 +182,9 @@ public final class Jdk11RequestHelper extends HttpRequest
       CompletableFuture<?> internal = exchange;
       exchange = null;
       if (internal != null) {
-        // Registered after the JDK's own dependent, so it runs first when the exchange completes.
+        // The newest dependent: it runs first when the future completes by itself (LIFO). With the
+        // registration of exchangeStarted (the oldest, first in FIFO order) the step ends before
+        // the JDK's own dependents in both orders of CompletableFuture (ADR-0010 C-230 (2)).
         // The dependent future is dropped on purpose: accept() never throws.
         @SuppressWarnings("FutureReturnValueIgnored")
         Object unused = internal.whenComplete(this);

@@ -6,6 +6,10 @@
  * which the dashboard, the collection health and the XLog share through {@link
  * io.argos.server.api.events.EventService}.
  *
- * <p>Owner: WO-23.
+ * <p>WO-26 adds {@link io.argos.server.api.events.EventsWriteController}: {@code POST /events} by
+ * an operator session or an application agent token, {@code DELETE /events/{eventId}} (ADR-0010
+ * C-153, 02 C-12).
+ *
+ * <p>Owner: WO-23, WO-26 (writes).
  */
 package io.argos.server.api.events;

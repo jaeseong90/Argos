@@ -11,9 +11,11 @@ import io.argos.server.audit.AuditResult;
 import io.argos.server.audit.AuditService;
 import io.argos.server.audit.Target;
 import io.argos.server.auth.ArgosPrincipal;
+import io.argos.server.auth.ObjectAccessPolicy;
 import io.argos.server.auth.RequiresRole;
 import io.argos.server.auth.Role;
 import io.argos.server.auth.session.LoginService;
+import io.argos.server.auth.session.OwnSessions;
 import io.argos.server.auth.session.PasswordChangeService;
 import io.argos.server.auth.session.RefreshRotation;
 import io.argos.server.auth.session.RevocationReason;
@@ -21,13 +23,18 @@ import io.argos.server.auth.session.SessionCookies;
 import io.argos.server.auth.session.SessionInvalidation;
 import io.argos.server.auth.session.SessionStateCache;
 import io.argos.server.auth.token.SecureTokens;
+import io.argos.server.storage.postgres.auth.SessionRepository;
 import io.argos.server.storage.postgres.auth.SessionStateRow;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -47,6 +54,7 @@ public class AuthController {
   private final SessionStateCache states;
   private final SessionCookies cookies;
   private final AuditService audit;
+  private final OwnSessions ownSessions;
 
   public AuthController(
       LoginService logins,
@@ -55,7 +63,8 @@ public class AuthController {
       SessionInvalidation invalidation,
       SessionStateCache states,
       SessionCookies cookies,
-      AuditService audit) {
+      AuditService audit,
+      OwnSessions ownSessions) {
     this.logins = logins;
     this.refreshes = refreshes;
     this.passwords = passwords;
@@ -63,6 +72,7 @@ public class AuthController {
     this.states = states;
     this.cookies = cookies;
     this.audit = audit;
+    this.ownSessions = ownSessions;
   }
 
   /**
@@ -131,6 +141,54 @@ public class AuthController {
     invalidation.revokeSession(principal.sid(), RevocationReason.LOGOUT, actor);
     audit.record(AuditEvent.LOGOUT, actor, Target.session(principal.sid()), AuditResult.success());
     cookies.clearAll(response);
+  }
+
+  /** The caller's own live sessions (16 §7.10, ADR-0010 C-136 (3)). */
+  @GetMapping("/sessions")
+  @RequiresRole(Role.VIEWER)
+  @Operation(
+      operationId = "auth_sessions_list",
+      summary = "My sessions",
+      description =
+          "The caller's live sessions (logins that are neither revoked nor expired), most"
+              + " recently used first, at most 100; current marks the session of this request."
+              + " No token or refresh value is ever returned.")
+  public Envelope<List<AuthDtos.OwnSessionView>> sessions() {
+    List<OwnSessions.Own> own = ownSessions.list(principal());
+    return Envelope.of(
+        own.stream()
+            .map(
+                o ->
+                    new AuthDtos.OwnSessionView(
+                        o.session().familyId().toString(),
+                        o.current(),
+                        AuthDtos.millis(o.session().loginAt()),
+                        AuthDtos.millis(o.session().lastSeenAt()),
+                        AuthDtos.millis(o.session().expiresAt()),
+                        o.session().userAgent(),
+                        o.session().ip(),
+                        o.session().kiosk()))
+            .toList(),
+        own.size() >= SessionRepository.MAX_LISTED_SESSIONS);
+  }
+
+  /** Ends one of the caller's own sessions (16 §7.10, ADR-0010 C-136 (3)). */
+  @DeleteMapping("/sessions/{sessionId}")
+  @RequiresRole(Role.VIEWER)
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  @ArgosAudit(AuditEvent.SESSION_REVOKED)
+  @Operation(
+      operationId = "auth_sessions_delete",
+      summary = "End one of my sessions",
+      description =
+          "sessionId is a session_id of GET /auth/sessions (UUIDv4). The session ends at once:"
+              + " its next request is 401 session_revoked and its WebSockets close within 1 s."
+              + " Ending the current session works like a logout. 404 for a session that is not"
+              + " one of the caller's live sessions.")
+  public void endSession(@PathVariable("sessionId") String sessionId, HttpServletRequest request) {
+    ArgosPrincipal principal = principal();
+    UUID id = ObjectAccessPolicy.requireUuidV4(sessionId, "sessionId");
+    ownSessions.revoke(principal, id, Actor.user(principal, request));
   }
 
   /** Who is logged in. */

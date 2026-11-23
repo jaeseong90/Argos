@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // /account (docs/15 §9.11, ADR-0010 C-168 (2)): who is logged in, the role, the password change
-// with the policy hint and the UI language. "My sessions" (list and terminate own sessions) waits
-// for its API (WO-28); there is no endpoint for it in docs/api/openapi.yaml yet.
+// with the policy hint, "My sessions" (own live sessions, ending the others; docs/16 §7.10,
+// C-136 (3)) and the UI language.
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
+import { queryKeys } from '../../api/queryKeys';
 import { SafeText } from '../../components/SafeText';
 import { supportedLanguages } from '../../i18n';
 import { useLanguage } from '../../i18n/useLanguage';
 import { useAuthStore } from '../../state/authStore';
 
 import './auth.css';
+import { OwnSessions } from './OwnSessions';
 import { PasswordChangeForm } from './PasswordChangeForm';
 
 const LANGUAGE_LABEL_KEYS = { en: 'language.en', ko: 'language.ko' } as const;
@@ -25,6 +28,7 @@ export function AccountPage() {
   const user = useAuthStore((s) => s.user);
   const role = useAuthStore((s) => s.role);
   const { language, setLanguage } = useLanguage();
+  const queryClient = useQueryClient();
 
   return (
     <div className="account-page" data-testid="account-page">
@@ -42,8 +46,15 @@ export function AccountPage() {
       </dl>
       <section className="account-page__section" aria-labelledby="account-password">
         <h2 id="account-password">{t('auth:account.passwordTitle')}</h2>
-        <PasswordChangeForm showSuccess onChanged={() => undefined} />
+        <PasswordChangeForm
+          showSuccess
+          onChanged={() => {
+            // The change signed the other sessions out (16 §7.4): list what is left.
+            void queryClient.invalidateQueries({ queryKey: queryKeys.auth.sessions() });
+          }}
+        />
       </section>
+      <OwnSessions />
       <section className="account-page__section" aria-labelledby="account-language">
         <h2 id="account-language">{t('auth:account.languageTitle')}</h2>
         <p>{t('auth:account.languageDescription')}</p>

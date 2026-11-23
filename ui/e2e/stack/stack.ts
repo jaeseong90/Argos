@@ -30,7 +30,7 @@
 // optional with insecure, the receiver offers none). The settings go to receivers.json of the run.
 // Memory limits: ClickHouse 2 GiB + PostgreSQL 0.5 GiB + server 1.25 GiB = 3.75 GiB, plus the Linux
 // Playwright container of e2e:docker (PLAYWRIGHT_MEMORY_BYTES, 1.25 GiB) = 5 GiB per run at most.
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -59,7 +59,6 @@ import {
   REPO_ROOT,
   runDir,
   secretsDir,
-  STACK_DIR,
 } from './paths.ts';
 import {
   DETACHED_OWNER,
@@ -353,12 +352,15 @@ function bind(source: string, target: string): string[] {
 
 /**
  * Removes the containers of an earlier run whose owner process is gone (a run killed before its
- * teardown). Objects of a live run, or of any other label, are never touched.
+ * teardown). Objects of a live run, or of any other label, are never touched. The caller holds the
+ * server-it lock (e2e/stack/lock.ts), so no other stack of this working tree is starting meanwhile.
+ * The directory ui/e2e/.stack/<run> of the earlier run is kept (ADR-0010 C-235 (8): only the run
+ * that made it deletes it); its path is logged for removal by hand.
  */
 export async function removeLeftovers(log: Log): Promise<void> {
   const previous = readRunState();
   if (previous === null || previous.reused) {
-    pruneRunDirectories(null);
+    clearSharedRunFiles();
     return;
   }
   if (previous.owner_pid === DETACHED_OWNER) {
@@ -376,26 +378,20 @@ export async function removeLeftovers(log: Log): Promise<void> {
     log(`removed leftovers of ${previous.run_id}: ${removed.join(', ')}`);
   }
   removeRunState();
-  pruneRunDirectories(null);
+  clearSharedRunFiles();
+  if (existsSync(runDir(previous.run_id))) {
+    log(
+      `the directory ${runDir(previous.run_id)} of the dead run ${previous.run_id} is kept (its logs, and secrets/ if it crashed before its teardown): delete it by hand when it is no longer needed`,
+    );
+  }
 }
 
 /**
- * Deletes the directories of earlier runs below ui/e2e/.stack (their logs and any secrets left by
- * a crash), except `keep`, and the manifest and session of an earlier run.
+ * Deletes the seed manifest and the session of an earlier run (the files of the working tree's
+ * current stack, which a new run replaces). Run directories ui/e2e/.stack/<run> are never deleted
+ * here: only the run that made one deletes it (stopStack, removeRunOutputs).
  */
-export function pruneRunDirectories(keep: string | null): void {
-  if (!existsSync(STACK_DIR)) {
-    return;
-  }
-  for (const entry of readdirSync(STACK_DIR, { withFileTypes: true })) {
-    if (
-      entry.isDirectory() &&
-      /^(e2e-)?\d{8}-\d{6}-[0-9a-f]{4}$/.test(entry.name) &&
-      entry.name !== keep
-    ) {
-      rmSync(join(STACK_DIR, entry.name), { recursive: true, force: true });
-    }
-  }
+export function clearSharedRunFiles(): void {
   rmSync(MANIFEST_FILE, { force: true });
   rmSync(SESSION_FILE, { force: true });
 }

@@ -2,7 +2,8 @@
 //
 // shop-boot3 with the agent jar of the stack, started from a spec while the stack runs (the seed
 // and T-SV-020e start it the same way): T-E2E-099 (overview live refresh) and T-E2E-active-31
-// (running transactions reported by the real agent, WO-16). The shop reports as the seed's
+// (running transactions reported by the real agent, WO-16), T-E2E-async-3 (virtual threads with
+// SAMPLE_VT=true, WO-15). The shop reports as the seed's
 // application (TRAFFIC_APP) under the instance name the caller gives, so that specs running in
 // parallel workers do not replace each other's session. Inside the Playwright image of e2e:docker
 // there is no JVM: shopProblem names the reason and the caller skips or falls back.
@@ -29,6 +30,16 @@ export interface ShopOptions {
   readonly instance: string;
   /** File name of the shop's log under the run's logs directory. */
   readonly logFile: string;
+  /** Further JVM system properties before `-jar` (WO-15: the async service's slow threshold). */
+  readonly jvmArgs?: readonly string[];
+  /** Environment of the shop process (WO-15: SAMPLE_VT=true). */
+  readonly env?: Readonly<Record<string, string>>;
+  /**
+   * Report as another application with its own agent token file (WO-17: remote configuration and
+   * the kill switch are held per application, so they never reach the seed app's agents).
+   * Default: the seed's TRAFFIC_APP with the stack's agent.token.
+   */
+  readonly app?: { readonly name: string; readonly env: string; readonly tokenFile: string };
 }
 
 /** Why the shop cannot start here, or null. */
@@ -68,16 +79,17 @@ export async function startShop(runId: string, options: ShopOptions): Promise<Ru
       `-javaagent:${join(jarsDir(runId), 'argos-agent.jar')}`,
       `-Dargos.server.address=127.0.0.1:${String(state.grpc_port)}`,
       '-Dargos.server.tls=false',
-      `-Dargos.server.token-file=${join(secretsDir(runId), 'agent.token')}`,
-      `-Dargos.app.name=${TRAFFIC_APP.name}`,
-      `-Dargos.app.env=${TRAFFIC_APP.env}`,
+      `-Dargos.server.token-file=${options.app?.tokenFile ?? join(secretsDir(runId), 'agent.token')}`,
+      `-Dargos.app.name=${options.app?.name ?? TRAFFIC_APP.name}`,
+      `-Dargos.app.env=${options.app?.env ?? TRAFFIC_APP.env}`,
       `-Dargos.app.instance=${options.instance}`,
+      ...(options.jvmArgs ?? []),
       '-jar',
       join(jarsDir(runId), 'shop-boot3.jar'),
       `--server.port=${String(port)}`,
       '--server.address=127.0.0.1',
     ],
-    {},
+    options.env ?? {},
     join(logs, options.logFile),
   );
   try {

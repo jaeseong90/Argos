@@ -1,0 +1,205 @@
+{
+  "page": {
+    "title": "Instance",
+    "notFound": {
+      "title": "This instance does not exist.",
+      "description": "It may have been deleted, or the link has a wrong id. Open the instance list of the application to choose another one.",
+      "list": "Open instances"
+    },
+    "operatorOnly": "Agent commands and thread dumps need the operator or administrator role."
+  },
+  "tabs": {
+    "label": "Instance sections",
+    "metrics": "Metrics",
+    "env": "Environment",
+    "commands": "Commands",
+    "dumps": "Thread dumps"
+  },
+  "header": {
+    "app": "Application",
+    "version": "Version",
+    "agentVersion": "Agent version",
+    "compat": {
+      "old": "Old agent version: upgrade recommended",
+      "unsupported": "Agent version not supported by this server"
+    },
+    "jvm": "JVM",
+    "os": "OS",
+    "host": "Host",
+    "pid": "PID",
+    "cgroup": "cgroup",
+    "startedAt": "Started at",
+    "uptime": "Uptime",
+    "restarts": "Restarts in range",
+    "restartsHint": "Agent sessions that started in the selected time range (start events).",
+    "atLeast_one": "At least {{count, number}}",
+    "atLeast_other": "At least {{count, number}}",
+    "clockSkewWarn": "Offset of 1 s or more: times of this instance may be shifted",
+    "drops": "Drops (24 h)",
+    "modulesDisabled": "Modules disabled",
+    "modulesNone": "None",
+    "ipMode": {
+      "label": "IP capture:",
+      "full": "Full",
+      "masked": "Masked",
+      "off": "Off"
+    },
+    "virtualThreads": {
+      "label": "Virtual threads:",
+      "on": "On",
+      "off": "Off"
+    }
+  },
+  "links": {
+    "label": "Related screens",
+    "xlog": "XLog of this instance",
+    "active": "Active transactions of this instance",
+    "alerts": "Alert history",
+    "config": "Configuration change history"
+  },
+  "charts": {
+    "label": "Instance metrics",
+    "baseline": "Compare with 7 days ago",
+    "baselineFailed": "The comparison could not be loaded.",
+    "notMeasured": "Not measured: the agent reported no such series for this instance.",
+    "containerCpuLimit": "System CPU is relative to the container limit of {{cores}} cores.",
+    "heap": "Heap and non-heap memory",
+    "memoryPools": "Memory pools",
+    "gcCount": "GC count",
+    "gcPause": "GC pause time",
+    "threads": "Threads",
+    "classes": "Classes",
+    "cpu": "CPU",
+    "fd": "File descriptors",
+    "tomcat": "Tomcat",
+    "jdbcPools": "Connection pools",
+    "systemMemory": "System memory",
+    "disk": "Disk",
+    "network": "Network",
+    "empty": {
+      "title": "This instance reported no metrics.",
+      "description": "Metrics appear once the agent sends them (every 5 seconds). Check that the instance is connected, or widen the range."
+    }
+  },
+  "series": {
+    "memoryUsed": "{{name}} used",
+    "memoryMax": "{{name}} max",
+    "poolUsed": "{{name}} used",
+    "poolMax": "{{name}} max",
+    "gcCount": "{{name}}",
+    "gcPause": "{{name}} pause",
+    "threadsLive": "Live",
+    "threadsDaemon": "Daemon",
+    "threadsPeak": "Peak",
+    "threadsVirtualStarted": "Virtual threads started",
+    "classesLoaded": "Loaded",
+    "classesUnloaded": "Unloaded",
+    "cpuProcess": "Process",
+    "cpuSystem": "System",
+    "fdOpen": "Open",
+    "fdMax": "Max",
+    "tomcatBusy": "{{name}} busy threads",
+    "tomcatThreads": "{{name}} threads",
+    "tomcatThreadsMax": "{{name}} max threads",
+    "tomcatConnections": "{{name}} connections",
+    "tomcatConnectionsMax": "{{name}} max connections",
+    "jdbcActive": "{{name}} active",
+    "jdbcIdle": "{{name}} idle",
+    "jdbcWaiting": "{{name}} waiting",
+    "jdbcMax": "{{name}} max",
+    "systemMemoryUsed": "Used",
+    "systemMemoryTotal": "Total",
+    "containerMemoryLimit": "Container limit",
+    "diskUsed": "{{name}} used",
+    "diskTotal": "{{name}} total",
+    "networkReceive": "{{name}} received",
+    "networkTransmit": "{{name}} sent"
+  },
+  "env": {
+    "dump": {
+      "title": "JVM options, environment variables and system properties",
+      "adminOnly": "The environment dump needs the administrator role. Values arrive masked from the agent."
+    },
+    "config": {
+      "title": "Effective configuration",
+      "hash": "Configuration hash:",
+      "drift": "Differs from most instances of this application",
+      "operatorOnly": "The effective configuration needs the operator or administrator role.",
+      "sourceUnknown": "Unknown",
+      "sourceUnknownNotice": "Values and sources from the agent's file and environment are unknown until a self diagnosis runs. The table shows the values the server holds.",
+      "runSelfDiagnosis": "Run a self diagnosis",
+      "showSelfDiagnosis": "Show latest self-diagnosis",
+      "reportedAt": "Values and sources from the self diagnosis of {{at}}.",
+      "key": "Key",
+      "value": "Value",
+      "sourceHeader": "Source",
+      "source": {
+        "file": "File",
+        "env": "Environment variable",
+        "server": "Server push",
+        "default": "Default",
+        "systemProperty": "System property"
+      },
+      "serverValue": "Server value",
+      "serverStatus": "Server push state",
+      "status": {
+        "applied": "Applied",
+        "pending": "Pending",
+        "rejected": "Rejected",
+        "notAllowed": "Not allowed"
+      },
+      "remoteAllowed": "Remote change",
+      "yes": "Allowed",
+      "no": "Local only",
+      "empty": {
+        "title": "No configuration keys.",
+        "description": "The server lists the keys a collector may change. Run a self diagnosis to see every key of the agent."
+      }
+    },
+    "allow": {
+      "title": "Keys allowed to change remotely",
+      "none": "None: every key is changed in the local agent configuration only."
+    },
+    "modules": {
+      "title": "Instrumentation modules",
+      "partial": "Without a self diagnosis only modules with errors or disabled modules are listed.",
+      "name": "Module",
+      "state": "State",
+      "active": "Active",
+      "disabled": "Disabled",
+      "unknown": "Unknown",
+      "errorsInRange": "Errors in range",
+      "errorsReported": "Errors (self diagnosis)",
+      "reason": "Reason",
+      "empty": {
+        "title": "No module reported errors or was disabled.",
+        "description": "Run a self diagnosis to list every instrumentation module with its state."
+      }
+    },
+    "diagnosis": {
+      "title": "Self diagnosis",
+      "publicHint": "Agent overhead and drops over the selected range, from the agent's own metrics.",
+      "dropped": "Drops",
+      "cpu": "Agent CPU time",
+      "heap": "Agent heap (estimated)",
+      "stackCapture": "Stack capture time",
+      "clockOffset": "Clock offset",
+      "dictionaryOverflow": "Dictionary overflows",
+      "operatorOnly": "The full self diagnosis result needs the operator or administrator role."
+    }
+  },
+  "list": {
+    "title": "Instances",
+    "name": "Instance",
+    "state": "State",
+    "compatOld": "Old",
+    "compatUnsupported": "Not supported",
+    "ipMode": "IP capture",
+    "virtualThreads": "Virtual threads",
+    "lastHeartbeat": "Last heartbeat",
+    "empty": {
+      "title": "No instance of this application has connected yet.",
+      "description": "Start the application with the Argos agent and this application's token; it appears here within seconds."
+    }
+  }
+}

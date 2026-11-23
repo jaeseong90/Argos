@@ -3,6 +3,7 @@ package io.argos.agent.core.boot;
 
 import io.argos.agent.bootstrap.ArgosThread;
 import io.argos.agent.core.config.AgentConfig;
+import io.argos.agent.core.config.RuntimeConfig;
 import io.argos.agent.core.guard.SelfDiagnosticsCollector;
 import io.argos.agent.core.log.AgentLogger;
 import io.argos.agent.core.metric.ActiveSnapshotter;
@@ -30,9 +31,12 @@ import java.util.concurrent.locks.LockSupport;
  *       active.snapshot-interval-seconds} (5 s): the {@link ActiveTask} (C-225 (1)).
  * </ul>
  *
- * The collector is built on this thread at its first tick, never on the premain thread (P7 only
- * starts the thread, ADR-0009 C-79). {@link #stop} (shutdown hook, before the sender's final flush)
- * ends the thread and puts the open statistics window into the queue once ({@link
+ * The two periods are read from the configuration in force at each tick ({@link
+ * RuntimeConfig#current()} once the transport built it, WO-17), so a remote change of {@code
+ * metrics.interval-seconds} or {@code active.snapshot-interval-seconds} applies from the next grid
+ * point on. The collector is built on this thread at its first tick, never on the premain thread
+ * (P7 only starts the thread, ADR-0009 C-79). {@link #stop} (shutdown hook, before the sender's
+ * final flush) ends the thread and puts the open statistics window into the queue once ({@link
  * StatsAggregator#drainAll()}), so that a JVM stopped right after its last requests still reports
  * them (10 §10.2). A failing task is logged once and skipped; the thread never dies of it.
  */
@@ -155,8 +159,14 @@ final class MetricsThread {
     }
   }
 
+  /** The configuration in force: the running one once the transport built it (WO-17). */
+  private AgentConfig current() {
+    RuntimeConfig running = RuntimeConfig.current();
+    return running == null ? config : running.config();
+  }
+
   private void metrics(long nowMs) {
-    long gridMs = Math.max(1, config.metricsIntervalSeconds()) * 1000L;
+    long gridMs = Math.max(1, current().metricsIntervalSeconds()) * 1000L;
     long gridTs = Math.floorDiv(nowMs, gridMs) * gridMs;
     if (nextMetricMs != Long.MIN_VALUE && nowMs < nextMetricMs) {
       return;
@@ -251,7 +261,7 @@ final class MetricsThread {
     }
     int server = runtime.serverActiveSnapshotIntervalSeconds();
     long periodMs =
-        (server > 0 ? server : Math.max(1, config.activeSnapshotIntervalSeconds())) * 1000L;
+        (server > 0 ? server : Math.max(1, current().activeSnapshotIntervalSeconds())) * 1000L;
     if (nextActiveMs != Long.MIN_VALUE && nowMs < nextActiveMs) {
       return;
     }

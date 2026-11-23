@@ -50,6 +50,7 @@ function sortedExtra(
 export const queryKeys = {
   auth: {
     me: () => ['auth', 'me'] as const,
+    sessions: () => ['auth', 'sessions'] as const,
   },
   setup: {
     status: () => ['setup', 'status'] as const,

@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# docs/05 §2.7-4 "명령 탭" and §2.7-5 "스레드 덤프 뷰어" as data-driven E2E tests (docs/18 §13,
+# DSN-18-10, docs/04 WO-37): one entry per bullet, so that T-E2E-dumps-1 is the commands tab and
+# T-E2E-dumps-2 the dump viewer. Each item opens the instance list of the traffic seed's
+# application and runs a named check of e2e/required/dumpsChecks.ts on the command feed
+# (e2e/fixtures/commandFeed.ts: app e2e-cmd, instance e2e-cmd-1 as a protocol-level agent session
+# of the real collector that answers remote commands until WO-17's agent is in the stack): the
+# check takes a thread dump through the real server (REST, agent session, result encrypted in
+# PostgreSQL with the stack's master key) and compares the screen with GET /commands/{id}/result
+# and GET /instances/{id}/commands asked in the test (no fixed values). The command round trip from
+# the buttons, the role matrix with the server's 403, the masked environment dump, the self
+# diagnosis, error and expiry states, the truncated dump and the real agent are
+# specs/dumps.spec.ts (T-E2E-dumps-20 .. 30). Inside the Playwright image of e2e:docker there is no
+# JVM for the feed: both items skip with the reason.
+screen: dumps
+title: Commands tab and thread dump viewer
+source: docs/05 §2.7-4, §2.7-5
+items:
+  - id: 2.7-4
+    title: the commands tab shows the request and result history (requester, time, duration, size, state) of the API, the administrator's five command buttons the server agrees with, and the audit trail
+    req: [F-U08, F-A12, SEC-21, SEC-50]
+    owner: WO-37
+    coverage: E2E (T-E2E-dumps-1, T-E2E-dumps-20, T-E2E-dumps-21, T-E2E-dumps-27); component CommandsTab.test.tsx
+    role: admin
+    route: /apps/{traffic_app_id}/instances
+    assert:
+      - visible: instances-page
+      - check: commandsTabElements
+
+  - id: 2.7-5
+    title: the dump viewer shows the threads by state with counts, identical stacks collapsed, lock holders and waiters with the deadlock, virtual threads, search by thread name, class and method, transaction links, the .txt download, the last 20 dumps and the depth-limit notice of the dump's result
+    req: [F-U08, SEC-60]
+    owner: WO-37
+    coverage: E2E (T-E2E-dumps-2, T-E2E-dumps-22, T-E2E-dumps-23, T-E2E-dumps-24); unit dumpModel.test.ts, component DumpsTab.test.tsx
+    role: operator
+    route: /apps/{traffic_app_id}/instances
+    assert:
+      - visible: instances-page
+      - check: dumpViewerElements

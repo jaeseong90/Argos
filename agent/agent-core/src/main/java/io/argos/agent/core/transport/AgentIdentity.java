@@ -34,8 +34,8 @@ import java.util.Locale;
  *   <li>runtime: agent version, {@code protocol_version} ({@code ProtocolVersion.CURRENT}), host
  *       name, pid, JVM version and vendor, OS, architecture, process start, {@code cgroup} ({@code
  *       v1}, {@code v2} or {@code none}, {@link CgroupReader#systemMode()}), {@code
- *       virtual_threads} false until WO-15 reports their use, loaded instrumentation modules,
- *       {@code plaintext};
+ *       virtual_threads} (true once a transaction began on a virtual thread, reported by the
+ *       tracer), loaded instrumentation modules, {@code plaintext};
  *   <li>per process: {@code agent_epoch} (random, C-3).
  * </ul>
  *

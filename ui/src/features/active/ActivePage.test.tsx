@@ -6,7 +6,8 @@
 // four bands and the instance state (T-UI-008), the nine columns with "Not collected" apart from
 // the dash (T-UI-007), default sort by elapsed and the client-side filters (T-UI-004), custom
 // thresholds, pause, "as of N s ago" on the server clock, the stale badge and its recovery, row
-// actions (disabled commands, recent completions link), collected strings as text (T-UI-005),
+// actions (stack and dump commands for operators, disabled with the reason for viewers, instance
+// detail and recent completions links), collected strings as text (T-UI-005),
 // empty and error states and the Korean catalog (T-UI-006).
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -501,7 +502,7 @@ describe('active: realtime (docs/14 §5, docs/15 §10)', () => {
 });
 
 describe('active: row actions (05 §2.6-4, T-ACPT-02 automated part)', () => {
-  it('a selected ≥ 8 s row offers stack and dump disabled with the reason and links recent completions to the XLog', async () => {
+  it('a viewer sees stack and dump disabled with the operator reason; recent completions links to the XLog', async () => {
     answer();
     const { app } = await openActive('env=prod');
     expect(screen.queryByTestId('active-row-actions')).not.toBeInTheDocument();
@@ -512,11 +513,13 @@ describe('active: row actions (05 §2.6-4, T-ACPT-02 automated part)', () => {
     for (const testId of ['active-action-stack', 'active-action-dump']) {
       const button = screen.getByTestId(testId);
       expect(button).toHaveAttribute('aria-disabled', 'true');
-      expect(button).toHaveAttribute('data-reason', enActive.actions.commandsUnavailable);
+      expect(button).toHaveAttribute('data-reason', enActive.actions.operatorRequired);
       const described = document.getElementById(button.getAttribute('aria-describedby') ?? '');
-      expect(described).toHaveTextContent(enActive.actions.commandsUnavailable);
+      expect(described).toHaveTextContent(enActive.actions.operatorRequired);
       fireEvent.click(button);
     }
+    // No command was requested for the viewer.
+    expect(stub.requests.some((r) => r.path.endsWith('/commands'))).toBe(false);
     expect(app.url()).toContain('/apps/1/active');
     const recent = screen.getByTestId('active-action-recent');
     const href = recent.getAttribute('href') ?? '';
@@ -529,6 +532,123 @@ describe('active: row actions (05 §2.6-4, T-ACPT-02 automated part)', () => {
     // A BATCH transaction carries its kind.
     fireEvent.click(screen.getByTestId('active-actions-clear'));
     expect(screen.queryByTestId('active-row-actions')).not.toBeInTheDocument();
+  });
+
+  it('T-ACPT-02 an operator gets the thread stack: thread_stack with the tx id, polled until done, state and tx match shown', async () => {
+    answer();
+    const commandId = '6f1c2d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f';
+    let polls = 0;
+    stub.on('POST /api/v1/instances/1/commands', () =>
+      envelope({ command_id: commandId, status: 'queued', ttl_s: 60 }, {}, 202),
+    );
+    stub.on(`GET /api/v1/commands/${commandId}`, () => {
+      polls += 1;
+      const done = polls >= 2;
+      return envelope({
+        command_id: commandId,
+        instance_id: 1,
+        type: 'thread_stack',
+        args: { tx_id: '101' },
+        status: done ? 'done' : 'sent',
+        error: null,
+        requested_by: 'u-1',
+        requested_at: '2026-11-23T10:00:00.000Z',
+        sent_at: '2026-11-23T10:00:00.100Z',
+        finished_at: done ? '2026-11-23T10:00:00.900Z' : null,
+        expires_at: new Date(Date.now() + 60_000).toISOString(),
+        duration_ms: done ? 800 : null,
+        result_size: done ? 420 : null,
+        truncated: done ? false : null,
+      });
+    });
+    stub.on(`GET /api/v1/commands/${commandId}/result`, () =>
+      envelope({
+        command_id: commandId,
+        instance_id: 1,
+        type: 'thread_stack',
+        format: 'json',
+        content_type: 'application/json',
+        size_bytes: 420,
+        truncated: false,
+        text: null,
+        deadlocks: [],
+        threads: [
+          {
+            id: 41,
+            name: 'http-nio-8080-exec-101',
+            state: 'RUNNABLE',
+            virtual: false,
+            locks_held: [],
+            waiting_on: null,
+            frames: [
+              'java.net.SocketInputStream.read(SocketInputStream.java:141)',
+              'com.shop.OrderDao.find(OrderDao.java:42)',
+            ],
+            tx_id: '101',
+          },
+        ],
+      }),
+    );
+    await openActive('', 'en', ['operator']);
+    fireEvent.click(screen.getByTestId('active-cell-elapsed-101'));
+    const stack = await screen.findByTestId('active-action-stack', {}, FIND);
+    expect(stack).not.toHaveAttribute('aria-disabled');
+    fireEvent.click(stack);
+    const modal = await screen.findByTestId('thread-stack-modal', {}, FIND);
+    const shown = await within(modal).findByTestId('thread-stack', {}, { timeout: 8000 });
+    expect(stub.calls('POST /api/v1/instances/1/commands')[0]?.body).toEqual({
+      type: 'thread_stack',
+      args: { tx_id: '101' },
+    });
+    expect(polls).toBeGreaterThanOrEqual(2);
+    expect(shown).toHaveAttribute('data-tx-match', 'match');
+    expect(shown).toHaveAttribute('data-state', 'RUNNABLE');
+    expect(within(modal).getByTestId('thread-stack-name')).toHaveTextContent(
+      'http-nio-8080-exec-101',
+    );
+    expect(within(modal).getByTestId('thread-stack-tx-link')).toHaveAttribute(
+      'href',
+      '/apps/1/transactions/101',
+    );
+    expect(modal).toHaveTextContent('com.shop.OrderDao.find(OrderDao.java:42)');
+    fireEvent.click(within(modal).getByTestId('thread-stack-close'));
+    expect(screen.queryByTestId('thread-stack-modal')).not.toBeInTheDocument();
+  }, 20_000);
+
+  it('an operator dump requests thread_dump and opens the dumps tab with the command; errors are told', async () => {
+    answer();
+    const commandId = '7a2b3c4d-5e6f-4a7b-9c8d-1e2f3a4b5c6d';
+    let reply: () => Response = () => errorBody(409, 'instance_offline');
+    stub.on('POST /api/v1/instances/1/commands', () => reply());
+    const { app } = await openActive('env=prod', 'en', ['operator']);
+    fireEvent.click(screen.getByTestId('active-cell-elapsed-101'));
+    fireEvent.click(await screen.findByTestId('active-action-dump', {}, FIND));
+    const feedback = await screen.findByTestId('active-dump-feedback', {}, FIND);
+    await waitFor(() => {
+      expect(feedback).toHaveAttribute('data-state', 'request-error');
+    }, FIND);
+    expect(app.url()).toContain('/apps/1/active');
+    reply = () => envelope({ command_id: commandId, status: 'queued', ttl_s: 60 }, {}, 202);
+    fireEvent.click(screen.getByTestId('active-action-dump'));
+    await waitFor(() => {
+      expect(app.url()).toContain('/apps/1/instances/1?');
+    }, FIND);
+    const query = new URLSearchParams(app.url().split('?')[1]);
+    expect(query.get('tab')).toBe('dumps');
+    expect(query.get('cmd')).toBe(commandId);
+    expect(query.get('env')).toBe('prod');
+    expect(stub.calls('POST /api/v1/instances/1/commands').at(-1)?.body).toEqual({
+      type: 'thread_dump',
+    });
+  });
+
+  it('instance names in the bars and rows link to the instance detail with the carried keys', async () => {
+    answer();
+    await openActive('env=prod');
+    const detail = screen.getByTestId('active-bar-detail-1');
+    expect(detail.getAttribute('href')).toBe('/apps/1/instances/1?env=prod');
+    const cell = screen.getByTestId('active-instance-link-201');
+    expect(cell.getAttribute('href')).toBe('/apps/1/instances/2?env=prod');
   });
 
   it('a BATCH row links with kind=BATCH; a row that finishes stays selected and says so', async () => {

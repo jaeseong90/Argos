@@ -14,8 +14,14 @@
 // secrets directory, is reused by later calls of the same run and is never printed. Inside the
 // Playwright image of e2e:docker there is no JVM: startActiveFeed resolves with null there, and the
 // specs skip their real-data tests (as T-SV-020e does).
+//
+// WO-37: the `commands` option starts the feed with `--commands`, so every instance also answers
+// remote commands (thread dump, thread stack, self diagnosis, environment dump, config reload) as
+// an agent does, deterministically from the scenario (ActiveFeed and ActiveFeedScenario javadoc).
+// `app` and `instances` let a spec run its own feed app next to e2e-active (e2e/fixtures/
+// commandFeed.ts: app e2e-cmd); each app has its own token file and log file.
 import type { ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { z } from 'zod';
@@ -50,6 +56,26 @@ export const ACTIVE_FEED_JAR = join(ACTIVE_FEED_DIR, 'active-feed.jar');
 /** File name of the feed's agent token inside the run's secrets directory. */
 export const ACTIVE_FEED_TOKEN_FILE = 'active-feed.token';
 
+/** An app of a feed (plain identifiers: they reach psql and the command line). */
+export interface FeedApp {
+  readonly name: string;
+  readonly env: string;
+}
+
+function isDefaultApp(app: FeedApp): boolean {
+  return app.name === ACTIVE_FEED_APP.name && app.env === ACTIVE_FEED_APP.env;
+}
+
+/** The token file name of `app` in the run's secrets directory (the default app keeps its name). */
+export function feedTokenFile(app: FeedApp): string {
+  return isDefaultApp(app) ? ACTIVE_FEED_TOKEN_FILE : `active-feed-${app.name}-${app.env}.token`;
+}
+
+/** The log file name of a feed of `app` in the run's logs directory. */
+export function feedLogFile(app: FeedApp): string {
+  return isDefaultApp(app) ? 'active-feed.log' : `active-feed-${app.name}.log`;
+}
+
 /** The default elapsed band limits of the server (1 s, 3 s, 8 s; docs/14 §4.9 `buckets`). */
 export const DEFAULT_BAND_LIMITS_MS = [1000, 3000, 8000] as const;
 
@@ -73,12 +99,31 @@ const ReadySlot = z.object({
   remote_ip: z.string().nullable(),
 });
 
+/**
+ * What the command answers of a `--commands` feed contain (ActiveFeedScenario constants, WO-37):
+ * the raw sentinel the environment dump never carries and the masked form it carries instead, the
+ * deadlocked thread names, the idle pool threads collapsed into one stack, the deepest stack and
+ * the XSS payload thread name.
+ */
+export const ActiveFeedCommands = z.object({
+  enabled: z.literal(true),
+  env_secret_sentinel: z.string().min(1),
+  env_secret_masked: z.string().regex(/^\*{4}\(len=\d+\)$/),
+  deadlock_threads: z.array(z.string()).length(2),
+  idle_pool_threads: z.number().int().positive(),
+  deep_frames: z.number().int().positive(),
+  xss_thread: z.string(),
+});
+export type ActiveFeedCommands = z.infer<typeof ActiveFeedCommands>;
+
 /** The ready file of the feed (ActiveFeedScenario.toJson). */
 export const ActiveFeedReady = z.object({
   app: z.string(),
   env: z.string(),
   feed_start_ms: z.number().int(),
   interval_ms: z.number().int().positive(),
+  /** Null (or absent from an older feed) without `--commands`. */
+  commands: ActiveFeedCommands.nullable().optional(),
   instances: z
     .array(
       z.object({
@@ -86,6 +131,8 @@ export const ActiveFeedReady = z.object({
         instance_id: z.number().int(),
         user_id_mode: z.enum(['off', 'plain', 'hashed']),
         ip_mode: z.enum(['off', 'masked', 'full']),
+        /** With `--commands`: the instance reports its thread dump truncated (the second one). */
+        dump_truncated: z.boolean().optional(),
         slots: z.array(ReadySlot).min(1),
       }),
     )
@@ -170,17 +217,27 @@ export interface ActiveFeedArgs {
   readonly instances?: readonly string[];
   readonly durationS?: number;
   readonly intervalS?: number;
+  /** The feed's app (default e2e-active/e2e). */
+  readonly app?: FeedApp;
+  /** Answer remote commands (`--commands`, WO-37). Off by default. */
+  readonly commands?: boolean;
 }
+
+const PLAIN_NAME = /^[A-Za-z0-9._:-]{1,128}$/;
 
 /** The java arguments of the feed process (`-jar active-feed.jar ...`). */
 export function activeFeedArgs(args: ActiveFeedArgs): string[] {
   const instances = args.instances ?? ACTIVE_FEED_INSTANCES;
+  const app = args.app ?? ACTIVE_FEED_APP;
+  if (!PLAIN_NAME.test(app.name) || !PLAIN_NAME.test(app.env)) {
+    throw new Error('invalid app name or env');
+  }
   const durationS = args.durationS ?? ACTIVE_FEED_DURATION_S;
   const intervalS = args.intervalS ?? ACTIVE_FEED_INTERVAL_S;
   if (!Number.isInteger(args.grpcPort) || args.grpcPort < 1 || args.grpcPort > 65_535) {
     throw new Error(`invalid gRPC port ${String(args.grpcPort)}`);
   }
-  if (instances.length === 0 || instances.some((i) => !/^[A-Za-z0-9._:-]{1,128}$/.test(i))) {
+  if (instances.length === 0 || instances.some((i) => !PLAIN_NAME.test(i))) {
     throw new Error('invalid instance names');
   }
   for (const [name, value, max] of [
@@ -208,9 +265,10 @@ export function activeFeedArgs(args: ActiveFeedArgs): string[] {
     '--interval',
     `${String(intervalS)}s`,
     '--app',
-    ACTIVE_FEED_APP.name,
+    app.name,
     '--env',
-    ACTIVE_FEED_APP.env,
+    app.env,
+    ...(args.commands === true ? ['--commands'] : []),
   ];
 }
 
@@ -242,9 +300,13 @@ export interface ActiveFeedStack {
 /** A running feed. */
 export interface RunningActiveFeed {
   readonly appId: number;
-  readonly appName: typeof ACTIVE_FEED_APP.name;
-  readonly env: typeof ACTIVE_FEED_APP.env;
+  readonly appName: string;
+  readonly env: string;
   readonly instances: readonly { readonly name: string; readonly instanceId: number }[];
+  /** What the command answers contain; null without `commands`. */
+  readonly commands: ActiveFeedCommands | null;
+  /** Per instance name: it reports its thread dump truncated (only with `commands`). */
+  readonly dumpTruncated: Readonly<Record<string, boolean>>;
   readonly scenario: readonly ScenarioRow[];
   readonly feedStartMs: number;
   readonly intervalMs: number;
@@ -270,11 +332,17 @@ interface ActiveData {
   items: ActiveItemRow[];
 }
 
-/** The app row and ACTIVE token of the feed; the token file path (created once per run). */
-async function provisionToken(runId: string, postgresContainer: string, log: Log): Promise<string> {
+/** The app row and ACTIVE token of the feed; the token file path (created once per run and app). */
+async function provisionToken(
+  runId: string,
+  postgresContainer: string,
+  app: FeedApp,
+  log: Log,
+): Promise<string> {
   const dir = secretsDir(runId);
-  const file = join(dir, ACTIVE_FEED_TOKEN_FILE);
-  if (existsSync(file) && readSecret(dir, ACTIVE_FEED_TOKEN_FILE).startsWith('argos_')) {
+  const name = feedTokenFile(app);
+  const file = join(dir, name);
+  if (existsSync(file) && readSecret(dir, name).startsWith('argos_')) {
     return file;
   }
   const token = newAgentToken();
@@ -295,22 +363,55 @@ async function provisionToken(runId: string, postgresContainer: string, log: Log
       'argos',
     ],
     {
-      input: tokenSql(sha256Hex(token), token.slice(0, 14), ACTIVE_FEED_APP),
+      input: tokenSql(sha256Hex(token), token.slice(0, 14), app),
       secrets: [token],
       timeoutMs: 60_000,
     },
   );
   // Written only after the row exists: a later call of the run reuses both.
-  writeSecret(dir, ACTIVE_FEED_TOKEN_FILE, token);
-  log(
-    `active feed app ${ACTIVE_FEED_APP.name}/${ACTIVE_FEED_APP.env} and its agent token provisioned`,
-  );
+  writeSecret(dir, name, token);
+  log(`active feed app ${app.name}/${app.env} and its agent token provisioned`);
   return file;
 }
 
-/** Builds the feed jar when it or its libraries are missing. */
+/** The feed's sources (server test fixtures): a jar older than any of them is rebuilt. */
+export const ACTIVE_FEED_SOURCES_DIR = join(
+  REPO_ROOT,
+  'server',
+  'src',
+  'testFixtures',
+  'java',
+  'io',
+  'argos',
+  'server',
+  'testing',
+  'fakeagent',
+);
+
+/**
+ * Whether a jar built at `jarMtimeMs` predates a source modified at one of `sourceMtimesMs` (a jar
+ * of WO-35 does not know `--commands`, WO-37).
+ */
+export function feedJarStale(jarMtimeMs: number, sourceMtimesMs: readonly number[]): boolean {
+  return sourceMtimesMs.some((m) => m > jarMtimeMs);
+}
+
+function sourceMtimes(): number[] {
+  if (!existsSync(ACTIVE_FEED_SOURCES_DIR)) {
+    return [];
+  }
+  return readdirSync(ACTIVE_FEED_SOURCES_DIR)
+    .filter((f) => f.endsWith('.java'))
+    .map((f) => statSync(join(ACTIVE_FEED_SOURCES_DIR, f)).mtimeMs);
+}
+
+/** Builds the feed jar when it or its libraries are missing, or older than its sources. */
 async function ensureJar(log: Log): Promise<void> {
-  if (existsSync(ACTIVE_FEED_JAR) && existsSync(join(ACTIVE_FEED_DIR, 'lib'))) {
+  if (
+    existsSync(ACTIVE_FEED_JAR) &&
+    existsSync(join(ACTIVE_FEED_DIR, 'lib')) &&
+    !feedJarStale(statSync(ACTIVE_FEED_JAR).mtimeMs, sourceMtimes())
+  ) {
     return;
   }
   log('building the active feed: ./gradlew :server:activeFeedJar');
@@ -331,8 +432,15 @@ export async function startActiveFeed(options: {
   readonly stack: ActiveFeedStack;
   readonly log: Log;
   readonly durationS?: number;
+  /** The feed's app (default e2e-active/e2e). */
+  readonly app?: FeedApp;
+  /** Instance names (default ACTIVE_FEED_INSTANCES). */
+  readonly instances?: readonly string[];
+  /** Answer remote commands (WO-37). */
+  readonly commands?: boolean;
 }): Promise<RunningActiveFeed | null> {
   const { stack, log } = options;
+  const feedApp = options.app ?? ACTIVE_FEED_APP;
   const state = readRunState();
   const problem = activeFeedProblem(stack.runId, state);
   if (problem !== null) {
@@ -345,7 +453,7 @@ export async function startActiveFeed(options: {
   // activeFeedProblem checked both.
   const grpcPort = state?.grpc_port ?? 0;
   const postgres = state?.containers?.postgres ?? '';
-  const tokenFile = await provisionToken(stack.runId, postgres, log);
+  const tokenFile = await provisionToken(stack.runId, postgres, feedApp, log);
   await ensureJar(log);
 
   started += 1;
@@ -355,7 +463,7 @@ export async function startActiveFeed(options: {
   rmSync(readyFile, { force: true });
   const logs = logsDir(stack.runId);
   mkdirSync(logs, { recursive: true });
-  const logFile = join(logs, 'active-feed.log');
+  const logFile = join(logs, feedLogFile(feedApp));
   const child: ChildProcess = startProcess(
     javaExecutable(),
     activeFeedArgs({
@@ -364,6 +472,9 @@ export async function startActiveFeed(options: {
       tokenFile,
       readyFile,
       durationS: options.durationS,
+      instances: options.instances,
+      app: feedApp,
+      commands: options.commands,
     }),
     {},
     logFile,
@@ -391,11 +502,12 @@ export async function startActiveFeed(options: {
     );
     const scenario = scenarioRows(ready);
     const apps = await stack.api.query<{ app_id: number; name: string; env: string }[]>('/apps');
-    const app = apps.data.find(
-      (a) => a.name === ACTIVE_FEED_APP.name && a.env === ACTIVE_FEED_APP.env,
-    );
+    const app = apps.data.find((a) => a.name === feedApp.name && a.env === feedApp.env);
     if (app === undefined) {
-      throw new Error(`GET /apps does not list ${ACTIVE_FEED_APP.name}/${ACTIVE_FEED_APP.env}`);
+      throw new Error(`GET /apps does not list ${feedApp.name}/${feedApp.env}`);
+    }
+    if (options.commands === true && (ready.commands ?? null) === null) {
+      throw new Error(`the feed of ${feedApp.name} was asked for --commands but reports none`);
     }
     const instances = await waitFor(
       async () => {
@@ -430,13 +542,17 @@ export async function startActiveFeed(options: {
       }
     }
     log(
-      `active feed up for ${ACTIVE_FEED_APP.name} (app ${String(app.app_id)}): ${instances.map((i) => `${i.name}=${String(i.instanceId)}`).join(' ')}`,
+      `active feed up for ${feedApp.name} (app ${String(app.app_id)}${options.commands === true ? ', answering commands' : ''}): ${instances.map((i) => `${i.name}=${String(i.instanceId)}`).join(' ')}`,
     );
     return {
       appId: app.app_id,
-      appName: ACTIVE_FEED_APP.name,
-      env: ACTIVE_FEED_APP.env,
+      appName: feedApp.name,
+      env: feedApp.env,
       instances,
+      commands: ready.commands ?? null,
+      dumpTruncated: Object.fromEntries(
+        ready.instances.map((i) => [i.name, i.dump_truncated === true]),
+      ),
       scenario,
       feedStartMs: ready.feed_start_ms,
       intervalMs: ready.interval_ms,

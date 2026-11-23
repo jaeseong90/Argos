@@ -33,10 +33,12 @@ public class AppRepository {
   public static final int MAX_ENV_CHARS = 32;
 
   private static final String FIND =
-      "SELECT id, name, env, registered_from_app_id FROM argos.apps WHERE name = ? AND env = ?";
+      "SELECT id, name, env, registered_from_app_id FROM argos.apps WHERE name = ? AND env = ?"
+          + " AND deleted_at IS NULL";
 
   /** Locks the home app's row: one variant registration per home app at a time, on any server. */
-  private static final String LOCK_HOME = "SELECT id FROM argos.apps WHERE id = ? FOR UPDATE";
+  private static final String LOCK_HOME =
+      "SELECT id FROM argos.apps WHERE id = ? AND deleted_at IS NULL FOR UPDATE";
 
   /**
    * Variants the home app's Hellos registered themselves ({@code auto_register}); a variant an

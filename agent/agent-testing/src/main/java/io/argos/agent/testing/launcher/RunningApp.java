@@ -4,6 +4,7 @@ package io.argos.agent.testing.launcher;
 import io.argos.agent.testing.baseline.TransformList;
 import io.argos.agent.testing.baseline.TransformLog;
 import io.argos.agent.testing.collector.Collected;
+import io.argos.agent.testing.collector.FakeCollector;
 import io.argos.agent.testing.export.FileExporterReader;
 import io.argos.agent.testing.jvm.JcmdClient;
 import java.io.IOException;
@@ -149,6 +150,20 @@ public interface RunningApp extends AutoCloseable {
    * not-available object that says why instead of returning zeros.
    */
   SelfDiagnostics selfDiagnostics();
+
+  /**
+   * The agent's self-diagnostics through the session: the {@code SELF_DIAGNOSTICS} command sent by
+   * {@code collector} (WO-17, ADR-0010 C-95 second source), parsed like the snapshot file ({@link
+   * SelfDiagnostics#fromCommand(FakeCollector)}). The collector must have exactly one open agent
+   * session (this run's). Not available, with the reason, when no agent is attached or the agent
+   * does not answer {@code OK}.
+   */
+  default SelfDiagnostics selfDiagnostics(FakeCollector collector) {
+    if (!agentAttached()) {
+      return SelfDiagnostics.notAvailable("no Argos agent is attached to this run");
+    }
+    return SelfDiagnostics.fromCommand(collector);
+  }
 
   /** Process creation to port binding (ADR-0004 C-49, N-04). */
   Duration startupTime();

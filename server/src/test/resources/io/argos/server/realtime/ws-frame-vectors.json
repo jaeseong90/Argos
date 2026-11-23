@@ -32,7 +32,22 @@
     "frame" : "{\"op\":\"ack\",\"id\":\"s4\",\"topic\":\"alert\",\"since\":\"2026-11-22T00:00:18.000Z\"}"
   }, {
     "name" : "push alert (FIRING, reason condition)",
-    "frame" : "{\"op\":\"push\",\"id\":\"s4\",\"topic\":\"alert\",\"t\":\"2026-11-22T00:00:18.000Z\",\"data\":{\"event\":{\"event_id\":\"01935a2b-7c00-7000-8000-000000000001\",\"ts\":\"2026-11-22T00:00:18Z\",\"app\":{\"id\":3,\"name\":\"shop\"},\"env\":\"prod\",\"target\":{\"type\":\"instance\",\"id\":\"12\",\"name\":\"host-a:8080\"},\"rule\":{\"id\":\"01935a2b-7c00-7000-8000-000000000002\",\"name\":\"Error rate high\"},\"severity\":\"critical\",\"state\":\"FIRING\",\"value\":0.12,\"threshold\":0.05,\"duration_s\":0,\"reason\":\"condition\",\"deeplink\":\"https://argos.example.com/apps/3/dashboard?env=prod&from=2026-11-21T23%3A44%3A18Z&to=2026-11-22T00%3A14%3A18Z&f.instance=12&alert=01935a2b-7c00-7000-8000-000000000001\"}}}"
+    "frame" : "{\"op\":\"push\",\"id\":\"s4\",\"topic\":\"alert\",\"t\":\"2026-11-22T00:00:18.000Z\",\"data\":{\"event\":{\"event_id\":\"01935a2b-7c00-7000-8000-000000000001\",\"ts\":\"2026-11-22T00:00:18Z\",\"app\":{\"id\":3,\"name\":\"shop\"},\"env\":\"prod\",\"target\":{\"type\":\"instance\",\"id\":\"12\",\"name\":\"host-a:8080\"},\"rule\":{\"id\":\"01935a2b-7c00-7000-8000-000000000002\",\"name\":\"Error rate high\",\"metric\":\"error_rate\",\"unit\":\"ratio\"},\"severity\":\"critical\",\"state\":\"FIRING\",\"value\":0.12,\"threshold\":0.05,\"duration_s\":0,\"reason\":\"condition\",\"deeplink\":\"https://argos.example.com/apps/3/dashboard?env=prod&from=2026-11-21T23%3A44%3A18Z&to=2026-11-22T00%3A14%3A18Z&f.instance=12&alert=01935a2b-7c00-7000-8000-000000000001\"}}}"
+  }, {
+    "name" : "ack admin",
+    "frame" : "{\"op\":\"ack\",\"id\":\"s6\",\"topic\":\"admin\",\"since\":\"2026-11-22T00:00:18.000Z\"}"
+  }, {
+    "name" : "push admin (command done)",
+    "frame" : "{\"op\":\"push\",\"id\":\"s6\",\"topic\":\"admin\",\"t\":\"2026-11-22T00:00:18.000Z\",\"data\":{\"command_id\":\"0b9d6f4e-3c1a-4f2b-9a7e-5d8c2e1f0a11\",\"instance_id\":12,\"type\":\"thread_dump\",\"status\":\"done\",\"error\":null}}"
+  }, {
+    "name" : "ack admin (config change)",
+    "frame" : "{\"op\":\"ack\",\"id\":\"s10\",\"topic\":\"admin\",\"since\":\"2026-11-22T00:00:18.000Z\"}"
+  }, {
+    "name" : "push admin (config change instance result)",
+    "frame" : "{\"op\":\"push\",\"id\":\"s10\",\"topic\":\"admin\",\"t\":\"2026-11-22T00:00:18.000Z\",\"data\":{\"change_id\":\"5f2c8a1e-7d4b-4c3e-8f6a-1b2d3e4f5a60\",\"app_id\":7,\"kind\":\"config\",\"status\":\"applying\",\"instance_id\":12,\"result\":\"partial\",\"rejected_keys\":[\"sampling.profile.normal-rate\"]}}"
+  }, {
+    "name" : "push admin (config change done)",
+    "frame" : "{\"op\":\"push\",\"id\":\"s10\",\"topic\":\"admin\",\"t\":\"2026-11-22T00:00:18.000Z\",\"data\":{\"change_id\":\"5f2c8a1e-7d4b-4c3e-8f6a-1b2d3e4f5a60\",\"app_id\":7,\"kind\":\"config\",\"status\":\"applied\",\"results\":{\"applied\":2,\"offline\":1,\"partial\":1,\"rejected\":1}}}"
   }, {
     "name" : "error topic_unknown",
     "frame" : "{\"op\":\"error\",\"id\":\"s7\",\"code\":\"topic_unknown\",\"message\":\"Unknown topic\"}"

@@ -15,13 +15,16 @@ import io.argos.server.collector.batch.UnknownEnumSink;
 import io.argos.server.collector.limits.LimitsChecker;
 import io.argos.server.collector.limits.SlidingWindowCounter;
 import io.argos.server.collector.limits.Violation;
+import io.argos.server.session.api.HelloConfigSource;
 import io.argos.server.session.api.IpMode;
 import io.argos.server.session.api.UserIdMode;
 import io.grpc.Status;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -91,8 +94,9 @@ import org.slf4j.LoggerFactory;
  * <p>An accepted Hello reuses or creates the {@code instances} row of (app, instance name) with the
  * Hello metadata, registers the session (check 7) and answers with the ids, the server and protocol
  * versions, the accepted agent range, the server time (first clock estimate, 11 §9), the intervals,
- * the configured {@code Limits}, an empty {@code config} (ConfigPush is WO-26) and an empty {@code
- * user_id_salt} (ADR-0010 C-125).
+ * the configured {@code Limits}, the {@code config} of the {@link HelloConfigSource} (WO-26: the
+ * values the server holds for the app within the Hello's {@code remote_config_allow}, 12 §6.2) and
+ * an empty {@code user_id_salt} (ADR-0010 C-125).
  *
  * <p>Check 6 and the registration run under a per-app lock, so that two Hellos of one app cannot
  * both pass the instance count.
@@ -148,6 +152,8 @@ public final class HelloService {
   private final AtomicLong lastMetadataWarn = new AtomicLong(Long.MIN_VALUE);
   private final AtomicLong lastVariantWarn = new AtomicLong(Long.MIN_VALUE);
   private final AtomicLong lastPendingWarn = new AtomicLong(Long.MIN_VALUE);
+  private final AtomicLong lastConfigWarn = new AtomicLong(Long.MIN_VALUE);
+  private volatile HelloConfigSource configSource = HelloConfigSource.NONE;
   private final SessionStore store;
   private final SessionRegistry registry;
   private final SessionSettings settings;
@@ -413,6 +419,8 @@ public final class HelloService {
       touchToken(token.tokenId());
       ServerHello accepted =
           base.setAccepted(true)
+              .putAllConfig(
+                  helloConfig(app.id(), session.instanceId(), hello.getRemoteConfigAllowList()))
               .setAppId(app.id())
               .setInstanceId(session.instanceId())
               .setSessionId(session.sessionId().toString())
@@ -551,6 +559,38 @@ public final class HelloService {
             instanceId,
             e.toString());
       }
+    }
+  }
+
+  /**
+   * Connects the source of {@code ServerHello.config} (WO-26 {@code ConfigChangeService}, wired at
+   * start-up by {@code AdminSessionWiring}); without one the config stays empty.
+   */
+  public void helloConfig(HelloConfigSource source) {
+    this.configSource = Objects.requireNonNull(source, "source");
+  }
+
+  /**
+   * The {@code ServerHello.config} of an accepted session: the source's values, empty when it fails
+   * (the session is accepted anyway; the values arrive with the next change or Hello), the failure
+   * logged at most once a minute.
+   */
+  private Map<String, String> helloConfig(int appId, int instanceId, List<String> allow) {
+    try {
+      Map<String, String> config = configSource.configFor(appId, instanceId, allow);
+      return config == null ? Map.of() : config;
+    } catch (RuntimeException e) {
+      long now = System.nanoTime();
+      long last = lastConfigWarn.get();
+      if ((last == Long.MIN_VALUE || now - last >= METADATA_WARN_INTERVAL_NANOS)
+          && lastConfigWarn.compareAndSet(last, now)) {
+        LOG.warn(
+            "The pushed configuration of instance {} could not be read; its ServerHello.config is"
+                + " empty (12 §6.2); further failures are not logged for a minute: {}",
+            instanceId,
+            e.getClass().getSimpleName());
+      }
+      return Map.of();
     }
   }
 

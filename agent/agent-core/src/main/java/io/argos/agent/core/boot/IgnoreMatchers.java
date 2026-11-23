@@ -57,6 +57,10 @@ public final class IgnoreMatchers {
                   "java.util.concurrent.FutureTask",
                   "java.util.concurrent.CompletableFuture",
                   "java.util.concurrent.ThreadPerTaskExecutor",
+                  // executor (WO-15): the task object of every ScheduledThreadPoolExecutor submit
+                  "java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask",
+                  // executor (WO-15): ForkJoinPool's Runnable adapter (JDK 8-25)
+                  "java.util.concurrent.ForkJoinTask$RunnableExecuteAction",
                   "jdk.internal.net.http.HttpClientImpl",
                   // httpclient-jdk11: completion of sendAsync (U-10, WO-14)
                   "jdk.internal.net.http.MultiExchange")));
@@ -68,7 +72,11 @@ public final class IgnoreMatchers {
               "sun.net.www.protocol.https.",
               "java.util.concurrent.CompletableFuture$AsyncSupply",
               "java.util.concurrent.CompletableFuture$AsyncRun",
-              "java.util.concurrent.CompletableFuture$Uni"));
+              "java.util.concurrent.CompletableFuture$Uni",
+              // executor (WO-15): ForkJoinPool's Runnable/Callable adapters (names vary by JDK)
+              "java.util.concurrent.ForkJoinTask$Adapted",
+              // executor (WO-15): TaskRunner and ThreadBoundFuture (JDK 21+)
+              "java.util.concurrent.ThreadPerTaskExecutor$"));
 
   /** Packages that are ignored unless allow-listed (item 3). */
   private static final String[] JDK_PREFIXES = {

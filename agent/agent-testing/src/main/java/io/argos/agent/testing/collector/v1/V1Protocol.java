@@ -20,6 +20,8 @@ import io.argos.proto.v1.AckStatus;
 import io.argos.proto.v1.ActiveTransaction;
 import io.argos.proto.v1.ActiveTransactionSnapshot;
 import io.argos.proto.v1.AgentBye;
+import io.argos.proto.v1.AgentEvent;
+import io.argos.proto.v1.AgentEventType;
 import io.argos.proto.v1.AgentHello;
 import io.argos.proto.v1.AgentMessage;
 import io.argos.proto.v1.AgentServiceGrpc;
@@ -410,14 +412,21 @@ public final class V1Protocol implements CollectorProtocol {
             case CONFIG_APPLY_RESULT -> {
               ConfigApplyResult result = message.getConfigApplyResult();
               Map<String, String> rejected = new LinkedHashMap<>();
+              Map<String, String> messages = new LinkedHashMap<>();
               for (RejectedKey key : result.getRejectedList()) {
                 rejected.put(key.getKey(), key.getCode().name());
+                if (!key.getMessage().isEmpty()) {
+                  messages.put(key.getKey(), key.getMessage());
+                }
               }
               collector.onConfigApplyResult(
                   result.getChangeId(),
                   result.getAppliedKeysList(),
                   rejected,
-                  result.getRetransformedClasses());
+                  result.getRetransformedClasses(),
+                  result.getEffectiveConfigHash(),
+                  Integer.toUnsignedLong(result.getDurationMs()),
+                  messages);
             }
             case COMMAND_RESULT -> {
               CommandResult result = message.getCommandResult();
@@ -429,7 +438,8 @@ public final class V1Protocol implements CollectorProtocol {
                   result.getPayload(),
                   result.getContentType(),
                   result.getError(),
-                  result.getTruncated());
+                  result.getTruncated(),
+                  Integer.toUnsignedLong(result.getDurationMs()));
             }
             case BYE -> {
               AgentBye bye = message.getBye();
@@ -446,6 +456,21 @@ public final class V1Protocol implements CollectorProtocol {
               if (message.getInstanceUpdate().hasInstanceName()) {
                 collector.onInstanceName(channel, message.getInstanceUpdate().getInstanceName());
               }
+              if (message.getInstanceUpdate().hasConfigHash()) {
+                collector.onConfigHash(channel, message.getInstanceUpdate().getConfigHash());
+              }
+              collector.onSessionMessage(message);
+            }
+            case EVENT -> {
+              AgentEvent event = message.getEvent();
+              collector.onAgentEvent(
+                  channel,
+                  event.getType() == AgentEventType.UNRECOGNIZED
+                      ? "UNRECOGNIZED"
+                      : event.getType().name(),
+                  event.getModule(),
+                  event.getDetail(),
+                  event.getAtMs());
               collector.onSessionMessage(message);
             }
             default -> collector.onSessionMessage(message);
@@ -664,6 +689,25 @@ public final class V1Protocol implements CollectorProtocol {
                   Command.newBuilder()
                       .setCommandId(commandId)
                       .setType(CommandType.valueOf(type))
+                      .setIssuedAtMs(issuedAtMs)
+                      .setTtlS(ttlSeconds)
+                      .putAllArgs(args))
+              .build());
+    }
+
+    @Override
+    public void commandNumber(
+        String commandId,
+        int typeNumber,
+        Map<String, String> args,
+        int ttlSeconds,
+        long issuedAtMs) {
+      send(
+          ServerMessage.newBuilder()
+              .setCommand(
+                  Command.newBuilder()
+                      .setCommandId(commandId)
+                      .setTypeValue(typeNumber)
                       .setIssuedAtMs(issuedAtMs)
                       .setTtlS(ttlSeconds)
                       .putAllArgs(args))

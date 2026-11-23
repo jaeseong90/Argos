@@ -111,6 +111,29 @@ final class LocalHttpServer implements AutoCloseable {
     seen.clear();
   }
 
+  /**
+   * Waits at most {@code timeoutMillis} until {@code count} requests to {@code path} were seen. A
+   * test whose client gave up before the server read its request (request timeout) calls this
+   * before it ends, so that the request is not recorded after the next test's {@link #clear()}
+   * (under load the server may read it hundreds of milliseconds later). A request the client never
+   * sent is not waited for longer than the timeout.
+   */
+  void awaitSeen(String path, int count, long timeoutMillis) throws InterruptedException {
+    long deadline = System.nanoTime() + timeoutMillis * 1_000_000L;
+    while (System.nanoTime() - deadline < 0) {
+      int found = 0;
+      for (Seen s : seen()) {
+        if (s.path.equals(path)) {
+          found++;
+        }
+      }
+      if (found >= count) {
+        return;
+      }
+      Thread.sleep(10);
+    }
+  }
+
   private void handle(HttpExchange exchange) throws IOException {
     String path = exchange.getRequestURI().getPath();
     ByteArrayOutputStream body = new ByteArrayOutputStream();

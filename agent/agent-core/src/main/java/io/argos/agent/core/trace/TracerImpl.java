@@ -27,6 +27,7 @@ import io.argos.agent.core.sql.SqlIds;
 import io.argos.agent.core.sql.SqlNormalizer;
 import io.argos.agent.core.stats.PoolWaitCounters;
 import io.argos.agent.core.stats.StatsAggregator;
+import io.argos.agent.core.transport.AgentSession;
 import io.argos.agent.core.transport.Queues;
 import java.util.SplittableRandom;
 import java.util.concurrent.atomic.AtomicReference;
@@ -139,6 +140,13 @@ public final class TracerImpl implements Tracer {
   private final boolean instanceNameFromConnector;
 
   /**
+   * Told on every {@link #begin} on a virtual thread (10 §8, §10.2 {@code InstanceUpdate}: virtual
+   * thread use, F-A30); null: {@link SessionVirtualThreadUse} (loaded on the first such begin, not
+   * in premain).
+   */
+  private final Runnable virtualThreadUse;
+
+  /**
    * The full SQL and external-call statistics (10 §9.3, WO-16) and the connection waits per pool
    * (13 §3.5, C-68), created by their first use like the registries above (never on premain, C-79).
    */
@@ -207,6 +215,7 @@ public final class TracerImpl implements Tracer {
     this.threadMeter = b.threadMeter != null ? b.threadMeter : ThreadMeter.NONE;
     this.userIds = new UserIds(counters, b.userIdSalts);
     this.instanceNameFromConnector = b.instanceNameFromConnector;
+    this.virtualThreadUse = b.virtualThreadUse;
     this.statsWindowSeconds = b.statsWindowSeconds;
     this.statsMaxKeys = b.statsMaxKeys;
     if (b.stats != null) {
@@ -306,6 +315,14 @@ public final class TracerImpl implements Tracer {
       slot.bind(new ThreadSlots.Binding(ctx, null, slot, true));
       if (activeRegistry != null) {
         activeRegistry.add(ctx);
+      }
+      if (virtual) {
+        Runnable use = virtualThreadUse;
+        if (use != null) {
+          use.run();
+        } else {
+          SessionVirtualThreadUse.report();
+        }
       }
       return ctx;
     } catch (Throwable t) {
@@ -1525,6 +1542,26 @@ public final class TracerImpl implements Tracer {
     }
   }
 
+  /**
+   * The default {@link Builder#virtualThreadUse}: tells the running transport session ({@link
+   * AgentSession#virtualThreads}, which keeps it for the next hello and sends one {@code
+   * InstanceUpdate}) once per session. Before a session exists nothing is told and a later virtual
+   * thread transaction tries again. Application threads: two volatile reads, never blocks.
+   */
+  private static final class SessionVirtualThreadUse {
+    private static volatile AgentSession told;
+
+    private SessionVirtualThreadUse() {}
+
+    static void report() {
+      AgentSession session = AgentSession.current();
+      if (session != null && session != told) {
+        told = session;
+        session.virtualThreads(true);
+      }
+    }
+  }
+
   /** Parts of a {@link TracerImpl}; unset parts take the defaults of the module-test tracer. */
   public static final class Builder {
     private Dictionary dictionary;
@@ -1545,6 +1582,7 @@ public final class TracerImpl implements Tracer {
     private PoolRegistry pools;
     private TomcatRegistry connectors;
     private boolean instanceNameFromConnector = true;
+    private Runnable virtualThreadUse;
     private SqlNormalizer sqlNormalizer;
     private StatsAggregator stats;
     private PoolWaitCounters poolWaits;
@@ -1602,6 +1640,15 @@ public final class TracerImpl implements Tracer {
      */
     public Builder instanceNameFromConnector(boolean value) {
       this.instanceNameFromConnector = value;
+      return this;
+    }
+
+    /**
+     * Called on every transaction begin on a virtual thread (tests); default: the transport
+     * session's {@code virtual_threads} ({@code AgentSession#virtualThreads}), once per session.
+     */
+    public Builder virtualThreadUse(Runnable value) {
+      this.virtualThreadUse = value;
       return this;
     }
 

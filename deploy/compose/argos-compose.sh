@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # argos-compose.sh: operator commands of the Docker Compose installation of Argos (docs/17
-# section 3.1, ADR-0010 C-171 (4) and C-173). Prepare the directory with ./argos-env-init.sh first.
+# section 3.1, ADR-0010 C-171 (4), C-173 and C-173 (4)). Prepare the directory with
+# ./argos-env-init.sh first.
 #
 # Usage: ./argos-compose.sh <command> [options]
 #   up [--timeout SECONDS]   check .env, secrets/ and tls/, start the stack and wait until every
@@ -15,7 +16,10 @@
 #                            installation)
 #   token create --app NAME --env ENV [--expires-days N]
 #                            issue an agent token for an application (created when it does not
-#                            exist). The token is printed once and stored only as a SHA-256 hash.
+#                            exist) through the server's token service (argos-admin token create
+#                            in the running server container). The token is printed once and
+#                            stored only as a SHA-256 hash; it expires after N days (1 to 3650,
+#                            default 365).
 #   compose ARGS...          run docker compose with the files of this installation
 #   upgrade, backup, diag    not provided in this version
 #   -h, --help               show this text
@@ -358,24 +362,17 @@ cmd_logs() {
 }
 
 # ---------------------------------------------------------------------------------------------
-# token create (ADR-0010 C-173, docs/16 section 2.1, C-155)
+# token create (ADR-0010 C-173 (4), docs/16 section 2.1, C-155)
 
-rand_b64url() { # rand_b64url <bytes>
-  if command -v openssl >/dev/null 2>&1; then
-    openssl rand -base64 "$1"
-  else
-    dd if=/dev/urandom bs="$1" count=1 2>/dev/null | base64
-  fi | tr -d '\r\n=' | tr '+/' '-_'
-}
+# The command line of the server jar (argos-admin, docs/17 section 4.4) in the server container:
+# the image's Java and classpath (Jib entrypoint), a small heap of its own. The container's
+# JAVA_TOOL_OPTIONS (the server heap, -Xms4096m by default) is cleared for this second JVM.
+ADMIN_JAVA="java -Xmx256m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -cp @/opt/argos/app/jib-classpath-file io.argos.server.ServerApplication admin"
 
-sha256_hex() { # reads the value from stdin
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum
-  elif command -v shasum >/dev/null 2>&1; then
-    shasum -a 256
-  else
-    openssl dgst -sha256 -r
-  fi | awk '{ print $1 }'
+# json_field <name> <one-line JSON object>: the value of a top-level string, number or boolean
+# field of the token create output (its values never contain quotes, commas or braces).
+json_field() {
+  printf '%s\n' "$2" | sed -n "s/.*\"$1\":\"\{0,1\}\([^\",}]*\)\"\{0,1\}[,}].*/\1/p" | head -n 1
 }
 
 # cert_san_line <certificate>: the line of names after "X509v3 Subject Alternative Name"
@@ -444,27 +441,11 @@ cmd_token() {
     *[!0-9]* | 0*) die 2 "--expires-days must be a whole number of days from 1 to 3650" ;;
     *) [ "$days" -le 3650 ] || die 2 "--expires-days must be at most 3650" ;;
   esac
-  if ! command -v openssl >/dev/null 2>&1 \
-    && ! { [ -r /dev/urandom ] && command -v base64 >/dev/null 2>&1; }; then
-    die 2 "a random generator is missing: openssl, or /dev/urandom with base64"
-  fi
-  if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1 \
-    && ! command -v openssl >/dev/null 2>&1; then
-    die 2 "a SHA-256 tool is missing: sha256sum, shasum or openssl"
-  fi
   require_docker
-  cid=$(dc ps -q postgres 2>/dev/null || true)
-  [ -n "$cid" ] || die 2 "the postgres service is not running: ./argos-compose.sh up"
+  cid=$(dc ps -q server 2>/dev/null || true)
+  [ -n "$cid" ] || die 2 "the server service is not running: ./argos-compose.sh up"
   health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$cid" 2>/dev/null || true)
-  [ "$health" = healthy ] || die 2 "the postgres service is not healthy (${health:-unknown}): ./argos-compose.sh status"
-
-  # 16 section 2.1: argos_ + base64url(32 CSPRNG bytes) = 49 characters. Kept in this shell only.
-  token="argos_$(rand_b64url 32)"
-  [ "${#token}" -eq 49 ] || die 1 "the random generator returned a token of unexpected length"
-  token_hash=$(printf '%s' "$token" | sha256_hex)
-  token_prefix=$(printf '%s' "$token" | cut -c1-14)
-  case $token_hash in *[!0-9a-f]* | '') die 1 "could not hash the token" ;; esac
-  [ "${#token_hash}" -eq 64 ] || die 1 "could not hash the token"
+  [ "$health" = healthy ] || die 2 "the server service is not healthy (${health:-unknown}): ./argos-compose.sh status"
 
   work=$(mktemp -d 2>/dev/null || mktemp -d -t argos-compose)
   # The EXIT trap cleans up; an interrupt ends the command (dash runs no EXIT trap when a signal
@@ -472,89 +453,42 @@ cmd_token() {
   trap 'rm -rf "$work"' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  # Only the hash and the display prefix go to PostgreSQL (the server's rule, AgentTokenRepository,
-  # TokenHash). One transaction as the owner "argos" over the container's local socket: the app
-  # (created if missing), the 5-active-tokens limit under a row lock of the app, the token row and
-  # one audit row TOKEN_ISSUED (docs/16 section 11.1) with the actor argos-compose.
-  if ! {
-    printf '\\set app %s\n\\set env %s\n\\set token_hash %s\n\\set token_prefix %s\n\\set days %s\n\\set max_active %s\n' \
-      "'$app'" "'$env'" "'$token_hash'" "'$token_prefix'" "'$days'" "$MAX_ACTIVE_TOKENS"
-    cat <<'SQL'
-\set ON_ERROR_STOP on
-BEGIN;
-\o /dev/null
-SELECT set_config('argos_cli.app', :'app', true),
-       set_config('argos_cli.env', :'env', true),
-       set_config('argos_cli.token_hash', :'token_hash', true),
-       set_config('argos_cli.token_prefix', :'token_prefix', true),
-       set_config('argos_cli.days', :'days', true),
-       set_config('argos_cli.max_active', :'max_active', true);
-\o
-DO $$
-DECLARE
-  v_app text := current_setting('argos_cli.app');
-  v_env text := current_setting('argos_cli.env');
-  v_days int := nullif(current_setting('argos_cli.days'), '')::int;
-  v_max int := current_setting('argos_cli.max_active')::int;
-  v_app_id int;
-  v_created boolean := false;
-  v_active int;
-  v_token_id uuid := gen_random_uuid();
-  v_expires timestamptz;
-BEGIN
-  INSERT INTO argos.apps (name, env) VALUES (v_app, v_env)
-    ON CONFLICT (name, env) DO NOTHING
-    RETURNING id INTO v_app_id;
-  IF v_app_id IS NOT NULL THEN
-    v_created := true;
-  END IF;
-  -- Serialises issuance per app (16 section 2.1 limit): concurrent runs wait here.
-  SELECT id INTO v_app_id FROM argos.apps WHERE name = v_app AND env = v_env FOR UPDATE;
-  SELECT count(*) INTO v_active FROM argos.agent_tokens
-   WHERE app_id = v_app_id
-     AND revoked_at IS NULL
-     AND (status = 'ACTIVE' OR (status = 'GRACE' AND (grace_until IS NULL OR grace_until > now())))
-     AND (expires_at IS NULL OR expires_at > now());
-  IF v_active >= v_max THEN
-    RAISE EXCEPTION 'argos-compose token limit: app % (env %) already has % active agent tokens, the limit is % per app',
-      v_app, v_env, v_active, v_max;
-  END IF;
-  IF v_days IS NOT NULL THEN
-    v_expires := now() + make_interval(days => v_days);
-  END IF;
-  INSERT INTO argos.agent_tokens (id, app_id, token_hash, token_prefix, issued_by, expires_at, status)
-    VALUES (v_token_id, v_app_id, current_setting('argos_cli.token_hash'),
-            current_setting('argos_cli.token_prefix'), NULL, v_expires, 'ACTIVE');
-  INSERT INTO argos.audit_logs (actor_type, actor_id, actor_name, action, target_type, target_id,
-                                target_name, result, reason, after)
-    VALUES ('system', 'argos-compose', 'argos-compose', 'TOKEN_ISSUED', 'token', v_token_id::text,
-            current_setting('argos_cli.token_prefix'), 'success', 'argos_compose_token_create',
-            jsonb_build_object('app_id', v_app_id, 'app', v_app, 'env', v_env,
-                               'token_prefix', current_setting('argos_cli.token_prefix'),
-                               'expires_at', v_expires, 'app_created', v_created));
-  PERFORM set_config('argos_cli.result',
-                     v_app_id || '|' || v_created || '|' || coalesce(to_char(v_expires AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'never'),
-                     true);
-END
-$$;
-SELECT current_setting('argos_cli.result');
-COMMIT;
-SQL
-  } | dc exec -T postgres psql -X -q -A -t --no-password -U argos -d argos >"$work/out" 2>"$work/err"; then
-    if grep -q 'argos-compose token limit' "$work/err"; then
-      sed -n 's/.*\(argos-compose token limit: .*\)$/\1/p' "$work/err" | head -n 1 >&2
-      token=
+  # The server's own token service issues the token (argos-admin token create, ADR-0010 C-173 (4)):
+  # inside the server container, as its user, with its configuration and its runtime database
+  # account. It creates the app when missing, keeps the limit of 5 active tokens per app, stores
+  # only the SHA-256 hash and the prefix, and writes the audit row TOKEN_ISSUED with the actor
+  # argos-compose. The token comes back once on its standard output, into a shell variable only;
+  # its standard error (messages, never the token) goes to the temporary directory.
+  set -- token create --app "$app" --env "$env" --actor argos-compose --json
+  [ -z "$days" ] || set -- "$@" --expires-days "$days"
+  rc=0
+  # shellcheck disable=SC2086 # ADMIN_JAVA is split into words on purpose (no spaces in its parts)
+  out=$(dc exec -T -e JAVA_TOOL_OPTIONS= server $ADMIN_JAVA "$@" </dev/null 2>"$work/err") || rc=$?
+  case $rc in
+    0) ;;
+    4)
+      out=
+      msg=$(sed -n 's/^argos-admin token create: //p' "$work/err" | head -n 1)
+      printf '%s: %s\n' "$prog" "${msg:-the application has its maximum of $MAX_ACTIVE_TOKENS active agent tokens}" >&2
       exit 4
-    fi
-    sed 's/^/  /' "$work/err" >&2
-    token=
-    die 1 "the token was not created"
-  fi
-  result=$(grep '|' "$work/out" | tail -n 1)
-  app_id=${result%%|*}
-  rest=${result#*|}
-  app_created=${rest%%|*}
-  expires=${rest#*|}
+      ;;
+    130 | 143) out=; exit "$rc" ;;
+    *)
+      out=
+      grep -v '^{' "$work/err" | sed 's/^/  /' >&2 || true
+      die 1 "the token was not created (exit code $rc of argos-admin token create in the server container)"
+      ;;
+  esac
+  token=$(json_field token "$out")
+  token_prefix=$(json_field prefix "$out")
+  app_id=$(json_field app_id "$out")
+  app_created=$(json_field app_created "$out")
+  expires=$(json_field expires_at "$out")
+  out=
+  case $token in
+    argos_*) [ "${#token}" -eq 49 ] || { token=; die 1 "the server returned a token of unexpected length"; } ;;
+    *) token=; die 1 "the server did not return a token" ;;
+  esac
 
   host=$(agent_host tls/server.crt)
   host_note=

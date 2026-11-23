@@ -113,12 +113,14 @@ class AgentAttachTest {
     assertThatAgentLog(log).hasStartBanner().hasNoErrors().hasNoWarnings();
     // The release modules (servlet, spring-webmvc, ...) are loaded; the servlet and Spring MVC
     // witnesses do not match the trivial app: no application class is transformed and no
-    // transaction is recorded. (JDK-class modules such as executor may transform JDK classes.)
+    // transaction is recorded. (JDK-class modules such as executor may transform JDK classes, and
+    // the executor module's execution side (10 §6.6, WO-15) the application's Runnable classes;
+    // the trivial-release baseline pins exactly which.)
     assertThat(modules(log)).contains("servlet", "spring-webmvc").noneMatch(isProbe());
     List<String> transformed = run.transformListLines();
     assertThat(transformed).first().isEqualTo(TRANSFORM_LIST_HEADER);
     assertThat(transformed)
-        .noneMatch(line -> line.startsWith("example.trivial."))
+        .noneMatch(line -> line.startsWith("example.trivial.") && !line.endsWith(" executor app"))
         .noneMatch(line -> line.contains(" servlet ") || line.contains(" spring-webmvc "));
     assertThat(transactions(run)).isEmpty();
     TransformBaseline.verify(

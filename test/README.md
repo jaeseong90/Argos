@@ -27,6 +27,7 @@ enforces what it can (section 3); everything else here is a review rule.
 | `test/chaos` | Chaos scenarios, `chaosTest` (18 §11.1; scenarios: WO-52) |
 | `test/agent` | `check-shading.sh`, the Unsafe allow-list, the WO-02 transport PoC (the WO-02 overhead harness moved to `test/bench`) |
 | `test/lint` | `check-spdx.sh` and its exclusions (T-BLD-007) |
+| `test/lock` | `argos-lock.sh`, the working-tree locks `.gradle/argos-locks/<name>` (ADR-0010 C-235 (8), section 2), and its tests `argos-lock.test.sh` |
 | `test/seed` | PII and XSS seed traffic with the sentinel `ARGOS_SEED` (18 §4.3) |
 | `sample-apps/` | The only agent integration fixtures (DSN-18-03): shop apps, ext-stub, load generator |
 | `ui/src/**/*.test.ts(x)` | UI unit and component tests (Vitest) |
@@ -62,6 +63,47 @@ or the development tools (`sampleSmoke*`, `sampleImage`, `storageGenerate`, `sto
 Development tools that are not test layers: `./gradlew :sample-apps:<app>:sampleSmoke` (sample app
 without the agent), `./gradlew :test:agent:transport-poc:transportPoc*` (WO-02 P-3),
 `./gradlew :test:storage:queries:storageQueries` (Q01..Q20 runner).
+
+### Shared working tree: locks
+
+Several engineers and agents may share one working tree. They serialise conflicting runs with
+directory locks under `.gradle/argos-locks/<name>` (ADR-0010 C-235 (8)):
+
+| Lock | Runs that take it |
+|---|---|
+| `server-it` | Everything that runs the real server or rebuilds its boot jar: `:server:integrationTest`, `:server:securityTest`, `:server:bootJar`, `generateOpenApi`, `jibDockerBuild`, `:deploy:composeSmoke`, `pnpm -C ui e2e:stack`, `e2e:docker`, and `perf` in route mode |
+| `agent-it` | Agent integration runs |
+| `quiet` | Measurements |
+| `deps` | Dependency lock edits |
+
+The build logic takes no lock. The caller wraps the Gradle command:
+
+```
+bash test/lock/argos-lock.sh run server-it --purpose ":server:integrationTest" -- ./gradlew :server:integrationTest
+bash test/lock/argos-lock.sh status server-it     # exit 0 free, 1 held, 3 held by a dead owner
+```
+
+`compose-smoke.sh` and the E2E stack (`ui/e2e/stack/lock.ts`) take `server-it` themselves. Inside an
+enclosing `run` of the same lock, they use the held lock (`ARGOS_LOCK_TOKEN_SERVER_IT`).
+
+- **Lock and owner file**: `mkdir` creates the lock directory atomically. The holder then writes
+  `owner.json` into it, one key per line: `version`, `name`, `token`, `pid`, `pid_kind`, `host`,
+  `started_at` (ISO-8601 UTC) and `purpose`.
+- **PIDs**: `pid` is the process that holds the lock (for `run`, the helper itself). On Windows it is
+  the Windows PID (`pid_kind` `windows`): Git Bash takes it from `/proc/<pid>/winpid`, Node uses
+  `process.pid`. Elsewhere it is the POSIX PID. Liveness is checked with `tasklist` (Windows) or
+  `kill -0` (POSIX) in bash, and with `process.kill(pid, 0)` in Node.
+- **Stale locks**: a lock is stale only when its owner file names this host, this host's PID kind,
+  and a PID that is not alive. Only a stale lock is removed automatically (renamed aside first,
+  then deleted if the token still matches). A lock without `owner.json`, from another host, or with
+  an owner of unknown liveness is never removed. The waiter waits up to `--wait-seconds`
+  (`ARGOS_LOCK_WAIT_SECONDS`, default 1800 s), then fails with the owner and the `rm -rf` to run by
+  hand once you have checked that the owner is gone.
+- **Release**: release deletes only a lock whose owner file has the caller's token. `run` releases
+  when the command ends, also on failure, Ctrl-C or TERM. `acquire` and `release --token` exist for
+  long-lived scripts. An AI agent's tool call ends its shell right away, so agents use `run`.
+- **Tests**: `bash test/lock/argos-lock.test.sh` (also run by `.github/scripts/test/run-all.sh`) and
+  `ui/e2e/stack/lock.test.ts` (Vitest).
 
 ## 3. Rules the build enforces
 

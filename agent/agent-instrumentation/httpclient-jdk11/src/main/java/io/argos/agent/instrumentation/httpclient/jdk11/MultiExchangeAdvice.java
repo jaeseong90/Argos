@@ -9,8 +9,10 @@ import net.bytebuddy.asm.Advice;
 /**
  * Inlined into {@code jdk.internal.net.http.MultiExchange.responseAsync(Executor)} (U-10): when the
  * exchange was created for a request that {@link HttpClientSendAdvice} wrapped (the {@code
- * userRequest} field of JDK 11 to 25), the exchange's internal future goes to the wrapper. Nothing
- * is read from or registered on that future here; the value returned to the JDK is unchanged.
+ * userRequest} field of JDK 11 to 25), the exchange's internal future goes to the wrapper, which
+ * registers itself on it as its first dependent ({@code sendAsync} only, see {@link
+ * Jdk11RequestHelper}). Nothing is read from that future; the value returned to the JDK is
+ * unchanged.
  */
 public final class MultiExchangeAdvice {
   private MultiExchangeAdvice() {}

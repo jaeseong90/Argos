@@ -3,6 +3,7 @@ package io.argos.server.session;
 
 import io.argos.proto.v1.CloseReason;
 import io.argos.proto.v1.SessionClose;
+import io.argos.server.session.api.SessionEndListener;
 import io.grpc.Metadata;
 import io.grpc.Status;
 import java.util.ArrayList;
@@ -10,9 +11,13 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The in-memory {@link SessionRegistry} (12 §4.1): instance id → session, plus a per-token count.
@@ -22,12 +27,38 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Bounded: the number of sessions is limited by the Hello checks (instances per app, sessions
  * per token, {@code HelloService.MAX_SESSIONS}); the per-token map holds only tokens with a live
  * session. A replaced or closed session is never held.
+ *
+ * <p>Session end (WO-26): every session that leaves the registry (unregistered, closed by token,
+ * closed at shutdown, replaced by a newer session of its instance) is reported once to the {@link
+ * SessionEndListener}s ({@link #addEndListener}), after the removal and outside the lock.
  */
 public final class InMemorySessionRegistry implements SessionRegistry {
+
+  private static final Logger LOG = LoggerFactory.getLogger(InMemorySessionRegistry.class);
 
   private final ConcurrentHashMap<Integer, AgentSession> byInstance = new ConcurrentHashMap<>();
   private final Map<UUID, Integer> perToken = new HashMap<>();
   private final Object lock = new Object();
+  private final List<SessionEndListener> endListeners = new CopyOnWriteArrayList<>();
+
+  /** Adds a listener told about every session that leaves the registry (startup wiring). */
+  public void addEndListener(SessionEndListener listener) {
+    endListeners.add(Objects.requireNonNull(listener, "listener"));
+  }
+
+  /** Tells the listeners that {@code session} left the registry (never throws). */
+  private void ended(AgentSession session) {
+    for (SessionEndListener l : endListeners) {
+      try {
+        l.onSessionEnd(session.instanceId(), session.appId());
+      } catch (RuntimeException e) {
+        LOG.warn(
+            "A session end listener failed for instance {}: {}",
+            session.instanceId(),
+            e.getClass().getSimpleName());
+      }
+    }
+  }
 
   @Override
   public Optional<AgentSession> find(int instanceId) {
@@ -53,16 +84,22 @@ public final class InMemorySessionRegistry implements SessionRegistry {
                   .build(),
               Status.OK,
               new Metadata());
+      ended(previous);
     }
     return Optional.ofNullable(previous);
   }
 
   @Override
   public void unregister(AgentSession session) {
+    boolean removed;
     synchronized (lock) {
-      if (byInstance.remove(session.instanceId(), session)) {
+      removed = byInstance.remove(session.instanceId(), session);
+      if (removed) {
         decrement(session.tokenId());
       }
+    }
+    if (removed) {
+      ended(session);
     }
   }
 
@@ -88,6 +125,7 @@ public final class InMemorySessionRegistry implements SessionRegistry {
               close,
               Status.UNAUTHENTICATED.withDescription("The agent token was revoked"),
               new Metadata());
+      ended(s);
     }
     return closed.size();
   }
@@ -102,6 +140,7 @@ public final class InMemorySessionRegistry implements SessionRegistry {
     }
     for (AgentSession s : closed) {
       s.stream().close(close, status, copy(trailers));
+      ended(s);
     }
     return closed.size();
   }

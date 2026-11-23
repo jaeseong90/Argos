@@ -19,6 +19,9 @@
 //                                  --update-snapshots=all to remake them after a UI change). The npm
 //                                  packages inside the image come from pnpm-lock.yaml with their
 //                                  integrities (e2e/stack/containerInstall.ts, npm ci).
+// up, restart-server and docker hold the working tree's server-it lock (e2e/stack/lock.ts, ADR-0010
+// C-235 (8)) while they build, start or run the stack; up releases it once the detached stack is
+// seeded (no process of it lives on to own the lock).
 // Exit code: 0 success, 1 failure (the Playwright exit code for docker), 2 usage error.
 import { readFileSync, rmSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
@@ -26,6 +29,7 @@ import { join, relative, sep } from 'node:path';
 import { containerLockfiles, writeContainerLockfiles } from './containerInstall.ts';
 import { NAME_PREFIX, removeRun, run, STACK_LABEL } from './docker.ts';
 import { PLAYWRIGHT_IMAGE } from './images.ts';
+import { acquireLock, SERVER_IT_LOCK } from './lock.ts';
 import { containerInstallDir, RUN_FILE, UI_ROOT } from './paths.ts';
 import { DETACHED_OWNER, readRunState, removeRunState } from './runState.ts';
 import { setUpStack, tearDownStack } from './setup.ts';
@@ -51,8 +55,17 @@ async function restart(): Promise<number> {
     );
     return 1;
   }
-  const next = await restartServer(state, log);
-  log(`reuse it:   ARGOS_E2E_STACK_URL=${next.stack_url} corepack pnpm e2e:stack`);
+  // Reads the tree's boot jar and starts the server: under the server-it lock (C-235 (8)).
+  const lock = await acquireLock(SERVER_IT_LOCK, {
+    purpose: `ui e2e stack ${state.run_id}: restart-server with the current boot jar`,
+    log,
+  });
+  try {
+    const next = await restartServer(state, log);
+    log(`reuse it:   ARGOS_E2E_STACK_URL=${next.stack_url} corepack pnpm e2e:stack`);
+  } finally {
+    lock.release();
+  }
   return 0;
 }
 

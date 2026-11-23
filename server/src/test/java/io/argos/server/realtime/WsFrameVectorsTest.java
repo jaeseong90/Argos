@@ -7,6 +7,9 @@ import static io.argos.server.realtime.BusFixture.session;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.argos.proto.v1.TransactionKind;
+import io.argos.server.admin.command.CommandKind;
+import io.argos.server.admin.command.CommandRouter;
+import io.argos.server.admin.configchange.ConfigChangeService;
 import io.argos.server.alert.engine.AlertPushEvent;
 import io.argos.server.alert.rule.RuleSpec.TargetType;
 import io.argos.server.alert.template.DeepLinks;
@@ -94,7 +97,7 @@ class WsFrameVectorsTest {
       }
     }
     assertThat(ops).contains("ack", "push", "error", "pong", "notice", "reauth");
-    assertThat(pushTopics).contains("xlog", "counter", "active", "overview", "alert");
+    assertThat(pushTopics).contains("xlog", "counter", "active", "overview", "alert", "admin");
     assertThat(codes)
         .contains(
             ServerFrames.FORBIDDEN,
@@ -259,6 +262,7 @@ class WsFrameVectorsTest {
                 "host-a:8080",
                 new UUID(0x0193_5a2b_7c00_7000L, 0x8000_0000_0000_0002L),
                 "Error rate high",
+                "error_rate",
                 "critical",
                 "FIRING",
                 0.12,
@@ -275,6 +279,64 @@ class WsFrameVectorsTest {
                     eventId))
             .toJson());
     out.add(new Vector("push alert (FIRING, reason condition)", find(transport, "s4")));
+
+    // admin (WO-26): an administrator's subscription to one command and the push of its state
+    // transition as CommandRouter writes it (no result, no argument values).
+    RecordingTransport adminTransport = new RecordingTransport();
+    WsConnection admin =
+        new WsConnection(
+            "c2",
+            new UUID(3, 3),
+            new UUID(4, 4),
+            Role.ADMIN,
+            adminTransport,
+            Runnable::run,
+            bus::outbox,
+            WsFixture.unlimited(),
+            clock.millis());
+    UUID commandId = UUID.fromString("0b9d6f4e-3c1a-4f2b-9a7e-5d8c2e1f0a11");
+    manager.onFrame(
+        admin,
+        "{\"op\":\"subscribe\",\"id\":\"s6\",\"topic\":\"admin\",\"params\":"
+            + "{\"command_id\":\""
+            + commandId
+            + "\"}}");
+    out.add(new Vector("ack admin", last(adminTransport)));
+    bus.publishAdmin(
+        null,
+        commandId.toString(),
+        clock.millis(),
+        CommandRouter.pushData(commandId, 12, CommandKind.THREAD_DUMP, "done", null));
+    out.add(new Vector("push admin (command done)", find(adminTransport, "s6")));
+
+    // admin (WO-26): a subscription to one configuration change, then the two pushes
+    // ConfigChangeService writes: one instance's result and the end of the change with its counts.
+    UUID changeId = UUID.fromString("5f2c8a1e-7d4b-4c3e-8f6a-1b2d3e4f5a60");
+    manager.onFrame(
+        admin,
+        "{\"op\":\"subscribe\",\"id\":\"s10\",\"topic\":\"admin\",\"params\":"
+            + "{\"change_id\":\""
+            + changeId
+            + "\"}}");
+    out.add(new Vector("ack admin (config change)", last(adminTransport)));
+    bus.publishAdmin(
+        changeId.toString(),
+        null,
+        clock.millis(),
+        ConfigChangeService.resultPushData(
+            changeId, 7, "config", 12, "partial", List.of("sampling.profile.normal-rate")));
+    out.add(new Vector("push admin (config change instance result)", find(adminTransport, "s10")));
+    Map<String, Integer> counts = new LinkedHashMap<>();
+    counts.put("rejected", 1);
+    counts.put("applied", 2);
+    counts.put("partial", 1);
+    counts.put("offline", 1);
+    bus.publishAdmin(
+        changeId.toString(),
+        null,
+        clock.millis(),
+        ConfigChangeService.donePushData(changeId, 7, "config", counts));
+    out.add(new Vector("push admin (config change done)", find(adminTransport, "s10")));
 
     // Errors: each code once, from the subscription logic.
     manager.onFrame(

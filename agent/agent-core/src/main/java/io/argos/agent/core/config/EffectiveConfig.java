@@ -19,10 +19,10 @@ public final class EffectiveConfig {
   /**
    * Where a value came from. The local sources are listed in their precedence, a later one wins (10
    * §15, 02 §7): {@link #DEFAULT} &lt; {@link #FILE} &lt; {@link #SYSTEM_PROPERTY} &lt; {@link
-   * #ENVIRONMENT}. {@link #REMOTE} is last in the list but its precedence over the local sources is
-   * not settled: 16 §5.5 step 7 says the local yml wins over a pushed value ("file &gt; env &gt;
-   * remote"), which also disagrees with the local order of 10 §15; WO-17 applies pushes after the
-   * PM decides (today {@code AgentConfig.withValues} lets a push replace a local value).
+   * #ENVIRONMENT}. {@link #REMOTE} wins over every local source, for the keys of the local {@code
+   * remote-config.allow} only (ADR-0010 C-118 (3); the allow list is the operator's hard cap, and a
+   * {@code CONFIG_RELOAD} that drops a key from it drops the remote value too). {@code
+   * RuntimeConfig} builds the remote entries (WO-17).
    */
   public enum Source {
     /** The documented default of 10 §15. */

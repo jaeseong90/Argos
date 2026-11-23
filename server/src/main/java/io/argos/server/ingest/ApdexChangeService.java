@@ -28,10 +28,12 @@ import org.springframework.stereotype.Component;
  * </ol>
  *
  * <p>Nothing here is retroactive: re-stamping stored rows is the operator command {@code
- * argos-admin apdex reapply} (D-17 "재구축으로 소급"). There is no HTTP endpoint yet: 14 has none for
- * service overrides and {@code PATCH /apps} is WO-26's, which calls {@link #setAppT} (WO-27 PM
- * question 1). The audit event of a change belongs to the 16 §11.1 catalog (WO-28); until then a
- * change is one INFO log line.
+ * argos-admin apdex reapply} (D-17 "재구축으로 소급"). The HTTP endpoints are WO-26's ({@code
+ * admin.apps.AppAdminService}): {@code PATCH /apps/{appId}} calls {@link #setAppT}, {@code PUT} and
+ * {@code DELETE /apps/{appId}/services/{serviceId}/apdex} call {@link #setServiceT} and {@link
+ * #clearServiceT} (ADR-0010 C-220 (1)); they record {@code APP_UPDATED} in the audit log. The
+ * operator command's audit event belongs to the 16 §11.1 catalog (WO-28); a change is also one INFO
+ * log line.
  */
 @Component
 public class ApdexChangeService {

@@ -59,7 +59,7 @@ public class CatalogRepository {
           + " (SELECT count(*) FROM argos.instances i WHERE i.app_id = a.id"
           + " AND i.archived_at IS NULL) AS instances_total,"
           + " (SELECT max(i.last_seen_at) FROM argos.instances i WHERE i.app_id = a.id)"
-          + " AS last_seen_at";
+          + " AS last_seen_at, a.app_packages";
 
   private static final String INSTANCE_COLUMNS =
       "id, app_id, name, host, pid, jvm_version, jvm_vendor, os, cgroup, virtual_threads,"
@@ -121,6 +121,8 @@ public class CatalogRepository {
    * @param registeredFromAppId the home app of an environment variant (C-155), or null
    * @param instancesTotal instances that are not archived
    * @param lastSeenAt the latest {@code last_seen_at} of its instances, or null
+   * @param appPackages the Java packages of the application's own code ({@code apps.app_packages},
+   *     V012, ADR-0010 C-207 (3)), in the stored order
    */
   public record AppRecord(
       int id,
@@ -134,7 +136,14 @@ public class CatalogRepository {
       Instant createdAt,
       Integer registeredFromAppId,
       int instancesTotal,
-      Instant lastSeenAt) {}
+      Instant lastSeenAt,
+      List<String> appPackages) {
+
+    /** Copies the list. */
+    public AppRecord {
+      appPackages = appPackages == null ? List.of() : List.copyOf(appPackages);
+    }
+  }
 
   /**
    * The filters of the application list (14 §4.3 {@code GET /apps}).
@@ -284,7 +293,7 @@ public class CatalogRepository {
   /** Applications matching {@code filter}, by name, at most {@code limit}. */
   public List<AppRecord> apps(AppFilter filter, int limit) {
     StringBuilder sql = new StringBuilder("SELECT ").append(APP_COLUMNS);
-    sql.append(" FROM argos.apps a WHERE TRUE");
+    sql.append(" FROM argos.apps a WHERE a.deleted_at IS NULL");
     List<Object> values = new ArrayList<>();
     if (filter.env() != null) {
       sql.append(" AND a.env = ?");
@@ -308,7 +317,7 @@ public class CatalogRepository {
     List<AppRecord> rows =
         query(
             "app",
-            "SELECT " + APP_COLUMNS + " FROM argos.apps a WHERE a.id = ?",
+            "SELECT " + APP_COLUMNS + " FROM argos.apps a WHERE a.id = ? AND a.deleted_at IS NULL",
             ps -> ps.setInt(1, id),
             CatalogRepository::app);
     return rows.stream().findFirst();
@@ -522,7 +531,17 @@ public class CatalogRepository {
         instant(rs, 9),
         (Integer) rs.getObject(10),
         rs.getInt(11),
-        instant(rs, 12));
+        instant(rs, 12),
+        texts(rs.getArray(13)));
+  }
+
+  /** The values of a text array column, empty for NULL. */
+  private static List<String> texts(Array array) throws SQLException {
+    if (array == null) {
+      return List.of();
+    }
+    Object[] values = (Object[]) array.getArray();
+    return Arrays.stream(values).map(String::valueOf).toList();
   }
 
   private static InstanceRecord instance(ResultSet rs, int n) throws SQLException {

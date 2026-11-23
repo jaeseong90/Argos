@@ -16,6 +16,8 @@ import io.argos.proto.v1.AckStatus;
 import io.argos.proto.v1.AgentHello;
 import io.argos.proto.v1.AgentMessage;
 import io.argos.proto.v1.AgentServiceGrpc;
+import io.argos.proto.v1.Command;
+import io.argos.proto.v1.ConfigPush;
 import io.argos.proto.v1.Heartbeat;
 import io.argos.proto.v1.InstanceUpdate;
 import io.argos.proto.v1.ServerHello;
@@ -181,7 +183,16 @@ class SessionFlowControlIntegrationTest {
           @Override
           public void stopped() {}
         },
-        new RejectingDispatcher(AgentConfig.of(Collections.<String, String>emptyMap()), ""),
+        new RemoteDispatcher() {
+          @Override
+          public void configPush(ConfigPush push, RemoteDispatcher.ResultSink sink) {}
+
+          @Override
+          public void command(Command command, RemoteDispatcher.ResultSink sink) {}
+
+          @Override
+          public void helloConfig(java.util.Map<String, String> config) {}
+        },
         new DictionaryCache(new Dictionary()),
         counters,
         new ClockSync(ClockSync.SYSTEM),

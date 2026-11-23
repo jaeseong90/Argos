@@ -673,7 +673,9 @@ gRPC(`9100`)는 프록시를 거치지 않습니다. 에이전트는 서버에 �
 
 ### 에이전트 토큰 만들기
 
-애플리케이션마다 에이전트 토큰이 필요합니다. 스택이 실행 중일 때 Argos 호스트에서 만드세요.
+애플리케이션마다 에이전트 토큰이 필요합니다. 스택이 실행 중일 때 Argos 호스트에서 만드세요(서버가
+healthy여야 합니다. 이 명령은 서버 컨테이너 안에서 서버의 토큰 서비스 `argos-admin token create`를
+실행합니다).
 
 ```sh
 sudo ./argos-compose.sh token create --app order-api --env prod
@@ -683,7 +685,7 @@ sudo ./argos-compose.sh token create --app order-api --env prod
 |---|---|
 | `--app <name>` | 에이전트가 `app.name`으로 보고하는 애플리케이션 이름(`A-Z a-z 0-9 . _ -` 1~64자). 없으면 만듦 |
 | `--env <env>` | `app.env`와 같은 환경(`prod`, `staging` 등, 최대 32자) |
-| `--expires-days <N>` | 선택: N일 뒤 토큰 만료(1~3650) |
+| `--expires-days <N>` | 선택: N일 뒤 토큰 만료(1~3650, 기본 365). 서버 기본 알림 규칙(인증서·토큰 만료)이 만료 전에 경고합니다 |
 
 명령은 토큰을 에이전트 설정 예시와 함께 **한 번만** 출력합니다. Argos는 SHA-256 해시만 보관하므로,
 토큰을 저장할 때까지([토큰 저장](#토큰-저장)) 출력을 화면에 남겨 두세요. 애플리케이션 하나에 활성
@@ -820,6 +822,7 @@ JVM 옵션 하나를 더해 애플리케이션을 시작하세요. Java 8 애플
 | 파일 모드를 검사할 수 없다는 경고 | 파일이 POSIX 모드가 없는 파일 시스템(Windows, NTFS)에 있습니다. 지원하는 운영 구성이 아닙니다. Linux 파일 시스템에 설치하세요 |
 | 에이전트가 TLS나 인증서 오류를 기록 | `server.address`가 인증서의 이름에 없거나, `server.tls.ca-file`이 그 인증서에 서명한 CA가 아닙니다 |
 | `token create`가 종료 코드 4로 끝남 | 애플리케이션에 이미 활성 에이전트 토큰이 5개 있습니다 |
+| `token create`가 server 서비스가 실행 중이 아니거나 healthy가 아니라고 함 | 스택을 시작하고(`sudo ./argos-compose.sh up`) `sudo ./argos-compose.sh status`에서 server가 healthy가 될 때까지 기다리세요. 토큰은 실행 중인 서버가 발급합니다 |
 
 ## 12. 이 버전에 없는 기능
 
@@ -831,8 +834,9 @@ JVM 옵션 하나를 더해 애플리케이션을 시작하세요. Java 8 애플
   업그레이드, 백업, 진단 번들
 - systemd를 쓰는 `tar.gz` 아카이브 설치와 에어갭 번들
 - 서명된 amd64·arm64 서버 이미지 릴리스
-- UI에서 관리하는 에이전트 토큰과 애플리케이션(`argos-compose.sh token create`를 쓰세요)
-- `argos-admin` 명령줄(관리자 비밀번호 재설정 등)과 UI의 사용자 관리
+- UI에서 관리하는 에이전트 토큰과 애플리케이션(`argos-compose.sh token create`를 쓰세요. 토큰 목록·회전·폐기는
+  서버의 관리 API `/api/v1/admin/apps/{appId}/tokens`로도 할 수 있습니다)
+- 그 밖의 `argos-admin` 명령(관리자 비밀번호 재설정 등)과 UI의 사용자 관리
 - 애플리케이션, 인스턴스, 트랜잭션을 보여 주는 UI 화면(에이전트 연결은 [9장](#연결-확인)처럼
   확인하세요)
 

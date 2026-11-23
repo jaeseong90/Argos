@@ -6,13 +6,14 @@
 // text nodes only), the occurrence trend with event markers (deploys) and outage shading, the
 // distributions by version (each version opens the XLog with the group and that version), by
 // instance (raw window) and by service, the last 10 transactions opening their detail with `ts`
-// (C-206 (1)), and the XLog with `f.error_group`. Application frames are bold only once the
-// application's packages are known: the API has no `app_packages` until WO-26, so none are bold
-// and the screen says so (ADR-0010 C-207 (3)); the client never guesses them.
+// (C-206 (1)), and the XLog with `f.error_group`. Frames of the application's packages
+// (`app_packages` of GET /apps/{appId}, ADR-0010 C-207 (3)) are bold; while none are set, none are
+// bold and the screen says so: the client never guesses them.
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
+import { useAppPackages } from '../../../api/apps';
 import { getErrorGroup, type ErrorGroupDetail, type StatsBreakdown } from '../../../api/stats';
 import { untrusted } from '../../../api/untrusted';
 import type { TimeRange as ChartRange } from '../../../charts/chartModel';
@@ -34,12 +35,6 @@ import { StatsScreen, type StatsScreenState } from '../common/StatsScreen';
 import { TrendChart } from '../common/TrendChart';
 
 import { NewBadge } from './errorColumns';
-
-/**
- * Application packages for bold frames. Empty until the API provides `app_packages` (WO-26,
- * ADR-0010 C-207 (3)): no frame is guessed to be an application frame.
- */
-const APP_PACKAGES: readonly string[] = [];
 
 /** A date-time figure of the summary with its raw ISO value. */
 function TimeItem({
@@ -91,6 +86,7 @@ export function ErrorDetailPage() {
     enabled,
   );
   const markers = useEventMarkers(appId, range);
+  const appPackages = useAppPackages(appId);
   const detail = query.data;
   const id = appId ?? 0;
   const carried = useMemo(() => carriedState(state), [state]);
@@ -214,11 +210,11 @@ export function ErrorDetailPage() {
               {t('stats:errors.stack')}
             </h2>
             <p className="stats-note" data-testid="stats-error-app-frames-note">
-              {APP_PACKAGES.length === 0
+              {appPackages.length === 0
                 ? t('stats:errors.appFramesUnknown')
                 : t('stats:errors.appFramesBold')}
             </p>
-            <FrameList source={frames} appPackages={APP_PACKAGES} data-testid="stats-error-stack" />
+            <FrameList source={frames} appPackages={appPackages} data-testid="stats-error-stack" />
           </section>
           <TrendChart
             series={detail.series}

@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.server.session;
 
+import io.argos.proto.v1.Command;
+import io.argos.proto.v1.ConfigPush;
 import io.argos.proto.v1.DictionaryRequest;
 import io.argos.proto.v1.ServerMessage;
 import io.argos.proto.v1.SessionClose;
@@ -14,7 +16,8 @@ import java.util.Optional;
 /**
  * {@link SessionMessenger} over the live sessions (11 §7 (3), 12 §4.1): a dictionary request goes
  * to the instance's own session, or to the session of the app with the most recent heartbeat; a
- * close goes to the instance's session and ends its stream.
+ * close goes to the instance's session and ends its stream; a command and a configuration push go
+ * to the instance's own live session only (WO-26), when its transport is ready.
  */
 public final class RegistrySessionMessenger implements SessionMessenger {
 
@@ -36,6 +39,30 @@ public final class RegistrySessionMessenger implements SessionMessenger {
         .filter(s -> !s.stream().ended())
         .sorted(Comparator.comparingLong(AgentSession::lastHeartbeatMs).reversed())
         .anyMatch(s -> s.stream().sendIfReady(message));
+  }
+
+  @Override
+  public boolean hasLiveSession(int instanceId) {
+    Optional<AgentSession> session = registry.find(instanceId);
+    return session.isPresent() && !session.get().stream().ended();
+  }
+
+  @Override
+  public boolean sendCommand(int instanceId, Command command) {
+    return sendToInstance(instanceId, ServerMessage.newBuilder().setCommand(command).build());
+  }
+
+  @Override
+  public boolean pushConfig(int instanceId, ConfigPush push) {
+    return sendToInstance(instanceId, ServerMessage.newBuilder().setConfigPush(push).build());
+  }
+
+  /** Sends {@code message} to the live session of {@code instanceId} if its transport is ready. */
+  private boolean sendToInstance(int instanceId, ServerMessage message) {
+    Optional<AgentSession> session = registry.find(instanceId);
+    return session.isPresent()
+        && !session.get().stream().ended()
+        && session.get().stream().sendIfReady(message);
   }
 
   @Override

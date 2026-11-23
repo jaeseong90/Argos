@@ -1111,8 +1111,8 @@ async function selectRow(page: Page, row: ScreenRow): Promise<void> {
 
 /**
  * 2.6-4 (T-ACPT-02 automated part): a row of 8 s or more offers this thread's stack and the
- * instance's thread dump, disabled with the reason until the remote commands exist (WO-26, WO-17),
- * and the recent completions of the same service in the XLog.
+ * instance's thread dump; the page's viewer sees both disabled with the reason (operator role
+ * needed, WO-37), and the recent completions of the same service in the XLog.
  */
 export const activeRowActions: ActiveCheck = async (ctx) => {
   await openFeedScreen(ctx);
@@ -1120,7 +1120,7 @@ export const activeRowActions: ActiveCheck = async (ctx) => {
   const row = await slowRow(page, 'BATCH');
   await selectRow(page, row);
   await expect(page.getByTestId('active-row-actions')).toHaveAttribute('data-running', 'true');
-  const reason = t('active:actions.commandsUnavailable');
+  const reason = t('active:actions.operatorRequired');
   for (const id of ['active-action-stack', 'active-action-dump']) {
     const action = page.getByTestId(id);
     await expect(action, `${id} is shown`).toBeVisible();

@@ -16,11 +16,16 @@
 // the feed or the shop: the real-data tests skip with the reason (as T-SV-020e does); the stub
 // tests and the visual baselines run there.
 // The checks live in e2e/required/activeChecks.ts, which the items of required/active.yaml
-// (T-E2E-active-1 .. 12) run too.
+// (T-E2E-active-1 .. 12) run too. The row actions this thread's stack and thread dump (WO-37,
+// T-ACPT-02) need an agent that answers remote commands: T-E2E-active-30 runs them as the operator
+// on the command feed's application (e2e/fixtures/commandFeed.ts, app e2e-cmd: the same active
+// scenario, answering commands through the real collector until WO-17's agent is in the stack),
+// with the checks of e2e/required/dumpsChecks.ts that required/active.yaml 2.6-4 runs too.
 import type { Page } from '@playwright/test';
 
 import { MISSING_DASH } from '../../src/utils/missing';
 import { expectNoCriticalA11y } from '../fixtures/a11y';
+import { commandFeedLog, stopCommandFeed } from '../fixtures/commandFeed';
 import { t } from '../fixtures/i18n';
 import { shellMasks } from '../fixtures/screenshots';
 import { apiAs, expect, test } from '../fixtures/stack';
@@ -53,6 +58,12 @@ import {
   type ActiveCheckContext,
   type ActiveItemApi,
 } from '../required/activeChecks';
+import {
+  activeThreadDump,
+  activeThreadStack,
+  signInAs,
+  type DumpsCheckContext,
+} from '../required/dumpsChecks';
 import { PLAYWRIGHT_IMAGE } from '../stack/images';
 import { shopProblem, startShop } from '../stack/liveShop';
 import { stopProcess } from '../stack/seed/traffic';
@@ -79,7 +90,9 @@ test.beforeAll(async ({ session, seed }, testInfo) => {
 // eslint-disable-next-line no-empty-pattern -- Playwright passes fixtures first; the hook uses none
 test.afterAll(async ({}, testInfo) => {
   await testInfo.attach('active-feed.log', { body: activeFeedLog(), contentType: 'text/plain' });
+  await testInfo.attach('command-feed.log', { body: commandFeedLog(), contentType: 'text/plain' });
   await stopActiveFeed();
+  await stopCommandFeed();
 });
 
 test.describe('the real WebSocket server', () => {
@@ -191,12 +204,35 @@ test(
 );
 
 test(
-  'T-E2E-active-27 a row of 8 s or more: stack and thread dump disabled with the reason, recent completions open the XLog with the service, 15 minutes and the kind (T-ACPT-02 automated part)',
-  { annotation: req('05-2.6-4') },
+  'T-E2E-active-27 a row of 8 s or more: stack and thread dump enabled for an operator, disabled with the permission reason for a viewer; recent completions open the XLog with the service, 15 minutes and the kind (T-ACPT-02 automated part)',
+  { annotation: req('05-2.6-4', 'SEC-21') },
   async ({ page, seed, apiAs: as, ws }, testInfo) => {
     const ctx = { page, seed, testInfo, apiAs: as, ws };
+    // The page's viewer: both disabled with the reason "operator role needed", a click does nothing.
     await activeRowActions(ctx);
     await activeRecentCompletions(ctx);
+    // An operator: both enabled, no reason (WO-37: the commands exist now; T-E2E-active-30 runs them).
+    await signInAs(page, as, 'operator');
+    const operatorFeed = await openFeedScreen(ctx);
+    const slowRow = (await readScreen(page)).rows.find((r) => r.elapsed >= 8000);
+    if (slowRow === undefined) {
+      throw new Error('no row of 8 s or more');
+    }
+    await page.getByTestId(`active-cell-elapsed-${slowRow.tx}`).click();
+    await expect(page.getByTestId('active-row-actions')).toHaveAttribute('data-tx-id', slowRow.tx);
+    for (const id of ['active-action-stack', 'active-action-dump']) {
+      const action = page.getByTestId(id);
+      await expect(action, `${id} is enabled for an operator`).toBeEnabled();
+      await expect(action).not.toHaveAttribute('aria-disabled', 'true');
+      await expect(action).not.toHaveAttribute('data-reason', /./);
+    }
+    const instanceId = operatorFeed.instances.find((i) => i.name === slowRow.instance)?.instanceId;
+    expect(instanceId, `instance id of ${slowRow.instance}`).toBeDefined();
+    await expect(page.getByTestId('active-action-instance')).toHaveAttribute(
+      'href',
+      new RegExp(`^/apps/${String(operatorFeed.appId)}/instances/${String(instanceId)}(\\?|$)`),
+    );
+    await signInAs(page, as, 'viewer');
     // An HTTP row of 8 s or more: the default kind is not written into the XLog link.
     const feed = await openFeedScreen(ctx);
     const read = await readScreen(page);
@@ -268,22 +304,19 @@ test(
   },
 );
 
-test.fixme(
-  'T-E2E-active-30 a selected request of 8 s or more shows its thread stack within 30 s, grouped by state and matched to the transaction (T-ACPT-02)',
-  {
-    annotation: [
-      ...req('05-2.6-4'),
-      {
-        type: 'fixme',
-        description:
-          'owned by WO-26 (command API) and WO-17 (agent single-thread stack); until then the action is disabled with the reason (T-E2E-active-27)',
-      },
-    ],
-  },
-  () => {
-    // Owned by WO-26 / WO-17 (fixme annotation).
-  },
-);
+test.describe('the operator on the command feed', () => {
+  test.use({ role: 'operator' });
+
+  test(
+    'T-E2E-active-30 a selected request of 8 s or more shows its thread stack within 30 s, grouped by state and matched to the transaction; the thread dump opens in the dumps tab (T-ACPT-02)',
+    { annotation: req('05-2.6-4', '05-2.7-5', 'F-A12') },
+    async ({ page, seed, apiAs: as }, testInfo) => {
+      const ctx: DumpsCheckContext = { page, seed, testInfo, apiAs: as, role: 'operator' };
+      await activeThreadStack(ctx);
+      await activeThreadDump(ctx);
+    },
+  );
+});
 
 // ---------------------------------------------------------------------------------------------
 // T-E2E-active-31: running transactions reported by the real agent (WO-16, ADR-0010 C-225 (1))

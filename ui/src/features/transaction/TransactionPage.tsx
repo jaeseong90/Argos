@@ -14,6 +14,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router';
 
+import { useAppPackages } from '../../api/apps';
 import { EmptyState, type StateAction } from '../../components/EmptyState';
 import { ErrorState } from '../../components/ErrorState';
 import { LoadingState } from '../../components/LoadingState';
@@ -61,12 +62,6 @@ import type { Neighbour } from './useAdjacent';
 import { useAdjacent } from './useAdjacent';
 
 import './transaction.css';
-
-/**
- * Application frame packages for bold frames (docs/15 §8.5). `app_packages` is not in the API yet
- * (ADR-0010 C-207 (3), WO-26): no frame is marked rather than guessing.
- */
-const APP_PACKAGES: readonly string[] = [];
 
 /** The not-found text of a state (C-50: list or ts hint, unless the link already had a hint). */
 function notFoundKey(
@@ -122,6 +117,8 @@ function DetailView({ detail, url, set, back, fetching, refetch }: DetailViewPro
   const baseline = useTransactionBaseline(detail.tx_id, detail.ts);
   const adjacent = useAdjacent(back, detail.tx_id);
   const links = detailLinks(detail, linkContext(detail, url, back, location.search));
+  // Application frames in bold (docs/15 §8.5): the packages an administrator set for the app.
+  const appPackages = useAppPackages(detail.app.app_id);
   const onNavigate = (path: string): void => {
     void navigate(path);
   };
@@ -204,16 +201,11 @@ function DetailView({ detail, url, set, back, fetching, refetch }: DetailViewPro
       break;
     case 'error':
       content = (
-        <ErrorTab
-          detail={detail}
-          links={links}
-          onNavigate={onNavigate}
-          appPackages={APP_PACKAGES}
-        />
+        <ErrorTab detail={detail} links={links} onNavigate={onNavigate} appPackages={appPackages} />
       );
       break;
     case 'stack':
-      content = <StackTab detail={detail} appPackages={APP_PACKAGES} />;
+      content = <StackTab detail={detail} appPackages={appPackages} />;
       break;
     case 'headers':
       content = <HeadersTab detail={detail} />;

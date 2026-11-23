@@ -38,9 +38,12 @@ import org.springframework.stereotype.Component;
  *
  * <p>Outside this filter: {@value io.argos.server.web.security.IpRateLimitFilter#CSP_REPORT_PATH}
  * ({@link #NOT_A_SESSION_REQUEST}): browsers send CSP reports without custom headers, the endpoint
- * acts on nothing but a counter and is limited by size and rate (16 §9.9). A later endpoint that
- * authenticates by something other than the session cookies ({@code POST /events} with an agent
- * token, 14 §2.2, WO-23/WO-26) is added to that set by its work order.
+ * acts on nothing but a counter and is limited by size and rate (16 §9.9). {@code POST
+ * /api/v1/events} with {@code Authorization: Bearer ...} ({@link #isAgentTokenEvent}, 14 §2.2, 02
+ * C-12, WO-26): an application's agent token authenticates it, not the session cookies, and Spring
+ * MVC dispatches every request with an {@code Authorization} header to the token handler, which
+ * ignores the cookies; a browser cannot add the header across origins without a CORS preflight,
+ * which the server refuses.
  */
 @Component
 public class CsrfFilter implements ApiFilter {
@@ -56,6 +59,9 @@ public class CsrfFilter implements ApiFilter {
 
   /** Paths that no browser session stands behind. */
   static final Set<String> NOT_A_SESSION_REQUEST = Set.of(IpRateLimitFilter.CSP_REPORT_PATH);
+
+  /** The one operation an agent token authenticates (14 §2.2, 14 §4.12). */
+  static final String EVENTS_PATH = "/api/v1/events";
 
   private static final Logger LOG = LoggerFactory.getLogger(CsrfFilter.class);
   private static final Set<String> UNSAFE = Set.of("POST", "PUT", "PATCH", "DELETE");
@@ -76,7 +82,9 @@ public class CsrfFilter implements ApiFilter {
   public void doFilter(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
       throws IOException, ServletException {
     String path = path(request);
-    if (UNSAFE.contains(request.getMethod()) && !NOT_A_SESSION_REQUEST.contains(path)) {
+    if (UNSAFE.contains(request.getMethod())
+        && !NOT_A_SESSION_REQUEST.contains(path)
+        && !isAgentTokenEvent(request, path)) {
       Optional<String> refusal = refusal(request, path);
       if (refusal.isPresent()) {
         LOG.debug("CSRF check failed: {}", refusal.get());
@@ -113,6 +121,18 @@ public class CsrfFilter implements ApiFilter {
       return Optional.of("token_mismatch");
     }
     return Optional.empty();
+  }
+
+  /**
+   * Whether the request is {@code POST /api/v1/events} with an {@code Authorization: Bearer}
+   * header: the agent-token path of 14 §2.2, authenticated by the token, not by cookies.
+   */
+  static boolean isAgentTokenEvent(HttpServletRequest request, String path) {
+    if (!"POST".equals(request.getMethod()) || !EVENTS_PATH.equals(path)) {
+      return false;
+    }
+    String authorization = request.getHeader("Authorization");
+    return authorization != null && authorization.startsWith("Bearer ");
   }
 
   private static String path(HttpServletRequest request) {

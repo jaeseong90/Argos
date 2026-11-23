@@ -1,17 +1,24 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.agent.testing.launcher;
 
+import io.argos.agent.testing.collector.CommandOutcome;
+import io.argos.agent.testing.collector.FakeCollector;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * The agent's self-diagnostics as 18 §5.2/§5.9 and 10 §19 require them ({@code
@@ -22,7 +29,11 @@ import java.util.Optional;
  * <p>Source: the snapshot file a development build of the agent rewrites every 2 s and at shutdown
  * with {@code -Dargos.test.selfdiag-file=<file>} (ADR-0010 C-95, agent-core {@code
  * SelfDiagnosticsFile}; the launcher's harness defaults set it to {@code
- * <workDir>/out/selfdiag.json}). WO-17 adds the {@code SELF_DIAG} command as a second source.
+ * <workDir>/out/selfdiag.json}), and the {@code SELF_DIAGNOSTICS} command of the session (WO-17,
+ * {@link #fromCommand}, {@link RunningApp#selfDiagnostics(FakeCollector)}). Both sources go through
+ * the same parser ({@link #parse(String)}), so a key means the same in both (C-95); the command
+ * result may add members the file does not have (version, effective configuration and its sources,
+ * ...), which {@link #json()} and {@link #member(String)} expose as parsed.
  *
  * <p>Missing is never zero: a field the agent did not report (it leaves out what it could not
  * measure, C-4) and every field of {@link #notAvailable(String)} make {@link #value(String)} throw
@@ -74,6 +85,7 @@ public final class SelfDiagnostics {
   private final List<Module> modules;
   private final List<Gauges> pools;
   private final List<Gauges> connectors;
+  private final Map<String, Object> json;
 
   /**
    * One entry of the development-only registry members {@code pools} and {@code connectors} (agent
@@ -125,6 +137,19 @@ public final class SelfDiagnostics {
       List<Module> modules,
       List<Gauges> pools,
       List<Gauges> connectors) {
+    this(available, reason, values, counters, modules, pools, connectors, Map.of());
+  }
+
+  private SelfDiagnostics(
+      boolean available,
+      String reason,
+      Map<String, Double> values,
+      Map<String, Long> counters,
+      List<Module> modules,
+      List<Gauges> pools,
+      List<Gauges> connectors,
+      Map<String, Object> json) {
+    this.json = Collections.unmodifiableMap(new LinkedHashMap<>(json));
     this.available = available;
     this.reason = reason;
     this.values = Map.copyOf(values);
@@ -168,14 +193,71 @@ public final class SelfDiagnostics {
   }
 
   /** The agent's snapshot JSON ({@code SelfDiagnostics.toJson()} of agent-core, format 1). */
-  @SuppressWarnings("unchecked")
   public static SelfDiagnostics parse(String json) {
+    return parse(json, true);
+  }
+
+  /** Default wait of {@link #fromCommand(FakeCollector)}. */
+  public static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(20);
+
+  /**
+   * The {@code SELF_DIAGNOSTICS} command result of the only agent session of {@code collector}
+   * (WO-17, 10 §12.1), waiting up to {@link #COMMAND_TIMEOUT}.
+   */
+  public static SelfDiagnostics fromCommand(FakeCollector collector) {
+    return fromCommand(collector, COMMAND_TIMEOUT);
+  }
+
+  /**
+   * The {@code SELF_DIAGNOSTICS} command result of the only agent session of {@code collector}; not
+   * available (with the reason) when the agent does not answer {@code OK} with JSON within {@code
+   * timeout}, never zeros.
+   */
+  public static SelfDiagnostics fromCommand(FakeCollector collector, Duration timeout) {
+    CommandOutcome outcome;
+    try {
+      outcome =
+          collector
+              .command("SELF_DIAGNOSTICS", Map.of())
+              .get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return notAvailable("interrupted while waiting for the SELF_DIAGNOSTICS command result");
+    } catch (ExecutionException | TimeoutException e) {
+      return notAvailable(
+          "no SELF_DIAGNOSTICS command result within " + timeout + ": " + e.getMessage());
+    }
+    return fromCommand(outcome);
+  }
+
+  /**
+   * A {@code SELF_DIAGNOSTICS} command result: parsed like the snapshot file when the status is
+   * {@code OK} (a {@code format} member, when present, must be 1), else not available with the
+   * agent's status and error.
+   */
+  public static SelfDiagnostics fromCommand(CommandOutcome outcome) {
+    if (!outcome.ok()) {
+      return notAvailable(
+          "the agent answered SELF_DIAGNOSTICS with "
+              + outcome.status()
+              + (outcome.error().isEmpty() ? "" : ": " + outcome.error()));
+    }
+    if (!outcome.contentType().startsWith("application/json")) {
+      throw new IllegalArgumentException(
+          "self-diagnostics command: content type " + outcome.contentType() + ", not JSON");
+    }
+    return parse(outcome.payloadText(), false);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static SelfDiagnostics parse(String json, boolean requireFormat) {
     Object root = new JsonReader(json.strip()).read();
     if (!(root instanceof Map<?, ?> map)) {
       throw new IllegalArgumentException("self-diagnostics: not a JSON object: " + json);
     }
     Object format = map.get("format");
-    if (!(format instanceof Number number) || number.intValue() != 1) {
+    boolean formatOk = format instanceof Number number && number.intValue() == 1;
+    if (requireFormat ? !formatOk : format != null && !formatOk) {
       throw new IllegalArgumentException("self-diagnostics: unsupported format " + format);
     }
     Map<String, Double> values = new LinkedHashMap<>();
@@ -228,7 +310,8 @@ public final class SelfDiagnostics {
     if (anyOrphan) {
       values.put("orphan_steps_total", (double) orphans);
     }
-    return new SelfDiagnostics(true, "", values, counters, modules, pools, connectors);
+    return new SelfDiagnostics(
+        true, "", values, counters, modules, pools, connectors, (Map<String, Object>) map);
   }
 
   @SuppressWarnings("unchecked")
@@ -252,6 +335,42 @@ public final class SelfDiagnostics {
 
   public boolean available() {
     return available;
+  }
+
+  /**
+   * The whole parsed JSON object (maps, lists, strings, {@code Long}/{@code Double}, booleans,
+   * null), including members the typed accessors do not read; empty when not available.
+   */
+  public Map<String, Object> json() {
+    return json;
+  }
+
+  /**
+   * The member at a dotted path ({@code "config.sampling.profile.normal-rate"} is tried as the
+   * member {@code config} and then its key {@code sampling.profile.normal-rate}: a whole key wins,
+   * else each dotted prefix that is a key is followed, shortest first), if present.
+   */
+  public Optional<Object> member(String path) {
+    return member(json, path);
+  }
+
+  private static Optional<Object> member(Object node, String path) {
+    if (!(node instanceof Map<?, ?> map)) {
+      return Optional.empty();
+    }
+    if (map.containsKey(path)) {
+      return Optional.ofNullable(map.get(path));
+    }
+    for (int dot = path.indexOf('.'); dot > 0; dot = path.indexOf('.', dot + 1)) {
+      String head = path.substring(0, dot);
+      if (map.containsKey(head)) {
+        Optional<Object> found = member(map.get(head), path.substring(dot + 1));
+        if (found.isPresent()) {
+          return found;
+        }
+      }
+    }
+    return Optional.empty();
   }
 
   /** Why the values are not available (empty when they are). */

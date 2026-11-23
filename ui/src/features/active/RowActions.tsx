@@ -1,29 +1,48 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Actions of the selected running transaction (05 §2.6-4, docs/15 §9.6 RowActions): this thread's
-// stack (single-thread stack command), the instance's thread dump and the recent completed
-// transactions of the same service. The first two need the remote command API, which this version
-// does not have yet (server WO-26, agent WO-17, dump viewer WO-37): they show disabled with the
-// reason. The third opens the XLog with the service key filter, the last 15 minutes and the
-// transaction's kind (the environment and live keys carried, docs/15 §5).
-import { useId } from 'react';
+// Actions of the selected running transaction (05 §2.6-4, docs/15 §9.6 RowActions, T-ACPT-02):
+// this thread's stack (the thread_stack command with the transaction id; the modal follows it and
+// says whether the thread still runs the transaction), the instance's thread dump (requested here,
+// then shown in the instance detail's dumps tab, WO-37), the instance detail, and the recent
+// completed transactions of the same service (the XLog with the service key filter, the last 15
+// minutes and the transaction's kind; the environment and live keys carried, docs/15 §5). The two
+// commands need the operator role (SEC-21): viewers see them disabled with the reason.
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 
 import type { ActiveItem } from '../../api/active';
 import { untrusted } from '../../api/untrusted';
 import { Hint } from '../../components/Hint';
 import { SafeText } from '../../components/SafeText';
 import { useFormat } from '../../i18n/format';
+import { useCan } from '../../state/permissions';
 import {
   buildUrl,
   carriedState,
   defaultState,
+  InstanceQ,
   KINDS,
   XLogQ,
   type CommonState,
   type Kind,
 } from '../../state/urlState';
+import { CommandFeedback } from '../instances/commands/CommandFeedback';
+import { dumpTabHref } from '../instances/commands/links';
+import { useCommandRun } from '../instances/commands/useCommands';
+import { ThreadStackModal } from '../instances/dumps/ThreadStackModal';
+
+/** The instance detail (WO-37) of an instance, keeping the carried keys (docs/15 §5). */
+export function instanceHref(
+  appId: number,
+  instanceId: number,
+  current: Partial<CommonState>,
+): string {
+  return buildUrl(`/apps/${String(appId)}/instances/${String(instanceId)}`, InstanceQ, {
+    ...defaultState(InstanceQ),
+    ...carriedState(current),
+  });
+}
 
 /** XLog link of "recent completions of the same service", or null without a service key. */
 export function recentCompletionsHref(
@@ -90,12 +109,39 @@ export interface RowActionsProps {
 }
 
 export function RowActions({ appId, item, running, current, onClear }: RowActionsProps) {
-  const { t } = useTranslation(['common', 'active']);
+  const { t } = useTranslation(['common', 'active', 'commands']);
   const format = useFormat();
+  const navigate = useNavigate();
   const reasonId = useId();
   const noServiceId = useId();
-  const reason = t('active:actions.commandsUnavailable');
+  const canStack = useCan('commands.thread-stack');
+  const canDump = useCan('commands.thread-dump');
+  const runner = useCommandRun(item.instance_id);
+  const [stack, setStack] = useState<{
+    readonly txId: string;
+    readonly commandId: string | null;
+  } | null>(null);
+  const [dumpRequested, setDumpRequested] = useState(false);
+  const reason = t('active:actions.operatorRequired');
   const recent = recentCompletionsHref(appId, item, current);
+  const busy = runner.requesting || runner.inFlight;
+
+  const requestStack = async (): Promise<void> => {
+    setDumpRequested(false);
+    const txId = item.tx_id;
+    setStack({ txId, commandId: null });
+    const id = await runner.run('thread_stack', { tx_id: txId });
+    setStack((open) => (open === null ? null : { txId, commandId: id }));
+  };
+  const requestDump = async (): Promise<void> => {
+    setStack(null);
+    setDumpRequested(true);
+    const id = await runner.run('thread_dump');
+    if (id !== null) {
+      void navigate(dumpTabHref(appId, item.instance_id, id, current));
+    }
+  };
+
   return (
     <div
       className="active-actions"
@@ -121,22 +167,55 @@ export function RowActions({ appId, item, running, current, onClear }: RowAction
       <span id={noServiceId} className="visually-hidden">
         {t('active:actions.noService')}
       </span>
-      {/* FIXME(WO-26, WO-17): single-thread stack command of this transaction's thread (05 §2.6-4,
-          T-ACPT-02, T-E2E-active-30); enable once the remote command API exists. */}
-      <UnavailableAction
-        label={t('active:actions.stack')}
-        reason={reason}
-        reasonId={reasonId}
-        testId="active-action-stack"
-      />
-      {/* FIXME(WO-26, WO-17, WO-37): thread dump of this instance and the dump viewer (05 §2.6-4);
-          enable once the remote command API and the viewer exist. */}
-      <UnavailableAction
-        label={t('active:actions.dump')}
-        reason={reason}
-        reasonId={reasonId}
-        testId="active-action-dump"
-      />
+      {canStack ? (
+        <button
+          type="button"
+          className="control-button"
+          disabled={busy}
+          title={t('active:actions.stackHint')}
+          onClick={() => {
+            void requestStack();
+          }}
+          data-testid="active-action-stack"
+        >
+          {t('active:actions.stack')}
+        </button>
+      ) : (
+        <UnavailableAction
+          label={t('active:actions.stack')}
+          reason={reason}
+          reasonId={reasonId}
+          testId="active-action-stack"
+        />
+      )}
+      {canDump ? (
+        <button
+          type="button"
+          className="control-button"
+          disabled={busy}
+          title={t('active:actions.dumpHint')}
+          onClick={() => {
+            void requestDump();
+          }}
+          data-testid="active-action-dump"
+        >
+          {t('active:actions.dump')}
+        </button>
+      ) : (
+        <UnavailableAction
+          label={t('active:actions.dump')}
+          reason={reason}
+          reasonId={reasonId}
+          testId="active-action-dump"
+        />
+      )}
+      <Link
+        to={instanceHref(appId, item.instance_id, current)}
+        className="control-button"
+        data-testid="active-action-instance"
+      >
+        {t('active:actions.instance')}
+      </Link>
       {recent === null ? (
         <UnavailableAction
           label={t('active:actions.recent')}
@@ -157,6 +236,26 @@ export function RowActions({ appId, item, running, current, onClear }: RowAction
       >
         {t('active:actions.clear')}
       </button>
+      {dumpRequested && (runner.requesting || runner.requestError !== null) ? (
+        <CommandFeedback
+          view={undefined}
+          requestError={runner.requestError}
+          pollError={null}
+          requesting={runner.requesting}
+          data-testid="active-dump-feedback"
+        />
+      ) : null}
+      <ThreadStackModal
+        appId={appId}
+        open={stack !== null}
+        commandId={stack?.commandId ?? null}
+        txId={stack?.txId ?? null}
+        requestError={runner.requestError}
+        requesting={runner.requesting}
+        onClose={() => {
+          setStack(null);
+        }}
+      />
     </div>
   );
 }

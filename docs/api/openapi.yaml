@@ -10,6 +10,349 @@ info:
 servers:
 - url: /
 paths:
+  /api/v1/admin/apps/{appId}/config:
+    get:
+      description: 'remote_allowed_keys: the agent keys every instance''s remote-config.allow names; remote_allowed_by_instance: each instance''s list (the live session''s, else its last Hello''s); current: the values the server holds for the app (pushed to connected instances, sent to the others in their next ServerHello.config; secret-like values ****); drift: instances whose configuration hash differs from the app''s majority (key null) and server-held values an instance does not run (not_allowed, rejected, pending).'
+      operationId: admin_config_get
+      parameters:
+      - in: path
+        name: appId
+        required: true
+        schema:
+          format: int32
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAppConfig'
+          description: OK
+      summary: An app's pushed configuration
+      tags:
+      - config-controller
+      x-argos-limits:
+        timeout_s: 10
+      x-argos-role: admin
+      x-argos-source:
+      - postgres:app_config
+      - postgres:config_change_results
+      - memory:sessions
+  /api/v1/admin/apps/{appId}/config/changes:
+    get:
+      description: Newest first (limit default 50, at most 100); the next page with cursor = meta.next_cursor.
+      operationId: admin_config_changes_list
+      parameters:
+      - in: path
+        name: appId
+        required: true
+        schema:
+          format: int32
+          type: integer
+      - description: meta.next_cursor of the previous page
+        in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+      - description: Rows, at most 100 (default 50)
+        in: query
+        name: limit
+        required: false
+        schema:
+          format: int32
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseEnvelopeListConfigChange'
+          description: OK
+      summary: An app's configuration changes
+      tags:
+      - config-controller
+      x-argos-limits:
+        rows_max: 100
+        timeout_s: 10
+      x-argos-role: admin
+      x-argos-source:
+      - postgres:config_changes
+      - postgres:config_change_results
+    post:
+      description: 'Stores a preview: reason (required, at most 1 KiB), changes {key: value} (agent keys of docs/agent-config.md in dotted form, at most 64; null removes the server-held value), targets {all: true} (default) or {instance_ids} (at most 100). 400 for an unknown or immutable key (server.*, remote-config.*, app.*, log.dir, keys whose Remote column is -), an invalid value, a mask pattern list that drops a held pattern (reduce_masking) or the kill switch key (use /kill-switch). 422 remote_key_not_allowed for a key no target''s remote-config.allow names (details: the key not_allowed_by_targets and every target not_allowed). A key only some targets allow is listed per instance in preview.rejected_keys_by_instance and is never pushed to them. Apply with POST /admin/config/changes/{changeId}/apply.'
+      operationId: admin_config_changes_create
+      parameters:
+      - in: path
+        name: appId
+        required: true
+        schema:
+          format: int32
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigChangeRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeConfigChange'
+          description: Created
+      summary: Propose a configuration change
+      tags:
+      - config-controller
+      x-argos-audit: CONFIG_CHANGE_CREATED
+      x-argos-limits:
+        timeout_s: 10
+      x-argos-role: admin
+      x-argos-source:
+      - postgres:config_changes
+      - postgres:app_config
+      - postgres:instances
+  /api/v1/admin/apps/{appId}/kill-switch:
+    post:
+      description: 'enabled = false makes every instrumentation point of the targeted agents a no-op at once (metrics and the session stay), true turns it back on: a configuration change of the agent key enabled (argos.enabled), proposed and applied in one call, with the same per-instance results (GET /admin/config/changes/{changeId}). reason required; instance_ids null or empty for every instance. 400 when no target''s remote-config.allow names enabled.'
+      operationId: admin_kill_switch
+      parameters:
+      - in: path
+        name: appId
+        required: true
+        schema:
+          format: int32
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KillSwitchRequest'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeConfigChange'
+          description: Accepted
+      summary: Turn the kill switch on or off
+      tags:
+      - config-controller
+      x-argos-audit: KILL_SWITCH,CONFIG_CHANGE_CREATED
+      x-argos-limits:
+        timeout_s: 30
+      x-argos-role: admin
+      x-argos-source:
+      - postgres:config_changes
+      - postgres:config_change_results
+      - memory:sessions
+  /api/v1/admin/apps/{appId}/tokens:
+    get:
+      operationId: tokens_list
+      parameters:
+      - in: path
+        name: appId
+        required: true
+        schema:
+          format: int32
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeListAgentTokenView'
+          description: OK
+      tags:
+      - tokens-controller
+      x-argos-role: admin
+    post:
+      operationId: tokens_issue
+      parameters:
+      - in: path
+        name: appId
+        required: true
+        schema:
+          format: int32
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueTokenRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeIssuedTokenResponse'
+          description: Created
+      tags:
+      - tokens-controller
+      x-argos-audit: TOKEN_ISSUED
+      x-argos-role: admin
+  /api/v1/admin/config/changes/{changeId}:
+    get:
+      description: 'The change (status previewed, applying, applied, superseded) with its diff and, per target, status applied, partial, rejected (with rejected keys: by server = outside its remote-config.allow, never pushed; by agent = the agent''s ConfigApplyResult), offline or pending.'
+      operationId: admin_config_changes_get
+      parameters:
+      - in: path
+        name: changeId
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeConfigChange'
+          description: OK
+      summary: A configuration change and its results
+      tags:
+      - config-controller
+      x-argos-limits:
+        timeout_s: 10
+      x-argos-role: admin
+      x-argos-source:
+      - postgres:config_changes
+      - postgres:config_change_results
+  /api/v1/admin/config/changes/{changeId}/apply:
+    post:
+      description: Stores the values as the app's server-held configuration and pushes them to every connected target (only the keys its remote-config.allow names); targets that are not connected are pending and get the values in their next ServerHello.config. Results arrive within seconds (GET /admin/config/changes/{changeId}, WebSocket topic admin); a push without an answer within 30 s is offline. 409 invalid_state when the change is not a preview (applied, superseded).
+      operationId: admin_config_changes_apply
+      parameters:
+      - in: path
+        name: changeId
+        required: true
+        schema:
+          type: string
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeConfigChange'
+          description: Accepted
+      summary: Apply a configuration change
+      tags:
+      - config-controller
+      x-argos-audit: CONFIG_PUSH,KILL_SWITCH
+      x-argos-limits:
+        timeout_s: 30
+      x-argos-role: admin
+      x-argos-source:
+      - postgres:config_changes
+      - postgres:config_change_results
+      - memory:sessions
+  /api/v1/admin/config/changes/{changeId}/revert:
+    post:
+      description: 'Creates and applies at once a change (revert_of) of the values the server held before the change, for its keys and targets (ConfigPush.revert = true). A key the server held no value for is removed from the server-held configuration and not pushed: the agent keeps the pushed value until its restart or reload_config. 409 invalid_state when the change was not applied.'
+      operationId: admin_config_changes_revert
+      parameters:
+      - in: path
+        name: changeId
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigRevertRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeConfigChange'
+          description: Created
+      summary: Revert a configuration change
+      tags:
+      - config-controller
+      x-argos-audit: CONFIG_ROLLBACK,CONFIG_PUSH,KILL_SWITCH
+      x-argos-limits:
+        timeout_s: 30
+      x-argos-role: admin
+      x-argos-source:
+      - postgres:config_changes
+      - postgres:config_change_results
+      - memory:sessions
+  /api/v1/admin/pending-registrations:
+    get:
+      description: 'Hellos of an application (name, env) that the server did not register automatically (12 §4.4: its environment does not register automatically, or the token''s home application has 8 automatic variants), most recently attempted first, at most 1,000. env filters by environment.'
+      operationId: admin_pending_registrations_list
+      parameters:
+      - in: query
+        name: env
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeListPendingRegistration'
+          description: OK
+      summary: Queued registration requests
+      tags:
+      - pending-registrations-controller
+      x-argos-limits:
+        rows_max: 1000
+      x-argos-role: admin
+      x-argos-source:
+      - postgres:pending_registrations
+  /api/v1/admin/pending-registrations/{id}/approve:
+    post:
+      description: 'Creates the application as an environment variant of the token''s home application (the home application''s agents are accepted on their next retry), applies group and apdex_t_ms and issues one agent token of the new application, returned in this response only. 404 for an unknown request, 409 already_exists when (name, env) belongs to another application, 409 invalid_state when the request has no home application. 409 invalid_state with the details approval: applied, token: not_issued and app_id: token_limit when the application has 5 active tokens already: the approval stays applied (the request is gone, the application exists) and no token is issued; issue one with POST /admin/apps/{appId}/tokens after revoking another.'
+      operationId: admin_pending_registrations_approve
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          format: int32
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproveRegistrationRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeApprovedRegistration'
+          description: Created
+      summary: Approve a registration request
+      tags:
+      - pending-registrations-controller
+      x-argos-audit: APP_APPROVED,TOKEN_ISSUED
+      x-argos-role: admin
+  /api/v1/admin/pending-registrations/{id}/reject:
+    post:
+      description: Deletes the request; the agent's next retry queues it again (12 §4.4 keeps no deny list). 404 for an unknown request.
+      operationId: admin_pending_registrations_reject
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          format: int32
+          type: integer
+      responses:
+        '204':
+          description: No Content
+      summary: Reject a registration request
+      tags:
+      - pending-registrations-controller
+      x-argos-audit: APP_REJECTED
+      x-argos-role: admin
   /api/v1/admin/storage/health:
     get:
       description: ClickHouse disks, the partitions with the most active parts, merges, insert health counters, mutations (system tables read as argos_reader), the server's WAL and unresolved dictionary ids. ttl_last_run_at and emergency_retention_active are null until the storage health job exists (WO-28).
@@ -34,6 +377,52 @@ paths:
       - system.disks
       - system.mutations
       - memory:meters
+  /api/v1/admin/tokens/{tokenId}/revoke:
+    post:
+      operationId: tokens_revoke
+      parameters:
+      - in: path
+        name: tokenId
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeTokenRequest'
+      responses:
+        '204':
+          description: No Content
+      tags:
+      - tokens-controller
+      x-argos-audit: TOKEN_REVOKED
+      x-argos-role: admin
+  /api/v1/admin/tokens/{tokenId}/rotate:
+    post:
+      operationId: tokens_rotate
+      parameters:
+      - in: path
+        name: tokenId
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RotateTokenRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeIssuedTokenResponse'
+          description: Created
+      tags:
+      - tokens-controller
+      x-argos-audit: TOKEN_ROTATED,TOKEN_ISSUED
+      x-argos-role: admin
   /api/v1/admin/users:
     get:
       operationId: admin_users_list
@@ -66,6 +455,23 @@ paths:
       x-argos-audit: USER_CREATED
       x-argos-role: admin
   /api/v1/admin/users/{id}:
+    delete:
+      description: The account is anonymised and disabled (the user name becomes free again), every session of it ends at once (401 session_revoked on its next request) and the audit log keeps its old name. 409 invalid_state for the caller's own account (detail self) or the last enabled administrator (detail last_admin).
+      operationId: admin_users_delete
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: No Content
+      summary: Delete a user
+      tags:
+      - admin-users-controller
+      x-argos-audit: USER_DELETED,SESSION_REVOKED
+      x-argos-role: admin
     patch:
       operationId: admin_users_patch
       parameters:
@@ -753,7 +1159,55 @@ paths:
       - postgres:apps
       - postgres:instances
       - memory:sessions
+    post:
+      description: name 1 to 128 and env 1 to 32 characters (no control characters), group at most 64, apdex_t_ms 1 to 65535 (default 500), registration_policy auto (default) or approval. 409 already_exists when (name, env) exists. Agents of the application connect with a token issued by POST /admin/apps/{appId}/tokens.
+      operationId: apps_create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppCreateRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeApp'
+          description: Created
+      summary: Create an application
+      tags:
+      - apps-admin-controller
+      x-argos-audit: APP_CREATED
+      x-argos-role: admin
   /api/v1/apps/{appId}:
+    delete:
+      description: confirm must be the application's name (400 otherwise). Every agent token of the application is revoked and its live sessions end with UNAUTHENTICATED within 5 s, its alert rules are deleted, its instances archived; the application is no longer listed and its name can be registered again. Collected data stays until its retention ends.
+      operationId: apps_delete
+      parameters:
+      - in: path
+        name: appId
+        required: true
+        schema:
+          format: int32
+          type: integer
+      - description: The application's name, as a confirmation
+        in: query
+        name: confirm
+        required: false
+        schema:
+          type: string
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAppDeleted'
+          description: Accepted
+      summary: Delete an application
+      tags:
+      - apps-admin-controller
+      x-argos-audit: APP_DELETED,TOKEN_REVOKED
+      x-argos-role: admin
     get:
       description: '404 not_found for an unknown application. kinds lists the transaction kinds recorded in the last 7 days (service_stat_1h; null when ClickHouse cannot answer). Instance state (12 §4.2): UP while heartbeats arrive, STALE after 60 s without a heartbeat, DOWN after 180 s without one, 5 minutes after the agent''s shutdown message without a reconnect, or when never connected since the server started; WARN while up with a clock offset of 1 s or more, drops in the last 5 minutes, the lowest accepted agent version, a disabled module, the kill switch on, a configuration hash that differs from the application''s majority or a leaked-context count in the last 5 minutes. instances_up counts the instances in UP or WARN.'
       operationId: apps_get
@@ -782,6 +1236,33 @@ paths:
       - postgres:instances
       - memory:sessions
       - service_stat_1h
+    patch:
+      description: 'Absent fields stay as they are. group: an empty string clears it. apdex_t_ms applies to transactions received from now on and writes an apdex event marker (D-17; past data keeps its T). app_packages replaces the list (at most 50 Java package names; JDK and Argos packages are refused). 400 when nothing changes.'
+      operationId: apps_patch
+      parameters:
+      - in: path
+        name: appId
+        required: true
+        schema:
+          format: int32
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppPatchRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeApp'
+          description: OK
+      summary: Change an application
+      tags:
+      - apps-admin-controller
+      x-argos-audit: APP_UPDATED
+      x-argos-role: admin
   /api/v1/apps/{appId}/active:
     get:
       description: The latest 5-second snapshot of every live agent session (memory). At most 2,000 items, longest first (meta.truncated). per_instance lists only the instances with a live session, each with its instance state (UP, WARN, STALE, DOWN) as in GET /apps/{appId}/instances.
@@ -1574,6 +2055,68 @@ paths:
       - profile_step
       - postgres:dictionary
       - postgres:error_groups
+  /api/v1/apps/{appId}/services/{serviceId}/apdex:
+    delete:
+      description: The service's transactions received from now on get the application's Apdex T again; an apdex event marker is written when the T in effect changes.
+      operationId: apps_service_apdex_delete
+      parameters:
+      - in: path
+        name: appId
+        required: true
+        schema:
+          format: int32
+          type: integer
+      - in: path
+        name: serviceId
+        required: true
+        schema:
+          pattern: ^[0-9]{1,20}$
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeServiceApdex'
+          description: OK
+      summary: Remove a service's Apdex T
+      tags:
+      - apps-admin-controller
+      x-argos-audit: APP_UPDATED
+      x-argos-role: admin
+    put:
+      description: 'Overrides the application''s Apdex T for one service (D-17): transactions received from now on are stamped with it and an apdex event marker is written; past data keeps its T (the operator command argos-admin apdex reapply re-stamps it). apdex_t_ms 1 to 65535. 409 invalid_state when the application has 1,000 overrides.'
+      operationId: apps_service_apdex_put
+      parameters:
+      - in: path
+        name: appId
+        required: true
+        schema:
+          format: int32
+          type: integer
+      - in: path
+        name: serviceId
+        required: true
+        schema:
+          pattern: ^[0-9]{1,20}$
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceApdexRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeServiceApdex'
+          description: OK
+      summary: Set a service's Apdex T
+      tags:
+      - apps-admin-controller
+      x-argos-audit: APP_UPDATED
+      x-argos-role: admin
   /api/v1/apps/{appId}/sql/stats:
     get:
       description: 'Per SQL statement and JDBC target of [from, to) (complete counts, D-12) from sql_stat_raw/1m/1h. Percentiles are estimated from the 15 latency buckets (estimated: true, C-14). sort: sum_ms (default), count, avg_ms, max_ms, errors or p95_ms (the estimated p95, ordered like the returned p95_ms values). db_id filters one target. limit at most 500 (default 100). compare_prev=true adds delta. Also as CSV (format=csv, tz). meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.'
@@ -1993,6 +2536,98 @@ paths:
       - auth-controller
       x-argos-audit: SESSION_REUSE_DETECTED,SESSION_REVOKED
       x-argos-role: public
+  /api/v1/auth/sessions:
+    get:
+      description: The caller's live sessions (logins that are neither revoked nor expired), most recently used first, at most 100; current marks the session of this request. No token or refresh value is ever returned.
+      operationId: auth_sessions_list
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeListOwnSession'
+          description: OK
+      summary: My sessions
+      tags:
+      - auth-controller
+      x-argos-role: viewer
+  /api/v1/auth/sessions/{sessionId}:
+    delete:
+      description: 'sessionId is a session_id of GET /auth/sessions (UUIDv4). The session ends at once: its next request is 401 session_revoked and its WebSockets close within 1 s. Ending the current session works like a logout. 404 for a session that is not one of the caller''s live sessions.'
+      operationId: auth_sessions_delete
+      parameters:
+      - in: path
+        name: sessionId
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: No Content
+      summary: End one of my sessions
+      tags:
+      - auth-controller
+      x-argos-audit: SESSION_REVOKED
+      x-argos-role: viewer
+  /api/v1/commands/{commandId}:
+    get:
+      description: 'The requester''s own command, or any command for an administrator (403 not_owner otherwise, 404 when it does not exist). status: queued, sent, done, failed, expired.'
+      operationId: commands_get
+      parameters:
+      - in: path
+        name: commandId
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeCommandView'
+          description: OK
+      summary: A command's state
+      tags:
+      - commands-controller
+      x-argos-limits:
+        timeout_s: 10
+      x-argos-role: viewer
+      x-argos-source:
+      - postgres:commands
+      - postgres:command_results
+  /api/v1/commands/{commandId}/result:
+    get:
+      description: The decrypted result of a done command for its requester or an administrator (the result of reload_config and env_dump for administrators only). format=json (default) parses a thread dump or stack into threads[] and deadlocks[], other results come as text; format=text returns every result as text. Viewing is audited (COMMAND_RESULT_VIEWED; SENSITIVE_VIEW for env_dump and thread dumps). 409 invalid_state when the command has no result.
+      operationId: commands_result
+      parameters:
+      - in: path
+        name: commandId
+        required: true
+        schema:
+          type: string
+      - description: json (default) or text
+        in: query
+        name: format
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeCommandResultView'
+          description: OK
+      summary: A command's result
+      tags:
+      - commands-controller
+      x-argos-audit: COMMAND_RESULT_VIEWED,SENSITIVE_VIEW
+      x-argos-limits:
+        timeout_s: 10
+      x-argos-role: viewer
+      x-argos-source:
+      - postgres:commands
+      - postgres:command_results
   /api/v1/csp-report:
     post:
       operationId: csp_report
@@ -2003,7 +2638,64 @@ paths:
       - csp-report-controller
       x-argos-audit: none
       x-argos-role: public
+  /api/v1/events:
+    post:
+      description: 'The application is app_id, or app (name) with env. type deploy or custom, title 1 to 256 characters, version at most 128, detail at most 2 KB (stored as {"text": detail}), ts default now (400 days ago to 1 hour ahead). At most 60 events per application a minute (429 rate_limited with Retry-After). Instead of a session, a deploy pipeline may send ''Authorization: Bearer argos_...'' with an agent token of the application (no CSRF header then): the token writes only its home application (403 otherwise, the home application when app_id and app are absent), an invalid, expired or revoked token is 401, and the audit records the token''s prefix.'
+      operationId: events_create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventCreateRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeEventCreated'
+          description: Created
+      summary: Create a deploy marker or custom event
+      tags:
+      - events-write-controller
+      x-argos-audit: EVENT_CREATED
+      x-argos-role: operator
+  /api/v1/events/{eventId}:
+    delete:
+      description: Only deploy and custom events are deleted (409 invalid_state for the automatic ones); 404 for an unknown event.
+      operationId: events_delete
+      parameters:
+      - in: path
+        name: eventId
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: No Content
+      summary: Delete a deploy marker or custom event
+      tags:
+      - events-write-controller
+      x-argos-audit: EVENT_DELETED
+      x-argos-role: admin
   /api/v1/instances/{instanceId}:
+    delete:
+      description: Only an archived instance that is not connected is deleted (409 invalid_state otherwise), with its command history; its events and collected data stay until their retention ends.
+      operationId: instances_delete
+      parameters:
+      - in: path
+        name: instanceId
+        required: true
+        schema:
+          format: int32
+          type: integer
+      responses:
+        '204':
+          description: No Content
+      summary: Delete an archived instance
+      tags:
+      - apps-admin-controller
+      x-argos-audit: INSTANCE_DELETED
+      x-argos-role: admin
     get:
       description: '404 not_found for an unknown instance. Instance state (12 §4.2): UP while heartbeats arrive, STALE after 60 s without a heartbeat, DOWN after 180 s without one, 5 minutes after the agent''s shutdown message without a reconnect, or when never connected since the server started; WARN while up with a clock offset of 1 s or more, drops in the last 5 minutes, the lowest accepted agent version, a disabled module, the kill switch on, a configuration hash that differs from the application''s majority or a leaked-context count in the last 5 minutes. instances_up counts the instances in UP or WARN.'
       operationId: instances_get
@@ -2032,6 +2724,121 @@ paths:
       - memory:sessions
       - metric
       - metric_1m
+  /api/v1/instances/{instanceId}/archive:
+    post:
+      description: Hides the instance from the instance list (archived=true lists it); a reconnect lists it again. 409 invalid_state while it is connected; archiving an archived instance changes nothing.
+      operationId: instances_archive
+      parameters:
+      - in: path
+        name: instanceId
+        required: true
+        schema:
+          format: int32
+          type: integer
+      responses:
+        '204':
+          description: No Content
+      summary: Archive an instance
+      tags:
+      - apps-admin-controller
+      x-argos-audit: INSTANCE_ARCHIVED
+      x-argos-role: operator
+  /api/v1/instances/{instanceId}/commands:
+    get:
+      description: The newest commands of the instance (limit default 50, at most 100), every requester; results are read through GET /commands/{commandId}/result.
+      operationId: commands_list
+      parameters:
+      - in: path
+        name: instanceId
+        required: true
+        schema:
+          format: int32
+          type: integer
+      - description: Rows, at most 100 (default 50)
+        in: query
+        name: limit
+        required: false
+        schema:
+          format: int32
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeListCommandView'
+          description: OK
+      summary: Commands of an instance
+      tags:
+      - commands-controller
+      x-argos-limits:
+        rows_max: 100
+        timeout_s: 10
+      x-argos-role: operator
+      x-argos-source:
+      - postgres:commands
+      - postgres:command_results
+    post:
+      description: 'Queues one command of the closed list (thread_dump, thread_stack, self_diagnosis: operator; reload_config, env_dump: admin, 403 otherwise) and sends it on the instance''s agent session. thread_stack takes exactly one of args.thread_id, args.tx_id (digits); the others take no args. 409 instance_offline without a live session, 409 invalid_state while another command of the instance runs, 429 rate_limited (Retry-After) beyond 10 per instance per minute, 409 secret_unavailable without a master key (results are stored encrypted). A command not sent within ttl_s expires and is never delivered; poll GET /commands/{commandId}.'
+      operationId: commands_create
+      parameters:
+      - in: path
+        name: instanceId
+        required: true
+        schema:
+          format: int32
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandRequest'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeCommandQueued'
+          description: Accepted
+      summary: Request a command of an instance
+      tags:
+      - commands-controller
+      x-argos-audit: COMMAND_REQUESTED,COMMAND_REJECTED
+      x-argos-limits:
+        timeout_s: 10
+      x-argos-role: operator
+      x-argos-source:
+      - postgres:commands
+      - memory:sessions
+  /api/v1/instances/{instanceId}/effective-config:
+    get:
+      description: 'Every agent key a collector may change, with remote_allowed (the instance''s remote-config.allow names it), the app''s server-held value (server_value, secret-like values ****) and the instance''s state of it (server_status applied, pending, rejected, not_allowed). value and source = server only for a server-held value the instance runs: the agent never sends its default, file or environment values, so they are unknown here (null).'
+      operationId: instances_effective_config
+      parameters:
+      - in: path
+        name: instanceId
+        required: true
+        schema:
+          format: int32
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeListEffectiveConfigEntry'
+          description: OK
+      summary: An instance's effective configuration
+      tags:
+      - config-controller
+      x-argos-limits:
+        timeout_s: 10
+      x-argos-role: operator
+      x-argos-source:
+      - postgres:app_config
+      - postgres:config_change_results
+      - memory:sessions
   /api/v1/instances/{instanceId}/metrics:
     get:
       description: 'The series named by names (stored names with labels, as metrics/names lists them; 1 to 50, each at most 256 bytes) on the time grid of [from, to) by the source rule of 14 §3 (meta.source; at most 1 year, 720 buckets, so at most 2,000 points per series). Gauges: bucket average, min and max; counters: the increase in the bucket. A bucket without samples is null, never 0 (D-09).'
@@ -2681,6 +3488,72 @@ components:
       - roles
       - updated_at
       - username
+      type: object
+    AgentTokenView:
+      properties:
+        app_id:
+          format: int32
+          type: integer
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          description: Name of the issuing user; null when the server or a command issued it
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        expires_at:
+          description: 'null: the token does not expire'
+          format: date-time
+          type:
+          - string
+          - 'null'
+        grace_until:
+          description: End of the rotation grace of a rotating token
+          format: date-time
+          type:
+          - string
+          - 'null'
+        instances_using:
+          description: Live agent sessions opened with this token
+          format: int32
+          type: integer
+        last_used_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        prefix:
+          description: argos_ and the next 8 characters of the token
+          type: string
+        revoked_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        state:
+          enum:
+          - active
+          - rotating
+          - revoked
+          - expired
+          type: string
+        token_id:
+          format: uuid
+          type: string
+      required:
+      - app_id
+      - created_at
+      - created_by
+      - expires_at
+      - grace_until
+      - instances_using
+      - last_used_at
+      - prefix
+      - revoked_at
+      - state
+      - token_id
       type: object
     AlertAck:
       properties:
@@ -3910,6 +4783,11 @@ components:
         app_id:
           format: int32
           type: integer
+        app_packages:
+          description: The Java packages of the application's own code (at most 50), set by an administrator with PATCH /apps/{appId}. Stack frames of these packages are the application's frames (ADR-0010 C-207 (3)); empty when none is set.
+          items:
+            type: string
+          type: array
         created_at:
           format: date-time
           type: string
@@ -3957,6 +4835,7 @@ components:
       required:
       - apdex_t_ms
       - app_id
+      - app_packages
       - created_at
       - env
       - group
@@ -3969,6 +4848,87 @@ components:
       - registered_from_app_id
       - registration_policy
       - slow_threshold_ms
+      type: object
+    AppConfig:
+      properties:
+        current:
+          additionalProperties:
+            type: string
+            x-argos-untrusted: true
+          type: object
+          x-argos-untrusted: true
+        drift:
+          items:
+            $ref: '#/components/schemas/ConfigDrift'
+          type: array
+        remote_allowed_by_instance:
+          items:
+            $ref: '#/components/schemas/ConfigInstanceAllow'
+          type: array
+        remote_allowed_keys:
+          items:
+            type: string
+          type: array
+      required:
+      - current
+      - drift
+      - remote_allowed_by_instance
+      - remote_allowed_keys
+      type: object
+    AppCreateRequest:
+      properties:
+        apdex_t_ms:
+          format: int32
+          type: integer
+        env:
+          type: string
+        group:
+          type: string
+        name:
+          type: string
+        registration_policy:
+          description: auto (default) or approval
+          type: string
+      required:
+      - env
+      - name
+      type: object
+    AppDeleted:
+      properties:
+        app_id:
+          format: int32
+          type: integer
+        rules_deleted:
+          format: int32
+          type: integer
+        sessions_closed:
+          format: int32
+          type: integer
+        tokens_revoked:
+          format: int32
+          type: integer
+      required:
+      - app_id
+      - rules_deleted
+      - sessions_closed
+      - tokens_revoked
+      type: object
+    AppPatchRequest:
+      properties:
+        apdex_t_ms:
+          format: int32
+          type: integer
+        app_packages:
+          description: 'Replaces the application packages: at most 50 Java package names (at most 255 characters each); java, javax, jdk, sun and io.argos and their subpackages are refused. An empty list clears them.'
+          items:
+            type: string
+          type: array
+        group:
+          description: The new group (at most 64 characters); an empty string clears it
+          type: string
+        registration_policy:
+          description: auto or approval
+          type: string
       type: object
     AppRef:
       properties:
@@ -3985,6 +4945,43 @@ components:
       - app_id
       - env
       - name
+      type: object
+    ApproveRegistrationRequest:
+      properties:
+        apdex_t_ms:
+          format: int32
+          type: integer
+        group:
+          type: string
+      type: object
+    ApprovedRegistration:
+      properties:
+        app:
+          $ref: '#/components/schemas/App'
+        token:
+          $ref: '#/components/schemas/ApprovedRegistrationToken'
+      required:
+      - app
+      - token
+      type: object
+    ApprovedRegistrationToken:
+      properties:
+        expires_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        prefix:
+          type: string
+        token:
+          type: string
+        token_id:
+          type: string
+      required:
+      - expires_at
+      - prefix
+      - token
+      - token_id
       type: object
     ChannelView:
       properties:
@@ -4100,6 +5097,475 @@ components:
       - per_instance
       - server_drops
       - server_drops_quota
+      type: object
+    CommandDeadlock:
+      properties:
+        thread_ids:
+          items:
+            format: int64
+            type: integer
+          type: array
+      required:
+      - thread_ids
+      type: object
+    CommandQueued:
+      properties:
+        command_id:
+          format: uuid
+          type: string
+        status:
+          type: string
+        ttl_s:
+          format: int32
+          type: integer
+      required:
+      - command_id
+      - status
+      - ttl_s
+      type: object
+    CommandRequest:
+      properties:
+        args:
+          additionalProperties:
+            type: string
+          type: object
+        type:
+          type: string
+      required:
+      - type
+      type: object
+    CommandResultView:
+      properties:
+        command_id:
+          format: uuid
+          type: string
+        content_type:
+          type: string
+        deadlocks:
+          items:
+            $ref: '#/components/schemas/CommandDeadlock'
+          type:
+          - array
+          - 'null'
+        format:
+          type: string
+        instance_id:
+          format: int32
+          type: integer
+        size_bytes:
+          format: int32
+          type: integer
+        text:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        threads:
+          items:
+            $ref: '#/components/schemas/CommandThread'
+          type:
+          - array
+          - 'null'
+        truncated:
+          type: boolean
+        type:
+          type: string
+      required:
+      - command_id
+      - content_type
+      - deadlocks
+      - format
+      - instance_id
+      - size_bytes
+      - text
+      - threads
+      - truncated
+      - type
+      type: object
+    CommandThread:
+      properties:
+        frames:
+          items:
+            type: string
+            x-argos-untrusted: true
+          type: array
+          x-argos-untrusted: true
+        id:
+          format: int64
+          type:
+          - integer
+          - 'null'
+        locks_held:
+          items:
+            type: string
+            x-argos-untrusted: true
+          type: array
+          x-argos-untrusted: true
+        name:
+          type: string
+          x-argos-untrusted: true
+        state:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        tx_id:
+          pattern: ^[0-9]{1,20}$
+          type:
+          - string
+          - 'null'
+        virtual:
+          type: boolean
+        waiting_on:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+      required:
+      - frames
+      - id
+      - locks_held
+      - name
+      - state
+      - tx_id
+      - virtual
+      - waiting_on
+      type: object
+    CommandView:
+      properties:
+        args:
+          additionalProperties:
+            type: string
+          type: object
+        command_id:
+          format: uuid
+          type: string
+        duration_ms:
+          format: int32
+          type:
+          - integer
+          - 'null'
+        error:
+          type:
+          - string
+          - 'null'
+        expires_at:
+          format: date-time
+          type: string
+        finished_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        instance_id:
+          format: int32
+          type: integer
+        requested_at:
+          format: date-time
+          type: string
+        requested_by:
+          format: uuid
+          type: string
+        requested_by_name:
+          description: The requester's user name; deleted-<id> for a deleted user, null when unknown
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        result_size:
+          format: int32
+          type:
+          - integer
+          - 'null'
+        sent_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        status:
+          type: string
+        truncated:
+          type:
+          - boolean
+          - 'null'
+        type:
+          type: string
+      required:
+      - args
+      - command_id
+      - duration_ms
+      - error
+      - expires_at
+      - finished_at
+      - instance_id
+      - requested_at
+      - requested_by
+      - requested_by_name
+      - result_size
+      - sent_at
+      - status
+      - truncated
+      - type
+      type: object
+    ConfigChange:
+      properties:
+        app_id:
+          format: int32
+          type: integer
+        applied_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        applied_by:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        change_id:
+          format: uuid
+          type: string
+        kind:
+          type: string
+        preview:
+          $ref: '#/components/schemas/ConfigPreview'
+        reason:
+          type: string
+          x-argos-untrusted: true
+        requested_at:
+          format: date-time
+          type: string
+        requested_by:
+          format: uuid
+          type: string
+        results:
+          items:
+            $ref: '#/components/schemas/ConfigChangeResult'
+          type: array
+        revert_of:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        status:
+          type: string
+        targets:
+          $ref: '#/components/schemas/ConfigTargetsView'
+      required:
+      - app_id
+      - applied_at
+      - applied_by
+      - change_id
+      - kind
+      - preview
+      - reason
+      - requested_at
+      - requested_by
+      - results
+      - revert_of
+      - status
+      - targets
+      type: object
+    ConfigChangeRequest:
+      properties:
+        changes:
+          additionalProperties: {}
+          type: object
+        reason:
+          type: string
+        targets:
+          $ref: '#/components/schemas/ConfigTargets'
+      required:
+      - changes
+      - reason
+      type: object
+    ConfigChangeResult:
+      properties:
+        applied_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        applied_keys:
+          items:
+            type: string
+          type: array
+        duration_ms:
+          format: int32
+          type:
+          - integer
+          - 'null'
+        effective_config_hash:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        error:
+          type:
+          - string
+          - 'null'
+        instance_id:
+          format: int32
+          type: integer
+        pushed_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        rejected:
+          items:
+            $ref: '#/components/schemas/ConfigRejectedKey'
+          type: array
+        rejected_keys:
+          items:
+            type: string
+          type: array
+        status:
+          type: string
+      required:
+      - applied_at
+      - applied_keys
+      - duration_ms
+      - effective_config_hash
+      - error
+      - instance_id
+      - pushed_at
+      - rejected
+      - rejected_keys
+      - status
+      type: object
+    ConfigDiffEntry:
+      properties:
+        after:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        before:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        key:
+          type: string
+      required:
+      - after
+      - before
+      - key
+      type: object
+    ConfigDrift:
+      properties:
+        instance_id:
+          format: int32
+          type: integer
+        key:
+          type:
+          - string
+          - 'null'
+        reason:
+          type: string
+        value:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+      required:
+      - instance_id
+      - key
+      - reason
+      - value
+      type: object
+    ConfigInstanceAllow:
+      properties:
+        instance_id:
+          format: int32
+          type: integer
+        name:
+          type: string
+          x-argos-untrusted: true
+        online:
+          type: boolean
+        patterns:
+          items:
+            type: string
+            x-argos-untrusted: true
+          type: array
+          x-argos-untrusted: true
+      required:
+      - instance_id
+      - name
+      - online
+      - patterns
+      type: object
+    ConfigInstanceKeys:
+      properties:
+        instance_id:
+          format: int32
+          type: integer
+        keys:
+          items:
+            type: string
+          type: array
+      required:
+      - instance_id
+      - keys
+      type: object
+    ConfigPreview:
+      properties:
+        diff:
+          items:
+            $ref: '#/components/schemas/ConfigDiffEntry'
+          type: array
+        rejected_keys_by_instance:
+          items:
+            $ref: '#/components/schemas/ConfigInstanceKeys'
+          type: array
+      required:
+      - diff
+      - rejected_keys_by_instance
+      type: object
+    ConfigRejectedKey:
+      properties:
+        by:
+          type: string
+        code:
+          type: string
+        key:
+          type: string
+      required:
+      - by
+      - code
+      - key
+      type: object
+    ConfigRevertRequest:
+      properties:
+        reason:
+          type: string
+      required:
+      - reason
+      type: object
+    ConfigTargets:
+      properties:
+        all:
+          type: boolean
+        instance_ids:
+          items:
+            format: int32
+            type: integer
+          type: array
+      type: object
+    ConfigTargetsView:
+      properties:
+        all:
+          type: boolean
+        instance_ids:
+          items:
+            format: int32
+            type: integer
+          type: array
+      required:
+      - all
+      - instance_ids
       type: object
     CreateChannelRequest:
       properties:
@@ -4642,6 +6108,38 @@ components:
       - target
       - vendor
       type: object
+    EffectiveConfigEntry:
+      properties:
+        key:
+          type: string
+        remote_allowed:
+          type: boolean
+        server_status:
+          type:
+          - string
+          - 'null'
+        server_value:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        source:
+          type:
+          - string
+          - 'null'
+        value:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+      required:
+      - key
+      - remote_allowed
+      - server_status
+      - server_value
+      - source
+      - value
+      type: object
     EnvelopeAdminUserView:
       properties:
         data:
@@ -4712,10 +6210,90 @@ components:
       - data
       - meta
       type: object
+    EnvelopeApp:
+      properties:
+        data:
+          $ref: '#/components/schemas/App'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeAppConfig:
+      properties:
+        data:
+          $ref: '#/components/schemas/AppConfig'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeAppDeleted:
+      properties:
+        data:
+          $ref: '#/components/schemas/AppDeleted'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeApprovedRegistration:
+      properties:
+        data:
+          $ref: '#/components/schemas/ApprovedRegistration'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
     EnvelopeChannelView:
       properties:
         data:
           $ref: '#/components/schemas/ChannelView'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeCommandQueued:
+      properties:
+        data:
+          $ref: '#/components/schemas/CommandQueued'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeCommandResultView:
+      properties:
+        data:
+          $ref: '#/components/schemas/CommandResultView'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeCommandView:
+      properties:
+        data:
+          $ref: '#/components/schemas/CommandView'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeConfigChange:
+      properties:
+        data:
+          $ref: '#/components/schemas/ConfigChange'
         meta:
           $ref: '#/components/schemas/QueryMeta'
       required:
@@ -4752,11 +6330,43 @@ components:
       - data
       - meta
       type: object
+    EnvelopeEventCreated:
+      properties:
+        data:
+          $ref: '#/components/schemas/EventCreated'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeIssuedTokenResponse:
+      properties:
+        data:
+          $ref: '#/components/schemas/IssuedTokenResponse'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
     EnvelopeListAdminUserView:
       properties:
         data:
           items:
             $ref: '#/components/schemas/AdminUserView'
+          type: array
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeListAgentTokenView:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/AgentTokenView'
           type: array
         meta:
           $ref: '#/components/schemas/QueryMeta'
@@ -4824,6 +6434,54 @@ components:
       - data
       - meta
       type: object
+    EnvelopeListCommandView:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/CommandView'
+          type: array
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeListEffectiveConfigEntry:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/EffectiveConfigEntry'
+          type: array
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeListOwnSession:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/OwnSession'
+          type: array
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeListPendingRegistration:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/PendingRegistration'
+          type: array
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
     EnvelopeLoginResponse:
       properties:
         data:
@@ -4858,6 +6516,16 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/RotatedKeyView'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeServiceApdex:
+      properties:
+        data:
+          $ref: '#/components/schemas/ServiceApdex'
         meta:
           $ref: '#/components/schemas/QueryMeta'
       required:
@@ -5043,6 +6711,37 @@ components:
       - ts
       - type
       - version
+      type: object
+    EventCreateRequest:
+      properties:
+        app:
+          type: string
+        app_id:
+          format: int32
+          type: integer
+        detail:
+          type: string
+        env:
+          type: string
+        title:
+          type: string
+        ts:
+          type: string
+        type:
+          description: deploy or custom
+          type: string
+        version:
+          type: string
+      required:
+      - title
+      - type
+      type: object
+    EventCreated:
+      properties:
+        event_id:
+          type: string
+      required:
+      - event_id
       type: object
     ExcludedSeries:
       properties:
@@ -5527,6 +7226,70 @@ components:
       - error_rate
       - p95
       type: object
+    IssueTokenRequest:
+      properties:
+        expires_in_days:
+          description: Days until the token expires. Optional; the server uses 365 when omitted.
+          format: int32
+          maximum: 3650
+          minimum: 1
+          type: integer
+      type: object
+    IssuedTokenResponse:
+      properties:
+        app_id:
+          format: int32
+          type: integer
+        expires_at:
+          description: 'null: the token does not expire'
+          format: date-time
+          type:
+          - string
+          - 'null'
+        grace_until:
+          description: 'Rotation only: when the rotated token stops authenticating'
+          format: date-time
+          type:
+          - string
+          - 'null'
+        prefix:
+          type: string
+        rotated_token_id:
+          description: 'Rotation only: the rotated token'
+          format: uuid
+          type:
+          - string
+          - 'null'
+        token:
+          description: Shown once, never again
+          type: string
+        token_id:
+          format: uuid
+          type: string
+      required:
+      - app_id
+      - expires_at
+      - grace_until
+      - prefix
+      - rotated_token_id
+      - token
+      - token_id
+      type: object
+    KillSwitchRequest:
+      properties:
+        enabled:
+          type: boolean
+        instance_ids:
+          items:
+            format: int32
+            type: integer
+          type: array
+        reason:
+          type: string
+      required:
+      - enabled
+      - reason
+      type: object
     KioskSession:
       properties:
         allowed:
@@ -5874,6 +7637,42 @@ components:
       - tps
       - ts
       type: object
+    OwnSession:
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        current:
+          type: boolean
+        expires_at:
+          format: date-time
+          type: string
+        ip:
+          type:
+          - string
+          - 'null'
+        kiosk:
+          type: boolean
+        last_seen_at:
+          format: date-time
+          type: string
+        session_id:
+          type: string
+        user_agent:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+      required:
+      - created_at
+      - current
+      - expires_at
+      - ip
+      - kiosk
+      - last_seen_at
+      - session_id
+      - user_agent
+      type: object
     PasswordChangeRequest:
       properties:
         current:
@@ -5904,6 +7703,48 @@ components:
             - admin
             type: string
           type: array
+      type: object
+    PendingRegistration:
+      properties:
+        attempts:
+          format: int32
+          type: integer
+        env:
+          type: string
+          x-argos-untrusted: true
+        first_attempt_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        home_app_id:
+          format: int32
+          type:
+          - integer
+          - 'null'
+        host:
+          type: string
+          x-argos-untrusted: true
+        id:
+          format: int32
+          type: integer
+        last_attempt_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        name:
+          type: string
+          x-argos-untrusted: true
+      required:
+      - attempts
+      - env
+      - first_attempt_at
+      - home_app_id
+      - host
+      - id
+      - last_attempt_at
+      - name
       type: object
     QueryMeta:
       description: 'The meta of every response (14 §2.5): request_id and generated_at always, the other fields where the endpoint has them'
@@ -6159,6 +8000,18 @@ components:
       - data
       - meta
       type: object
+    ResponseEnvelopeListConfigChange:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/ConfigChange'
+          type: array
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
     ResponseEnvelopeListErrorGroup:
       properties:
         data:
@@ -6355,6 +8208,23 @@ components:
       - data
       - meta
       type: object
+    RevokeTokenRequest:
+      properties:
+        reason:
+          maxLength: 512
+          type: string
+      required:
+      - reason
+      type: object
+    RotateTokenRequest:
+      properties:
+        grace_days:
+          description: Days the old token stays valid. Optional; the server uses 7 when omitted.
+          format: int32
+          maximum: 30
+          minimum: 1
+          type: integer
+      type: object
     RotatedKeyView:
       properties:
         previous_valid_until:
@@ -6442,6 +8312,47 @@ components:
       - disk_usage_ratio
       - ingest_lag_s
       - sessions
+      type: object
+    ServiceApdex:
+      properties:
+        apdex_t_ms:
+          format: int32
+          type: integer
+        app_id:
+          format: int32
+          type: integer
+        changed:
+          type: boolean
+        event_id:
+          type:
+          - string
+          - 'null'
+        overridden:
+          type: boolean
+        service_id:
+          pattern: ^[0-9]{1,20}$
+          type: string
+        ts:
+          format: date-time
+          type:
+          - string
+          - 'null'
+      required:
+      - apdex_t_ms
+      - app_id
+      - changed
+      - event_id
+      - overridden
+      - service_id
+      - ts
+      type: object
+    ServiceApdexRequest:
+      properties:
+        apdex_t_ms:
+          format: int32
+          type: integer
+      required:
+      - apdex_t_ms
       type: object
     ServiceDetail:
       properties:

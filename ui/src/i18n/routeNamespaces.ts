@@ -30,8 +30,12 @@ export const ROUTE_NAMESPACES: Readonly<Record<string, readonly LazyNamespace[]>
   errors: ['stats'],
   // The representative stack reuses the transaction detail's FrameList (its texts are in tx).
   'error-detail': ['stats', 'tx'],
-  // Active transactions (WO-35).
-  active: ['active'],
+  // Active transactions (WO-35); the stack and dump actions use the command texts (WO-37).
+  active: ['active', 'commands'],
+  // Instance list and detail (WO-37).
+  instances: ['instance'],
+  // The commands, environment dump and thread dump parts use the command texts (lane C).
+  instance: ['instance', 'commands'],
   // Alert screens (WO-38).
   alerts: ['alerts'],
   'alert-rules': ['alerts'],

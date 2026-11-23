@@ -123,9 +123,12 @@ public final class TraceContext {
 
   /**
    * SQL executions inside the transaction (11 {@code sql_count}) and their time, execute plus fetch
-   * (11 {@code sql_time_ms}, 13 "exec + fetch 합"); written by the JDBC helper (WO-13).
+   * (11 {@code sql_time_ms}, 13 "exec + fetch 합"); written by the JDBC helper (WO-13) only through
+   * {@link #addSqlExecution(long)} and {@link #addSqlNanos(long)}, which are safe from any thread:
+   * with executor propagation (WO-15) several threads run SQL of one transaction at the same time,
+   * and a plain {@code ++} lost counts.
    */
-  public int sqlCount;
+  public volatile int sqlCount;
 
   /**
    * External calls of the transaction (11 {@code ext_count}) and their time (11 {@code
@@ -134,7 +137,8 @@ public final class TraceContext {
    */
   public volatile int extCount;
 
-  public long sqlNanos;
+  /** See {@link #sqlCount}. */
+  public volatile long sqlNanos;
 
   /** See {@link #extCount}. */
   public volatile long extNanos;
@@ -155,9 +159,10 @@ public final class TraceContext {
   /**
    * Connection acquisition wait of the transaction: the sum of its outermost {@code
    * DataSource.getConnection()} times (11 {@code TransactionRecord.dbc_wait_ms}, F-A03); written by
-   * the JDBC helper. WO-13 addition to 10 §3.
+   * the JDBC helper through {@link #addDbcWait(long)} (any thread, see {@link #sqlCount}). WO-13
+   * addition to 10 §3.
    */
-  public long dbcNanos;
+  public volatile long dbcNanos;
 
   /** The core's per-transaction state; bootstrap code never reads it. */
   public volatile Object coreRef;
@@ -277,6 +282,30 @@ public final class TraceContext {
     EndState.EXT_COUNT.incrementAndGet(this);
     if (elapsedNanos > 0) {
       EndState.EXT_NANOS.addAndGet(this, elapsedNanos);
+    }
+  }
+
+  /**
+   * Adds one SQL execution of {@code elapsedNanos} (negative counts as 0) to {@link #sqlCount} and
+   * {@link #sqlNanos}: lock-free, safe from any thread, never blocks (WO-15). As {@link
+   * #addExternalCall(long)}, the two values are not updated as one.
+   */
+  public void addSqlExecution(long elapsedNanos) {
+    EndState.SQL_COUNT.incrementAndGet(this);
+    addSqlNanos(elapsedNanos);
+  }
+
+  /** Adds fetch time to {@link #sqlNanos} (negative or 0 adds nothing); any thread. */
+  public void addSqlNanos(long nanos) {
+    if (nanos > 0) {
+      EndState.SQL_NANOS.addAndGet(this, nanos);
+    }
+  }
+
+  /** Adds connection wait to {@link #dbcNanos} (negative or 0 adds nothing); any thread. */
+  public void addDbcWait(long nanos) {
+    if (nanos > 0) {
+      EndState.DBC_NANOS.addAndGet(this, nanos);
     }
   }
 

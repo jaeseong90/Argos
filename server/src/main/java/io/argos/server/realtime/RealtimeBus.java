@@ -92,8 +92,10 @@ import tools.jackson.databind.json.JsonMapper;
  * <p><b>Subscriptions.</b> The WebSocket handler validates the frame and the role, queues the
  * {@code ack} in the outbox and then calls {@link #subscribe}; the returned handle is cancelled on
  * {@code unsubscribe} and when the connection closes. {@code alert} pushes the alert engine's
- * transitions ({@link #publishAlert}, WO-25); {@code admin} (WO-26) is accepted and pushes nothing
- * yet.
+ * transitions ({@link #publishAlert}, WO-25); {@code admin} pushes the administration results
+ * ({@link #publishAdmin}, WO-26: command state transitions, configuration change results), each to
+ * the subscriptions without a filter and to those whose {@code change_id} or {@code command_id}
+ * matches.
  */
 @Component
 public class RealtimeBus implements RealtimePublisher, SmartLifecycle {
@@ -147,6 +149,12 @@ public class RealtimeBus implements RealtimePublisher, SmartLifecycle {
    * @param dataJson the push's {@code data} object ({@code {"event": {...}}})
    */
   record AlertPush(Integer appId, String env, long tMs, String dataJson) {}
+
+  /** The one sink of the {@code admin} topic: subscriptions filter by change or command (WO-26). */
+  static final TopicKey ADMIN_KEY = new TopicKey(Topic.ADMIN, 0, "");
+
+  /** One {@code admin} push: a change or a command (one of the ids is null). */
+  record AdminPush(String changeId, String commandId, long tMs, String dataJson) {}
 
   /** What a {@code counter} sink emits: the {@code data} JSON per kind choice. */
   record CounterTick(long tMs, Map<TxKind, String> data) {}
@@ -318,6 +326,21 @@ public class RealtimeBus implements RealtimePublisher, SmartLifecycle {
   }
 
   /**
+   * One {@code admin} push (WO-26, 14 §5.2 {@code {"change_id", "instance_id", "status"}}): a
+   * command state transition ({@code commandId} set) or a configuration change result ({@code
+   * changeId} set). The data is the push's {@code data} object, without collected data or secrets.
+   *
+   * @param changeId the configuration change, or null
+   * @param commandId the command, or null
+   * @param tMs server time of the transition
+   * @param dataJson the {@code data} object
+   */
+  public synchronized void publishAdmin(
+      String changeId, String commandId, long tMs, String dataJson) {
+    emit(ADMIN_KEY, new AdminPush(changeId, commandId, tMs, dataJson));
+  }
+
+  /**
    * The active alerts per application, {@code [critical, warn]} (the alert engine after every
    * change of its active alerts, WO-25): the {@code firing} of the {@code overview} rows (14 §4.2
    * {@code {critical, warn}}). Applications without an entry have none.
@@ -402,7 +425,17 @@ public class RealtimeBus implements RealtimePublisher, SmartLifecycle {
                       ServerFrames.push(id, Topic.ALERT, p.tMs(), p.dataJson(), null, null));
                 }
               };
-          case TopicRequest.Admin ad -> null;
+          case TopicRequest.Admin ad ->
+              v -> {
+                AdminPush p = (AdminPush) v;
+                boolean unfiltered = ad.changeId() == null && ad.commandId() == null;
+                if (unfiltered
+                    || (ad.changeId() != null && ad.changeId().equals(p.changeId()))
+                    || (ad.commandId() != null && ad.commandId().equals(p.commandId()))) {
+                  outbox.offerControl(
+                      ServerFrames.push(id, Topic.ADMIN, p.tMs(), p.dataJson(), null, null));
+                }
+              };
         };
     Disposable d = consumer == null ? null : attach(key, consumer);
     subscribers.get(request.topic()).incrementAndGet();
@@ -465,7 +498,7 @@ public class RealtimeBus implements RealtimePublisher, SmartLifecycle {
       case TopicRequest.Overview o ->
           new TopicKey(Topic.OVERVIEW, 0, o.env() == null ? "" : o.env());
       case TopicRequest.Alert a -> ALERT_KEY;
-      case TopicRequest.Admin a -> null;
+      case TopicRequest.Admin a -> ADMIN_KEY;
       case TopicRequest.Xlog x -> appKey(Topic.XLOG, x.app(), x.env());
       case TopicRequest.Counter c -> appKey(Topic.COUNTER, c.app(), c.env());
       case TopicRequest.Active a -> appKey(Topic.ACTIVE, a.app(), a.env());

@@ -100,7 +100,8 @@ public class AppsService {
         a.slowThresholdMs(),
         a.createdAt(),
         a.registeredFromAppId(),
-        kinds);
+        kinds,
+        a.appPackages());
   }
 
   /**

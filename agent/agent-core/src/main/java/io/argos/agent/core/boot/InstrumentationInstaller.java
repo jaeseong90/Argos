@@ -16,8 +16,9 @@ import net.bytebuddy.matcher.ElementMatcher;
  * Assembles and installs the agent builder (10 §4.3 P6, §5.2):
  *
  * <ul>
- *   <li>advice inlining only, no class format changes (methods and fields are never added; field
- *       injection for not-yet-loaded types arrives with WO-10/WO-15);
+ *   <li>advice inlining, no class format changes through ByteBuddy ({@code REDEFINE_FROZEN}); the
+ *       one exception is the context field of DSN-02-05, which {@link FieldInjector} writes at the
+ *       ASM level into application task classes while they are first defined;
  *   <li>retransformation of already loaded classes (JDK allow-list classes such as {@code
  *       ThreadPoolExecutor}, P-6); no initialization or injection strategy ({@link
  *       ArgosAgentBuilder}: no auxiliary types, no {@code Nexus}, ByteBuddy never injects classes

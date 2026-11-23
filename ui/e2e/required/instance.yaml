@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# docs/05 §2.7 "인스턴스 상세" as data-driven E2E tests (docs/18 §13, DSN-18-10): one entry per
+# bullet of the checklist (2.7-1 .. 2.7-6, docs/04 WO-37), in checklist order, so that
+# T-E2E-instance-<n> carries the bullet's number. Each item opens the instance list of the traffic
+# seed's application, opens the real agent's instance (shop-boot3 with the agent of the stack,
+# `e2e-shop-1`) from its row and then its deep link with the traffic range, and runs a named check
+# of e2e/required/instanceChecks.ts that compares the screen with the answers the page received and
+# with the API asked the same question inside the test (no fixed values).
+# 2.7-4 and 2.7-5 here check that the commands and thread dump tabs of the detail are reached (keys,
+# deep link) with the operator's commands; their contents, the command round trip and the dump
+# viewer are e2e/required/dumps.yaml (T-E2E-dumps-<n>). The command results of the environment tab
+# (self diagnosis, masked environment dump) need an agent that answers commands: until WO-17 the
+# command feed answers them in specs/instance.spec.ts (T-E2E-instance-22b/c).
+screen: instance
+title: Instance detail
+source: docs/05 §2.7
+items:
+  - id: 2.7-1
+    title: the header shows state, application and environment, version, agent version with its compatibility, JVM, OS, host, PID, cgroup, start time, uptime, restarts in the range, clock skew, drops, disabled modules, IP capture and virtual-thread modes of the server's answers
+    req: [F-U08, F-S28, D-23, SEC-60]
+    owner: WO-37
+    coverage: E2E (T-E2E-instance-1, T-E2E-instance-20); component InstanceHeader.test.tsx
+    route: /apps/{traffic_app_id}/instances
+    assert:
+      - visible: instances-page
+      - check: instanceHeader
+
+  - id: 2.7-2
+    title: the heap, memory pool, GC, thread, class, CPU, FD, Tomcat, pool, system memory, disk and network panels equal the metrics API of the real agent, with event markers and the 7-day baseline
+    req: [F-U08, D-09]
+    owner: WO-37
+    coverage: E2E (T-E2E-instance-2, T-E2E-instance-21); unit panels.test.ts, api/instances.test.ts
+    route: /apps/{traffic_app_id}/instances
+    assert:
+      - visible: instances-page
+      - check: instanceCharts
+
+  - id: 2.7-3
+    title: the environment tab shows the effective configuration of the server, the remote-allowed keys, the module status and the public self-diagnosis summary of the agent's own series; the environment dump is the administrator's
+    req: [F-U08, SEC-21]
+    owner: WO-37
+    coverage: E2E (T-E2E-instance-3, T-E2E-instance-22a..c, T-E2E-instance-25); unit env/model.test.ts
+    role: operator
+    route: /apps/{traffic_app_id}/instances
+    assert:
+      - visible: instances-page
+      - check: instanceEnvTab
+
+  - id: 2.7-4
+    title: the commands tab is reached with the keyboard and offers the operator's thread dump, single thread stack and self diagnosis, not the administrator's commands
+    req: [F-U08, F-A12, SEC-21]
+    owner: WO-37
+    coverage: E2E (T-E2E-instance-4); round trip, history and audit in dumps.yaml (T-E2E-dumps-1)
+    role: operator
+    route: /apps/{traffic_app_id}/instances
+    assert:
+      - visible: instances-page
+      - check: instanceCommandsTab
+
+  - id: 2.7-5
+    title: the thread dumps tab is reached with the keyboard and by its deep link
+    req: [F-U08, F-A12]
+    owner: WO-37
+    coverage: E2E (T-E2E-instance-5); the dump viewer in dumps.yaml (T-E2E-dumps-2)
+    role: operator
+    route: /apps/{traffic_app_id}/instances
+    assert:
+      - visible: instances-page
+      - check: instanceDumpsTab
+
+  - id: 2.7-6
+    title: the links open this instance's XLog (coloured by instance), its active transactions, the application's alert history and configuration history with the range
+    req: [F-U08, F-U16]
+    owner: WO-37
+    coverage: E2E (T-E2E-instance-6, T-E2E-instance-23); component InstancePage.test.tsx
+    route: /apps/{traffic_app_id}/instances
+    assert:
+      - visible: instances-page
+      - check: instanceLinks

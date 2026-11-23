@@ -11,13 +11,17 @@ import io.argos.agent.core.transport.TransportFakes.FakeOpener;
 import io.argos.agent.core.transport.TransportFakes.FakeStream;
 import io.argos.agent.core.transport.TransportFakes.ManualClock;
 import io.argos.agent.core.transport.TransportFakes.ManualLoop;
+import io.argos.proto.v1.AgentEvent;
+import io.argos.proto.v1.AgentEventType;
 import io.argos.proto.v1.AgentHello;
 import io.argos.proto.v1.AgentMessage;
 import io.argos.proto.v1.ByeReason;
 import io.argos.proto.v1.CloseReason;
 import io.argos.proto.v1.Command;
+import io.argos.proto.v1.CommandResult;
 import io.argos.proto.v1.CommandStatus;
 import io.argos.proto.v1.CommandType;
+import io.argos.proto.v1.ConfigApplyResult;
 import io.argos.proto.v1.ConfigPush;
 import io.argos.proto.v1.DictionaryKind;
 import io.argos.proto.v1.DictionaryRef;
@@ -25,7 +29,6 @@ import io.argos.proto.v1.DictionaryRequest;
 import io.argos.proto.v1.Heartbeat;
 import io.argos.proto.v1.HeartbeatAck;
 import io.argos.proto.v1.InstanceUpdate;
-import io.argos.proto.v1.RejectCode;
 import io.argos.proto.v1.RejectReason;
 import io.argos.proto.v1.ServerHello;
 import io.argos.proto.v1.ServerMessage;
@@ -52,6 +55,33 @@ class SessionClientTest {
   private final List<Throttle> throttles = new ArrayList<Throttle>();
   private int lost;
   private int stoppedCalls;
+  private final RecordingDispatcher dispatcher = new RecordingDispatcher();
+
+  /** Records what the session hands over, with the sink of each request (WO-17 contract). */
+  static final class RecordingDispatcher implements RemoteDispatcher {
+    final List<ConfigPush> pushes = new ArrayList<ConfigPush>();
+    final List<Command> commands = new ArrayList<Command>();
+    final List<RemoteDispatcher.ResultSink> sinks = new ArrayList<RemoteDispatcher.ResultSink>();
+    final List<java.util.Map<String, String>> hellos =
+        new ArrayList<java.util.Map<String, String>>();
+
+    @Override
+    public void configPush(ConfigPush push, RemoteDispatcher.ResultSink sink) {
+      pushes.add(push);
+      sinks.add(sink);
+    }
+
+    @Override
+    public void command(Command command, RemoteDispatcher.ResultSink sink) {
+      commands.add(command);
+      sinks.add(sink);
+    }
+
+    @Override
+    public void helloConfig(java.util.Map<String, String> config) {
+      hellos.add(config);
+    }
+  }
 
   private final SessionClient.Listener listener =
       new SessionClient.Listener() {
@@ -101,7 +131,7 @@ class SessionClientTest {
           }
         },
         listener,
-        new RejectingDispatcher(AgentConfig.of(Collections.<String, String>emptyMap()), "hash-1"),
+        dispatcher,
         new DictionaryCache(dictionary),
         counters,
         new ClockSync(clock),
@@ -577,33 +607,47 @@ class SessionClientTest {
   @Test
   @Tag("req:SEC-23")
   @DisplayName(
-      "C-118, WO-11: ConfigPush keys are evaluated against the hard cap and answered NOT_ALLOWED,"
-          + " nothing applied; pushed values never appear in the answer")
+      "WO-17: a ConfigPush goes to the dispatcher without an answer on argos-io; the answer handed"
+          + " to its sink is written on the loop, on the same stream")
   void configPush() {
     establishedClient();
     FakeStream stream = opener.last();
-    stream.server(
-        ServerMessage.newBuilder()
-            .setConfigPush(
-                ConfigPush.newBuilder()
-                    .setChangeId("c-1")
-                    .putValues("sampling.profile.normal-rate", "0.5")
-                    .putValues("server.address", "evil.example:1"))
-            .build());
+    ConfigPush push =
+        ConfigPush.newBuilder()
+            .setChangeId("c-1")
+            .putValues("sampling.profile.normal-rate", "0.5")
+            .build();
+    stream.server(ServerMessage.newBuilder().setConfigPush(push).build());
+    loop.run();
+    assertThat(dispatcher.pushes).containsExactly(push);
+    assertThat(stream.sentOf(AgentMessage.BodyCase.CONFIG_APPLY_RESULT))
+        .as("the dispatcher answers later, from argos-command")
+        .isEmpty();
+
+    dispatcher
+        .sinks
+        .get(0)
+        .send(
+            AgentMessage.newBuilder()
+                .setConfigApplyResult(
+                    ConfigApplyResult.newBuilder()
+                        .setChangeId("c-1")
+                        .addAppliedKeys("sampling.profile.normal-rate"))
+                .build());
+    assertThat(stream.sentOf(AgentMessage.BodyCase.CONFIG_APPLY_RESULT))
+        .as("written on the loop thread only")
+        .isEmpty();
+    loop.run();
     List<AgentMessage> answers = stream.sentOf(AgentMessage.BodyCase.CONFIG_APPLY_RESULT);
     assertThat(answers).hasSize(1);
     assertThat(answers.get(0).getConfigApplyResult().getChangeId()).isEqualTo("c-1");
-    assertThat(answers.get(0).getConfigApplyResult().getAppliedKeysList()).isEmpty();
-    assertThat(answers.get(0).getConfigApplyResult().getEffectiveConfigHash()).isEqualTo("hash-1");
-    assertThat(answers.get(0).getConfigApplyResult().getRejectedList())
-        .hasSize(2)
-        .allSatisfy(key -> assertThat(key.getCode()).isEqualTo(RejectCode.NOT_ALLOWED));
-    assertThat(answers.get(0).toString()).doesNotContain("evil.example");
   }
 
   @Test
   @Tag("req:SEC-24")
-  @DisplayName("WO-11: every Command is answered REJECTED and nothing runs")
+  @DisplayName(
+      "WO-17: Command chunks handed to the sink are written in order on the receiving session;"
+          + " unknown type numbers reach the dispatcher (it answers REJECTED)")
   void command() {
     establishedClient();
     FakeStream stream = opener.last();
@@ -615,12 +659,107 @@ class SessionClientTest {
         ServerMessage.newBuilder()
             .setCommand(Command.newBuilder().setCommandId("cmd-2").setTypeValue(99))
             .build());
+    assertThat(dispatcher.commands).hasSize(2);
+    assertThat(dispatcher.commands.get(1).getType()).isEqualTo(CommandType.UNRECOGNIZED);
+    for (int i = 0; i < 2; i++) {
+      dispatcher
+          .sinks
+          .get(0)
+          .send(
+              AgentMessage.newBuilder()
+                  .setCommandResult(
+                      CommandResult.newBuilder()
+                          .setCommandId("cmd-1")
+                          .setStatus(CommandStatus.OK)
+                          .setChunkIndex(i)
+                          .setChunkCount(2))
+                  .build());
+    }
+    loop.run();
     List<AgentMessage> answers = stream.sentOf(AgentMessage.BodyCase.COMMAND_RESULT);
     assertThat(answers).hasSize(2);
-    assertThat(answers.get(0).getCommandResult().getStatus()).isEqualTo(CommandStatus.REJECTED);
-    assertThat(answers.get(0).getCommandResult().getCommandId()).isEqualTo("cmd-1");
-    assertThat(answers.get(1).getCommandResult().getStatus()).isEqualTo(CommandStatus.REJECTED);
-    assertThat(answers.get(0).getCommandResult().getPayload().isEmpty()).isTrue();
+    assertThat(answers.get(0).getCommandResult().getChunkIndex()).isZero();
+    assertThat(answers.get(1).getCommandResult().getChunkIndex()).isEqualTo(1);
+  }
+
+  @Test
+  @Tag("req:SEC-24")
+  @DisplayName(
+      "WO-17: an answer for a session that ended is dropped and counted, never written on the next"
+          + " session (the server expires the request with session_ended)")
+  void resultOfEndedSessionDropped() {
+    establishedClient();
+    FakeStream first = opener.last();
+    first.server(
+        ServerMessage.newBuilder()
+            .setCommand(Command.newBuilder().setCommandId("cmd-1").setType(CommandType.ENV_DUMP))
+            .build());
+    RemoteDispatcher.ResultSink sink = dispatcher.sinks.get(0);
+    reconnect();
+    FakeStream second = opener.last();
+    assertThat(second).isNotSameAs(first);
+    second.server(accepted(7, "session-2"));
+    long droppedBefore = counters.sessionMessagesDropped();
+
+    sink.send(
+        AgentMessage.newBuilder()
+            .setCommandResult(
+                CommandResult.newBuilder()
+                    .setCommandId("cmd-1")
+                    .setStatus(CommandStatus.OK)
+                    .setChunkCount(1))
+            .build());
+    loop.run();
+    assertThat(second.sentOf(AgentMessage.BodyCase.COMMAND_RESULT)).isEmpty();
+    assertThat(first.sentOf(AgentMessage.BodyCase.COMMAND_RESULT)).isEmpty();
+    assertThat(counters.sessionMessagesDropped()).isEqualTo(droppedBefore + 1);
+  }
+
+  @Test
+  @DisplayName("WO-17: AgentEvent is written while a session is established, skipped otherwise")
+  void agentEvent() {
+    SessionClient client = started();
+    AgentEvent event =
+        AgentEvent.newBuilder().setType(AgentEventType.KILL_SWITCH_ON).setDetail("d").build();
+    client.event(event);
+    loop.run();
+    assertThat(opener.last().sentOf(AgentMessage.BodyCase.EVENT)).isEmpty();
+    opener.last().server(accepted(7, "session-1"));
+    client.event(event);
+    loop.run();
+    List<AgentMessage> events = opener.last().sentOf(AgentMessage.BodyCase.EVENT);
+    assertThat(events).hasSize(1);
+    assertThat(events.get(0).getEvent().getType()).isEqualTo(AgentEventType.KILL_SWITCH_ON);
+  }
+
+  @Test
+  @DisplayName(
+      "WO-17: AgentSession.event cuts the detail to 1 KiB and stamps at_ms; AgentSession.configHash"
+          + " sends one InstanceUpdate per new hash")
+  void agentSessionEventAndHash() {
+    SessionClient client = started();
+    opener.last().server(accepted(7, "session-1"));
+    loop.run();
+    AgentSession session = new AgentSession(identity(), client);
+    StringBuilder longDetail = new StringBuilder();
+    for (int i = 0; i < 2000; i++) {
+      longDetail.append('x');
+    }
+    session.event(AgentEventType.CONFIG_FILE_RELOADED, null, longDetail.toString());
+    session.configHash("h2");
+    session.configHash("h2");
+    loop.run();
+    List<AgentMessage> events = opener.last().sentOf(AgentMessage.BodyCase.EVENT);
+    assertThat(events).hasSize(1);
+    assertThat(events.get(0).getEvent().getDetail()).hasSize(AgentSession.MAX_EVENT_DETAIL_BYTES);
+    assertThat(events.get(0).getEvent().getAtMs()).isPositive();
+    List<String> hashes = new ArrayList<String>();
+    for (InstanceUpdate update : updates(opener.last())) {
+      if (update.hasConfigHash()) {
+        hashes.add(update.getConfigHash());
+      }
+    }
+    assertThat(hashes).containsExactly("h2");
   }
 
   @Test

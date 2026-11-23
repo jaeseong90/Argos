@@ -70,3 +70,23 @@ tasks.named<Test>("test") {
     .withPropertyName("agentConfigReference")
     .withPathSensitivity(PathSensitivity.RELATIVE)
 }
+
+// Virtual threads (WO-15, 10 §8, U-1, T-AG-054, T-ACC-23): the unit tests whose class name contains
+// "VirtualThread" also run on JDK 21 and 25, where virtual threads exist (on the Java 8 `test` run
+// their virtual-thread cases are skipped by assumption). The rest of the suite targets Java 8 only.
+fun registerVirtualThreadTests(jdk: Int) =
+  tasks.register<Test>("testJdk$jdk") {
+    description = "Runs the virtual-thread unit tests on JDK $jdk."
+    group = "verification"
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(jdk) }
+    filter { includeTestsMatching("*VirtualThread*") }
+    shouldRunAfter(tasks.named("test"))
+  }
+
+val testJdk21 = registerVirtualThreadTests(21)
+val testJdk25 = registerVirtualThreadTests(25)
+
+tasks.named("check") { dependsOn(testJdk21, testJdk25) }

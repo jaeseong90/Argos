@@ -8,6 +8,206 @@
 import type { Untrusted } from '../untrusted';
 
 export interface paths {
+  '/api/v1/admin/apps/{appId}/config': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * An app's pushed configuration
+     * @description remote_allowed_keys: the agent keys every instance's remote-config.allow names; remote_allowed_by_instance: each instance's list (the live session's, else its last Hello's); current: the values the server holds for the app (pushed to connected instances, sent to the others in their next ServerHello.config; secret-like values ****); drift: instances whose configuration hash differs from the app's majority (key null) and server-held values an instance does not run (not_allowed, rejected, pending).
+     */
+    get: operations['admin_config_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/apps/{appId}/config/changes': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * An app's configuration changes
+     * @description Newest first (limit default 50, at most 100); the next page with cursor = meta.next_cursor.
+     */
+    get: operations['admin_config_changes_list'];
+    put?: never;
+    /**
+     * Propose a configuration change
+     * @description Stores a preview: reason (required, at most 1 KiB), changes {key: value} (agent keys of docs/agent-config.md in dotted form, at most 64; null removes the server-held value), targets {all: true} (default) or {instance_ids} (at most 100). 400 for an unknown or immutable key (server.*, remote-config.*, app.*, log.dir, keys whose Remote column is -), an invalid value, a mask pattern list that drops a held pattern (reduce_masking) or the kill switch key (use /kill-switch). 422 remote_key_not_allowed for a key no target's remote-config.allow names (details: the key not_allowed_by_targets and every target not_allowed). A key only some targets allow is listed per instance in preview.rejected_keys_by_instance and is never pushed to them. Apply with POST /admin/config/changes/{changeId}/apply.
+     */
+    post: operations['admin_config_changes_create'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/apps/{appId}/kill-switch': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Turn the kill switch on or off
+     * @description enabled = false makes every instrumentation point of the targeted agents a no-op at once (metrics and the session stay), true turns it back on: a configuration change of the agent key enabled (argos.enabled), proposed and applied in one call, with the same per-instance results (GET /admin/config/changes/{changeId}). reason required; instance_ids null or empty for every instance. 400 when no target's remote-config.allow names enabled.
+     */
+    post: operations['admin_kill_switch'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/apps/{appId}/tokens': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['tokens_list'];
+    put?: never;
+    post: operations['tokens_issue'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/config/changes/{changeId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * A configuration change and its results
+     * @description The change (status previewed, applying, applied, superseded) with its diff and, per target, status applied, partial, rejected (with rejected keys: by server = outside its remote-config.allow, never pushed; by agent = the agent's ConfigApplyResult), offline or pending.
+     */
+    get: operations['admin_config_changes_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/config/changes/{changeId}/apply': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Apply a configuration change
+     * @description Stores the values as the app's server-held configuration and pushes them to every connected target (only the keys its remote-config.allow names); targets that are not connected are pending and get the values in their next ServerHello.config. Results arrive within seconds (GET /admin/config/changes/{changeId}, WebSocket topic admin); a push without an answer within 30 s is offline. 409 invalid_state when the change is not a preview (applied, superseded).
+     */
+    post: operations['admin_config_changes_apply'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/config/changes/{changeId}/revert': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Revert a configuration change
+     * @description Creates and applies at once a change (revert_of) of the values the server held before the change, for its keys and targets (ConfigPush.revert = true). A key the server held no value for is removed from the server-held configuration and not pushed: the agent keeps the pushed value until its restart or reload_config. 409 invalid_state when the change was not applied.
+     */
+    post: operations['admin_config_changes_revert'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/pending-registrations': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Queued registration requests
+     * @description Hellos of an application (name, env) that the server did not register automatically (12 §4.4: its environment does not register automatically, or the token's home application has 8 automatic variants), most recently attempted first, at most 1,000. env filters by environment.
+     */
+    get: operations['admin_pending_registrations_list'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/pending-registrations/{id}/approve': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Approve a registration request
+     * @description Creates the application as an environment variant of the token's home application (the home application's agents are accepted on their next retry), applies group and apdex_t_ms and issues one agent token of the new application, returned in this response only. 404 for an unknown request, 409 already_exists when (name, env) belongs to another application, 409 invalid_state when the request has no home application. 409 invalid_state with the details approval: applied, token: not_issued and app_id: token_limit when the application has 5 active tokens already: the approval stays applied (the request is gone, the application exists) and no token is issued; issue one with POST /admin/apps/{appId}/tokens after revoking another.
+     */
+    post: operations['admin_pending_registrations_approve'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/pending-registrations/{id}/reject': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Reject a registration request
+     * @description Deletes the request; the agent's next retry queues it again (12 §4.4 keeps no deny list). 404 for an unknown request.
+     */
+    post: operations['admin_pending_registrations_reject'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/admin/storage/health': {
     parameters: {
       query?: never;
@@ -22,6 +222,38 @@ export interface paths {
     get: operations['storage_health_get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/tokens/{tokenId}/revoke': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['tokens_revoke'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/tokens/{tokenId}/rotate': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['tokens_rotate'];
     delete?: never;
     options?: never;
     head?: never;
@@ -54,7 +286,11 @@ export interface paths {
     get?: never;
     put?: never;
     post?: never;
-    delete?: never;
+    /**
+     * Delete a user
+     * @description The account is anonymised and disabled (the user name becomes free again), every session of it ends at once (401 session_revoked on its next request) and the audit log keeps its old name. 409 invalid_state for the caller's own account (detail self) or the last enabled administrator (detail last_admin).
+     */
+    delete: operations['admin_users_delete'];
     options?: never;
     head?: never;
     patch: operations['admin_users_patch'];
@@ -452,7 +688,11 @@ export interface paths {
      */
     get: operations['apps_list'];
     put?: never;
-    post?: never;
+    /**
+     * Create an application
+     * @description name 1 to 128 and env 1 to 32 characters (no control characters), group at most 64, apdex_t_ms 1 to 65535 (default 500), registration_policy auto (default) or approval. 409 already_exists when (name, env) exists. Agents of the application connect with a token issued by POST /admin/apps/{appId}/tokens.
+     */
+    post: operations['apps_create'];
     delete?: never;
     options?: never;
     head?: never;
@@ -473,10 +713,18 @@ export interface paths {
     get: operations['apps_get'];
     put?: never;
     post?: never;
-    delete?: never;
+    /**
+     * Delete an application
+     * @description confirm must be the application's name (400 otherwise). Every agent token of the application is revoked and its live sessions end with UNAUTHENTICATED within 5 s, its alert rules are deleted, its instances archived; the application is no longer listed and its name can be registered again. Collected data stays until its retention ends.
+     */
+    delete: operations['apps_delete'];
     options?: never;
     head?: never;
-    patch?: never;
+    /**
+     * Change an application
+     * @description Absent fields stay as they are. group: an empty string clears it. apdex_t_ms applies to transactions received from now on and writes an apdex event marker (D-17; past data keeps its T). app_packages replaces the list (at most 50 Java package names; JDK and Argos packages are refused). 400 when nothing changes.
+     */
+    patch: operations['apps_patch'];
     trace?: never;
   };
   '/api/v1/apps/{appId}/active': {
@@ -719,6 +967,30 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/apps/{appId}/services/{serviceId}/apdex': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Set a service's Apdex T
+     * @description Overrides the application's Apdex T for one service (D-17): transactions received from now on are stamped with it and an apdex event marker is written; past data keeps its T (the operator command argos-admin apdex reapply re-stamps it). apdex_t_ms 1 to 65535. 409 invalid_state when the application has 1,000 overrides.
+     */
+    put: operations['apps_service_apdex_put'];
+    post?: never;
+    /**
+     * Remove a service's Apdex T
+     * @description The service's transactions received from now on get the application's Apdex T again; an apdex event marker is written when the T in effect changes.
+     */
+    delete: operations['apps_service_apdex_delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/apps/{appId}/sql/stats': {
     parameters: {
       query?: never;
@@ -915,6 +1187,86 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/auth/sessions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * My sessions
+     * @description The caller's live sessions (logins that are neither revoked nor expired), most recently used first, at most 100; current marks the session of this request. No token or refresh value is ever returned.
+     */
+    get: operations['auth_sessions_list'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/auth/sessions/{sessionId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * End one of my sessions
+     * @description sessionId is a session_id of GET /auth/sessions (UUIDv4). The session ends at once: its next request is 401 session_revoked and its WebSockets close within 1 s. Ending the current session works like a logout. 404 for a session that is not one of the caller's live sessions.
+     */
+    delete: operations['auth_sessions_delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/commands/{commandId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * A command's state
+     * @description The requester's own command, or any command for an administrator (403 not_owner otherwise, 404 when it does not exist). status: queued, sent, done, failed, expired.
+     */
+    get: operations['commands_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/commands/{commandId}/result': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * A command's result
+     * @description The decrypted result of a done command for its requester or an administrator (the result of reload_config and env_dump for administrators only). format=json (default) parses a thread dump or stack into threads[] and deadlocks[], other results come as text; format=text returns every result as text. Viewing is audited (COMMAND_RESULT_VIEWED; SENSITIVE_VIEW for env_dump and thread dumps). 409 invalid_state when the command has no result.
+     */
+    get: operations['commands_result'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/csp-report': {
     parameters: {
       query?: never;
@@ -926,6 +1278,46 @@ export interface paths {
     put?: never;
     post: operations['csp_report'];
     delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/events': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Create a deploy marker or custom event
+     * @description The application is app_id, or app (name) with env. type deploy or custom, title 1 to 256 characters, version at most 128, detail at most 2 KB (stored as {"text": detail}), ts default now (400 days ago to 1 hour ahead). At most 60 events per application a minute (429 rate_limited with Retry-After). Instead of a session, a deploy pipeline may send 'Authorization: Bearer argos_...' with an agent token of the application (no CSRF header then): the token writes only its home application (403 otherwise, the home application when app_id and app are absent), an invalid, expired or revoked token is 401, and the audit records the token's prefix.
+     */
+    post: operations['events_create'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/events/{eventId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Delete a deploy marker or custom event
+     * @description Only deploy and custom events are deleted (409 invalid_state for the automatic ones); 404 for an unknown event.
+     */
+    delete: operations['events_delete'];
     options?: never;
     head?: never;
     patch?: never;
@@ -943,6 +1335,74 @@ export interface paths {
      * @description 404 not_found for an unknown instance. Instance state (12 §4.2): UP while heartbeats arrive, STALE after 60 s without a heartbeat, DOWN after 180 s without one, 5 minutes after the agent's shutdown message without a reconnect, or when never connected since the server started; WARN while up with a clock offset of 1 s or more, drops in the last 5 minutes, the lowest accepted agent version, a disabled module, the kill switch on, a configuration hash that differs from the application's majority or a leaked-context count in the last 5 minutes. instances_up counts the instances in UP or WARN.
      */
     get: operations['instances_get'];
+    put?: never;
+    post?: never;
+    /**
+     * Delete an archived instance
+     * @description Only an archived instance that is not connected is deleted (409 invalid_state otherwise), with its command history; its events and collected data stay until their retention ends.
+     */
+    delete: operations['instances_delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/instances/{instanceId}/archive': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Archive an instance
+     * @description Hides the instance from the instance list (archived=true lists it); a reconnect lists it again. 409 invalid_state while it is connected; archiving an archived instance changes nothing.
+     */
+    post: operations['instances_archive'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/instances/{instanceId}/commands': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Commands of an instance
+     * @description The newest commands of the instance (limit default 50, at most 100), every requester; results are read through GET /commands/{commandId}/result.
+     */
+    get: operations['commands_list'];
+    put?: never;
+    /**
+     * Request a command of an instance
+     * @description Queues one command of the closed list (thread_dump, thread_stack, self_diagnosis: operator; reload_config, env_dump: admin, 403 otherwise) and sends it on the instance's agent session. thread_stack takes exactly one of args.thread_id, args.tx_id (digits); the others take no args. 409 instance_offline without a live session, 409 invalid_state while another command of the instance runs, 429 rate_limited (Retry-After) beyond 10 per instance per minute, 409 secret_unavailable without a master key (results are stored encrypted). A command not sent within ttl_s expires and is never delivered; poll GET /commands/{commandId}.
+     */
+    post: operations['commands_create'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/instances/{instanceId}/effective-config': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * An instance's effective configuration
+     * @description Every agent key a collector may change, with remote_allowed (the instance's remote-config.allow names it), the app's server-held value (server_value, secret-like values ****) and the instance's state of it (server_status applied, pending, rejected, not_allowed). value and source = server only for a server-held value the instance runs: the agent never sends its default, file or environment values, so they are unknown here (null).
+     */
+    get: operations['instances_effective_config'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1241,6 +1701,39 @@ export interface components {
       /** Format: date-time */
       updated_at: string;
       username: Untrusted;
+    };
+    AgentTokenView: {
+      /** Format: int32 */
+      app_id: number;
+      /** Format: date-time */
+      created_at: string;
+      /** @description Name of the issuing user; null when the server or a command issued it */
+      created_by: Untrusted | null;
+      /**
+       * Format: date-time
+       * @description null: the token does not expire
+       */
+      expires_at: string | null;
+      /**
+       * Format: date-time
+       * @description End of the rotation grace of a rotating token
+       */
+      grace_until: string | null;
+      /**
+       * Format: int32
+       * @description Live agent sessions opened with this token
+       */
+      instances_using: number;
+      /** Format: date-time */
+      last_used_at: string | null;
+      /** @description argos_ and the next 8 characters of the token */
+      prefix: string;
+      /** Format: date-time */
+      revoked_at: string | null;
+      /** @enum {string} */
+      state: 'active' | 'rotating' | 'revoked' | 'expired';
+      /** Format: uuid */
+      token_id: string;
     };
     AlertAck: {
       /** Format: date-time */
@@ -1714,6 +2207,8 @@ export interface components {
       apdex_t_ms: number;
       /** Format: int32 */
       app_id: number;
+      /** @description The Java packages of the application's own code (at most 50), set by an administrator with PATCH /apps/{appId}. Stack frames of these packages are the application's frames (ADR-0010 C-207 (3)); empty when none is set. */
+      app_packages: string[];
       /** Format: date-time */
       created_at: string;
       env: Untrusted;
@@ -1734,11 +2229,64 @@ export interface components {
       /** Format: int32 */
       slow_threshold_ms: number;
     };
+    AppConfig: {
+      current: {
+        [key: string]: Untrusted;
+      };
+      drift: components['schemas']['ConfigDrift'][];
+      remote_allowed_by_instance: components['schemas']['ConfigInstanceAllow'][];
+      remote_allowed_keys: string[];
+    };
+    AppCreateRequest: {
+      /** Format: int32 */
+      apdex_t_ms?: number;
+      env: string;
+      group?: string;
+      name: string;
+      /** @description auto (default) or approval */
+      registration_policy?: string;
+    };
+    AppDeleted: {
+      /** Format: int32 */
+      app_id: number;
+      /** Format: int32 */
+      rules_deleted: number;
+      /** Format: int32 */
+      sessions_closed: number;
+      /** Format: int32 */
+      tokens_revoked: number;
+    };
+    AppPatchRequest: {
+      /** Format: int32 */
+      apdex_t_ms?: number;
+      /** @description Replaces the application packages: at most 50 Java package names (at most 255 characters each); java, javax, jdk, sun and io.argos and their subpackages are refused. An empty list clears them. */
+      app_packages?: string[];
+      /** @description The new group (at most 64 characters); an empty string clears it */
+      group?: string;
+      /** @description auto or approval */
+      registration_policy?: string;
+    };
     AppRef: {
       /** Format: int32 */
       app_id: number;
       env: Untrusted;
       name: Untrusted;
+    };
+    ApproveRegistrationRequest: {
+      /** Format: int32 */
+      apdex_t_ms?: number;
+      group?: string;
+    };
+    ApprovedRegistration: {
+      app: components['schemas']['App'];
+      token: components['schemas']['ApprovedRegistrationToken'];
+    };
+    ApprovedRegistrationToken: {
+      /** Format: date-time */
+      expires_at: string | null;
+      prefix: string;
+      token: string;
+      token_id: string;
     };
     ChannelView: {
       allow_http: boolean;
@@ -1780,6 +2328,166 @@ export interface components {
       per_instance: components['schemas']['InstanceCollection'][];
       server_drops: components['schemas']['HealthSeries'];
       server_drops_quota: components['schemas']['HealthSeries'];
+    };
+    CommandDeadlock: {
+      thread_ids: number[];
+    };
+    CommandQueued: {
+      /** Format: uuid */
+      command_id: string;
+      status: string;
+      /** Format: int32 */
+      ttl_s: number;
+    };
+    CommandRequest: {
+      args?: {
+        [key: string]: string;
+      };
+      type: string;
+    };
+    CommandResultView: {
+      /** Format: uuid */
+      command_id: string;
+      content_type: string;
+      deadlocks: components['schemas']['CommandDeadlock'][] | null;
+      format: string;
+      /** Format: int32 */
+      instance_id: number;
+      /** Format: int32 */
+      size_bytes: number;
+      text: Untrusted | null;
+      threads: components['schemas']['CommandThread'][] | null;
+      truncated: boolean;
+      type: string;
+    };
+    CommandThread: {
+      frames: Untrusted[];
+      /** Format: int64 */
+      id: number | null;
+      locks_held: Untrusted[];
+      name: Untrusted;
+      state: Untrusted | null;
+      tx_id: string | null;
+      virtual: boolean;
+      waiting_on: Untrusted | null;
+    };
+    CommandView: {
+      args: {
+        [key: string]: string;
+      };
+      /** Format: uuid */
+      command_id: string;
+      /** Format: int32 */
+      duration_ms: number | null;
+      error: string | null;
+      /** Format: date-time */
+      expires_at: string;
+      /** Format: date-time */
+      finished_at: string | null;
+      /** Format: int32 */
+      instance_id: number;
+      /** Format: date-time */
+      requested_at: string;
+      /** Format: uuid */
+      requested_by: string;
+      /** @description The requester's user name; deleted-<id> for a deleted user, null when unknown */
+      requested_by_name: Untrusted | null;
+      /** Format: int32 */
+      result_size: number | null;
+      /** Format: date-time */
+      sent_at: string | null;
+      status: string;
+      truncated: boolean | null;
+      type: string;
+    };
+    ConfigChange: {
+      /** Format: int32 */
+      app_id: number;
+      /** Format: date-time */
+      applied_at: string | null;
+      /** Format: uuid */
+      applied_by: string | null;
+      /** Format: uuid */
+      change_id: string;
+      kind: string;
+      preview: components['schemas']['ConfigPreview'];
+      reason: Untrusted;
+      /** Format: date-time */
+      requested_at: string;
+      /** Format: uuid */
+      requested_by: string;
+      results: components['schemas']['ConfigChangeResult'][];
+      /** Format: uuid */
+      revert_of: string | null;
+      status: string;
+      targets: components['schemas']['ConfigTargetsView'];
+    };
+    ConfigChangeRequest: {
+      changes: {
+        [key: string]: unknown;
+      };
+      reason: string;
+      targets?: components['schemas']['ConfigTargets'];
+    };
+    ConfigChangeResult: {
+      /** Format: date-time */
+      applied_at: string | null;
+      applied_keys: string[];
+      /** Format: int32 */
+      duration_ms: number | null;
+      effective_config_hash: Untrusted | null;
+      error: string | null;
+      /** Format: int32 */
+      instance_id: number;
+      /** Format: date-time */
+      pushed_at: string | null;
+      rejected: components['schemas']['ConfigRejectedKey'][];
+      rejected_keys: string[];
+      status: string;
+    };
+    ConfigDiffEntry: {
+      after: Untrusted | null;
+      before: Untrusted | null;
+      key: string;
+    };
+    ConfigDrift: {
+      /** Format: int32 */
+      instance_id: number;
+      key: string | null;
+      reason: string;
+      value: Untrusted | null;
+    };
+    ConfigInstanceAllow: {
+      /** Format: int32 */
+      instance_id: number;
+      name: Untrusted;
+      online: boolean;
+      patterns: Untrusted[];
+    };
+    ConfigInstanceKeys: {
+      /** Format: int32 */
+      instance_id: number;
+      keys: string[];
+    };
+    ConfigPreview: {
+      diff: components['schemas']['ConfigDiffEntry'][];
+      rejected_keys_by_instance: components['schemas']['ConfigInstanceKeys'][];
+    };
+    ConfigRejectedKey: {
+      by: string;
+      code: string;
+      key: string;
+    };
+    ConfigRevertRequest: {
+      reason: string;
+    };
+    ConfigTargets: {
+      all?: boolean;
+      instance_ids?: number[];
+    };
+    ConfigTargetsView: {
+      all: boolean;
+      instance_ids: number[];
     };
     CreateChannelRequest: {
       /** @description Allow a plain http URL; needs argos.alert.webhook.allow-http=true on the server */
@@ -1927,6 +2635,14 @@ export interface components {
       target: Untrusted;
       vendor: Untrusted | null;
     };
+    EffectiveConfigEntry: {
+      key: string;
+      remote_allowed: boolean;
+      server_status: string | null;
+      server_value: Untrusted | null;
+      source: string | null;
+      value: Untrusted | null;
+    };
     EnvelopeAdminUserView: {
       data: components['schemas']['AdminUserView'];
       meta: components['schemas']['QueryMeta'];
@@ -1955,8 +2671,40 @@ export interface components {
       data: components['schemas']['AlertTemplatesApplied'];
       meta: components['schemas']['QueryMeta'];
     };
+    EnvelopeApp: {
+      data: components['schemas']['App'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeAppConfig: {
+      data: components['schemas']['AppConfig'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeAppDeleted: {
+      data: components['schemas']['AppDeleted'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeApprovedRegistration: {
+      data: components['schemas']['ApprovedRegistration'];
+      meta: components['schemas']['QueryMeta'];
+    };
     EnvelopeChannelView: {
       data: components['schemas']['ChannelView'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeCommandQueued: {
+      data: components['schemas']['CommandQueued'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeCommandResultView: {
+      data: components['schemas']['CommandResultView'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeCommandView: {
+      data: components['schemas']['CommandView'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeConfigChange: {
+      data: components['schemas']['ConfigChange'];
       meta: components['schemas']['QueryMeta'];
     };
     EnvelopeCreateUserResponse: {
@@ -1971,8 +2719,20 @@ export interface components {
       data: components['schemas']['CsrfResponse'];
       meta: components['schemas']['QueryMeta'];
     };
+    EnvelopeEventCreated: {
+      data: components['schemas']['EventCreated'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeIssuedTokenResponse: {
+      data: components['schemas']['IssuedTokenResponse'];
+      meta: components['schemas']['QueryMeta'];
+    };
     EnvelopeListAdminUserView: {
       data: components['schemas']['AdminUserView'][];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeListAgentTokenView: {
+      data: components['schemas']['AgentTokenView'][];
       meta: components['schemas']['QueryMeta'];
     };
     EnvelopeListAlertMute: {
@@ -1995,6 +2755,22 @@ export interface components {
       data: components['schemas']['ChannelView'][];
       meta: components['schemas']['QueryMeta'];
     };
+    EnvelopeListCommandView: {
+      data: components['schemas']['CommandView'][];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeListEffectiveConfigEntry: {
+      data: components['schemas']['EffectiveConfigEntry'][];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeListOwnSession: {
+      data: components['schemas']['OwnSession'][];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeListPendingRegistration: {
+      data: components['schemas']['PendingRegistration'][];
+      meta: components['schemas']['QueryMeta'];
+    };
     EnvelopeLoginResponse: {
       data: components['schemas']['LoginResponse'];
       meta: components['schemas']['QueryMeta'];
@@ -2009,6 +2785,10 @@ export interface components {
     };
     EnvelopeRotatedKeyView: {
       data: components['schemas']['RotatedKeyView'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeServiceApdex: {
+      data: components['schemas']['ServiceApdex'];
       meta: components['schemas']['QueryMeta'];
     };
     EnvelopeSetupAdminResponse: {
@@ -2063,6 +2843,21 @@ export interface components {
       ts: string;
       type: string;
       version: Untrusted | null;
+    };
+    EventCreateRequest: {
+      app?: string;
+      /** Format: int32 */
+      app_id?: number;
+      detail?: string;
+      env?: string;
+      title: string;
+      ts?: string;
+      /** @description deploy or custom */
+      type: string;
+      version?: string;
+    };
+    EventCreated: {
+      event_id: string;
     };
     ExcludedSeries: {
       by_reason: {
@@ -2210,6 +3005,42 @@ export interface components {
       error_rate: boolean | null;
       p95: boolean | null;
     };
+    IssueTokenRequest: {
+      /**
+       * Format: int32
+       * @description Days until the token expires. Optional; the server uses 365 when omitted.
+       */
+      expires_in_days?: number;
+    };
+    IssuedTokenResponse: {
+      /** Format: int32 */
+      app_id: number;
+      /**
+       * Format: date-time
+       * @description null: the token does not expire
+       */
+      expires_at: string | null;
+      /**
+       * Format: date-time
+       * @description Rotation only: when the rotated token stops authenticating
+       */
+      grace_until: string | null;
+      prefix: string;
+      /**
+       * Format: uuid
+       * @description Rotation only: the rotated token
+       */
+      rotated_token_id: string | null;
+      /** @description Shown once, never again */
+      token: string;
+      /** Format: uuid */
+      token_id: string;
+    };
+    KillSwitchRequest: {
+      enabled: boolean;
+      instance_ids?: number[];
+      reason: string;
+    };
     KioskSession: {
       allowed: boolean;
       ip_cidrs: string[];
@@ -2318,6 +3149,19 @@ export interface components {
       tps: (number | null)[];
       ts: string[];
     };
+    OwnSession: {
+      /** Format: date-time */
+      created_at: string;
+      current: boolean;
+      /** Format: date-time */
+      expires_at: string;
+      ip: string | null;
+      kiosk: boolean;
+      /** Format: date-time */
+      last_seen_at: string;
+      session_id: string;
+      user_agent: Untrusted | null;
+    };
     PasswordChangeRequest: {
       current: string;
       new: string;
@@ -2327,6 +3171,21 @@ export interface components {
       kiosk_session?: components['schemas']['KioskSessionPatch'];
       permissions?: 'pii.view'[];
       roles?: ('viewer' | 'operator' | 'admin')[];
+    };
+    PendingRegistration: {
+      /** Format: int32 */
+      attempts: number;
+      env: Untrusted;
+      /** Format: date-time */
+      first_attempt_at: string | null;
+      /** Format: int32 */
+      home_app_id: number | null;
+      host: Untrusted;
+      /** Format: int32 */
+      id: number;
+      /** Format: date-time */
+      last_attempt_at: string | null;
+      name: Untrusted;
     };
     /** @description The meta of every response (14 §2.5): request_id and generated_at always, the other fields where the endpoint has them */
     QueryMeta: {
@@ -2434,6 +3293,10 @@ export interface components {
       data: components['schemas']['App'][];
       meta: components['schemas']['QueryMeta'];
     };
+    ResponseEnvelopeListConfigChange: {
+      data: components['schemas']['ConfigChange'][];
+      meta: components['schemas']['QueryMeta'];
+    };
     ResponseEnvelopeListErrorGroup: {
       data: components['schemas']['ErrorGroup'][];
       meta: components['schemas']['QueryMeta'];
@@ -2506,6 +3369,16 @@ export interface components {
       data: components['schemas']['XlogSummary'];
       meta: components['schemas']['QueryMeta'];
     };
+    RevokeTokenRequest: {
+      reason: string;
+    };
+    RotateTokenRequest: {
+      /**
+       * Format: int32
+       * @description Days the old token stays valid. Optional; the server uses 7 when omitted.
+       */
+      grace_days?: number;
+    };
     RotatedKeyView: {
       /**
        * Format: date-time
@@ -2542,6 +3415,22 @@ export interface components {
       ingest_lag_s: number | null;
       /** Format: int32 */
       sessions: number;
+    };
+    ServiceApdex: {
+      /** Format: int32 */
+      apdex_t_ms: number;
+      /** Format: int32 */
+      app_id: number;
+      changed: boolean;
+      event_id: string | null;
+      overridden: boolean;
+      service_id: string;
+      /** Format: date-time */
+      ts: string | null;
+    };
+    ServiceApdexRequest: {
+      /** Format: int32 */
+      apdex_t_ms: number;
     };
     ServiceDetail: {
       by_instance: components['schemas']['StatsBreakdown'][];
@@ -3184,6 +4073,293 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  admin_config_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        appId: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeAppConfig'];
+        };
+      };
+    };
+  };
+  admin_config_changes_list: {
+    parameters: {
+      query?: {
+        /** @description meta.next_cursor of the previous page */
+        cursor?: string;
+        /** @description Rows, at most 100 (default 50) */
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        appId: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseEnvelopeListConfigChange'];
+        };
+      };
+    };
+  };
+  admin_config_changes_create: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        appId: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ConfigChangeRequest'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeConfigChange'];
+        };
+      };
+    };
+  };
+  admin_kill_switch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        appId: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['KillSwitchRequest'];
+      };
+    };
+    responses: {
+      /** @description Accepted */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeConfigChange'];
+        };
+      };
+    };
+  };
+  tokens_list: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        appId: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeListAgentTokenView'];
+        };
+      };
+    };
+  };
+  tokens_issue: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        appId: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['IssueTokenRequest'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeIssuedTokenResponse'];
+        };
+      };
+    };
+  };
+  admin_config_changes_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        changeId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeConfigChange'];
+        };
+      };
+    };
+  };
+  admin_config_changes_apply: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        changeId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Accepted */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeConfigChange'];
+        };
+      };
+    };
+  };
+  admin_config_changes_revert: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        changeId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ConfigRevertRequest'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeConfigChange'];
+        };
+      };
+    };
+  };
+  admin_pending_registrations_list: {
+    parameters: {
+      query?: {
+        env?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeListPendingRegistration'];
+        };
+      };
+    };
+  };
+  admin_pending_registrations_approve: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['ApproveRegistrationRequest'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeApprovedRegistration'];
+        };
+      };
+    };
+  };
+  admin_pending_registrations_reject: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   storage_health_get: {
     parameters: {
       query?: never;
@@ -3200,6 +4376,56 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseEnvelopeStorageHealth'];
+        };
+      };
+    };
+  };
+  tokens_revoke: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tokenId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['RevokeTokenRequest'];
+      };
+    };
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  tokens_rotate: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tokenId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['RotateTokenRequest'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeIssuedTokenResponse'];
         };
       };
     };
@@ -3245,6 +4471,26 @@ export interface operations {
         content: {
           'application/json': components['schemas']['EnvelopeCreateUserResponse'];
         };
+      };
+    };
+  };
+  admin_users_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };
@@ -3901,6 +5147,30 @@ export interface operations {
       };
     };
   };
+  apps_create: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['AppCreateRequest'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeApp'];
+        };
+      };
+    };
+  };
   apps_get: {
     parameters: {
       query?: never;
@@ -3919,6 +5189,57 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseEnvelopeApp'];
+        };
+      };
+    };
+  };
+  apps_delete: {
+    parameters: {
+      query?: {
+        /** @description The application's name, as a confirmation */
+        confirm?: string;
+      };
+      header?: never;
+      path: {
+        appId: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Accepted */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeAppDeleted'];
+        };
+      };
+    };
+  };
+  apps_patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        appId: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['AppPatchRequest'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeApp'];
         };
       };
     };
@@ -4291,6 +5612,56 @@ export interface operations {
       };
     };
   };
+  apps_service_apdex_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        appId: number;
+        serviceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['ServiceApdexRequest'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeServiceApdex'];
+        };
+      };
+    };
+  };
+  apps_service_apdex_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        appId: number;
+        serviceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeServiceApdex'];
+        };
+      };
+    };
+  };
   sql_stats_list: {
     parameters: {
       query: {
@@ -4576,6 +5947,93 @@ export interface operations {
       };
     };
   };
+  auth_sessions_list: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeListOwnSession'];
+        };
+      };
+    };
+  };
+  auth_sessions_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        sessionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  commands_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        commandId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeCommandView'];
+        };
+      };
+    };
+  };
+  commands_result: {
+    parameters: {
+      query?: {
+        /** @description json (default) or text */
+        format?: string;
+      };
+      header?: never;
+      path: {
+        commandId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeCommandResultView'];
+        };
+      };
+    };
+  };
   csp_report: {
     parameters: {
       query?: never;
@@ -4587,6 +6045,50 @@ export interface operations {
     responses: {
       /** @description OK */
       200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  events_create: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['EventCreateRequest'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeEventCreated'];
+        };
+      };
+    };
+  };
+  events_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        eventId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description No Content */
+      204: {
         headers: {
           [name: string]: unknown;
         };
@@ -4612,6 +6114,119 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseEnvelopeInstance'];
+        };
+      };
+    };
+  };
+  instances_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        instanceId: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  instances_archive: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        instanceId: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  commands_list: {
+    parameters: {
+      query?: {
+        /** @description Rows, at most 100 (default 50) */
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        instanceId: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeListCommandView'];
+        };
+      };
+    };
+  };
+  commands_create: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        instanceId: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CommandRequest'];
+      };
+    };
+    responses: {
+      /** @description Accepted */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeCommandQueued'];
+        };
+      };
+    };
+  };
+  instances_effective_config: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        instanceId: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeListEffectiveConfigEntry'];
         };
       };
     };

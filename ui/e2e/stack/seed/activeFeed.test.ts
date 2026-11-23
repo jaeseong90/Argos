@@ -9,12 +9,16 @@ import type { RunState } from '../runState';
 
 import {
   ACTIVE_FEED_APP,
+  ACTIVE_FEED_TOKEN_FILE,
   ActiveFeedReady,
   activeFeedArgs,
   activeFeedProblem,
   elapsedBand,
   expectedBuckets,
   expectedElapsedMs,
+  feedJarStale,
+  feedLogFile,
+  feedTokenFile,
   scenarioRows,
 } from './activeFeed';
 import { tokenSql } from './traffic';
@@ -195,6 +199,38 @@ describe('activeFeedArgs', () => {
     const args = activeFeedArgs({ jar: 'j', grpcPort: 9100, tokenFile: 'tf', readyFile: 'r' });
     expect(args.join(' ')).not.toMatch(/argos_[A-Za-z0-9_-]{20,}/);
   });
+
+  it('adds --commands only when asked (WO-37) and takes another app', () => {
+    const base = { jar: 'j', grpcPort: 9100, tokenFile: 't', readyFile: 'r' };
+    expect(activeFeedArgs(base)).not.toContain('--commands');
+    expect(activeFeedArgs({ ...base, commands: false })).not.toContain('--commands');
+    const args = activeFeedArgs({
+      ...base,
+      commands: true,
+      app: { name: 'e2e-cmd', env: 'e2e' },
+      instances: ['e2e-cmd-1', 'e2e-cmd-2'],
+    });
+    expect(args.slice(-5)).toEqual(['--app', 'e2e-cmd', '--env', 'e2e', '--commands']);
+    expect(() => activeFeedArgs({ ...base, app: { name: 'a b', env: 'e2e' } })).toThrow(/app/);
+    expect(() => activeFeedArgs({ ...base, app: { name: 'a', env: "e';--" } })).toThrow(/app/);
+  });
+});
+
+describe('feedJarStale', () => {
+  it('rebuilds a jar older than any fixture source (a WO-35 jar has no --commands)', () => {
+    expect(feedJarStale(1000, [900, 999, 1000])).toBe(false);
+    expect(feedJarStale(1000, [900, 1001])).toBe(true);
+    expect(feedJarStale(1000, [])).toBe(false);
+  });
+});
+
+describe('feed token and log files', () => {
+  it('keeps the WO-35 names for e2e-active and gives every other app its own files', () => {
+    expect(feedTokenFile(ACTIVE_FEED_APP)).toBe(ACTIVE_FEED_TOKEN_FILE);
+    expect(feedLogFile(ACTIVE_FEED_APP)).toBe('active-feed.log');
+    expect(feedTokenFile({ name: 'e2e-cmd', env: 'e2e' })).toBe('active-feed-e2e-cmd-e2e.token');
+    expect(feedLogFile({ name: 'e2e-cmd', env: 'e2e' })).toBe('active-feed-e2e-cmd.log');
+  });
 });
 
 describe('tokenSql', () => {
@@ -248,6 +284,31 @@ describe('ready file and scenario', () => {
       user_id_mode: 'off',
       ip_mode: 'off',
     });
+  });
+
+  it('reads a WO-35 ready file without commands as commands null (absent or null)', () => {
+    expect(ready.commands ?? null).toBeNull();
+    expect(ActiveFeedReady.parse({ ...READY, commands: null }).commands).toBeNull();
+  });
+
+  it('reads the commands block of a --commands feed and rejects an unmasked secret form', () => {
+    const commands = {
+      enabled: true,
+      env_secret_sentinel: 'ARGOS_SEED-env-secret-value',
+      env_secret_masked: '****(len=27)',
+      deadlock_threads: ['order-settle-worker', 'inventory-sync-worker'],
+      idle_pool_threads: 10,
+      deep_frames: 64,
+      xss_thread: 'x',
+    };
+    const withCommands = ActiveFeedReady.parse({ ...READY, commands });
+    expect(withCommands.commands?.env_secret_masked).toBe('****(len=27)');
+    expect(() =>
+      ActiveFeedReady.parse({
+        ...READY,
+        commands: { ...commands, env_secret_masked: 'ARGOS_SEED-env-secret-value' },
+      }),
+    ).toThrow();
   });
 
   it('rejects a ready file with an unknown state', () => {

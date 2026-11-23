@@ -1,0 +1,204 @@
+{
+  "page": {
+    "title": "인스턴스",
+    "notFound": {
+      "title": "이 인스턴스가 없습니다.",
+      "description": "삭제되었거나 링크의 id가 잘못되었을 수 있습니다. 앱의 인스턴스 목록을 열어 다른 인스턴스를 고르세요.",
+      "list": "인스턴스 목록 열기"
+    },
+    "operatorOnly": "$t(common:term.remoteCommand)과 스레드 덤프는 운영자 또는 관리자 역할이 필요합니다."
+  },
+  "tabs": {
+    "label": "인스턴스 구역",
+    "metrics": "메트릭",
+    "env": "환경",
+    "commands": "명령",
+    "dumps": "스레드 덤프"
+  },
+  "header": {
+    "app": "앱",
+    "version": "버전",
+    "agentVersion": "에이전트 버전",
+    "compat": {
+      "old": "구버전 에이전트: 업그레이드 권장",
+      "unsupported": "이 서버가 지원하지 않는 에이전트 버전"
+    },
+    "jvm": "JVM",
+    "os": "OS",
+    "host": "호스트",
+    "pid": "PID",
+    "cgroup": "cgroup",
+    "startedAt": "기동 시각",
+    "uptime": "업타임",
+    "restarts": "기간 내 재기동",
+    "restartsHint": "선택한 기간에 시작된 에이전트 세션(start 이벤트) 수입니다.",
+    "atLeast_other": "{{count, number}} 이상",
+    "clockSkewWarn": "1초 이상 차이: 이 인스턴스의 시각이 어긋날 수 있습니다",
+    "drops": "$t(common:term.drop) (24시간)",
+    "modulesDisabled": "비활성 모듈",
+    "modulesNone": "없음",
+    "ipMode": {
+      "label": "IP 수집:",
+      "full": "전체",
+      "masked": "마스킹",
+      "off": "끔"
+    },
+    "virtualThreads": {
+      "label": "가상 스레드:",
+      "on": "사용",
+      "off": "미사용"
+    }
+  },
+  "links": {
+    "label": "관련 화면",
+    "xlog": "이 인스턴스의 XLog",
+    "active": "이 인스턴스의 액티브 트랜잭션",
+    "alerts": "알림 이력",
+    "config": "설정 변경 이력"
+  },
+  "charts": {
+    "label": "인스턴스 메트릭",
+    "baseline": "7일 전과 비교",
+    "baselineFailed": "비교 데이터를 불러오지 못했습니다.",
+    "notMeasured": "측정 안 됨: 에이전트가 이 인스턴스에서 해당 시리즈를 보내지 않았습니다.",
+    "containerCpuLimit": "시스템 CPU는 컨테이너 한도 {{cores}}코어 기준입니다.",
+    "heap": "힙·비힙 메모리",
+    "memoryPools": "메모리 풀",
+    "gcCount": "GC 횟수",
+    "gcPause": "GC 정지 시간",
+    "threads": "스레드",
+    "classes": "클래스",
+    "cpu": "CPU",
+    "fd": "파일 디스크립터",
+    "tomcat": "Tomcat",
+    "jdbcPools": "커넥션 풀",
+    "systemMemory": "시스템 메모리",
+    "disk": "디스크",
+    "network": "네트워크",
+    "empty": {
+      "title": "이 인스턴스가 보낸 메트릭이 없습니다.",
+      "description": "에이전트가 메트릭을 보내면(5초마다) 나타납니다. 인스턴스가 접속 중인지 확인하거나 기간을 넓히세요."
+    }
+  },
+  "series": {
+    "memoryUsed": "{{name}} 사용",
+    "memoryMax": "{{name}} 최대",
+    "poolUsed": "{{name}} 사용",
+    "poolMax": "{{name}} 최대",
+    "gcCount": "{{name}}",
+    "gcPause": "{{name}} 정지",
+    "threadsLive": "활성",
+    "threadsDaemon": "데몬",
+    "threadsPeak": "최대",
+    "threadsVirtualStarted": "시작된 가상 스레드",
+    "classesLoaded": "로드됨",
+    "classesUnloaded": "언로드됨",
+    "cpuProcess": "프로세스",
+    "cpuSystem": "시스템",
+    "fdOpen": "열림",
+    "fdMax": "최대",
+    "tomcatBusy": "{{name}} 사용 중 스레드",
+    "tomcatThreads": "{{name}} 스레드",
+    "tomcatThreadsMax": "{{name}} 최대 스레드",
+    "tomcatConnections": "{{name}} 연결",
+    "tomcatConnectionsMax": "{{name}} 최대 연결",
+    "jdbcActive": "{{name}} active",
+    "jdbcIdle": "{{name}} idle",
+    "jdbcWaiting": "{{name}} waiting",
+    "jdbcMax": "{{name}} max",
+    "systemMemoryUsed": "사용",
+    "systemMemoryTotal": "전체",
+    "containerMemoryLimit": "컨테이너 한도",
+    "diskUsed": "{{name}} 사용",
+    "diskTotal": "{{name}} 전체",
+    "networkReceive": "{{name}} 수신",
+    "networkTransmit": "{{name}} 송신"
+  },
+  "env": {
+    "dump": {
+      "title": "JVM 옵션·환경변수·시스템 프로퍼티($t(common:term.envDump))",
+      "adminOnly": "$t(common:term.envDump)는 관리자 역할이 필요합니다. 값은 에이전트에서 마스킹된 상태로 옵니다."
+    },
+    "config": {
+      "title": "유효 설정",
+      "hash": "설정 해시:",
+      "drift": "이 앱의 다수 인스턴스와 다름",
+      "operatorOnly": "유효 설정은 운영자 또는 관리자 역할이 필요합니다.",
+      "sourceUnknown": "알 수 없음",
+      "sourceUnknownNotice": "에이전트의 파일·환경변수 값과 출처는 자가 진단을 실행해야 알 수 있습니다. 표에는 서버가 가진 값만 보입니다.",
+      "runSelfDiagnosis": "자가 진단 실행",
+      "showSelfDiagnosis": "최근 자가 진단 보기",
+      "reportedAt": "{{at}} 자가 진단의 값과 출처입니다.",
+      "key": "키",
+      "value": "값",
+      "sourceHeader": "출처",
+      "source": {
+        "file": "파일",
+        "env": "환경변수",
+        "server": "서버 푸시",
+        "default": "기본값",
+        "systemProperty": "시스템 프로퍼티"
+      },
+      "serverValue": "서버 값",
+      "serverStatus": "서버 푸시 상태",
+      "status": {
+        "applied": "적용됨",
+        "pending": "대기",
+        "rejected": "거부됨",
+        "notAllowed": "허용 안 됨"
+      },
+      "remoteAllowed": "원격 변경",
+      "yes": "허용",
+      "no": "로컬만",
+      "empty": {
+        "title": "설정 키가 없습니다.",
+        "description": "서버는 수집기가 바꿀 수 있는 키만 나열합니다. 에이전트의 모든 키를 보려면 자가 진단을 실행하세요."
+      }
+    },
+    "allow": {
+      "title": "원격 변경 허용 키",
+      "none": "없음: 모든 키는 에이전트 로컬 설정에서만 바꿉니다."
+    },
+    "modules": {
+      "title": "계측 모듈",
+      "partial": "자가 진단 전에는 에러가 있거나 비활성인 모듈만 보입니다.",
+      "name": "모듈",
+      "state": "상태",
+      "active": "활성",
+      "disabled": "비활성",
+      "unknown": "알 수 없음",
+      "errorsInRange": "기간 내 에러",
+      "errorsReported": "에러(자가 진단)",
+      "reason": "사유",
+      "empty": {
+        "title": "에러를 보고했거나 비활성된 모듈이 없습니다.",
+        "description": "모든 계측 모듈과 상태를 보려면 자가 진단을 실행하세요."
+      }
+    },
+    "diagnosis": {
+      "title": "자가 진단",
+      "publicHint": "선택한 기간의 에이전트 오버헤드와 $t(common:term.drop)입니다(에이전트 자기 메트릭).",
+      "dropped": "$t(common:term.drop)",
+      "cpu": "에이전트 CPU 시간",
+      "heap": "에이전트 힙(추정)",
+      "stackCapture": "스택 캡처 시간",
+      "clockOffset": "$t(common:term.clockSkew)",
+      "dictionaryOverflow": "사전 오버플로",
+      "operatorOnly": "자가 진단 결과 전체는 운영자 또는 관리자 역할이 필요합니다."
+    }
+  },
+  "list": {
+    "title": "인스턴스",
+    "name": "인스턴스",
+    "state": "상태",
+    "compatOld": "구버전",
+    "compatUnsupported": "지원 안 됨",
+    "ipMode": "IP 수집",
+    "virtualThreads": "가상 스레드",
+    "lastHeartbeat": "마지막 heartbeat",
+    "empty": {
+      "title": "이 앱에 접속한 인스턴스가 아직 없습니다.",
+      "description": "Argos 에이전트와 이 앱의 토큰으로 애플리케이션을 시작하면 몇 초 안에 여기에 나타납니다."
+    }
+  }
+}

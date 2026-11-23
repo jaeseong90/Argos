@@ -115,17 +115,22 @@ public class UserRepository {
 
   /** The user with this id. */
   public Optional<UserRecord> findById(UUID id) {
-    return jdbc.query(SELECT + " WHERE u.id = ?", MAPPER, id).stream().findFirst();
+    return jdbc.query(SELECT + " WHERE u.id = ? AND u.deleted_at IS NULL", MAPPER, id).stream()
+        .findFirst();
   }
 
   /** The user with this id, row-locked until the end of the transaction. */
   public Optional<UserRecord> findByIdForUpdate(UUID id) {
-    return jdbc.query(SELECT + " WHERE u.id = ? FOR UPDATE OF u", MAPPER, id).stream().findFirst();
+    return jdbc
+        .query(SELECT + " WHERE u.id = ? AND u.deleted_at IS NULL FOR UPDATE OF u", MAPPER, id)
+        .stream()
+        .findFirst();
   }
 
   /** The first users by name, at most {@code limit}. */
   public List<UserRecord> findFirst(int limit) {
-    return jdbc.query(SELECT + " ORDER BY u.username LIMIT ?", MAPPER, limit);
+    return jdbc.query(
+        SELECT + " WHERE u.deleted_at IS NULL ORDER BY u.username LIMIT ?", MAPPER, limit);
   }
 
   /** Whether a user name exists, ignoring case (names that differ in case only are refused). */
@@ -231,6 +236,27 @@ public class UserRepository {
   /** Enables or disables the account. */
   public void updateEnabled(UUID id, boolean enabled) {
     jdbc.update("UPDATE argos.users SET enabled = ?, updated_at = now() WHERE id = ?", enabled, id);
+  }
+
+  /**
+   * Deletes the user by anonymising its row (V012 {@code deleted_at}; the row stays for the
+   * references of {@code agent_tokens.issued_by} and {@code commands.requested_by}): the name
+   * becomes {@code anonymousName}, the password hash {@code passwordHash} (of a secret nobody
+   * knows), the account is disabled, without kiosk approval, lockout state or extra permissions.
+   * Run inside {@link AuthTransactions#inTransaction} after locking the row.
+   */
+  public void markDeleted(UUID id, String anonymousName, String passwordHash, Instant now) {
+    jdbc.update("DELETE FROM argos.user_permissions WHERE user_id = ?", id);
+    jdbc.update(
+        "UPDATE argos.users SET username = ?, display_name = NULL, password_hash = ?,"
+            + " enabled = FALSE, must_change_password = TRUE, failed_logins = 0,"
+            + " locked_until = NULL, lockout_level = 0, kiosk_allowed = FALSE,"
+            + " kiosk_ip_allowlist = NULL, deleted_at = ?, updated_at = ? WHERE id = ?",
+        anonymousName,
+        passwordHash,
+        timestamp(now),
+        timestamp(now),
+        id);
   }
 
   /** Kiosk permission and address ranges ({@code network/prefix} values). */

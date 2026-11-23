@@ -67,6 +67,11 @@ public enum ErrorCode {
   /** The resource is not in a state that allows the operation. */
   INVALID_STATE(409, "The resource is not in a valid state for this operation"),
   /**
+   * The instance has no live agent session, so a command cannot be delivered (14 §4.10 {@code POST
+   * /instances/{instanceId}/commands}; WO-26).
+   */
+  INSTANCE_OFFLINE(409, "The instance has no live agent session"),
+  /**
    * A stored secret cannot be encrypted or decrypted: no master key is configured, or the key that
    * encrypted it is not loaded (a key rotation or a restore without the key, 16 §8.3; WO-25).
    */

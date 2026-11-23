@@ -29,11 +29,13 @@
 #   FAKE_DATA_WRITABLE=0        the server cannot write /data
 #   FAKE_DATA_STAT              'stat -c "%u:%g %a" /data' in the server (default "10001:10001 700")
 #   FAKE_SETUP_TOKEN_FILE=1     /data/setup-token exists in the server
-#   FAKE_PSQL_INPUT             file: the standard input of 'compose exec -T postgres psql' is saved
-#   FAKE_PSQL_RESULT            what that psql prints (default "42|true|never")
-#   FAKE_SIGNAL                 INT or TERM: 'compose ps --format json' and psql send it to the
-#                               outermost process whose arguments contain FAKE_SIGNAL_TARGET (for
-#                               example ./smoke.sh), then answer as usual
+#   FAKE_ADMIN_ARGS             file: the arguments of 'compose exec ... server java ... admin token
+#                               create' (argos-admin in the server container) are saved
+#   FAKE_ADMIN_EXIT             its exit code (default 0: prints the JSON result with a token
+#                               generated at run time; 4: the limit; others: a failure)
+#   FAKE_SIGNAL                 INT or TERM: 'compose ps --format json' and argos-admin send it to
+#                               the outermost process whose arguments contain FAKE_SIGNAL_TARGET
+#                               (for example ./smoke.sh), then answer as usual
 
 if [ -n "${FAKE_DOCKER_LOG:-}" ]; then
   printf '%s\n' "$*" >>"$FAKE_DOCKER_LOG"
@@ -161,18 +163,49 @@ case ${1:-} in
       down | logs) ;;
       exec)
         shift
-        [ "${1:-}" = -T ] && shift
+        while [ $# -gt 0 ]; do
+          case $1 in
+            -T) shift ;;
+            -e) shift 2 ;;
+            *) break ;;
+          esac
+        done
         svc=${1:-}
         shift
         case "$svc $*" in
-          "postgres psql"*)
-            if [ -n "${FAKE_PSQL_INPUT:-}" ]; then
-              cat >"$FAKE_PSQL_INPUT"
-            else
-              cat >/dev/null
+          "server java "*" admin token create "*)
+            if [ -n "${FAKE_ADMIN_ARGS:-}" ]; then
+              printf '%s\n' "$*" >"$FAKE_ADMIN_ARGS"
             fi
             send_signal
-            printf '%s\n' "${FAKE_PSQL_RESULT:-42|true|never}"
+            app=
+            env=
+            while [ $# -gt 0 ]; do
+              case $1 in
+                --app) app=$2; shift 2 ;;
+                --env) env=$2; shift 2 ;;
+                *) shift ;;
+              esac
+            done
+            code=${FAKE_ADMIN_EXIT:-0}
+            case $code in
+              0)
+                # A token of the 16 section 2.1 shape, generated now (never a literal in the tree).
+                t=$(head -c 32 /dev/urandom | base64 | tr -d '\n=' | tr '+/' '-_' | cut -c1-43)
+                printf '{"command":"token create","app":"%s","env":"%s","app_id":42,"app_created":true,"token_id":"0b6f5c4e-1d2a-4b3c-8d4e-5f6a7b8c9d0e","prefix":"argos_%s","expires_at":"2027-11-23T10:00:00Z","token":"argos_%s"}\n' "$app" "$env" "$(printf '%s' "$t" | cut -c1-8)" "$t" # gitleaks:allow (fake token generated at run time)
+                ;;
+              4)
+                echo '{"level":"INFO","message":"argos-admin"}' >&2
+                echo "argos-admin token create: The application has its maximum of 5 active agent tokens" >&2
+                printf '{"command":"token create","error":"The application has its maximum of 5 active agent tokens","code":"token_limit"}\n'
+                ;;
+              *)
+                echo '{"level":"ERROR","message":"argos-admin"}' >&2
+                echo "argos-admin token create: PostgreSQL: cannot connect as argos_app" >&2
+                printf '{"command":"token create","error":"PostgreSQL: cannot connect as argos_app","code":"database"}\n'
+                ;;
+            esac
+            exit "$code"
             ;;
           "server sh -c "*/proc/1/status*)
             printf 'Uid:\t%s\t%s\t%s\t%s\nGid:\t%s\t%s\t%s\t%s\n' "$uid" "$uid" "$uid" "$uid" "$uid" "$uid" "$uid" "$uid"

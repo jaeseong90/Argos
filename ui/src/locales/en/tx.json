@@ -303,7 +303,7 @@
     "group": "$t(common:term.errorGroup)",
     "groupLink": "Open the error group",
     "noGroup": "No error group was assigned.",
-    "appFramesUnavailable": "Application frames are not highlighted: the application's packages are not known to the server yet.",
+    "appFramesUnavailable": "Application frames are not highlighted: no application packages are set for this application.",
     "noSteps": "No exception with frames was recorded in the profile.",
     "stepLabel": "Exception at step {{seq}}"
   },

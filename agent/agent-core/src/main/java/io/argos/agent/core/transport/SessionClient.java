@@ -3,12 +3,12 @@ package io.argos.agent.core.transport;
 
 import io.argos.agent.core.log.AgentLogger;
 import io.argos.proto.v1.AgentBye;
+import io.argos.proto.v1.AgentEvent;
 import io.argos.proto.v1.AgentHello;
 import io.argos.proto.v1.AgentMessage;
 import io.argos.proto.v1.ByeReason;
 import io.argos.proto.v1.CloseReason;
 import io.argos.proto.v1.Command;
-import io.argos.proto.v1.CommandResult;
 import io.argos.proto.v1.ConfigPush;
 import io.argos.proto.v1.DictionaryEntries;
 import io.argos.proto.v1.DictionaryRequest;
@@ -63,8 +63,10 @@ import java.util.concurrent.TimeUnit;
  *
  * <p><b>Server messages</b>: {@code DictionaryRequest} is answered from the dictionary (misses are
  * skipped silently, 11 §7); {@code ConfigPush} and {@code Command} go to the {@link
- * RemoteDispatcher} (WO-11: rejected, nothing executed); {@code Throttle} to {@link
- * Listener#throttle}.
+ * RemoteDispatcher} (WO-17: executed on {@code argos-command}); their answers come back through a
+ * {@link RemoteDispatcher.ResultSink} bound to the receiving stream and are written on this loop
+ * only while that stream's session is still the current one, else dropped and counted; {@code
+ * Throttle} to {@link Listener#throttle}.
  *
  * <p><b>Outbound flow control</b> (T-AG-071): a message is written only while the stream {@link
  * SessionStream#isReady() is ready}; otherwise it waits in a pending list bounded at {@value
@@ -340,6 +342,23 @@ final class SessionClient implements SessionLink {
           public void run() {
             if (established) {
               write(AgentMessage.newBuilder().setInstanceUpdate(update).build());
+            }
+          }
+        });
+  }
+
+  /**
+   * Writes {@code event} ({@code AgentEvent}: kill switch, configuration reload, ...) if a session
+   * is established when the loop runs the task; otherwise it is neither sent nor kept. Any thread,
+   * never blocks.
+   */
+  void event(final AgentEvent event) {
+    loop.execute(
+        new Runnable() {
+          @Override
+          public void run() {
+            if (established) {
+              write(AgentMessage.newBuilder().setEvent(event).build());
             }
           }
         });
@@ -754,13 +773,36 @@ final class SessionClient implements SessionLink {
   }
 
   private void configPush(ConfigPush push) {
-    write(AgentMessage.newBuilder().setConfigApplyResult(dispatcher.configPush(push)).build());
+    dispatcher.configPush(push, resultSink());
   }
 
   private void command(Command command) {
-    for (CommandResult result : dispatcher.command(command)) {
-      write(AgentMessage.newBuilder().setCommandResult(result).build());
-    }
+    dispatcher.command(command, resultSink());
+  }
+
+  /**
+   * The answer path of a request received on the current stream: the message is written on this
+   * loop if that stream is still the current one and its session established, else dropped and
+   * counted (the server expires the request with {@code session_ended}).
+   */
+  private RemoteDispatcher.ResultSink resultSink() {
+    final int current = generation;
+    return new RemoteDispatcher.ResultSink() {
+      @Override
+      public void send(final AgentMessage message) {
+        loop.execute(
+            new Runnable() {
+              @Override
+              public void run() {
+                if (current == generation && established) {
+                  write(message);
+                } else {
+                  dropped(message);
+                }
+              }
+            });
+      }
+    };
   }
 
   private void onClose(SessionClose close) {

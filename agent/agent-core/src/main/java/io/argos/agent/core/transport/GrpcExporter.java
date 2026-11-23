@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.agent.core.transport;
 
+import io.argos.agent.core.command.SamplingControl;
 import io.argos.agent.core.config.AgentConfig;
 import io.argos.agent.core.export.QueueExporter;
 import io.argos.agent.core.guard.AgentCounters;
@@ -58,7 +59,8 @@ final class GrpcExporter
   private final BatchAssembler assembler;
   private final AgentCounters counters;
   private final TraceRuntime runtime;
-  private final Sampler localSampler;
+  private final SamplingControl sampling;
+  private final RemoteDispatcher dispatcher;
   private final AgentSession agentSession;
   private final String description;
   private volatile boolean stopped;
@@ -68,7 +70,11 @@ final class GrpcExporter
     this.transport = parts.transport;
     this.counters = parts.counters;
     this.runtime = parts.runtime;
-    this.localSampler = Sampler.of(parts.config);
+    this.sampling =
+        parts.sampling != null
+            ? parts.sampling
+            : new SamplingControl(parts.runtime, Sampler.of(parts.config));
+    this.dispatcher = parts.dispatcher;
     // A DictionaryEntries message stays within the batch target of the session's Limits (11 §2).
     DictionaryCache cache =
         new DictionaryCache(
@@ -95,7 +101,7 @@ final class GrpcExporter
             identity,
             this,
             this,
-            new RejectingDispatcher(parts.config, parts.configHash),
+            parts.dispatcher,
             cache,
             parts.transportCounters,
             new ClockSync(ClockSync.SYSTEM),
@@ -147,6 +153,12 @@ final class GrpcExporter
     String configHash;
     List<String> modules;
     long agentEpoch;
+
+    /** Commands, configuration pushes and the hello configuration (WO-17). */
+    RemoteDispatcher dispatcher;
+
+    /** The profile sampler shared with the remote configuration (null: the configured one). */
+    SamplingControl sampling;
   }
 
   /** The exporter of {@code parts}; the transport id lookup needs the instance first. */
@@ -276,6 +288,9 @@ final class GrpcExporter
     // WO-16: the active snapshot period the server asks for (11 §3), read by argos-metrics.
     runtime.serverActiveSnapshotIntervalSeconds(hello.getActiveSnapshotIntervalS());
     agentSession.userIdSalt(hello.getUserIdSalt().toByteArray());
+    // WO-17, ADR-0010 C-231 (4): the values the server holds for this agent; applied on
+    // argos-command (the kill switch at once), nothing reported back.
+    dispatcher.helloConfig(hello.getConfigMap());
     sender.wake();
   }
 
@@ -306,11 +321,13 @@ final class GrpcExporter
   /**
    * {@code Throttle.profile_normal_rate} of a session {@code Throttle} ({@code argos-io}) or of an
    * {@code Ack.throttle} ({@code argos-sender}): the configured sampler with its normal rate capped
-   * at {@code rate}, never above the configured rate (11 §4.2). Safe from any thread: {@code
+   * at {@code rate}, never above the configured rate (11 §4.2). The configured sampler is the one
+   * in force, a remote {@code sampling.profile.*} change included ({@link SamplingControl}, WO-17),
+   * and the cap stays when that sampler changes. Safe from any thread: {@code
    * TracerImpl.setSampler} publishes the new immutable sampler through a volatile field.
    */
   void applyProfileRate(float rate) {
-    applyProfileRate(runtime, localSampler, rate);
+    sampling.throttle(rate);
   }
 
   /** {@link #applyProfileRate(float)} for a runtime and its configured sampler (tests). */

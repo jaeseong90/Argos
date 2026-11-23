@@ -21,8 +21,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Applications and instances (14 §4.3, GET only; the mutations are WO-26, ADR-0010 C-153). Instance
- * states come from the instance state machine (12 §4.2, WO-22).
+ * Applications and instances (14 §4.3, GET; the mutations are {@link AppsAdminController}, WO-26,
+ * ADR-0010 C-153). Instance states come from the instance state machine (12 §4.2, WO-22).
  */
 @RestController
 @RequiresRole(Role.VIEWER)

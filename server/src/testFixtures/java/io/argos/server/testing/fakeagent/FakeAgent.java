@@ -12,6 +12,10 @@ import io.argos.proto.v1.AgentHello;
 import io.argos.proto.v1.AgentMessage;
 import io.argos.proto.v1.AgentServiceGrpc;
 import io.argos.proto.v1.ByeReason;
+import io.argos.proto.v1.Command;
+import io.argos.proto.v1.CommandResult;
+import io.argos.proto.v1.ConfigApplyResult;
+import io.argos.proto.v1.ConfigPush;
 import io.argos.proto.v1.DictionaryEntries;
 import io.argos.proto.v1.DictionaryEntry;
 import io.argos.proto.v1.DictionaryRef;
@@ -59,6 +63,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 
@@ -79,7 +84,11 @@ import java.util.function.UnaryOperator;
  *       KiB; {@link #sendRaw} for bytes that are not a valid or small batch;
  *   <li>every {@link CallResult} (ack, status, headers, trailers, latency) and every {@link
  *       ServerMessage} is kept (bounded) for assertions; a {@code DictionaryRequest} is answered
- *       from {@link #records()} unless disabled.
+ *       from {@link #records()} unless disabled;
+ *   <li>a {@code Command} is answered with the {@code CommandResult}s of {@link Builder#onCommand}
+ *       and a {@code ConfigPush} with the {@code ConfigApplyResult} of {@link Builder#onConfigPush}
+ *       (WO-26; canned replies in {@link CommandReplies}); without a handler, or when it returns
+ *       null, nothing is answered (an agent that never replies).
  * </ul>
  *
  * <p>Thread-safe. No JUnit dependency (WO-29's load generator reuses it). The token is never logged
@@ -114,6 +123,8 @@ public final class FakeAgent implements AutoCloseable {
   private final Duration callDeadline;
   private final int maxRecorded;
   private final boolean answerDictionaryRequests;
+  private final Function<Command, List<CommandResult>> onCommand;
+  private final Function<ConfigPush, ConfigApplyResult> onConfigPush;
   private final Map<BatchKind, MethodDescriptor<byte[], Ack>> rawMethods =
       new EnumMap<>(BatchKind.class);
 
@@ -139,6 +150,8 @@ public final class FakeAgent implements AutoCloseable {
     this.callDeadline = b.callDeadline;
     this.maxRecorded = b.maxRecorded;
     this.answerDictionaryRequests = b.answerDictionaryRequests;
+    this.onCommand = b.onCommand;
+    this.onConfigPush = b.onConfigPush;
     AgentHello.Builder hello =
         AgentHello.newBuilder()
             .setAgentVersion(b.agentVersion)
@@ -646,6 +659,22 @@ public final class FakeAgent implements AutoCloseable {
       }
       lock.notifyAll();
     }
+    if (message.hasCommand() && onCommand != null) {
+      List<CommandResult> results = onCommand.apply(message.getCommand());
+      if (results != null) {
+        for (CommandResult r : results) {
+          if (!reply(from, AgentMessage.newBuilder().setCommandResult(r).build())) {
+            break;
+          }
+        }
+      }
+    }
+    if (message.hasConfigPush() && onConfigPush != null) {
+      ConfigApplyResult result = onConfigPush.apply(message.getConfigPush());
+      if (result != null) {
+        reply(from, AgentMessage.newBuilder().setConfigApplyResult(result).build());
+      }
+    }
     if (message.hasDictionaryRequest() && answerDictionaryRequests) {
       List<DictionaryEntry> known = new ArrayList<>();
       for (DictionaryRef ref : message.getDictionaryRequest().getRefsList()) {
@@ -662,6 +691,16 @@ public final class FakeAgent implements AutoCloseable {
           unansweredDictionaryRequests.incrementAndGet();
         }
       }
+    }
+  }
+
+  /** Sends {@code message} on {@code from}; false when that session has ended meanwhile. */
+  private static boolean reply(Session from, AgentMessage message) {
+    try {
+      from.send(message);
+      return true;
+    } catch (IllegalStateException e) {
+      return false;
     }
   }
 
@@ -894,6 +933,8 @@ public final class FakeAgent implements AutoCloseable {
     private Duration callDeadline = Duration.ofSeconds(5);
     private int maxRecorded = 100_000;
     private boolean answerDictionaryRequests = true;
+    private Function<Command, List<CommandResult>> onCommand;
+    private Function<ConfigPush, ConfigApplyResult> onConfigPush;
     private UnaryOperator<AgentHello.Builder> hello = UnaryOperator.identity();
 
     private Builder(ManagedChannel channel) {
@@ -995,6 +1036,26 @@ public final class FakeAgent implements AutoCloseable {
     /** Answer {@code DictionaryRequest}s from the known entries (default true, 11 §7 (3)). */
     public Builder answerDictionaryRequests(boolean answer) {
       this.answerDictionaryRequests = answer;
+      return this;
+    }
+
+    /**
+     * Answers each received {@code Command} with the returned {@code CommandResult} messages, sent
+     * in order on the session the command arrived on (WO-26; {@link CommandReplies}). Called on the
+     * gRPC thread that delivered the command. Default: no handler (commands are recorded only);
+     * returning null or an empty list answers nothing.
+     */
+    public Builder onCommand(Function<Command, List<CommandResult>> handler) {
+      this.onCommand = handler;
+      return this;
+    }
+
+    /**
+     * Answers each received {@code ConfigPush} with the returned {@code ConfigApplyResult} (WO-26).
+     * Default: no handler; returning null answers nothing (an offline-like agent).
+     */
+    public Builder onConfigPush(Function<ConfigPush, ConfigApplyResult> handler) {
+      this.onConfigPush = handler;
       return this;
     }
 

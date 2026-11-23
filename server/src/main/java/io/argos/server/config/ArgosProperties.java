@@ -87,6 +87,7 @@ import org.springframework.util.unit.DataSize;
  * @param alert alert engine (WO-25)
  * @param agent agent registration policy (WO-22)
  * @param instance instance lifecycle (WO-22)
+ * @param commands remote commands (WO-26)
  * @param retention data retention, applied to ClickHouse tables when they are created
  * @param privacy privacy defaults
  * @param ops operations jobs (WO-27, WO-28)
@@ -118,6 +119,7 @@ public record ArgosProperties(
     @Valid @DefaultValue Alert alert,
     @Valid @DefaultValue Agent agent,
     @Valid @DefaultValue Instance instance,
+    @Valid @DefaultValue Commands commands,
     @Valid @DefaultValue Retention retention,
     @Valid @DefaultValue Privacy privacy,
     @Valid @DefaultValue Ops ops,
@@ -181,6 +183,8 @@ public record ArgosProperties(
         + agent
         + ", instance="
         + instance
+        + ", commands="
+        + commands
         + ", retention="
         + retention
         + ", privacy="
@@ -854,6 +858,37 @@ public record ArgosProperties(
    */
   public record Instance(
       @DefaultValue("7d") Duration archiveAfter, @DefaultValue("30d") Duration purgeAfter) {}
+
+  /**
+   * Remote commands (12 §6.1, 16 §5.2 {@code argos.commands.*}; WO-26). The result retention is
+   * {@code argos.retention.command-results} (12 §10; 16 §5.3 names it {@code
+   * argos.commands.result-retention-days}, the 12 §10 key is the one kept).
+   *
+   * @param ttl a queued command not sent within this long expires and is never delivered; also the
+   *     {@code ttl_s} the agent measures from its receive time (60 s)
+   * @param resultTimeout a sent command without a complete result within this long expires with
+   *     error {@code timeout} (16 §5.2 TIMEOUT, 120 s)
+   * @param maxInflightPerInstance commands queued or sent per instance at most (409 beyond)
+   * @param maxPerMinutePerInstance commands requested per instance per minute at most (429 beyond)
+   * @param keepPerInstance commands (with their results) kept per instance at most, the newest
+   *     first (16 §5.3)
+   */
+  public record Commands(
+      @DefaultValue("60s") Duration ttl,
+      @DefaultValue("120s") Duration resultTimeout,
+      @DefaultValue("1") @Min(1) @Max(10) int maxInflightPerInstance,
+      @DefaultValue("10") @Min(1) @Max(600) int maxPerMinutePerInstance,
+      @DefaultValue("100") @Min(1) @Max(10000) int keepPerInstance) {
+
+    public Commands {
+      if (ttl == null || ttl.isNegative() || ttl.isZero() || ttl.toSeconds() > 3600) {
+        throw new IllegalArgumentException("argos.commands.ttl must be between 1s and 1h");
+      }
+      if (resultTimeout == null || resultTimeout.compareTo(Duration.ofSeconds(1)) < 0) {
+        throw new IllegalArgumentException("argos.commands.result-timeout must be at least 1s");
+      }
+    }
+  }
 
   /**
    * Privacy defaults.

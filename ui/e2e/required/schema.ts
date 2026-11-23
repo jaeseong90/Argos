@@ -68,7 +68,7 @@ export type Assertion = z.infer<typeof Assertion>;
  * real WebSocket server on the dashboard, ADR-0010 C-216 (2); WO-31: the overview; WO-36: the
  * statistics screens; WO-25: the firing alert panels of the dashboard and the overview; WO-35:
  * the active transactions screen; WO-38: the alert history, rule and channel screens and the alert
- * transition markers of deep link 4).
+ * transition markers of deep link 4; WO-37: the instance detail and the thread dump viewer).
  */
 export const RUNNING_OWNERS: ReadonlySet<string> = new Set([
   'WO-22',
@@ -80,6 +80,7 @@ export const RUNNING_OWNERS: ReadonlySet<string> = new Set([
   'WO-34',
   'WO-35',
   'WO-36',
+  'WO-37',
   'WO-38',
 ]);
 

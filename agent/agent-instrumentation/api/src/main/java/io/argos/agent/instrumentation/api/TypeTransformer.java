@@ -18,4 +18,18 @@ public interface TypeTransformer {
    * every method of the matched type that {@code methods} matches.
    */
   void applyAdvice(ElementMatcher<? super MethodDescription> methods, String adviceClassName);
+
+  /**
+   * Asks for the context field of DSN-02-05 (10 §6.6 "필드 주입") on the matched type: a {@code
+   * volatile TraceContext argos$ctx} field and an implementation of the bootstrap interface {@code
+   * ContextCarrier}, which the task stores of {@code ContextStore} then use instead of their weak
+   * map.
+   *
+   * <p>The core adds them only where the class format may still change: a class being defined for
+   * the first time, by an application class loader, that is a concrete class (not an interface,
+   * annotation, enum or record) and not serializable. On retransformation, for already loaded, JDK
+   * or bootstrap classes, and for every other type this does nothing, and the stores fall back to
+   * the weak map. Advice code does not depend on which path a type took.
+   */
+  default void injectContextField() {}
 }

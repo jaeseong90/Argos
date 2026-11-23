@@ -2,8 +2,8 @@
 //
 // The error group detail in the whole app (05 §2.5-5, WO-36): the class with the new badge, count
 // and first / last occurrence, the masked message pattern, the representative stack through the
-// transaction detail's FrameList with no application frame in bold while the API has no
-// app_packages (ADR-0010 C-207 (3)) and a note saying so, the occurrence trend with deploy
+// transaction detail's FrameList with the frames of the application's app_packages in bold and
+// none (with a note saying so) while none are set (ADR-0010 C-207 (3)), the occurrence trend with deploy
 // markers, the distributions by version (each version → XLog with the group and version), by
 // service and by instance (raw window), the last 10 transactions opening their detail with ts
 // (C-206 (1)), the XLog with f.error_group, collected strings as text (T-UI-005) and the states.
@@ -19,6 +19,7 @@ import {
   type ApiStub,
 } from '../../../../test/apiStub';
 import {
+  appBody,
   PRELOAD_TIMEOUT_MS,
   preloadRoutes,
   renderApp,
@@ -154,6 +155,28 @@ describe('error group detail (05 §2.5-5)', () => {
     expect(stack.querySelectorAll('.tx-frame--app')).toHaveLength(0);
     expect(screen.getByTestId('stats-error-app-frames-note')).toHaveTextContent(
       'application packages are not configured yet',
+    );
+  });
+
+  it('C-207 (3) puts the frames of the app_packages of GET /apps/{appId} in bold', async () => {
+    answer();
+    signedIn(stub);
+    stub.on('GET /api/v1/apps/1', () =>
+      envelope(appBody(1, 'order-api', 'prod', { app_packages: ['com.shop'] })),
+    );
+    renderApp(`/apps/1/stats/errors/61?${RANGE_QUERY}`);
+    const page = await screen.findByTestId('stats-error-detail', {}, FIND);
+    await waitFor(() => {
+      expect(page).toHaveAttribute('data-state', 'ready');
+    }, FIND);
+    const stack = screen.getByTestId('stats-error-stack');
+    await waitFor(() => {
+      expect(stack.querySelectorAll('.tx-frame--app').length).toBeGreaterThan(0);
+    }, FIND);
+    const bold = Array.from(stack.querySelectorAll('.tx-frame--app')).map((f) => f.textContent);
+    expect(bold).toEqual(SAMPLE_STACK.filter((frame) => frame.startsWith('com.shop.')));
+    expect(screen.getByTestId('stats-error-app-frames-note')).toHaveTextContent(
+      'Application frames are in bold.',
     );
   });
 

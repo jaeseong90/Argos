@@ -1,5 +1,13 @@
 # Transformed-class baseline (18 §5.6, DSN-18-05, T-AG-005): <class> <modules> <loader>
 # trivial-probe on JDK 21. Re-record: ./gradlew :agent:agent-testing:integrationTest -Pagent.baseline.record=true; review the diff in the PR.
 example.trivial.TrivialApp$Handler test-probe app
+example.trivial.TrivialApp$Handler$1 executor app
 example.trivial.TrivialApp$Store test-probe app
+java.util.concurrent.ForkJoinPool executor bootstrap
+java.util.concurrent.ForkJoinTask executor bootstrap
+java.util.concurrent.ForkJoinTask$AdaptedCallable executor bootstrap
+java.util.concurrent.ForkJoinTask$AdaptedInterruptibleCallable executor bootstrap
+java.util.concurrent.ForkJoinTask$AdaptedRunnable executor bootstrap
+java.util.concurrent.ForkJoinTask$AdaptedRunnableAction executor bootstrap
+java.util.concurrent.ForkJoinTask$RunnableExecuteAction executor bootstrap
 java.util.concurrent.ThreadPoolExecutor executor,test-probe-jdk bootstrap

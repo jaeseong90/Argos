@@ -31,6 +31,8 @@ import { credentialFile } from '../stack/paths';
 import { ACTIVE_CHECKS } from './activeChecks';
 import { ALERTS_CHECKS } from './alertsChecks';
 import { DASHBOARD_CHECKS } from './dashboardChecks';
+import { DUMPS_CHECKS } from './dumpsChecks';
+import { INSTANCE_CHECKS } from './instanceChecks';
 import { OVERVIEW_CHECKS } from './overviewChecks';
 import { STATS_CHECKS } from './statsChecks';
 import { TRACE_CHECKS } from './traceChecks';
@@ -360,4 +362,9 @@ export const CHECKS: Readonly<Record<string, Check>> = {
   ...ACTIVE_CHECKS,
   // The alert screens' checks (WO-38): docs/05 §2.4 and §2.9.
   ...ALERTS_CHECKS,
+  // The instance detail's checks (WO-37): docs/05 §2.7-1 .. 2.7-6.
+  ...INSTANCE_CHECKS,
+  // The commands tab, the thread dump viewer and the active screen's stack and dump actions
+  // (WO-37): docs/05 §2.7-4, §2.7-5 and 2.6-4.
+  ...DUMPS_CHECKS,
 };

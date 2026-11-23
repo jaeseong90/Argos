@@ -362,15 +362,29 @@ describe('overview padding and server panel oracles', () => {
       ],
       more: null,
       summary: t('overview:panel.firing.summary', 'en', { critical: '1', warn: '1' }),
+      overflow: 0,
     };
     expect(overviewFiringMismatches(good, answer, 2)).toEqual([]);
+    // Fewer rows drawn because only they fit (C-234 (5)): the rest is "+N more".
+    const fitted = {
+      ...good,
+      rows: [{ id: 'b', severity: 'critical' }],
+      more: t('overview:panel.firing.more_one', 'en', { count: '1' }),
+    };
+    expect(overviewFiringMismatches(fitted, answer, 2)).toEqual([]);
+    expect(overviewFiringMismatches({ ...fitted, more: null }, answer, 2).join('\n')).toMatch(
+      /^more /m,
+    );
+    expect(overviewFiringMismatches({ ...good, overflow: 24 }, answer, 2).join('\n')).toMatch(
+      /page scroll/,
+    );
     expect(overviewFiringMismatches(good, answer, 3).join('\n')).toMatch(
       /alerts_firing_total 3 != 2/,
     );
     expect(overviewFiringMismatches(good, answer, null).join('\n')).toMatch(/never|always/);
     const reordered = { ...good, rows: [...good.rows].reverse() };
     expect(overviewFiringMismatches(reordered, answer, 2).join('\n')).toMatch(/^rows /);
-    const empty = { state: 'empty', total: '0', rows: [], more: null, summary: null };
+    const empty = { state: 'empty', total: '0', rows: [], more: null, summary: null, overflow: 0 };
     expect(overviewFiringMismatches(empty, [], 0)).toEqual([]);
   });
 

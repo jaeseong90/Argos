@@ -2,8 +2,8 @@
 //
 // Stack frames as an ordered list of text nodes (SafeText, monospace; SEC-60), top of the stack
 // first. Optional marks: frames common to every STACK capture, the deepest common frame ("stuck
-// here", docs/15 §8.5) and application frames in bold (only when the application's packages are
-// known; until WO-26 adds `app_packages` none are, ADR-0010 C-207 (3)).
+// here", docs/15 §8.5) and application frames in bold (the `app_packages` of GET /apps/{appId},
+// ADR-0010 C-207 (3); none while an administrator set no packages).
 import { useTranslation } from 'react-i18next';
 
 import type { Untrusted } from '../../api/untrusted';

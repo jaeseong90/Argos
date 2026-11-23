@@ -22,8 +22,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The events of an application (14 §4.12, GET only; deploy marker creation and deletion are WO-26,
- * ADR-0010 C-153).
+ * The events of an application (14 §4.12, GET; deploy marker creation and deletion are {@link
+ * EventsWriteController}, WO-26, ADR-0010 C-153).
  */
 @RestController
 @RequiresRole(Role.VIEWER)

@@ -346,7 +346,7 @@ class Jdk11AdviceTest {
   @DisplayName(
       "T-AG-056m request timeout: TIMEOUT, the HttpTimeoutException reaches the application (send"
           + " and sendAsync)")
-  void requestTimeout() {
+  void requestTimeout() throws InterruptedException {
     HttpRequest slow =
         HttpRequest.newBuilder(URI.create(server.url("/slow")))
             .timeout(Duration.ofMillis(200))
@@ -359,6 +359,9 @@ class Jdk11AdviceTest {
         .isInstanceOf(CompletionException.class)
         .hasCauseInstanceOf(HttpTimeoutException.class);
     assertOneStep(async, "GET " + hostPort() + "/slow", 0, FailureKind.TIMEOUT);
+    // The client gave up after 200 ms; under load the server may read the requests later. Let them
+    // arrive now so that the next test does not see them (they carry this test's traceparent).
+    server.awaitSeen("/slow", 2, 5_000);
   }
 
   @Test

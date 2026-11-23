@@ -30,6 +30,7 @@ import {
   HOP_SCENARIOS,
   HOP_SERVICE,
   isoSeconds,
+  manifestAsyncCalls,
   seedEvents,
   seedEventsOf,
   TRAFFIC_APP,
@@ -707,6 +708,7 @@ export async function resolveManifest(input: {
     // (manifest.ts recordOutage, WO-22).
     outage: null,
     hop_traces: hops.traces,
+    async_calls: manifestAsyncCalls(traffic.asyncCalls),
     missing_optional: [
       ...(xss === null
         ? [

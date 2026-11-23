@@ -121,6 +121,27 @@ result. Highlights:
   result. An unsupported mode answers 400. `preset=1` makes the app set its own `traceparent` (random,
   reported as `presetTraceparent`) and `tracestate: shop=preset1` on the request (the agent keeps
   them, docs/10 §8).
+- `GET /api/async/executor` (shop-boot2/3/4): `@Async`, `CompletableFuture.supplyAsync`, a parallel
+  stream, a `ScheduledThreadPoolExecutor` task and the `remove()` / `cancel()` results that context
+  propagation must keep (`removed`, `cancelled`, `queueAfterCancel`). WO-15 adds two variants
+  (`common/.../async/AsyncSqlWork.java`, the plain call is unchanged):
+  - `?work=sql`: the plain answer plus one SQL statement per async branch, each on its own thread
+    and each a different statement: `@Async` (`SELECT COUNT(*) FROM products`, Boot's
+    `applicationTaskExecutor`, virtual threads with `SAMPLE_VT=true`), `supplyAsync` (`... FROM
+    orders`, the common pool or the `SAMPLE_CUSTOM_EXECUTOR` executor), a scheduled task (`... FROM
+    customers`, thread `async-sql-scheduler-1`), the app's one-thread pool (`... FROM order_items`,
+    thread `async-sql-pool-1`) and on JDK 21+ `Executors.newVirtualThreadPerTaskExecutor()` (`...
+    FROM audit_log`, looked up with a `MethodHandle`; common is compiled for Java 8). The request
+    waits for all of them. Answer fields: `requestThread`, `asyncMethodThread`,
+    `supplyAsyncSqlThread`, `scheduledSqlThread`, `poolSqlThread`, `virtualPerTaskThread` (JDK 21+
+    only; virtual threads of that executor have an empty name), `sqlBranches` and `asyncSql` (the
+    statements that ran off the request thread; an agent puts that many SQL steps into the request's
+    transaction).
+  - `?work=detached&count=N` (1..100, default 5): `N` statements `SELECT COUNT(*) FROM customers
+    WHERE id < 0` on `async-sql-pool-1`, submitted by a dispatcher thread that the app started at
+    startup, i.e. work that belongs to no transaction on the thread that ran request tasks before
+    (`detachedSql`, `detachedThreads`). An agent must record none of them in a transaction (T-AG-052
+    context leak check). Any other `work` value answers 400.
 - `GET /api/hop/{id}?depth=N&client=X[&fail=timeout|refuse|status500][&mode=M][&preset=1]` (WO-14,
   `common/.../http/HopService.java`): `depth` > 0 calls `SAMPLE_HOP_URL` (default: the app itself)
   `/api/hop/{id}?depth=N-1` with the same client, `fail` and `mode`; `depth` 0 is the `/api/pay/{id}`

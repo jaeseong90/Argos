@@ -2,9 +2,9 @@
 //
 // required/active.yaml is valid and covers the docs/05 §2.6 checklist (docs/04 WO-35, 2.6-1 ..
 // 2.6-6) in order, with checks that exist in required/activeChecks.ts and route variables of
-// manifestVariables(); the stack and thread dump actions (remote commands, WO-26 / WO-17) are
-// fixme entries that name where they are covered until then (docs/18 §13, DSN-18-10). Also the
-// pure parts of the checks: the typed stub snapshot and the band rule.
+// manifestVariables(); the stack and thread dump actions (remote commands, WO-37 on the command API
+// of WO-26) run as the operator with checks of required/dumpsChecks.ts (docs/18 §13, DSN-18-10).
+// Also the pure parts of the checks: the typed stub snapshot and the band rule.
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,6 +24,7 @@ import {
   MAX_AS_OF_S,
   stubSnapshot,
 } from './activeChecks';
+import { DUMPS_CHECKS } from './dumpsChecks';
 import {
   fillTemplate,
   parseRequiredFile,
@@ -97,16 +98,23 @@ describe('required/active.yaml (docs/05 §2.6)', () => {
     expect(byCheck.get('activeSummaryAndRuleLink')?.role).toBe('operator');
   });
 
-  it('keeps the stack and thread dump actions as fixme of WO-26 covered by T-E2E-active-27', () => {
-    const later = spec.items.filter((item) => !RUNNING_OWNERS.has(item.owner));
-    expect(later.map((item) => `${item.id} ${item.owner}`)).toEqual(['2.6-4 WO-26', '2.6-4 WO-26']);
-    for (const item of later) {
-      expect(item.coverage, item.id).toContain('T-E2E-active-27');
-      expect(item.coverage, item.id).toContain('WO-17');
-      expect(item.route, item.id).toBeUndefined();
+  it('runs the stack and thread dump actions (WO-37) as the operator with checks of dumpsChecks.ts', () => {
+    expect(spec.items.filter((item) => !RUNNING_OWNERS.has(item.owner))).toEqual([]);
+    const commands = spec.items.filter((item) => item.owner === 'WO-37');
+    expect(commands.map((item) => item.id)).toEqual(['2.6-4', '2.6-4']);
+    const checks = commands.map((item) =>
+      item.assert.flatMap((a) => ('check' in a ? [a.check] : [])),
+    );
+    expect(checks).toEqual([['activeThreadStack'], ['activeThreadDump']]);
+    for (const item of commands) {
+      expect(item.role, item.title).toBe('operator');
+      expect(item.coverage, item.title).toContain('T-E2E-active-27');
+      expect(item.coverage, item.title).toContain('T-E2E-active-30');
+      expect(item.route, item.title).toBe('/apps/{primary_app_id}/active?kind=ALL');
     }
-    expect(later[0]?.coverage).toContain('T-E2E-active-30');
-    expect(later[1]?.coverage).toContain('WO-37');
+    for (const check of checks.flat()) {
+      expect(Object.keys(DUMPS_CHECKS), check).toContain(check);
+    }
   });
 
   it('manifestVariables() fills every route', () => {

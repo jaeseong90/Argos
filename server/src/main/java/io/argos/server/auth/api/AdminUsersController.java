@@ -12,12 +12,14 @@ import io.argos.server.auth.RequiresRole;
 import io.argos.server.auth.Role;
 import io.argos.server.auth.users.UserAdministration;
 import io.argos.server.storage.postgres.auth.UserRecord;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -100,6 +102,21 @@ public class AdminUsersController {
             kiosk(body.kioskSession()));
     return Envelope.of(
         AuthDtos.AdminUserView.of(administration.patch(userId, change, principal(), request)));
+  }
+
+  /** Deletes a user (ADR-0010 C-136 (3)). */
+  @DeleteMapping("/{id}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  @ArgosAudit({AuditEvent.USER_DELETED, AuditEvent.SESSION_REVOKED})
+  @Operation(
+      summary = "Delete a user",
+      description =
+          "The account is anonymised and disabled (the user name becomes free again), every"
+              + " session of it ends at once (401 session_revoked on its next request) and the"
+              + " audit log keeps its old name. 409 invalid_state for the caller's own account"
+              + " (detail self) or the last enabled administrator (detail last_admin).")
+  public void delete(@PathVariable("id") String id, HttpServletRequest request) {
+    administration.delete(userId(id), principal(), request);
   }
 
   /** Ends every session of a user. */

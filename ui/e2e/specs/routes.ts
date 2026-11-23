@@ -52,8 +52,8 @@ export const SHELL_ROUTES: readonly ShellRoute[] = [
   { pattern: '/apps/:appId/stats/external/:hostId', kind: 'screen', role: 'viewer' },
   { pattern: '/apps/:appId/stats/errors', kind: 'screen', role: 'viewer' },
   { pattern: '/apps/:appId/stats/errors/:groupId', kind: 'screen', role: 'viewer' },
-  { pattern: '/apps/:appId/instances', kind: 'placeholder', role: 'viewer' },
-  { pattern: '/apps/:appId/instances/:instanceId', kind: 'placeholder', role: 'viewer' },
+  { pattern: '/apps/:appId/instances', kind: 'screen', role: 'viewer' },
+  { pattern: '/apps/:appId/instances/:instanceId', kind: 'screen', role: 'viewer' },
   { pattern: '/apps/:appId/map', kind: 'placeholder', role: 'viewer' },
 ];
 

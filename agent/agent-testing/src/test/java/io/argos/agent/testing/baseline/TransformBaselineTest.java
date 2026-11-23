@@ -29,6 +29,28 @@ class TransformBaselineTest {
   }
 
   @Test
+  @DisplayName(
+      "T-AG-005 recording: the first recording of a file in a JVM replaces it, a later one adds its"
+          + " lines (two test classes verify one baseline)")
+  void recordingUnion() throws Exception {
+    Path file = dir.resolve("shop-21-vt.txt");
+    Files.writeString(file, "old.Stale executor app\n", StandardCharsets.UTF_8);
+    TransformBaseline.record(
+        file,
+        "first",
+        log("T b.B jdbc app", "# summary transformed=1 onError=0 classCircularityError=0"));
+    assertThat(TransformBaseline.read(file)).containsExactly("b.B jdbc app");
+    TransformBaseline.record(
+        file,
+        "second",
+        log(
+            "T a.A servlet app",
+            "T b.B jdbc app",
+            "# summary transformed=2 onError=0 classCircularityError=0"));
+    assertThat(TransformBaseline.read(file)).containsExactly("a.A servlet app", "b.B jdbc app");
+  }
+
+  @Test
   @DisplayName("the transform log parses T and E lines and the summary counts")
   void parsesLog() {
     TransformLog log =

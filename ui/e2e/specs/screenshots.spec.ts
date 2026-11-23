@@ -16,6 +16,8 @@ import { shellMasks } from '../fixtures/screenshots';
 import { expect, test } from '../fixtures/stack';
 import { expectShell } from '../fixtures/ui';
 import { OVERFLOW_TX_ID } from '../required/checks';
+import { expectViewerOf, stubFixedDump, userIdOf } from '../required/dumpsChecks';
+import { instancePath, trafficInstance } from '../required/instanceChecks';
 import { PLAYWRIGHT_IMAGE } from '../stack/images';
 
 const VISUAL = { type: 'req', description: 'F-U16' };
@@ -62,9 +64,10 @@ test(
   { annotation: VISUAL },
   async ({ page, seed }) => {
     // A relative range: its label ("Last 1 hour") has the same width every day, unlike an
-    // absolute one, whose width would move the controls next to the mask. The dashboard (WO-32) and
-    // active transactions (WO-35) are screens now: the instance list (WO-37) is the placeholder shown.
-    await page.goto(`/apps/${String(seed.primary_app_id)}/instances?from=now-1h`);
+    // absolute one, whose width would move the controls next to the mask. The dashboard (WO-32),
+    // active transactions (WO-35) and the instance screens (WO-37) are screens now: the
+    // application map is the placeholder shown.
+    await page.goto(`/apps/${String(seed.primary_app_id)}/map?from=now-1h`);
     await expectShell(page);
     await expect(page.getByTestId('route-pending')).toBeVisible();
     await expect(page.getByTestId('time-range-preset')).toHaveAttribute('data-range', '1h');
@@ -117,3 +120,42 @@ test(
     await page.unroute('**/api/v1/transactions/**');
   },
 );
+
+test.describe('thread dump viewer (WO-37, fixed stub answers on the seed instance)', () => {
+  test.use({ role: 'operator' });
+
+  for (const [id, truncated, file] of [
+    ['T-E2E-dumps-40', false, 'dumps-normal.png'],
+    ['T-E2E-dumps-41', true, 'dumps-truncated.png'],
+  ] as const) {
+    test(
+      `${id} visual: the thread dump viewer${truncated ? ' of a truncated dump' : ''}`,
+      { annotation: VISUAL },
+      async ({ page, seed, apiAs }) => {
+        // The dump, its history row and its state are answered in the browser from the fixed dump
+        // of e2e/required/dumpsChecks.ts (no agent in e2e:docker); the instance is the seed's.
+        const target = trafficInstance(seed);
+        const operator = await apiAs('operator');
+        const cmd = await stubFixedDump(
+          page,
+          target.instanceId,
+          await userIdOf(operator),
+          truncated,
+        );
+        await page.goto(
+          instancePath(target.appId, target.instanceId, {
+            from: 'now-1h',
+            tab: 'dumps',
+            extra: { cmd },
+          }),
+        );
+        await expectShell(page);
+        await expectViewerOf(page, cmd);
+        await expect(page.getByTestId('dump-truncated')).toHaveCount(truncated ? 1 : 0);
+        await expect(page).toHaveScreenshot(file, {
+          mask: [...masks(page), page.getByTestId('instance-header')],
+        });
+      },
+    );
+  }
+});

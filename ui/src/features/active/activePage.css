@@ -392,3 +392,16 @@
   border-radius: 3px;
   font-size: var(--fs-xs, 11px);
 }
+
+/* Instance detail links (WO-37) */
+.active-bar__detail,
+.active-instance-link {
+  color: var(--color-primary-text, #1f5bd1);
+}
+
+.active-instance-link {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  vertical-align: bottom;
+}

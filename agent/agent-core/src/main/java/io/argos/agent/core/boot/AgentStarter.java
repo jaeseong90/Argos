@@ -44,7 +44,8 @@ import java.util.jar.Manifest;
  *   <li>P6: the agent builder and {@code installOn} (transformation recorder, error listener with
  *       {@link SelfProtection}, {@code instrumentation.exclude-classes});
  *   <li>P7: agent threads ({@code argos-sender}, {@code argos-watch}, {@code argos-metrics});
- *       premain does not wait;
+ *       premain does not wait. {@code argos-command} (WO-17) starts with the first server command
+ *       or configuration message;
  *   <li>P8: one INFO banner: version, commit, protocol, app and env, configuration hash, masked
  *       token, exporter, modules.
  * </ol>
@@ -125,8 +126,8 @@ public final class AgentStarter {
 
       // P4: configuration (never throws), then the log destination it names.
       timer.begin(StartTimer.P4);
-      LoadedConfig loaded =
-          ConfigLoader.load(ConfigInputs.forAgent(agentJar, agentArgs, info.isReleaseBuild()));
+      ConfigInputs inputs = ConfigInputs.forAgent(agentJar, agentArgs, info.isReleaseBuild());
+      LoadedConfig loaded = ConfigLoader.load(inputs);
       AgentConfig config = loaded.config();
       timer.begin(StartTimer.P3);
       String logDestination = AgentLogger.configure(config, agentJar);
@@ -134,7 +135,7 @@ public final class AgentStarter {
       reportConfiguration(loaded);
       control.setEnabled(config.enabled());
 
-      run(inst, control, timer, running, loaded, info, logDestination);
+      run(inst, control, timer, running, inputs, loaded, info, logDestination);
     } catch (Throwable t) {
       fail(control, running, t);
     }
@@ -145,6 +146,7 @@ public final class AgentStarter {
       AgentControl control,
       StartTimer timer,
       Running running,
+      ConfigInputs inputs,
       LoadedConfig loaded,
       AgentInfo info,
       String logDestination) {
@@ -240,7 +242,16 @@ public final class AgentStarter {
           });
       running.selfDiagnostics = selfDiagnostics;
     }
-    recording.startSender(AgentLogger.logDirectory(), loaded, moduleIds, diagnostics);
+    // WO-17: the command executor and remote configuration are built on argos-sender from these.
+    recording.startSender(
+        AgentLogger.logDirectory(),
+        loaded,
+        moduleIds,
+        diagnostics,
+        inst,
+        control,
+        inputs,
+        moduleNames);
     watch.start();
     running.watch = watch;
     // WO-16: argos-metrics (metrics, statistics windows, active snapshot); collectors are built

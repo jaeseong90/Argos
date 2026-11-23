@@ -286,15 +286,17 @@ class StatsAggregatorTest {
 
   @Test
   @DisplayName(
-      "T-AG-061 without a flush (argos-metrics not running) at most 8 windows stay linked: the"
-          + " windows kept are bounded (10 §14)")
+      "T-AG-061 without a flush (argos-metrics not running: no drain within 30 s of the creation)"
+          + " at most 8 windows stay linked: the windows kept are bounded (10 §14)")
   void windowsStayBoundedWithoutAFlush() {
     StatsAggregator one = aggregator(5000, 1000);
     one.recordSql(Kind.HTTP, 1, 1, MS, false);
     long cellBytes = one.estimatedBytes();
     assertThat(cellBytes).isPositive();
 
-    StatsAggregator stats = aggregator(5000, 1000);
+    AtomicLong nanos = new AtomicLong(0L);
+    StatsAggregator stats = new StatsAggregator(10, 5000, 1000, now::get, nanos::get);
+    nanos.set(StatsAggregator.FLUSH_ALIVE_NANOS);
     for (int w = 0; w < 40; w++) {
       stats.recordSql(Kind.HTTP, 1, 1, MS, false);
       now.addAndGet(10_000L);
@@ -312,6 +314,78 @@ class StatsAggregatorTest {
         .containsEntry(
             StatsAggregator.WINDOWS_DROPPED_METRIC,
             (long) (41 - StatsAggregator.MAX_ATTACHED_WINDOWS));
+  }
+
+  @Test
+  @DisplayName(
+      "T-AG-061 a running flush that fell behind (not scheduled while 12 windows went by) loses no"
+          + " window; while it runs at most 16 windows stay linked (ADR-0010 C-230 (2))")
+  void runningFlushThatFellBehindLosesNothing() {
+    AtomicLong nanos = new AtomicLong(5_000_000_000L);
+    StatsAggregator one = aggregator(5000, 1000);
+    one.recordSql(Kind.HTTP, 1, 1, MS, false);
+    long cellBytes = one.estimatedBytes();
+
+    StatsAggregator stats = new StatsAggregator(10, 5000, 1000, now::get, nanos::get);
+    assertThat(stats.drain(now.get())).as("the flush runs").isEmpty();
+    for (int w = 0; w < 12; w++) {
+      stats.recordSql(Kind.HTTP, 1, 1, MS, false);
+      now.addAndGet(10_000L);
+      nanos.addAndGet(1_000_000L); // 12 windows of the test clock within 12 ms of real time
+    }
+    stats.recordSql(Kind.HTTP, 1, 1, MS, false);
+    assertThat(stats.estimatedBytes() / cellBytes).as("all 13 windows linked").isEqualTo(13);
+    List<StatBatch> sent = new ArrayList<StatBatch>(stats.drain(now.get() + 2_000L));
+    sent.addAll(stats.drainAll());
+    assertThat(sqlCount(sent)).isEqualTo(13);
+    assertThat(stats.windowsDropped()).isZero();
+
+    // Bounded while the flush runs: 41 windows without a drain keep the newest 16.
+    for (int w = 0; w < 40; w++) {
+      stats.recordSql(Kind.HTTP, 1, 1, MS, false);
+      now.addAndGet(10_000L);
+    }
+    stats.recordSql(Kind.HTTP, 1, 1, MS, false);
+    assertThat(stats.estimatedBytes() / cellBytes).isEqualTo(StatsAggregator.MAX_LINKED_WINDOWS);
+    assertThat(sqlCount(stats.drainAll())).isEqualTo(StatsAggregator.MAX_LINKED_WINDOWS);
+    assertThat(stats.windowsDropped()).isEqualTo(41 - StatsAggregator.MAX_LINKED_WINDOWS);
+  }
+
+  @Test
+  @DisplayName(
+      "T-AG-061 a flush whose first drain comes late (12 windows of the test clock before it, within"
+          + " 30 s of real time) loses no window")
+  void lateFirstDrainLosesNothing() {
+    AtomicLong nanos = new AtomicLong(0L);
+    StatsAggregator stats = new StatsAggregator(10, 5000, 1000, now::get, nanos::get);
+    for (int w = 0; w < 12; w++) {
+      stats.recordSql(Kind.HTTP, 1, 1, MS, false);
+      now.addAndGet(10_000L);
+      nanos.addAndGet(1_000_000L);
+    }
+    stats.recordSql(Kind.HTTP, 1, 1, MS, false);
+    List<StatBatch> sent = new ArrayList<StatBatch>(stats.drain(now.get() + 2_000L));
+    sent.addAll(stats.drainAll());
+    assertThat(sqlCount(sent)).isEqualTo(13);
+    assertThat(stats.windowsDropped()).isZero();
+  }
+
+  @Test
+  @DisplayName(
+      "T-AG-061 a flush whose last drain began 30 s ago (real time) no longer counts as running: the"
+          + " bound of 8 linked windows applies again")
+  void stoppedFlushBoundsWindowsAgain() {
+    AtomicLong nanos = new AtomicLong(0L);
+    StatsAggregator stats = new StatsAggregator(10, 5000, 1000, now::get, nanos::get);
+    assertThat(stats.drain(now.get())).isEmpty();
+    nanos.set(StatsAggregator.FLUSH_ALIVE_NANOS);
+    for (int w = 0; w < 40; w++) {
+      stats.recordSql(Kind.HTTP, 1, 1, MS, false);
+      now.addAndGet(10_000L);
+    }
+    stats.recordSql(Kind.HTTP, 1, 1, MS, false);
+    assertThat(sqlCount(stats.drainAll())).isEqualTo(StatsAggregator.MAX_ATTACHED_WINDOWS);
+    assertThat(stats.windowsDropped()).isEqualTo(41 - StatsAggregator.MAX_ATTACHED_WINDOWS);
   }
 
   @Test

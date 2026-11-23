@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.LongSupplier;
 
 /**
  * The full statistics of SQL executions and outgoing calls (10 §9.3, F-A22, D-12): every execution
@@ -47,8 +48,10 @@ import java.util.concurrent.locks.LockSupport;
  * <p><b>Bounds</b> (10 §14): at most {@code stats.max-keys} (5,000) SQL keys and {@value
  * #MAX_EXT_KEYS} EXT keys per window; a record of a key beyond the cap is added to the overflow key
  * of its kind (id 0) and counted in {@code argos_agent_stats_overflow_total{kind="sql|ext"}}
- * ({@link #counters()}). At most three windows are alive at once: the current one and the ones
- * waiting for their flush.
+ * ({@link #counters()}). With the flush running every second, about three windows are alive at
+ * once: the current one and the ones waiting for their flush. The linked windows are bounded
+ * ({@link #trim}): {@value #MAX_ATTACHED_WINDOWS} when no flush runs, {@value #MAX_LINKED_WINDOWS}
+ * while a running flush has fallen behind.
  *
  * <p><b>Flush</b> ({@code argos-metrics}, {@link #drain}): a window is detached {@value
  * #DETACH_GRACE_MS} ms after its end (a record that read the clock before the end still finds it
@@ -99,6 +102,18 @@ public final class StatsAggregator implements CounterSource {
   /** Windows kept linked when no flush unlinks them ({@link #trim}). */
   static final int MAX_ATTACHED_WINDOWS = 8;
 
+  /**
+   * Windows kept linked while the flush runs but has fallen behind ({@link #trim}): a flush thread
+   * that was not scheduled for a moment loses no window, the memory stays bounded (10 §14).
+   */
+  static final int MAX_LINKED_WINDOWS = 2 * MAX_ATTACHED_WINDOWS;
+
+  /**
+   * The flush counts as running when its last {@link #drain} began less than this long ago (real
+   * time; {@code argos-metrics} drains every second).
+   */
+  static final long FLUSH_ALIVE_NANOS = 30_000_000_000L;
+
   // SQL cell layout.
   static final int SQL_COUNT = 0;
   static final int SQL_ERRORS = 1;
@@ -138,7 +153,15 @@ public final class StatsAggregator implements CounterSource {
   private final int maxSqlKeys;
   private final int maxExtKeys;
   private final Clock clock;
+  private final LongSupplier ticker;
   private final AtomicReference<Window> current;
+
+  /**
+   * {@link #ticker} time of the last {@link #drain} start, at first the creation: a flush that
+   * starts within {@link #FLUSH_ALIVE_NANOS} of the creation counts as running from the start.
+   */
+  private volatile long lastDrainNanos;
+
   private final LongAdder sqlOverflow = new LongAdder();
   private final LongAdder extOverflow = new LongAdder();
   private final LongAdder windowsDropped = new LongAdder();
@@ -153,13 +176,29 @@ public final class StatsAggregator implements CounterSource {
    * @param clock the wall clock
    */
   public StatsAggregator(int windowSeconds, int maxSqlKeys, int maxExtKeys, Clock clock) {
+    this(windowSeconds, maxSqlKeys, maxExtKeys, clock, null);
+  }
+
+  /** Tests: {@code ticker} replaces {@link System#nanoTime()} for the flush liveness of trim. */
+  StatsAggregator(
+      int windowSeconds, int maxSqlKeys, int maxExtKeys, Clock clock, LongSupplier ticker) {
     this.windowSeconds = Math.max(1, windowSeconds);
     this.windowMs = this.windowSeconds * 1000L;
     this.maxSqlKeys = Math.max(1, maxSqlKeys);
     this.maxExtKeys = Math.max(1, maxExtKeys);
     this.clock = clock == null ? SYSTEM : clock;
+    this.ticker = ticker == null ? NANO_TIME : ticker;
+    this.lastDrainNanos = this.ticker.getAsLong();
     this.current = new AtomicReference<Window>(new Window(start(this.clock.currentTimeMillis())));
   }
+
+  private static final LongSupplier NANO_TIME =
+      new LongSupplier() {
+        @Override
+        public long getAsLong() {
+          return System.nanoTime();
+        }
+      };
 
   /** The defaults: 10 s windows, 5,000 SQL and 1,000 EXT keys, the system clock. */
   public StatsAggregator() {
@@ -312,18 +351,24 @@ public final class StatsAggregator implements CounterSource {
   }
 
   /**
-   * Keeps at most {@value #MAX_ATTACHED_WINDOWS} windows linked from {@code head}. The flush of
-   * {@code argos-metrics} unlinks ended windows every second, so this cut only matters when no
-   * flush runs (the thread did not start): the windows beyond the bound are then let go instead of
-   * growing without bound (10 §14). Each window let go counts once in {@code
-   * argos_agent_stats_windows_dropped_total} (C-229 (7)); a window the flush collected before is
-   * not counted ({@link Window#claimed}). Only in a race with a flush that is collecting the same
-   * chain can a window be counted and still be sent; no record is lost for the count.
+   * Keeps at most {@value #MAX_ATTACHED_WINDOWS} windows linked from {@code head} when no flush
+   * runs (no {@link #drain} began within {@link #FLUSH_ALIVE_NANOS}, counted from the creation
+   * until the first one), {@value #MAX_LINKED_WINDOWS} while it runs. The flush of {@code
+   * argos-metrics} unlinks ended windows every second, so the cut only matters when no flush runs:
+   * the windows beyond the bound are then let go instead of growing without bound (10 §14). A
+   * running flush that was not scheduled for a moment (ADR-0010 C-230 (2): with a test clock that
+   * crosses a window every few hundred records, 8 windows went by in a few milliseconds and a whole
+   * window was lost) keeps its windows; they are sent at its next call. Each window let go counts
+   * once in {@code argos_agent_stats_windows_dropped_total} (C-229 (7)); a window the flush
+   * collected before is not counted ({@link Window#claimed}). Only in a race with a flush that is
+   * collecting the same chain can a window be counted and still be sent; no record is lost for the
+   * count.
    */
   private void trim(Window head) {
+    int bound = flushRunning() ? MAX_LINKED_WINDOWS : MAX_ATTACHED_WINDOWS;
     Window w = head;
     for (int depth = 1; w != null; depth++) {
-      if (depth >= MAX_ATTACHED_WINDOWS) {
+      if (depth >= bound) {
         Window cut = w.previous;
         w.previous = null;
         for (Window d = cut; d != null; d = d.previous) {
@@ -335,6 +380,11 @@ public final class StatsAggregator implements CounterSource {
       }
       w = w.previous;
     }
+  }
+
+  /** True when a {@link #drain} (or the creation) was within {@link #FLUSH_ALIVE_NANOS}. */
+  private boolean flushRunning() {
+    return ticker.getAsLong() - lastDrainNanos < FLUSH_ALIVE_NANOS;
   }
 
   /**
@@ -428,6 +478,7 @@ public final class StatsAggregator implements CounterSource {
    * first, without empty windows. One thread at a time.
    */
   public List<StatBatch> drain(long nowMs) {
+    lastDrainNanos = ticker.getAsLong();
     List<StatBatch> out = new ArrayList<StatBatch>(2);
     detachEnded(nowMs);
     for (int i = 0; i < detached.size(); ) {

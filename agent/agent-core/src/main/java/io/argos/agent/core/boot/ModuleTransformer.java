@@ -14,8 +14,9 @@ import net.bytebuddy.utility.JavaModule;
 
 /**
  * Applies one {@link TypeInstrumentation} of a module (10 §5.2 steps 3-4): injects the module's
- * helpers into the type's loader, then inlines the advice. Any exception fails the transformation
- * of this type only (ByteBuddy keeps the original class, {@link
+ * helpers into the type's loader, then inlines the advice, and adds the context field of DSN-02-05
+ * when the instrumentation asked for it ({@link FieldInjector}). Any exception fails the
+ * transformation of this type only (ByteBuddy keeps the original class, {@link
  * io.argos.agent.core.guard.TransformErrorListener} counts it).
  */
 final class ModuleTransformer implements AgentBuilder.Transformer {
@@ -54,11 +55,15 @@ final class ModuleTransformer implements AgentBuilder.Transformer {
     helpers.inject(module, classLoader, protectionDomain, javaModule);
     Applier applier = new Applier(builder);
     instrumentation.transform(applier);
+    if (applier.contextField && FieldInjector.eligible(typeDescription, classLoader, javaModule)) {
+      return applier.builder.visit(FieldInjector.INSTANCE);
+    }
     return applier.builder;
   }
 
   private final class Applier implements TypeTransformer {
     private DynamicType.Builder<?> builder;
+    private boolean contextField;
 
     Applier(DynamicType.Builder<?> builder) {
       this.builder = builder;
@@ -68,6 +73,15 @@ final class ModuleTransformer implements AgentBuilder.Transformer {
     public void applyAdvice(
         ElementMatcher<? super MethodDescription> methods, String adviceClassName) {
       builder = builder.visit(advices.advice(module.moduleId(), adviceClassName).on(methods));
+    }
+
+    /**
+     * DSN-02-05: the context field is added once per type, after the advice, and only where {@link
+     * FieldInjector#eligible} allows it; otherwise the task stores use their weak map.
+     */
+    @Override
+    public void injectContextField() {
+      contextField = true;
     }
   }
 }

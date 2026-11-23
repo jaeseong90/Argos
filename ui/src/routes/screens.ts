@@ -438,6 +438,7 @@ export const SCREENS: readonly ScreenDef[] = [
     menu: 'app',
     permission: 'view',
     owner: 'WO-37',
+    load: () => import('../features/instances/InstancesPage').then((m) => m.InstancesPage),
   },
   {
     id: 'instance',
@@ -448,6 +449,7 @@ export const SCREENS: readonly ScreenDef[] = [
     menu: null,
     permission: 'view',
     owner: 'WO-37',
+    load: () => import('../features/instances/InstancePage').then((m) => m.InstancePage),
   },
   {
     id: 'map',

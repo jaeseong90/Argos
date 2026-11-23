@@ -123,6 +123,8 @@ export function appBody(
     slow_threshold_ms: 1000,
     // Transaction kinds of the last 7 days (GET /apps/{appId} only; null = unknown, C-205 (4)).
     kinds: null,
+    // The application's own packages for bold stack frames (ADR-0010 C-207 (3)); none set.
+    app_packages: [],
     ...overrides,
   };
 }

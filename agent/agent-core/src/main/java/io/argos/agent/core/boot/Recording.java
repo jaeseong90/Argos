@@ -4,6 +4,7 @@ package io.argos.agent.core.boot;
 import io.argos.agent.bootstrap.AgentControl;
 import io.argos.agent.bootstrap.Tracer;
 import io.argos.agent.core.config.AgentConfig;
+import io.argos.agent.core.config.ConfigInputs;
 import io.argos.agent.core.config.LoadedConfig;
 import io.argos.agent.core.export.AgentInfo;
 import io.argos.agent.core.export.ExportWorker;
@@ -15,6 +16,7 @@ import io.argos.agent.core.trace.TraceRuntime;
 import io.argos.agent.core.trace.TracerImpl;
 import io.argos.agent.core.watch.MaxDurationEnforcer;
 import java.io.File;
+import java.lang.instrument.Instrumentation;
 import java.util.List;
 import java.util.Map;
 
@@ -32,6 +34,7 @@ final class Recording {
   private final AgentInfo info;
   private final AgentCounters counters;
   private volatile ExportWorker sender;
+  private volatile MaxDurationEnforcer maxDurationEnforcer;
 
   private Recording(
       TraceRuntime runtime, AgentConfig config, AgentInfo info, AgentCounters counters) {
@@ -78,11 +81,21 @@ final class Recording {
 
   /**
    * The {@code transaction.max-duration-ms} task of {@code argos-watch} over this runtime's active
-   * registry (WO-12, 10 §6.7, §13.1).
+   * registry (WO-12, 10 §6.7, §13.1); one instance, so that a remote change of the key reaches the
+   * running task (WO-17).
    */
   MaxDurationEnforcer maxDurationEnforcer() {
-    return new MaxDurationEnforcer(
-        runtime.activeRegistry(), runtime.tracerImpl(), null, config.transactionMaxDurationMs());
+    MaxDurationEnforcer enforcer = maxDurationEnforcer;
+    if (enforcer == null) {
+      enforcer =
+          new MaxDurationEnforcer(
+              runtime.activeRegistry(),
+              runtime.tracerImpl(),
+              null,
+              config.transactionMaxDurationMs());
+      maxDurationEnforcer = enforcer;
+    }
+    return enforcer;
   }
 
   /** The 18 §19 gauges of the runtime ({@code TraceRuntime.selfValues()}). */
@@ -99,25 +112,32 @@ final class Recording {
    * P7: starts {@code argos-sender}; the after-premain work and the exporter (the gRPC transport by
    * default, WO-11) run on that thread, never on the premain thread (C-79). {@code loaded} gives
    * the transport the effective token and the configuration hash, {@code modules} the module ids of
-   * {@code AgentHello}, {@code diagnostics} the place for its self metrics.
+   * {@code AgentHello}, {@code diagnostics} the place for its self metrics. {@code inst}, {@code
+   * control}, {@code inputs} and {@code moduleNames} (module id to the name of an installed module)
+   * are the parts of the remote control that the transport builds on {@code argos-sender} (WO-17).
    */
   void startSender(
       File logDirectory,
       LoadedConfig loaded,
       List<String> modules,
-      SelfDiagnosticsCollector diagnostics) {
+      SelfDiagnosticsCollector diagnostics,
+      Instrumentation inst,
+      AgentControl control,
+      ConfigInputs inputs,
+      String[] moduleNames) {
     ExportWorker worker =
         new ExportWorker(
             runtime,
             new ExporterContext(
-                config,
-                runtime.dictionary(),
-                info,
-                loaded,
-                counters,
-                runtime,
-                modules,
-                diagnostics),
+                    config,
+                    runtime.dictionary(),
+                    info,
+                    loaded,
+                    counters,
+                    runtime,
+                    modules,
+                    diagnostics)
+                .remoteControl(inst, control, inputs, moduleNames, maxDurationEnforcer()),
             logDirectory,
             config.senderBatchSize(),
             config.senderFlushIntervalMs());

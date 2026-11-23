@@ -79,6 +79,11 @@ argos.collector.stale-after	duration	1m
 argos.collector.tls.cert-file	string	conf/tls/server.crt
 argos.collector.tls.enabled	boolean	true
 argos.collector.tls.key-file	string	conf/tls/server.key
+argos.commands.keep-per-instance	int	100
+argos.commands.max-inflight-per-instance	int	1
+argos.commands.max-per-minute-per-instance	int	10
+argos.commands.result-timeout	duration	2m
+argos.commands.ttl	duration	1m
 argos.instance.archive-after	duration	7d
 argos.instance.purge-after	duration	30d
 argos.jwt-key	string	(none)

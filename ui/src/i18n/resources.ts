@@ -2,8 +2,10 @@
 import type enActive from '../locales/en/active.json';
 import type enAlerts from '../locales/en/alerts.json';
 import enAuth from '../locales/en/auth.json';
+import type enCommands from '../locales/en/commands.json';
 import enCommon from '../locales/en/common.json';
 import type enDashboard from '../locales/en/dashboard.json';
+import type enInstance from '../locales/en/instance.json';
 import type enOverview from '../locales/en/overview.json';
 import enShell from '../locales/en/shell.json';
 import type enStats from '../locales/en/stats.json';
@@ -58,6 +60,8 @@ interface LazyCatalogs {
   stats: typeof enStats;
   active: typeof enActive;
   alerts: typeof enAlerts;
+  instance: typeof enInstance;
+  commands: typeof enCommands;
 }
 
 /** Screen namespaces, loaded with the route that renders them (routeNamespaces.ts). */
@@ -72,6 +76,8 @@ export const lazyNamespaces = [
   'stats',
   'active',
   'alerts',
+  'instance',
+  'commands',
 ] as const satisfies readonly LazyNamespace[];
 
 /** English source catalogs of every namespace: the typed keys of i18next.d.ts. */

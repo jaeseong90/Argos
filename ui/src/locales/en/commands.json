@@ -1,0 +1,259 @@
+{
+  "type": {
+    "thread_dump": "Thread dump",
+    "thread_stack": "Single thread stack",
+    "self_diagnosis": "Self diagnosis",
+    "reload_config": "Reload configuration",
+    "env_dump": "Environment dump",
+    "unknown": "Other command"
+  },
+  "impact": {
+    "thread_dump": "The agent pauses the application's threads briefly (usually a few milliseconds, longer with thousands of threads) to record every thread's state, locks and up to 64 frames.",
+    "thread_stack": "The agent records one thread's state, locks and up to 64 frames. The application is not paused.",
+    "self_diagnosis": "The agent reports its own health: memory and CPU use, dropped data, module states and its effective configuration. The application is not affected.",
+    "reload_config": "The agent re-reads its local configuration file. Keys that can change at runtime take effect at once; the others need a restart.",
+    "env_dump": "The agent sends the JVM arguments, environment variables and system properties. Values of secret-like keys are masked by the agent before they leave the server."
+  },
+  "visibility": {
+    "thread_dump": "Only you and administrators can read the result. It is stored encrypted for 30 days and every view is audited.",
+    "thread_stack": "Only you and administrators can read the result. It is stored encrypted for 30 days and every view is audited.",
+    "self_diagnosis": "Only you and administrators can read the full report. It is stored encrypted for 30 days.",
+    "reload_config": "Only administrators can read the result. The request is audited.",
+    "env_dump": "Only administrators can read the result. It is stored encrypted for 30 days and every view is audited."
+  },
+  "status": {
+    "queued": "Waiting to be sent",
+    "sent": "Sent, waiting for the agent",
+    "done": "Done",
+    "failed": "Failed",
+    "expired": "Expired",
+    "unknown": "Unknown state",
+    "withReason": "{{status}}: {{reason}}"
+  },
+  "reason": {
+    "ttl": "not sent within 60 s (the instance's session was busy or gone)",
+    "timeout": "no complete result within 120 s",
+    "session_ended": "the instance's session ended",
+    "rejected": "the agent refused it (disabled by its configuration)",
+    "cooldown": "the agent asks to wait before running it again",
+    "agent_failed": "the agent could not run it",
+    "agent_expired": "the agent dropped it as expired",
+    "invalid_result": "the agent's result could not be read",
+    "unknown": "reason not known to this version"
+  },
+  "error": {
+    "instance_offline": "The instance is not connected. Commands can be sent only while its agent is online.",
+    "busy": "Another command of this instance is running. Wait until it ends and try again.",
+    "rate_limited": "Too many commands for this instance. Wait a minute and try again.",
+    "rate_limitedWait": "Too many commands for this instance. Try again in {{seconds, number}} s.",
+    "secret_unavailable": "The server has no master key, so command results cannot be stored. Ask an administrator to configure it.",
+    "forbidden": "Your role cannot run or read this command.",
+    "not_owner": "Only the user who requested this command and administrators can read it.",
+    "not_found": "The command no longer exists.",
+    "no_result": "The command has no result.",
+    "network": "The server could not be reached. Check the connection and try again.",
+    "other": "The request failed. Try again; if it keeps failing, check the server log."
+  },
+  "run": {
+    "requesting": "Sending the request…",
+    "noAnswer": "No answer from the agent in time. Check the history for its final state."
+  },
+  "tab": {
+    "run": "Run a command",
+    "viewerNotice": "Running commands and reading their history needs the operator role.",
+    "offlineHint": "The instance is not connected now: a command will be refused until its agent is online.",
+    "limits": "One command at a time per instance, at most 10 per minute. A command not sent within 60 s expires."
+  },
+  "dialog": {
+    "title": "Run {{command}}?",
+    "cancel": "Cancel",
+    "confirm": "Run",
+    "stackTarget": "Thread to record",
+    "tx_id": "Transaction ID",
+    "thread_id": "Thread ID",
+    "argHint": "Digits only. A transaction ID records the thread that runs it now.",
+    "digitsOnly": "Enter digits only (at most 20)."
+  },
+  "history": {
+    "title": "Command history",
+    "caption": "Commands of this instance, newest first",
+    "auditNote": "This history is the audit trail of the instance's commands: who asked, when, how long it took and what came back. Every request and every result view is also an audit record.",
+    "auditLink": "Open in audit log",
+    "operatorOnly": "The command history is shown to operators and administrators.",
+    "type": "Command",
+    "requester": "Requested by",
+    "requesterUnknown": "The server did not send the user name.",
+    "requestedAt": "Requested at",
+    "duration": "Duration",
+    "size": "Result size",
+    "status": "Status",
+    "result": "Result",
+    "truncated": "Truncated",
+    "truncatedTitle": "The result reached the size limit (1 MiB) and was cut.",
+    "open": "Show result",
+    "openDump": "Open in dump viewer",
+    "notYours": "Requester and administrators only",
+    "empty": "No command was run on this instance.",
+    "emptyHint": "Run a command above; its request and result appear here."
+  },
+  "result": {
+    "title": "Result: {{command}}",
+    "close": "Close",
+    "truncated": "The result was cut at the size limit. The end is missing.",
+    "raw": "The result is not in the expected format; it is shown as the agent sent it.",
+    "rawLabel": "Raw result",
+    "key": "Key",
+    "value": "Value",
+    "other": "Other fields",
+    "entries_one": "{{section}} ({{count, number}})",
+    "entries_other": "{{section}} ({{count, number}})",
+    "noEntries": "{{section}}: none reported."
+  },
+  "latest": {
+    "title": {
+      "env_dump": "Environment variables, system properties and JVM options",
+      "self_diagnosis": "Latest self diagnosis"
+    },
+    "adminOnly": "Administrator permission required. Environment variables, system properties and JVM options are shown to administrators only.",
+    "operatorOnly": "Running a self diagnosis and reading its full report needs the operator role. The agent health summary above is public.",
+    "empty": {
+      "env_dump": "No environment dump yet. Run one to see the instance's environment (values of secret-like keys come masked).",
+      "self_diagnosis": "No self diagnosis that you can read yet. Run one to see the agent's own health and where each setting comes from."
+    },
+    "asOf": "As of {{at}}",
+    "by": "by",
+    "run": "Run now",
+    "refresh": "Run again",
+    "newerUnreadable": "Another user ran a newer one. Only its requester and administrators can read it.",
+    "show": {
+      "env_dump": "Show the latest environment dump",
+      "self_diagnosis": "Show latest self-diagnosis"
+    },
+    "showHint": "Viewing a result is recorded in the audit log."
+  },
+  "selfDiagnosis": {
+    "gauges": "Agent health",
+    "noGauges": "The agent reported no measured value.",
+    "gauge": {
+      "threadlocal_contexts_live": "Live thread-local contexts",
+      "active_registry_size": "Running transactions tracked",
+      "weakmap_size": "Context store entries holding transactions",
+      "weakmap_entries": "Context store entries",
+      "agent_threads_cpu_seconds_total": "Agent threads CPU (s)",
+      "direct_memory_bytes": "Direct memory (bytes)",
+      "premain_ms": "Startup time (ms)"
+    },
+    "modules": "Instrumentation modules",
+    "noModules": "The agent reported no module.",
+    "module": "Module",
+    "moduleState": "State",
+    "moduleErrors": "Errors",
+    "moduleReason": "Reason",
+    "effectiveConfig": "Effective configuration",
+    "noConfig": "The agent reported no configuration.",
+    "source": "Source",
+    "counters": "Counters"
+  },
+  "envDump": {
+    "maskNote": "Values of secret-like keys are masked by the agent and shown as received. Argos never stores or shows the original.",
+    "masked": "masked",
+    "maskedTitle": "Masked by the agent: only the length is known.",
+    "jvmArguments": "JVM options",
+    "noJvmArguments": "The agent reported no JVM option.",
+    "env": "Environment variables",
+    "systemProperties": "System properties",
+    "truncated": "The agent cut this dump at 256 KiB: some entries are missing.",
+    "unavailable": "The JVM did not give these sections: {{sections}}.",
+    "section": {
+      "env": "environment variables",
+      "properties": "system properties",
+      "args": "JVM options"
+    }
+  },
+  "dumps": {
+    "take": "Take thread dump",
+    "compare": "Compare two dumps",
+    "compareLater": "Comparing two dumps comes in a later version.",
+    "recent_one": "Last {{count, number}} dump",
+    "recent_other": "Last {{count, number}} dumps",
+    "listEmpty": "No thread dump of this instance yet.",
+    "notYours": "Requester and administrators only",
+    "emptyTitle": "No thread dump to show.",
+    "emptyHint": "Take a thread dump to see what every thread of this instance is doing.",
+    "operatorOnly": "Thread dumps are shown to operators and administrators: they hold stack traces of the application.",
+    "notDump": "The command in the address is not a thread dump."
+  },
+  "viewer": {
+    "total_one": "{{count, number}} thread",
+    "total_other": "{{count, number}} threads",
+    "byState": "Threads by state",
+    "state": {
+      "RUNNABLE": "Runnable",
+      "BLOCKED": "Blocked",
+      "WAITING": "Waiting",
+      "TIMED_WAITING": "Timed waiting",
+      "OTHER": "Other"
+    },
+    "sectionCount_one": "{{count, number}} thread, {{stacks, number}} distinct stacks",
+    "sectionCount_other": "{{count, number}} threads, {{stacks, number}} distinct stacks",
+    "virtual": "VT",
+    "virtualTitle": "Virtual thread",
+    "virtualCount_one": "{{count, number}} virtual thread",
+    "virtualCount_other": "{{count, number}} virtual threads",
+    "deadlock": "Deadlock",
+    "deadlockBadge_one": "Deadlock: {{count, number}} cycle",
+    "deadlockBadge_other": "Deadlock: {{count, number}} cycles",
+    "deadlocks_one": "Deadlock ({{count, number}} cycle)",
+    "deadlocks_other": "Deadlocks ({{count, number}} cycles)",
+    "deadlockFromAgent": "Found by the agent (JVM deadlock detection).",
+    "deadlockFromGraph": "Inferred from the locks in the dump: each thread waits for a lock held by the next one.",
+    "waitsFor": "waits for",
+    "waitingOn": "waiting on",
+    "locksHeld": "Holds",
+    "locks_one": "Lock waited for ({{count, number}})",
+    "locks_other": "Locks waited for ({{count, number}})",
+    "lock": "Lock",
+    "holder": "Held by",
+    "waiters": "Waiting threads",
+    "noHolder": "Holder not in the dump",
+    "moreLocks_one": "{{count, number}} more lock not shown.",
+    "moreLocks_other": "{{count, number}} more locks not shown.",
+    "transactions_one": "Thread running a transaction ({{count, number}})",
+    "transactions_other": "Threads running a transaction ({{count, number}})",
+    "snapshotNote": "As of the dump: the transaction may have ended since, and its detail appears once it is collected.",
+    "openTransaction": "Open transaction",
+    "openTransactionId": "Transaction {{txId}}",
+    "search": "Search threads",
+    "searchPlaceholder": "Thread name, class or method",
+    "searchCount": "{{count, number}} of {{total, number}} threads match",
+    "noMatch": "No thread matches the search.",
+    "noThreads": "The dump has no thread.",
+    "download": "Download .txt",
+    "truncated": "The dump reached the size limit (1 MiB) and was cut: some threads are missing. Download the full file to see what was kept.",
+    "depthCut": "Some stacks reached the agent's limit of {{count, number}} frames and are cut at the bottom. Download the full file for the text as recorded.",
+    "depthCutBadge": "{{count, number}} frames (cut)",
+    "sameStackTitle": "Threads with this same stack",
+    "threads": "Threads",
+    "moreNames_one": "Show {{count, number}} more",
+    "moreNames_other": "Show {{count, number}} more",
+    "fewerNames": "Show fewer",
+    "moreStacks_one": "Show {{count, number}} more stack",
+    "moreStacks_other": "Show {{count, number}} more stacks",
+    "frames_one": "Stack, {{count, number}} frame",
+    "frames_other": "Stack, {{count, number}} frames",
+    "noFrames": "No frames recorded.",
+    "threadId": "ID {{id}}"
+  },
+  "stack": {
+    "title": "This thread's stack",
+    "none": "The agent returned no thread.",
+    "frames_one": "Stack, {{count, number}} frame",
+    "frames_other": "Stack, {{count, number}} frames",
+    "depthCut": "The stack reached the agent's limit of {{count, number}} frames and is cut at the bottom.",
+    "match": {
+      "match": "The thread runs transaction {{txId}}.",
+      "other": "The thread no longer runs transaction {{txId}}: it has moved on to another one.",
+      "unknown": "The agent did not report which transaction the thread runs; it may have finished {{txId}}."
+    }
+  }
+}

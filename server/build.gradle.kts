@@ -171,12 +171,22 @@ tasks.named<Test>("test") {
     .file(layout.settingsDirectory.file("deploy/compose/argos-compose.sh"))
     .withPathSensitivity(PathSensitivity.RELATIVE)
     .withPropertyName("composeTokenCreateScript")
+  // AgentKeySchemaDocTest compares the server-side remote config key schema with the agent key
+  // reference (T-SV-042k, WO-26).
+  inputs
+    .file(layout.settingsDirectory.file("docs/agent-config.md"))
+    .withPathSensitivity(PathSensitivity.RELATIVE)
+    .withPropertyName("agentConfigReference")
 }
 
 tasks.named<Test>("integrationTest") {
   // One Docker-heavy class at a time: the machine is shared (each test class starts PostgreSQL and
   // ClickHouse, <= 5 GiB per container).
   maxParallelForks = 1
+  // One JVM runs every class: Gradle's default 512 MiB ran out of heap once the WO-26 classes were
+  // added (Spring contexts of finished classes stay reachable until the JVM ends; a follow-up
+  // finds what holds them), so the test JVM gets 1.5 GiB.
+  maxHeapSize = "1536m"
   // T-SV-002 (V001 + 1/100 generator data, then the next-version fixture scripts) is a nightly test
   // (ADR-0010 C-100): it runs only with -Pserver.nightly=true and is reported as skipped otherwise.
   // The nightly job itself is WO-50.

@@ -112,6 +112,23 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
 ./gradlew :agent:agent-testing:integrationTest -Pagent.container=true --tests '*CgroupContainer*'
                                                   # T-AG-063 cgroup v2(Docker, --cpus 1.5 --memory 512m, 약 40초): Hello cgroup=v2, container_cpu_limit_cores 1.5,
                                                   # container_memory_limit_bytes = system_memory_total_bytes = 512 MiB, [wo16-cgroup]. 실제 cgroup v1 호스트는 WO-50 매트릭스(사람 확인)
+./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot3@21,shop-boot4@21 --tests '*async*'
+                                                  # 비동기 전파·가상 스레드 스위트(WO-15, 패키지 io.argos.agent.testing.async, 기본 integrationTest에도 포함되며 기본은 shop-boot3@21):
+                                                  # 샘플 앱 /api/async/executor?work=sql(@Async·supplyAsync·STPE·앱 TPE·JDK 21+ newVirtualThreadPerTaskExecutor 갈래마다 SQL 1개)과 work=detached,
+                                                  # T-AG-051m/n(remove·cancel 보존, ThreadPerTaskExecutor), T-AG-052g~j(트랜잭션마다 비동기 SQL step = asyncSql·sql_count, ASYNC step 아래, 풀 스레드 오염 0),
+                                                  # Boot 3/4 + JDK 21 이상이면 SAMPLE_VT 실행을 더한다: T-AG-054m~q(트랜잭션 수 = 플랫폼, U-16 tomcat-handler-, VT 2,000요청 뒤 THREAD 사전 1개, 액티브 VT),
+                                                  # T-ACC-23m/n(VT는 cpu·alloc 필드 없음). 조합마다 변환 베이스라인(<app>-<jdk>[-vt].txt) 확인. 이 노트북 shop-boot3@21 약 1.5분(앱 2회 기동),
+                                                  # 8조합 약 4분. 베이스라인 재녹화는 SampleAppAgentTest와 같은 파일을 쓰므로 한 실행에 함께: --tests '*async*' --tests '*SampleAppAgentTest*' -Pagent.baseline.record=true.
+                                                  # 결과 줄 [wo15-sql]·[wo15-leak]·[wo15-batch]·[wo15-vt]·[wo15-baseline]은 결과 XML system-out, 로그 build/reports/agent-e2e/wo15-*
+./gradlew :agent:agent-core:testJdk21 :agent:agent-core:testJdk25   # 이름에 VirtualThread가 든 agent-core 단위 테스트(U-1 VT CPU·alloc -1, T-AG-054·T-ACC-23)를 JDK 21·25에서(check 포함).
+                                                  # executor 모듈은 test(JDK 8)·testJdk11·17·21·25로 실제 JDK 클래스에 모듈을 설치해 검사한다(U-12 witness, check 포함)
+./gradlew :agent:agent-testing:integrationTest -Pagent.attach.jdks=8,11,17,21,25 -Pagent.e2e=shop-boot2@8,shop-boot3@21,shop-boot3@25 --tests 'io.argos.agent.testing.command.*' --tests 'io.argos.agent.testing.remoteconfig.*'
+                                                  # 원격 명령·원격 설정·킬 스위치 스위트(WO-17, 기본 integrationTest에도 포함되며 기본은 부착 JDK 8·21·shop-boot3@21). command: CommandRoundTripTest(5종·청크 결합·COOLDOWN·
+                                                  # 미지 타입 REJECTED·TTL 수신 기준·CONFIG_RELOAD), EnvDumpSeedTest(T-AG-072·T-SEC-20 센티널 0), ThreadDumpVirtualTest(T-AG-054 덤프 항목: shop-boot3@21+ SAMPLE_VT,
+                                                  # 10 U-2: -Pagent.attach.jdks마다 dumpThreads yes|no), SelfDiagCommandE2eTest(C-95 파일 = 명령). remoteconfig: RemoteConfigE2eTest(T-AG-069·T-SEC-23·N-25 에이전트 몫, shop 항목마다),
+                                                  # KillSwitchRemoteTest(T-AG-043·C-231 (4) Hello config), RetransformLimitTest(T-AG-046), CustomMethodPolicyE2eTest(T-SEC-25). 이 노트북 위 조합 약 8.5분(에이전트 jar 빌드 후).
+                                                  # 결과 줄 [wo17-u2]·[wo17-n25]·[wo17-vt]·[wo17-env]·[wo17-selfdiag]·[wo17-roundtrip]·[wo17-retransform]·[wo17-killswitch]는 결과 XML system-out, 로그 build/reports/agent-e2e/wo17-*.
+                                                  # C-233 (6) VT 첫 DBC 대상: --tests '*VirtualThreadDbTargetTest'(약 40초, [c233]). 서버 왕복은 pnpm -C ui e2e:stack --grep "WO-17"
 ./gradlew :agent:agent-testing:integrationTest --tests '*transport*' -Pagent.jdk8u252=<JRE> -Pagent.jdk8u242=<JRE>
                                                   # gRPC 전송(WO-11) 대 FakeCollector: T-AG-071·067, T-ACC-02a·06a, T-SEC-06·07a·08c, T-NFR-26a, C-74 증명(T-BLD-004a), C-75, T-BLD-011·011a(실행 시점 프록시 미사용),
                                                   # 세션 반응(ConnectionTransportTest: 백오프당 TCP 접속·DNS 조회 1회, 해석 불가 주소 WARN 분당 1회, 영구 거부·REPLACED 뒤 연결·argos-io 해제, Ack.throttle).
@@ -135,6 +152,9 @@ java -jar server/build/libs/argos-server-<버전>.jar admin consistency check --
                                                   # 종료 코드 0 롤업 불일치 없음, 1 남음·실패, 2 인자 오류(D-12는 종료 코드에 반영 안 함)
 java -jar server/build/libs/argos-server-<버전>.jar admin apdex reapply --app <id> [--service <unsigned id>] --from <d> --to <d> [--json]
                                                   # Apdex T 소급(D-17, 수동 실행만): 원본 보존 기간 안의 xlog.apdex_t_ms를 현재 T(앱·서비스 오버라이드)로 뮤테이션(mutations_sync=2)한 뒤 그날들을 재구축. 최대 400일
+java -jar server/build/libs/argos-server-<버전>.jar admin token create --app <name> --env <env> [--expires-days <n>] [--actor <name>] [--json]
+                                                  # 에이전트 토큰 발급(WO-26, C-173 (4)): 서버 TokenService로(앱이 없으면 생성, 앱당 활성 5개, SHA-256 해시 + 14자 접두사만 저장, 감사 TOKEN_ISSUED),
+                                                  # 기본 만료 365일(1~3650). 토큰은 stdout에 1회. 종료 코드 0 성공, 1 실패, 2 인자 오류, 4 활성 토큰 한도. argos-compose.sh token create가 서버 컨테이너 안에서 이것을 실행
 ./gradlew :server:integrationTest                 # 서버 기동 순서·설정·관리 포트·PG/CH 마이그레이션·DB 권한(실제 PostgreSQL 16·ClickHouse 26.8, Testcontainers),
                                                   # WO-21 수집 경로(collector·ingest·e2e: FakeAgent → gRPC → WAL → ClickHouse, T-SV-010은 bootJar 자식 JVM 강제 종료 2회,
                                                   # T-ACC-13 (c) ClickHouse 3분 중단 2종(ingest 수준·gRPC 종단) 포함, WO-23 조회 API 포함 약 22분. bootJar를 먼저 빌드한다).
@@ -172,6 +192,12 @@ java -jar server/build/libs/argos-server-<버전>.jar admin apdex reapply --app 
                                                   # AlertsApiIT(/alerts REST·대시보드·overview firing 실값·channel_failures_24h). 가짜 수신기는 testFixtures io.argos.server.testing.alert의 FakeWebhookReceiver(HTTP/HTTPS·302·500·지연)·
                                                   # FakeSmtpServer(STARTTLS 켜기/끄기)·TestTls·TestMasterKey(실행 시 생성 0600 키 파일 → argos.master-key-file). 개발 빌드 전용 키 argos.testing.notify-retry-delays(재시도 1s/5s/30s 단축)·
                                                   # argos.testing.alert-ca-file(시험 CA 신뢰), 루프백 수신기는 argos.alert.webhook.allow-cidrs[0]=127.0.0.1/32. 외부 Slack·SMTP는 호출하지 않는다
+                                                  # WO-26 토큰·명령·설정 변경·앱 관리: --tests 'io.argos.server.admin.*'(약 6분) = TokenLifecycleIT(T-SV-040 발급 → FakeAgent 세션 → 회전 유예 → 폐기 ≤ 5초
+                                                  # UNAUTHENTICATED → 재접속 거부, 만료 잡, T-SV-040j argos-admin token create), CommandRoutingIT(T-SV-041 FakeAgent 스레드 덤프 왕복·PG body_enc 봉투·청크 조립·
+                                                  # 동시 1건·세션 종료 expired), ConfigChangeIT(T-SV-042 applied/rejected/offline/pending·다음 ServerHello.config·revert·drift·감사),
+                                                  # ConfigPushScaleIT(T-SV-031 FakeAgent 50개 설정·킬 스위치 결과 집계 ≤ 10초, [T-SV-031] 줄, 노트북 값은 참고), ApprovalQueueIT(승인 대기 API).
+                                                  # --tests '*AppsAdminIT' --tests '*EventsWriteIT' --tests '*SelfSessionsIT'(약 1분): 앱 생성·수정·삭제·app_packages·서비스 Apdex 오버라이드,
+                                                  # POST/DELETE /events(쿠키 또는 앱 토큰 Bearer), 내 세션 목록·종료·사용자 삭제. 실제 에이전트의 명령·ConfigPush 왕복은 WO-17 몫(FakeAgent 훅 onCommand·onConfigPush)
 ./gradlew :server:generateOpenApi                 # docs/api/openapi.yaml 재생성(생성본, 손 편집 금지, C-28). 컨트롤러·DTO를 바꾸면 돌리고 함께 커밋한다(빌드 버전과 무관, info.version v1).
                                                   # :server:contractTest(check 포함)가 커밋본 = 생성본, 14 §2.9 린트(JUnit, Spectral 없음, C-151), 저장소 조회 operation의 x-argos-limits,
                                                   # 커밋본 스펙의 권한 매트릭스(T-API-010), oasdiff 네거티브(T-API-002, Docker)를 검사한다. 서버 jar를 다시 만들 수 있어 서버 통합 실행 중에는 돌리지 않는다.
@@ -190,15 +216,17 @@ java -jar server/build/libs/argos-server-<버전>.jar admin apdex reapply --app 
 ./gradlew :server:activeFeedJar                   # 개발 전용 FakeAgent 액티브 피더(WO-35, 배포물 아님) → server/build/active-feed/active-feed.jar + lib/. 액티브 E2E의 전제
                                                   # (실제 에이전트의 ActiveTransactionSnapshot은 WO-16 몫). 앱 e2e-active·인스턴스 2개로 실제 수집기에 5초마다 스냅샷을 보낸다.
                                                   # java -jar <jar> --target H:P --token-file T --instances 2 --ready-file F [--duration s] [--interval s] [--app] [--env]
+                                                  # [--commands](WO-37, 기본 꺼짐)이면 thread_dump(데드락·VT·64프레임·XSS 이름, 인스턴스 2는 truncated)·thread_stack·
+                                                  # self_diagnosis(실제 에이전트 형태: effective_config 맵·modules 사유)·env_dump(text/plain 구획, '****(len=27)', 원문 센티널 없음)·reload_config에 결정적으로 응답(C-234 (1))(E2E 픽스처 e2e/fixtures/commandFeed.ts, 앱 e2e-cmd)
 ./gradlew :server:jibDockerBuild                  # 로컬 이미지 argos-server:<버전>(linux/amd64, 베이스 다이제스트 고정, user 10001:10001, HOME=/data, 포트 8080·9100, UI 포함.
-                                                  # -Pargos.ui.skip=true면 UI 없음). Jib은 구성 캐시 미호환. 서버 jar를 다시 만들므로 .gradle/argos-locks/server-it를 잡고 돈다.
+                                                  # -Pargos.ui.skip=true면 UI 없음). Jib은 구성 캐시 미호환. 서버 jar를 다시 만들므로 server-it 락 안에서 돌린다(test/lock/argos-lock.sh run).
                                                   # /data·/data/tmp·/logs는 이미지에서 10001:10001 0700이라 새 named volume은 준비가 필요 없다(bind mount만 chown, server/README.md)
 bash deploy/compose/test/run-all.sh               # Compose 설치 스크립트 테스트(Docker, 약 50초): env-init을 Ubuntu·Alpine·Debian 컨테이너에서(권한·길이·금지 목록·종료 코드·
-                                                  # RAM 8/16/32GB 스냅샷·--force 거부), argos-compose.sh(미제공 명령 거부·up 사전 검사·token create 입력 상한·SAN 예시),
+                                                  # RAM 8/16/32GB 스냅샷·--force 거부), argos-compose.sh(미제공 명령 거부·up 사전 검사·token create 입력 상한·서버 컨테이너 exec 경로(가짜 docker)·SAN 예시),
                                                   # smoke.sh 판정 로직과 변이(5432 게시·.env 0644 등), compose 파일(다이제스트 = image.properties, 포트 집합, 프록시 XFF·INTERNALPROXIES, .env.example)
 ./gradlew :deploy:composeSmoke                    # Compose 종단 스모크(WO-40, Docker, check 미포함, 약 3.5분 + 이미지 빌드): jibDockerBuild → env-init → up --wait → smoke.sh
-                                                  # → token create + 실제 에이전트(shop-boot3, TLS) 적재 → 5개 상한 → ARGOS_MGMT_EXPOSE 변형 → down -v, 마법사·무인 두 모드와 금지 비밀번호 기동 거부.
-                                                  # server-it 잠금을 잡고, 호스트 포트 8080·9100을 쓴다(프로젝트 argos-wo40-smoke, 컨테이너 ≤ 6GiB 상한). -Pcompose.smoke.modes=wizard|unattended,
+                                                  # → token create(서버 컨테이너 안 argos-admin, WO-26) + 실제 에이전트(shop-boot3, TLS) 적재 → 5개 상한 → ARGOS_MGMT_EXPOSE 변형 → down -v, 마법사·무인 두 모드와 금지 비밀번호 기동 거부.
+                                                  # compose-smoke.sh가 server-it 락을 스스로 잡는다(앞의 jibDockerBuild까지 묶으려면 명령 전체를 argos-lock.sh run으로 감쌈). 호스트 포트 8080·9100을 쓴다(프로젝트 argos-wo40-smoke, 컨테이너 ≤ 6GiB 상한). -Pcompose.smoke.modes=wizard|unattended,
                                                   # 진단은 ARGOS_SMOKE_KEEP_ON_FAILURE=1 bash deploy/compose/test/compose-smoke.sh. Linux Docker Engine에서는 root로(비밀값을 uid 10001에 넘김)
 deploy/compose/smoke.sh                           # 설치 상태 검사(운영자용, POSIX sh, 기본 읽기 전용): .env·secrets/ 권한, 게시 포트 {8080, 9100}(+127.0.0.1:8081), ss -ltnp, 이미지 다이제스트,
                                                   # back internal, uid 10001, health, /actuator 404, 설정 토큰 403. --complete-setup(마법사 API로 관리자 생성, 테스트 설치용),
@@ -218,6 +246,9 @@ test/storage/bench/bench-server.sh start          # 저장소 PoC 벤치용 단�
                                                   # WO-25 알림 채널(io.argos.server.security.alert): ChannelTlsSecurityTest(Docker 불필요, T-SV-035 STARTTLS·HTTPS 고정 IP·T-SEC-54 평문 SMTP 거부),
                                                   # AlertChannelSecurityTest(SecuritySuite 환경: T-SEC-51 목적지 검증 7단계·금지 대역 422 webhook_destination_blocked·리다이렉트 미추종·allow-cidrs, T-SEC-52 PG 덤프에 평문 비밀값 0·
                                                   # 마스킹 GET·이전 키 복호화, T-SEC-53 서명 회전 v1 두 개, 키 없음 409 secret_unavailable, 서버 로그에 비밀값 0)
+                                                  # WO-26(io.argos.server.security.{token,command,configchange}, 약 5분): AgentTokenSecurityTest(T-SEC-01~05 앱 범위·해시만·로그 0·no-store·만료·유예·폐기 ≤ 5초·
+                                                  # 세션 61번째·IP 인증 실패 21번째 RESOURCE_EXHAUSTED), CommandSecurityTest(T-SEC-21 3역할 × 5명령 실제 로그인 세션, T-SEC-50 타인 결과 403·UUIDv4,
+                                                  # T-SEC-22 command_results 평문·센티널 0, T-SEC-24 TTL·COOLDOWN), ConfigChangeSecurityTest(T-SEC-23 서버 측 하드 캡: 허용 밖 키는 그 인스턴스에 푸시 안 함)
                                                   # 웹 계층 스텁 매트릭스(Docker 없음)는 :server:contractTest → permission-matrix.md. 두 Gradle 실행이 같은 :server:securityTest를 동시에 돌리면 결과 파일이 깨진다
 java server/scripts/GeneratePasswordDenylist.java # 비밀번호 금지 목록 해시 재생성(개발 도구, SecLists 10k를 고정 커밋·SHA-256으로 내려받음, 출처 NOTICE)
                                                   # → server/src/main/resources/security/password-denylist.sha256. 빌드·실행 시에는 아무것도 내려받지 않는다
@@ -263,7 +294,8 @@ pnpm -C ui e2e                                    # vite build --mode perf --out
                                                   # ./gradlew :server:bootJar :agent:agent-dist:agentJar :sample-apps:shop-boot3:sampleAppJar :sample-apps:ext-stub:sampleAppJar :sample-apps:smoke:sampleAppJar
                                                   # (UI·서버 소스보다 오래된 bootJar는 거부. 출력이 같아 Gradle이 UP-TO-DATE로 두면 ./gradlew :server:bootJar --rerun).
                                                   # 재시도 0, 이 노트북 약 5.5분(스택 기동·시드 약 1분). test·Gradle check에 포함되지 않음.
-                                                  # 실서버 실행은 server-it 락. 서버 CSP 카운터는 Chromium에서 검증 불가(csp-counter-not-verifiable 주석, ui/e2e/README.md CSP 절)
+                                                  # 새 스택은 jar를 읽기 전에 server-it 락을 스스로 잡고 teardown(실패 시 포함)에서 푼다(e2e/stack/lock.ts, 대기 ARGOS_LOCK_WAIT_SECONDS 기본 1200,
+                                                  # ARGOS_E2E_STACK_URL 재사용은 락 없음). 실행은 자기 ui/e2e/.stack/<run>만 지운다. 서버 CSP 카운터는 Chromium에서 검증 불가(csp-counter-not-verifiable 주석, ui/e2e/README.md CSP 절)
 pnpm -C ui e2e:preview                            # preview 프로젝트만 / pnpm -C ui e2e:stack [--shard=i/n]: stack 프로젝트만
 pnpm -C ui e2e:stack --grep "T-E2E-08[0-9]|T-E2E-dashboard|T-E2E-common-(2|7) "   # 대시보드(WO-32) 부분 실행: dashboard.spec·required/dashboard.yaml·common 2.0-1·2.0-5
 pnpm -C ui e2e:stack --grep "T-E2E-stats|T-E2E-service-version|T-E2E-errors"   # 통계 4종(WO-36) 부분 실행(약 3분, 스택 기동·시드 포함): stats.spec·required/stats.yaml(목록·상세 값 = 같은 질문의 API, 서버 CSV,
@@ -282,6 +314,19 @@ pnpm -C ui e2e:stack --grep "T-E2E-09[0-9]|T-E2E-overview"   # 전체 현황(WO-
 pnpm -C ui e2e:stack --grep "T-E2E-active"        # 액티브 트랜잭션(WO-35) 부분 실행: active.spec·required/active.yaml(약 4.6분, 스택 기동·시드 포함, jar 5개 + :server:activeFeedJar 전제).
                                                   # beforeAll이 피더(앱 e2e-active)를 띄워 실서버 active push·REST·화면을 대조, 끊김·인스턴스 상태는 WS 스텁.
                                                   # 실데이터 테스트는 JVM 없는 e2e:docker 안에서 skip(시각 기준 active-*.png T-E2E-active-40~43만). 피더 로그 ui/e2e/.stack/<run>/logs/active-feed.log
+pnpm -C ui e2e:stack --grep "WO-17"               # 실제 에이전트 ↔ 실서버 명령·원격 설정·킬 스위치(WO-17) 부분 실행: agent-commands.spec(T-AG-054·T-SEC-24·T-AG-072·T-SEC-21·T-AG-069·T-SEC-23·T-AG-043 (stack)).
+                                                  # 호스트 JVM 21로 자체 앱 e2e-wo17(인스턴스 wo17-cmd, SAMPLE_VT·센티널 비밀값, 토큰은 psql로 만든 secrets/wo17-agent.token)을 띄워 WO-26 REST로 명령·설정 변경·킬 스위치를 보낸다.
+                                                  # jar 5개 전제, JVM 없는 e2e:docker 안에서는 전부 skip(CI 이미지 결과는 사람 확인). [wo17-n25]는 콘솔·annotation, 로그 .stack/<run>/logs/wo17-cmd-shop-boot3.log·wo17-cmd-agent/.
+                                                  # 이 노트북 시험 약 2분 + 스택 기동·시드 약 2~4분. liveShop.ts를 바꾸면 --grep "T-E2E-active|T-E2E-099|T-E2E-async"도 함께
+pnpm -C ui e2e:stack --grep "T-E2E-instance|T-E2E-053"   # 인스턴스 상세(WO-37) 부분 실행(약 3분, 스택 기동·시드 포함, jar 5개 + :server:activeFeedJar 전제): instance.spec·required/instance.yaml
+                                                  # (헤더·차트·환경 탭·링크 = 페이지가 받은 응답과 같은 질문의 API, 실제 에이전트 인스턴스 e2e-shop-1), 역할별 환경 탭은 명령 피더(앱 e2e-cmd)
+                                                  # 시각 기준 instance-*.png(T-E2E-instance-40~43)는 e2e:docker 전용. T-E2E-053·055a 플레이스홀더 대상은 /apps/:id/map
+pnpm -C ui e2e:stack --grep "T-E2E-dumps|T-E2E-active"   # 명령 탭·스레드 덤프 뷰어·액티브 행 동작(WO-37) 부분 실행(시험 약 8분 + 스택 기동·시드 2~4분): dumps.spec·required/dumps.yaml·active.spec.
+                                                  # 피더 ActiveFeed --commands(e2e/fixtures/commandFeed.ts, 앱 e2e-cmd: e2e-cmd-1 정상·e2e-cmd-2 잘린 덤프)가 실제 수집기 → PG 암호화 결과로 왕복,
+                                                  # T-E2E-dumps-30은 실제 에이전트(shop-boot3 SAMPLE_VT=true, JDK 21) 덤프. 명령마다 인스턴스 이력으로 분당 10개·동시 1개 빈자리를 기다린다(commandSlot).
+                                                  # 시각 기준 dumps-*.png(T-E2E-dumps-40·41)는 e2e:docker 전용
+pnpm -C ui e2e:stack --grep "T-E2E-05[78] "       # 설정 마법사 첫 앱 단계·내 세션(WO-26) 부분 실행(스택 기동·시드 약 4.5분 + 시험 수 초): T-E2E-057(첫 앱 등록·토큰 1회 표시·no-store·Bearer 이벤트 쓰기,
+                                                  # 끝나면 앱 삭제, /setup/status·/setup/admin만 page.route), T-E2E-058(/account 내 세션 목록·다른 세션 즉시 종료 → 그 세션 401)
 pnpm -C ui e2e:stack --grep "T-E2E-alerts|T-E2E-09[67] |T-E2E-dashboard|T-E2E-overview" # 알림 패널(WO-25) 부분 실행: 시드 (e)가 주 앱에 실제 FIRING 알림을 만들고(seed/alerts.ts, 매니페스트 alert, timings.seed_alert_s),
                                                   # T-E2E-alerts-1·2(대시보드·전체 현황 패널 = 페이지가 받은 응답, 링크 /alerts?…&alert=<event_id>)·-3(권장 템플릿 규칙 적용, 템플릿 part 중복 없음),
                                                   # T-E2E-096·097, required 2.3-5·2.10-4. 스택 서버에 마스터 키가 없어 채널은 만들지 않는다(409 secret_unavailable). 규칙 창이 1h라 재사용 스택은 적재 1시간 뒤 알림이 풀린다
@@ -298,11 +343,18 @@ pnpm -C ui e2e:stack:up && pnpm -C ui e2e:stack:down   # 시드된 스택을 띄
 pnpm -C ui perf:initial-load                      # 스택 위 초기 로드(T-NFR-14 골격, Navigation Timing 5회·CPU 부하 기록, 참고값). 같은 jar 전제
 pnpm -C ui perf                                   # vite build --mode perf --outDir build/perf-dist + XLog 프레임 시간 spec(T-NFR-14, Chrome tracing): 기본은 /xlog-poc(합성 점).
                                                   # 조용한 머신에서, 약 12~16분. XLOG_PERF_TARGET=route XLOG_PERF_SCENARIOS=static,interaction,selection이면 E2E 스택(jar 5개 전제,
-                                                  # server-it 락)의 정식 XLog 화면: 프레임 C-35 런별, 선택 계산·화면 선택(selectMs)·화면 반영(놓은 뒤 요약·목록 첫 행 프레임, GPU 포함)
+                                                  # 스택이 server-it 락을 잡음)의 정식 XLog 화면: 프레임 C-35 런별, 선택 계산·화면 선택(selectMs)·화면 반영(놓은 뒤 요약·목록 첫 행 프레임, GPU 포함)
                                                   # C-36 런별(전체 플롯·부분 선택 2변형), 10만 점 창 로드 3회. DPR 1·2 약 9분. route에서 realtime은 WS 스텁(10만 점 + 500점/s),
                                                   # XLOG_PERF_ROUTE_UNSAMPLED=1은 비표본 약 10만 점 창. 결과 ui/perf/results/xlog-frame-<runId>.md(ui/README.md "Performance, XLog screen")
 
 bash test/lint/check-spdx.sh                      # SPDX 헤더 전수(T-BLD-007)
+bash test/lock/argos-lock.sh run server-it --purpose "<용도>" -- ./gradlew :server:integrationTest
+                                                  # 작업 트리 공유 락(ADR-0010 C-235 (8)): server-it(실서버 실행·서버 bootJar 재생성: :server:integrationTest·securityTest·bootJar·generateOpenApi·
+                                                  # jibDockerBuild·composeSmoke·e2e:stack·e2e:docker·perf route), agent-it, quiet(측정), deps(잠금 파일 편집). 락 = .gradle/argos-locks/<name> 디렉터리(mkdir) +
+                                                  # 그 안 owner.json(token·pid·pid_kind·host·started_at UTC·purpose). 남의 락은 지우지 않는다. 같은 호스트에서 소유 PID가 죽은 락만 낡은 락으로 자동 정리하고,
+                                                  # owner.json 없는 락·다른 호스트 락은 기다린 뒤(기본 1800초, --wait-seconds) 소유자와 수동 삭제(rm -rf)를 알리고 실패한다. Gradle 태스크는 빌드 로직이 아니라
+                                                  # 호출자가 run으로 감싼다(명령이 끝나거나 실패해도 해제. 셸이 바로 끝나는 AI 도구 호출은 run만 쓴다). acquire|release --token|status도 있다.
+                                                  # Windows는 Windows PID(Git Bash /proc/<pid>/winpid, tasklist), Node 쪽 구현은 ui/e2e/stack/lock.ts. 테스트 bash test/lock/argos-lock.test.sh
 bash sample-apps/load/run-bench.sh --summary build/bench/summary.json   # k6 bench.js 1,000/s × 1분(Docker), 결과 JSON·머신 부하
 java -jar sample-apps/load/build/sample-app/load.jar --target-url http://127.0.0.1:8080 --mix bench --rate 1000 --duration 1m --summary build/load/summary.json
                                                   # 데모 부하 생성기(의존성 없음, :sample-apps:load:sampleAppJar), 실행 중인 앱 대상

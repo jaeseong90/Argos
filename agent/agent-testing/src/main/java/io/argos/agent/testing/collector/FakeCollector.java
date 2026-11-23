@@ -116,7 +116,7 @@ public final class FakeCollector implements AutoCloseable {
   private final String bindHost;
   private final int flowControlWindow;
   private final int heartbeatIntervalS;
-  private final Map<String, String> helloConfig;
+  private volatile Map<String, String> helloConfig;
   private final ByteString userIdSalt;
   private final boolean retainBatches;
   private final String token;
@@ -128,6 +128,8 @@ public final class FakeCollector implements AutoCloseable {
   private final List<Message> sessionMessages = Collections.synchronizedList(new ArrayList<>());
   private final List<HeartbeatRecord> heartbeats = Collections.synchronizedList(new ArrayList<>());
   private final List<ByeInfo> byes = new CopyOnWriteArrayList<>();
+  private final List<AgentEventInfo> agentEvents = new CopyOnWriteArrayList<>();
+  private final List<ConfigHashUpdate> configHashUpdates = new CopyOnWriteArrayList<>();
   private final Map<Long, String> dictionary = new ConcurrentHashMap<>();
   private final List<Collected.DictionaryItem> dictionaryItems =
       Collections.synchronizedList(new ArrayList<>());
@@ -141,6 +143,7 @@ public final class FakeCollector implements AutoCloseable {
   private final List<CollectorProtocol.UnaryReply> hung = new CopyOnWriteArrayList<>();
   private final Map<String, CompletableFuture<ConfigApplyOutcome>> configResults =
       new ConcurrentHashMap<>();
+  private final Map<String, Long> configSentNanos = new ConcurrentHashMap<>();
   private final Map<String, CommandAccumulator> commandResults = new ConcurrentHashMap<>();
   private final AtomicLong nextInstanceId;
   private final AtomicInteger helloNumbers = new AtomicInteger();
@@ -485,6 +488,7 @@ public final class FakeCollector implements AutoCloseable {
     for (CompletableFuture<ConfigApplyOutcome> pending : configResults.values()) {
       pending.completeExceptionally(new IllegalStateException("FakeCollector closed"));
     }
+    configSentNanos.clear();
     for (CommandAccumulator pending : commandResults.values()) {
       pending.future.completeExceptionally(new IllegalStateException("FakeCollector closed"));
     }
@@ -672,6 +676,54 @@ public final class FakeCollector implements AutoCloseable {
     return List.copyOf(byes);
   }
 
+  /** Every {@code AgentEvent} received, in arrival order (they also stay in sessionMessages). */
+  public List<AgentEventInfo> agentEvents() {
+    return List.copyOf(agentEvents);
+  }
+
+  /** The {@code AgentEvent}s of {@code type} ({@code KILL_SWITCH_ON}, ...), in arrival order. */
+  public List<AgentEventInfo> agentEvents(String type) {
+    return agentEvents.stream().filter(e -> e.type().equals(type)).toList();
+  }
+
+  /**
+   * Waits until {@code count} {@code AgentEvent}s of {@code type} arrived; returns what is there
+   * (fewer when the timeout passed).
+   */
+  public List<AgentEventInfo> awaitAgentEvents(String type, int count, Duration timeout) {
+    return awaitList(() -> agentEvents(type), count, timeout);
+  }
+
+  /** Every {@code InstanceUpdate.config_hash} value received, in arrival order. */
+  public List<String> configHashes() {
+    return configHashUpdates.stream().map(ConfigHashUpdate::hash).toList();
+  }
+
+  /** Every {@code InstanceUpdate.config_hash} received with its session, in arrival order. */
+  public List<ConfigHashUpdate> configHashUpdates() {
+    return List.copyOf(configHashUpdates);
+  }
+
+  /**
+   * Waits until an {@code InstanceUpdate.config_hash} equal to {@code hash} arrived (for example
+   * the {@link ConfigApplyOutcome#effectiveConfigHash()} of a push); true when it did.
+   */
+  public boolean awaitConfigHash(String hash, Duration timeout) {
+    long deadline = System.nanoTime() + timeout.toNanos();
+    while (!configHashes().contains(hash)) {
+      if (System.nanoTime() >= deadline) {
+        return false;
+      }
+      try {
+        Thread.sleep(20);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        return configHashes().contains(hash);
+      }
+    }
+    return true;
+  }
+
   /**
    * How long after {@code bye} the last batch arrived (the agent's shutdown flush, 11 §6 "종료": at
    * most 1 s); empty when no batch arrived after it.
@@ -733,25 +785,106 @@ public final class FakeCollector implements AutoCloseable {
    * ConfigApplyResult}.
    */
   public CompletableFuture<ConfigApplyOutcome> pushConfig(Map<String, String> values) {
+    return pushConfig(values, false);
+  }
+
+  /**
+   * Sends {@code ConfigPush{values, revert}} to the only open session (11 §4.2: {@code revert} true
+   * means "these keys go back to the local value"); completes with the agent's {@code
+   * ConfigApplyResult}, whose {@link ConfigApplyOutcome#roundTripMs()} the collector measures.
+   */
+  public CompletableFuture<ConfigApplyOutcome> pushConfig(
+      Map<String, String> values, boolean revert) {
     CollectorProtocol.SessionChannel channel = onlySession();
     String changeId = "change-" + changeIds.incrementAndGet();
     CompletableFuture<ConfigApplyOutcome> result = new CompletableFuture<>();
     configResults.put(changeId, result);
-    send(channel, c -> c.configPush(changeId, Map.copyOf(values), false, now()));
+    configSentNanos.put(changeId, System.nanoTime());
+    send(channel, c -> c.configPush(changeId, Map.copyOf(values), revert, now()));
     return result;
   }
 
+  /** Default {@code Command.ttl_s} of {@link #command(String, Map)} (11 §8.2: 60). */
+  public static final int DEFAULT_COMMAND_TTL_S = 60;
+
   /**
    * Sends {@code Command} of {@code type} ({@code THREAD_DUMP}, {@code SELF_DIAGNOSTICS}, ...) to
-   * the only open session; completes with the joined {@code CommandResult} chunks.
+   * the only open session with {@code ttl_s} 60; completes with the joined {@code CommandResult}
+   * chunks.
    */
   public CompletableFuture<CommandOutcome> command(String type, Map<String, String> args) {
+    return command(type, args, DEFAULT_COMMAND_TTL_S);
+  }
+
+  /**
+   * {@link #command(String, Map)} with {@code ttl_s} (0 is sent as 0: the agent's default applies)
+   * and {@code issued_at_ms} = the collector's clock.
+   */
+  public CompletableFuture<CommandOutcome> command(
+      String type, Map<String, String> args, int ttlS) {
+    return command(type, args, ttlS, now());
+  }
+
+  /**
+   * {@link #command(String, Map)} with {@code ttl_s} and an explicit {@code issued_at_ms} (11 §8.2:
+   * the agent measures the TTL from its receive time, so an old {@code issued_at_ms} alone must not
+   * expire a command).
+   */
+  public CompletableFuture<CommandOutcome> command(
+      String type, Map<String, String> args, int ttlS, long issuedAtMs) {
+    requireTtl(ttlS);
     CollectorProtocol.SessionChannel channel = onlySession();
-    String commandId = UUID.randomUUID().toString();
-    CommandAccumulator accumulator = new CommandAccumulator(commandId);
-    commandResults.put(commandId, accumulator);
-    send(channel, c -> c.command(commandId, type, Map.copyOf(args), 60, now()));
+    CommandAccumulator accumulator = newCommand();
+    Map<String, String> copy = Map.copyOf(args);
+    send(channel, c -> c.command(accumulator.commandId, type, copy, ttlS, issuedAtMs));
     return accumulator.future;
+  }
+
+  /**
+   * Sends {@code Command} whose {@code type} is the raw wire number {@code typeNumber} (for example
+   * one the enum does not define: the agent's closed command list must answer {@code REJECTED},
+   * SEC-24); {@code ttl_s} 60.
+   */
+  public CompletableFuture<CommandOutcome> commandRaw(int typeNumber, Map<String, String> args) {
+    CollectorProtocol.SessionChannel channel = onlySession();
+    CommandAccumulator accumulator = newCommand();
+    Map<String, String> copy = Map.copyOf(args);
+    long issuedAt = now();
+    send(
+        channel,
+        c ->
+            c.commandNumber(
+                accumulator.commandId, typeNumber, copy, DEFAULT_COMMAND_TTL_S, issuedAt));
+    return accumulator.future;
+  }
+
+  private CommandAccumulator newCommand() {
+    CommandAccumulator accumulator = new CommandAccumulator(UUID.randomUUID().toString());
+    commandResults.put(accumulator.commandId, accumulator);
+    return accumulator;
+  }
+
+  private static void requireTtl(int ttlS) {
+    if (ttlS < 0) {
+      throw new IllegalArgumentException("ttl_s is unsigned: " + ttlS);
+    }
+  }
+
+  /**
+   * Replaces {@code ServerHello.config} for every later accepted hello (initially {@link
+   * Builder#config}); the open session keeps what its hello carried. To make a running agent see
+   * the new values, end its session: {@code faults().closeStream()} (connection loss, the agent
+   * reconnects after its backoff) or {@code faults().sessionClose("SERVER_SHUTDOWN", ...)}, then
+   * {@link #awaitSessions} for the new hello.
+   */
+  public FakeCollector helloConfig(Map<String, String> values) {
+    this.helloConfig = Map.copyOf(values);
+    return this;
+  }
+
+  /** The {@code ServerHello.config} the next accepted hello carries. */
+  public Map<String, String> helloConfig() {
+    return helloConfig;
   }
 
   /**
@@ -1153,11 +1286,55 @@ public final class FakeCollector implements AutoCloseable {
       String changeId,
       List<String> applied,
       Map<String, String> rejected,
-      int retransformedClasses) {
+      int retransformedClasses,
+      String effectiveConfigHash,
+      long durationMs,
+      Map<String, String> messages) {
     CompletableFuture<ConfigApplyOutcome> result = configResults.remove(changeId);
+    Long sent = configSentNanos.remove(changeId);
     if (result != null) {
-      result.complete(new ConfigApplyOutcome(changeId, applied, rejected, retransformedClasses));
+      long roundTrip = sent == null ? 0 : (System.nanoTime() - sent) / 1_000_000;
+      result.complete(
+          new ConfigApplyOutcome(
+              changeId,
+              applied,
+              rejected,
+              retransformedClasses,
+              effectiveConfigHash,
+              durationMs,
+              messages,
+              roundTrip));
     }
+  }
+
+  /** {@code AgentEvent} on a session stream ({@link #agentEvents()}). */
+  public void onAgentEvent(
+      CollectorProtocol.SessionChannel channel,
+      String type,
+      String module,
+      String detail,
+      long atMs) {
+    LiveSession live = openSessions.get(channel);
+    agentEvents.add(
+        new AgentEventInfo(
+            type,
+            module,
+            detail,
+            atMs,
+            live == null ? null : live.sessionId(),
+            live == null ? 0 : live.instanceId(),
+            Instant.now()));
+  }
+
+  /** {@code InstanceUpdate.config_hash} on a session stream ({@link #configHashUpdates()}). */
+  public void onConfigHash(CollectorProtocol.SessionChannel channel, String hash) {
+    LiveSession live = openSessions.get(channel);
+    configHashUpdates.add(
+        new ConfigHashUpdate(
+            hash,
+            live == null ? null : live.sessionId(),
+            live == null ? 0 : live.instanceId(),
+            Instant.now()));
   }
 
   /** One {@code CommandResult} chunk on a session stream. */
@@ -1169,12 +1346,14 @@ public final class FakeCollector implements AutoCloseable {
       ByteString payload,
       String contentType,
       String error,
-      boolean truncated) {
+      boolean truncated,
+      long durationMs) {
     CommandAccumulator accumulator = commandResults.get(commandId);
     if (accumulator == null) {
       return;
     }
-    if (accumulator.add(status, chunkIndex, chunkCount, payload, contentType, error, truncated)) {
+    if (accumulator.add(
+        status, chunkIndex, chunkCount, payload, contentType, error, truncated, durationMs)) {
       commandResults.remove(commandId);
     }
   }
@@ -1300,6 +1479,7 @@ public final class FakeCollector implements AutoCloseable {
   private static final class CommandAccumulator {
     final String commandId;
     final CompletableFuture<CommandOutcome> future = new CompletableFuture<>();
+    final long sentNanos = System.nanoTime();
     ByteString payload = ByteString.EMPTY;
     int chunks;
 
@@ -1315,12 +1495,22 @@ public final class FakeCollector implements AutoCloseable {
         ByteString data,
         String contentType,
         String error,
-        boolean truncated) {
+        boolean truncated,
+        long durationMs) {
       payload = payload.concat(data);
       chunks++;
       if (chunkIndex + 1 >= Math.max(1, chunkCount)) {
         future.complete(
-            new CommandOutcome(commandId, status, payload, contentType, error, truncated, chunks));
+            new CommandOutcome(
+                commandId,
+                status,
+                payload,
+                contentType,
+                error,
+                truncated,
+                chunks,
+                durationMs,
+                (System.nanoTime() - sentNanos) / 1_000_000));
         return true;
       }
       return false;

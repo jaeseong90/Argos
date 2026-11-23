@@ -3,7 +3,9 @@
 // Authentication screens (docs/15 §9.11, docs/16 §7.8-§7.9, ADR-0010 C-168 (2)): /login with
 // generic failures, lock, rate limit, forced password change and `next` (deep link 1); /setup
 // (setup token, administrator with the password policy, IP collection mode with masked
-// preselected, finish with the agent hint); /account (password change, language). The HTTP
+// preselected, the optional first application, finish with the agent hint); /account (password
+// change, language). The first application's token and the own sessions are in
+// setupFirstApp.test.tsx and ownSessions.test.tsx. The HTTP
 // boundary is stubbed (test/apiStub.ts); the real server flows run in e2e/specs/auth.spec.ts.
 // Requirements (test/README.md §5): { type: 'req', description: 'SEC-41' }, { type: 'req', description: 'SEC-43' }, { type: 'req', description: 'SEC-47' }, { type: 'req', description: 'F-U14' }
 import { screen, waitFor, within } from '@testing-library/react';
@@ -271,9 +273,16 @@ describe('T-SEC-47 /setup (docs/15 §9.11, docs/16 §7.8)', () => {
     expect(modes).toHaveTextContent(enAuth.setup.ipMode.offHelp);
     await user.click(screen.getByTestId('setup-create'));
 
-    // Step 4: finished, with the agent token hint (C-173) and no token in the body.
+    // Step 4: the optional first application (C-168 (2)); skipped here.
+    expect(await screen.findByTestId('setup-first-app', {}, FIND)).toHaveTextContent(
+      enAuth.setup.firstApp.description,
+    );
+    await user.click(screen.getByTestId('setup-first-app-skip'));
+
+    // Step 5: finished, with the agent token hint (C-173) and no token in the body.
     const finish = await screen.findByTestId('setup-finish', {}, FIND);
     expect(finish).toHaveTextContent(enAuth.setup.finish.agentToken);
+    expect(stub.calls('POST /api/v1/apps')).toHaveLength(0);
     expect(created).toEqual({
       body: { username: 'root-admin', password: 'twelve-chars', ip_mode: 'masked' },
       token: 'setup-token-value',

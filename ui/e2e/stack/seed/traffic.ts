@@ -4,7 +4,9 @@
 // the agent jar, pointed at the stack's gRPC port through a TCP proxy (e2e/stack/seed/grpcProxy.ts,
 // the WO-22 collection outage), then test/seed/seed-traffic.sh (the PII/XSS seed
 // endpoints of docs/18 §4.3, sentinel ARGOS_SEED), the GET /api/hop/{id} calls of WO-14 (real
-// multi-hop traces, HOP_SCENARIOS) and a wait until the data is queryable through the API. The
+// multi-hop traces, HOP_SCENARIOS), the GET /api/async/executor?work=sql calls of WO-15 (async work
+// on executors inside one transaction, ASYNC_SERVICE) and a wait until the data is queryable
+// through the API. The
 // agent token is provisioned exactly as WO-21's integration tests do it
 // (AgentTokens): `argos_` + base64url(32 random bytes), only its SHA-256 and 14-character prefix
 // in argos.agent_tokens for an existing app (the slice has no issuance API, WO-26). The token text
@@ -19,6 +21,7 @@ import { join } from 'node:path';
 
 import { ApiSession } from '../api.ts';
 import { run } from '../docker.ts';
+import type { ManifestAsyncCall } from '../manifest.ts';
 import { logsDir, runDir, secretsDir } from '../paths.ts';
 import { newAgentToken, sha256Hex, writeSecret } from '../secrets.ts';
 import type { Log } from '../stack.ts';
@@ -129,6 +132,165 @@ async function sendHops(shopUrl: string, log: Log): Promise<HopCall[]> {
   return calls;
 }
 
+/**
+ * Service name of GET /api/async/executor (sample-apps AsyncController, Spring MVC pattern). Like
+ * the hop service, the agent keeps every profile of this service alone (slow threshold 0), so the
+ * transaction detail of each seed call has its steps. `async.step` stays off: the async work shows
+ * as the SQL steps of the request's transaction, and the step counts of other screens do not move.
+ */
+export const ASYNC_SERVICE = 'GET /api/async/executor';
+
+/** Calls of GET /api/async/executor?work=sql (WO-15). */
+export const ASYNC_REPEAT = 3;
+
+/** Path and query of the async seed call (WO-15 plan §3: one SQL per async branch). */
+export const ASYNC_PATH = '/api/async/executor?work=sql';
+
+/**
+ * Pause between two async seed calls. A call takes some tens of milliseconds, about as much as the
+ * agent's transaction clock (start of its JVM's time base) and the host's `Date.now()` can differ
+ * (Windows timer resolution about 16 ms), so back-to-back calls let a transaction's start fall
+ * into its neighbour's interval. With this gap every start is nearest to its own call
+ * (`asyncCallOf`).
+ */
+export const ASYNC_GAP_MS = 2500;
+
+/**
+ * One GET /api/async/executor?work=sql call of the seed (host clock times around it) with the
+ * app's answer: `asyncSql` is the number of SQL statements the app ran off the request thread
+ * (`@Async`, `supplyAsync`, the scheduled task, the app pool, the virtual-thread-per-task executor
+ * on JDK 21+, each its own statement), `virtualPerTaskThread` the thread name of the last branch
+ * (JDK 21+, null otherwise or when absent).
+ */
+export interface AsyncCall {
+  readonly sentAt: number;
+  readonly doneAt: number;
+  /** The app's answer, null when the call itself failed (`problem`). */
+  readonly status: number | null;
+  readonly asyncSql: number | null;
+  readonly virtualPerTaskThread: string | null;
+  /** Why the call has no usable answer, null when it has one. */
+  readonly problem: string | null;
+}
+
+/**
+ * Reads the async answer of the sample app contract (WO-15 plan §3): a JSON object with a
+ * non-negative integer `asyncSql` and, on JDK 21+, a string `virtualPerTaskThread`.
+ */
+export function parseAsyncAnswer(text: string): {
+  asyncSql: number | null;
+  virtualPerTaskThread: string | null;
+  problem: string | null;
+} {
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return { asyncSql: null, virtualPerTaskThread: null, problem: 'the answer is not JSON' };
+  }
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return { asyncSql: null, virtualPerTaskThread: null, problem: 'the answer is not an object' };
+  }
+  const record = body as Record<string, unknown>;
+  const thread =
+    typeof record.virtualPerTaskThread === 'string' ? record.virtualPerTaskThread : null;
+  const asyncSql = record.asyncSql;
+  if (typeof asyncSql !== 'number' || !Number.isInteger(asyncSql) || asyncSql < 0) {
+    return {
+      asyncSql: null,
+      virtualPerTaskThread: thread,
+      problem: `the answer has no asyncSql count (${JSON.stringify(asyncSql ?? null)}; sample app contract of WO-15)`,
+    };
+  }
+  return { asyncSql, virtualPerTaskThread: thread, problem: null };
+}
+
+/**
+ * The async call a transaction that started at `ts` belongs to: the call whose [sentAt, doneAt]
+ * holds the start, else the nearest call within `slackMs` (the host and agent clocks are the same
+ * machine's; the slack covers rounding and their small difference). Calls are sent one at a time,
+ * `ASYNC_GAP_MS` apart, so a start never lies nearer to another call.
+ */
+export function asyncCallOf<T extends Pick<AsyncCall, 'sentAt' | 'doneAt'>>(
+  ts: string | number,
+  calls: readonly T[],
+  slackMs = 1000,
+): T | undefined {
+  const at = typeof ts === 'number' ? ts : Date.parse(ts);
+  if (!Number.isFinite(at)) {
+    return undefined;
+  }
+  const holding = calls.find((c) => c.sentAt <= at && at <= c.doneAt);
+  if (holding !== undefined) {
+    return holding;
+  }
+  let best: T | undefined;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const call of calls) {
+    const distance = at < call.sentAt ? call.sentAt - at : at - call.doneAt;
+    if (distance <= slackMs && distance < bestDistance) {
+      best = call;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/** The async calls as the seed manifest records them (`async_calls`, ISO-8601 with milliseconds). */
+export function manifestAsyncCalls(calls: readonly AsyncCall[]): ManifestAsyncCall[] {
+  return calls.map((c) => ({
+    sent_at: new Date(c.sentAt).toISOString(),
+    done_at: new Date(c.doneAt).toISOString(),
+    status: c.status,
+    async_sql: c.asyncSql,
+    virtual_per_task_thread: c.virtualPerTaskThread,
+    problem: c.problem,
+  }));
+}
+
+/**
+ * Agent properties that keep every profile of the hop and async services (slow threshold 0 for
+ * those services alone; other services keep the default sampling).
+ */
+export function profileKeptProperties(): string[] {
+  return [HOP_SERVICE, ASYNC_SERVICE].map(
+    (service) => `-Dargos.sampling.profile.slow-threshold-ms.services.${service}=0`,
+  );
+}
+
+/** Sends the async seed calls to the running shop-boot3, one call at a time. */
+async function sendAsyncCalls(shopUrl: string, log: Log): Promise<AsyncCall[]> {
+  const calls: AsyncCall[] = [];
+  for (let repeat = 0; repeat < ASYNC_REPEAT; repeat += 1) {
+    if (repeat > 0) {
+      await sleep(ASYNC_GAP_MS);
+    }
+    const sentAt = Date.now();
+    let status: number | null = null;
+    let answer: ReturnType<typeof parseAsyncAnswer> = {
+      asyncSql: null,
+      virtualPerTaskThread: null,
+      problem: null,
+    };
+    try {
+      // Every branch waits at most 10 s in the app (ExecutorProbe); 60 s is far above it.
+      const response = await httpGet(`${shopUrl}${ASYNC_PATH}`, {}, 60_000);
+      status = response.status;
+      answer =
+        status === 200
+          ? parseAsyncAnswer(response.text)
+          : { ...answer, problem: `HTTP ${String(status)}` };
+    } catch (error) {
+      answer = { ...answer, problem: error instanceof Error ? error.message : String(error) };
+    }
+    calls.push({ sentAt, doneAt: Date.now(), status, ...answer });
+  }
+  log(
+    `async traffic: ${calls.map((c) => (c.problem === null ? `asyncSql=${String(c.asyncSql)}` : `problem=${c.problem}`)).join(' ')}`,
+  );
+  return calls;
+}
+
 export interface TrafficJars {
   readonly agent: string;
   readonly shop: string;
@@ -167,6 +329,8 @@ export interface TrafficResult {
   readonly xssService: string | null;
   /** The GET /api/hop/{id} calls (WO-14 multi-hop traces), in the order sent. */
   readonly hops: readonly HopCall[];
+  /** The GET /api/async/executor?work=sql calls (WO-15), in the order sent. */
+  readonly asyncCalls: readonly AsyncCall[];
 }
 
 /**
@@ -448,7 +612,8 @@ export async function seedTraffic(
         // by default), so the trace API links the hop callees to their callers; every profile of
         // the hop service is kept (its caller HTTP steps), other services sample as before.
         '-Dargos.propagation.argos-state.hosts=127.0.0.1',
-        `-Dargos.sampling.profile.slow-threshold-ms.services.${HOP_SERVICE}=0`,
+        // WO-15: every profile of the async service is kept as well (its async SQL steps).
+        ...profileKeptProperties(),
         '-jar',
         jars.shop,
         `--server.port=${String(shopPort)}`,
@@ -522,6 +687,8 @@ export async function seedTraffic(
     // WO-14: real multi-hop traces (self calls through the HTTP client, ending at ext-stub), sent
     // before the stability wait so that the traffic window's totals include them.
     const hops = await sendHops(shopUrl, log);
+    // WO-15: async work handed to executors inside one request (one SQL per branch).
+    const asyncCalls = await sendAsyncCalls(shopUrl, log);
 
     // Queryable: the XSS seed service is in the service statistics and the XLog total is stable.
     let last = -1;
@@ -564,6 +731,7 @@ export async function seedTraffic(
       total,
       xssService,
       hops,
+      asyncCalls,
     };
     if (target.whileRunning !== undefined) {
       await target.whileRunning(result, { proxy, instanceName: TRAFFIC_INSTANCE });

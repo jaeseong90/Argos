@@ -33,8 +33,9 @@ test(
   'T-E2E-053 switching to ko shows the appendix B labels at once; the choice survives a reload; en again',
   { annotation: I18N },
   async ({ page, seed }) => {
-    // A placeholder screen (the instance list of WO-37; the statistics are screens since WO-36).
-    await page.goto(`/apps/${String(seed.primary_app_id)}/instances`);
+    // A placeholder screen (the application map, 1.x; the instance screens are WO-37's since the
+    // instance list and detail were built).
+    await page.goto(`/apps/${String(seed.primary_app_id)}/map`);
     await expectShell(page);
     // English by default for an en-US browser (O-A05).
     await expect(page.getByTestId('kind-filter-http')).toHaveText(t('common:term.kind.http'));
@@ -50,9 +51,12 @@ test(
     await expect(page.getByTestId('side-menu-active')).toContainText(APPENDIX_B.active);
     await expect(page.getByTestId('side-menu-xlog')).toContainText(APPENDIX_B.xlog);
     await expect(page.getByTestId('side-menu-map')).toContainText(APPENDIX_B.map);
-    // The placeholder of a later screen is translated too (no English left on the page body).
+    // The placeholder of a later screen is translated too (no English left on the page body). Its
+    // label shell:screen.map refers to common:term.applicationMap (resolved here; t() of the
+    // fixtures does not follow $t references).
+    expect(t('shell:screen.map', 'ko')).toBe('$t(common:term.applicationMap)');
     await expect(page.getByTestId('route-pending')).toContainText(
-      t('shell:screen.instances', 'ko'),
+      t('common:term.applicationMap', 'ko'),
     );
 
     await page.reload();

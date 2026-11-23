@@ -865,9 +865,21 @@ export const AlertRuleQ = {
   template: stringField('template', z.string().regex(TEMPLATE_KEY_PATTERN)),
 } as const satisfies UrlSchema;
 
+/** A remote command id (docs/14 §4.10: UUIDv4, docs/16 §7.11; accepted in either case). */
+const COMMAND_ID_PATTERN =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+
+/**
+ * Instance detail (docs/15 §9.8, 05 §2.7, WO-37): the tab, the thread dump shown in the dumps tab
+ * (`cmd`, a command id), the dump viewer's search over thread names and frames (`q`) and the
+ * metrics tab's 7-day comparison baseline (`baseline=1`, 05 §2.7-2).
+ */
 export const InstanceQ = {
   ...CommonQ,
   tab: enumField('tab', ['metrics', 'env', 'commands', 'dumps'], 'metrics'),
+  cmd: stringField('cmd', z.string().regex(COMMAND_ID_PATTERN)),
+  q: textField('q'),
+  baseline: flagField('baseline'),
 } as const satisfies UrlSchema;
 
 export const OverviewQ = {

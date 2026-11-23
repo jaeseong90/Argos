@@ -97,6 +97,7 @@ class TwoHopTraceTest {
       double minMarginMs = Double.MAX_VALUE;
       double maxMarginMs = 0;
       int holds = 0;
+      List<String> violations = new ArrayList<>();
       for (TransactionRecord caller : callers) {
         TransactionRecord callee = calleeByTrace.get(caller.traceId());
         assertThat(callee).as("B transaction in the trace of %s", caller).isNotNull();
@@ -118,6 +119,11 @@ class TwoHopTraceTest {
         double margin = step.elapsedMs() - callee.elapsedMs();
         if (margin >= 0) {
           holds++;
+        } else if (violations.size() < 10) {
+          violations.add(
+              String.format(
+                  "%s step %.3f ms < callee %.3f ms",
+                  caller.path(), step.elapsedMs(), callee.elapsedMs()));
         }
         minMarginMs = Math.min(minMarginMs, margin);
         maxMarginMs = Math.max(maxMarginMs, margin);
@@ -136,8 +142,11 @@ class TwoHopTraceTest {
               + " ms; caller app id "
               + appIdA
               + ", callee app id "
-              + appIdB);
-      assertThat(holds).as("T-ACC-05: caller HTTP step >= callee elapsed").isEqualTo(CALLS);
+              + appIdB
+              + (violations.isEmpty() ? "" : "; violations " + violations));
+      assertThat(holds)
+          .as("T-ACC-05: caller HTTP step >= callee elapsed; violations %s", violations)
+          .isEqualTo(CALLS);
 
       threeHop(a, b, appIdA, appIdB);
       assertThatAgentLog(a.app.agentLog()).hasStartBanner().hasNoErrors();

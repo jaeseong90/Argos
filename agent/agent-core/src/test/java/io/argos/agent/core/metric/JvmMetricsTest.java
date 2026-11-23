@@ -38,7 +38,13 @@ class JvmMetricsTest {
   void thisJvm() {
     MetricRegistry r = new MetricRegistry(500);
     JvmMetrics jvm = new JvmMetrics(new GcNameMapper(() -> {}), OsBean.jvm());
-    Map<String, MetricSample> v = collect(jvm, r, System.nanoTime());
+    // A first collection primes the process CPU time: the series under test is then the ratio of
+    // the CPU time between two collections (the documented path). The first collection alone
+    // falls back to the OS bean's recent load, which the JVM may not have yet (a negative value,
+    // so the series is rightly missing): that made this test fail now and then (C-235 (9)).
+    long first = System.nanoTime();
+    collect(jvm, r, first);
+    Map<String, MetricSample> v = collect(jvm, r, Math.max(System.nanoTime(), first + 1));
 
     assertThat(v.get("jvm_memory_used_bytes{area=\"heap\"}").getValue()).isPositive();
     assertThat(v.get("jvm_memory_used_bytes{area=\"nonheap\"}").getValue()).isPositive();

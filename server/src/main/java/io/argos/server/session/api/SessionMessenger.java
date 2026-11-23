@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.server.session.api;
 
+import io.argos.proto.v1.Command;
+import io.argos.proto.v1.ConfigPush;
 import io.argos.proto.v1.DictionaryRequest;
 import io.argos.proto.v1.SessionClose;
 
@@ -12,6 +14,9 @@ import io.argos.proto.v1.SessionClose;
  * <p>Sends are non-blocking for the caller: a message is handed to the session's stream observer
  * (sends on one stream are serialized, 12 §4.1) and the method returns. Messages never carry a
  * token (11 §11).
+ *
+ * <p>WO-26 adds {@link #sendCommand} and {@link #pushConfig}; their defaults send nothing (test
+ * doubles that predate them).
  */
 public interface SessionMessenger {
 
@@ -32,4 +37,36 @@ public interface SessionMessenger {
    * @return {@code false} when the instance has no live session
    */
   boolean close(int instanceId, SessionClose close);
+
+  /**
+   * Whether {@code instanceId} has a live session whose stream has not ended (WO-26: a command to
+   * an instance without one is refused with {@code 409 instance_offline}).
+   */
+  default boolean hasLiveSession(int instanceId) {
+    return false;
+  }
+
+  /**
+   * Sends a server command to the live session of {@code instanceId} (11 §8.2, 12 §6.1 step 1). The
+   * message is sent only when the session's transport is ready for it (no server-side buffering,
+   * like the dictionary request); the caller keeps the command queued and tries again until its
+   * TTL.
+   *
+   * @return {@code false} when the instance has no live session or its transport is not ready
+   *     (nothing sent)
+   */
+  default boolean sendCommand(int instanceId, Command command) {
+    return false;
+  }
+
+  /**
+   * Pushes a configuration change to the live session of {@code instanceId} (11 §8.1, 12 §6.2
+   * {@code apply()}), with the same readiness rule as {@link #sendCommand}.
+   *
+   * @return {@code false} when the instance has no live session or its transport is not ready
+   *     (nothing sent)
+   */
+  default boolean pushConfig(int instanceId, ConfigPush push) {
+    return false;
+  }
 }

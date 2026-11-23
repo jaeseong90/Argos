@@ -534,6 +534,52 @@ describe('overview: panels (05 §2.10, ADR-0010 C-212 (2))', () => {
     expect(screen.getByTestId('overview-server-cert-expiry')).toHaveTextContent('12 days');
   });
 
+  it('fits the firing rows to the height left at 1366x768 and links the rest as "+N more" (C-234 (5))', async () => {
+    answer(apps(), { alerts_firing_total: 10 });
+    signedIn(stub);
+    const items = Array.from({ length: 10 }, (_, i) => ({
+      event_id: `0f9a3c1e-0000-4000-8000-0000000001${String(i).padStart(2, '0')}`,
+      ts: `2026-11-23T09:${String(10 + i)}:00.000Z`,
+      app: { id: 3, name: 'billing' },
+      env: 'prod',
+      target: { type: 'instance', id: String(30 + i), name: `billing-${String(i)}` },
+      rule: { id: '7d1c0000-0000-4000-8000-000000000002', name: 'instance down' },
+      severity: 'critical',
+      state: 'FIRING',
+      deeplink: 'http://argos.example/alerts',
+    }));
+    stub.on(ALERTS, (request) => envelope(request.query.has('state') ? [] : items));
+    // A layout: the side column grows 100 px per drawn row from 400 px; the page box ends at the
+    // 768 px viewport, so 3 rows fit (400 + 3 x 100 <= 768 < 400 + 4 x 100).
+    const rect = (bottom: number) =>
+      ({ top: 0, left: 0, right: 0, bottom, width: 0, height: bottom, x: 0, y: 0 }) as DOMRect;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this.id === 'argos-main') {
+        return rect(768);
+      }
+      if (this.classList.contains('overview-page__side')) {
+        const drawn = this.querySelectorAll('[data-testid="overview-firing-row"]').length;
+        return rect(400 + 100 * drawn);
+      }
+      // The spy is on HTMLElement.prototype; Element.prototype keeps jsdom's own.
+      return Element.prototype.getBoundingClientRect.call(this);
+    });
+    renderApp('/overview');
+    const panel = await screen.findByTestId('overview-firing-panel', {}, FIND);
+    await waitFor(() => {
+      expect(panel).toHaveAttribute('data-rows-shown', '3');
+    }, FIND);
+    expect(within(panel).getAllByTestId('overview-firing-row')).toHaveLength(3);
+    const more = within(panel).getByTestId('overview-firing-more');
+    expect(more).toHaveTextContent('+7 more alerts');
+    expect(more.tagName).toBe('A');
+    const href = more.getAttribute('href') ?? '';
+    expect(href.startsWith('/alerts?')).toBe(true);
+    expect(new URLSearchParams(href.split('?')[1]).get('state')).toBe('firing');
+  });
+
   it('T-UI-007 zero active alerts is "no alerts" and zero channel failures is the value 0', async () => {
     answer(apps(), { alerts_firing_total: 0, server: { channel_failures_24h: 0 } });
     signedIn(stub);

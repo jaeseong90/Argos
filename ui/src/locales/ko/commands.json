@@ -1,0 +1,245 @@
+{
+  "type": {
+    "thread_dump": "스레드 덤프",
+    "thread_stack": "단일 스레드 스택",
+    "self_diagnosis": "자가 진단",
+    "reload_config": "설정 다시 읽기",
+    "env_dump": "$t(common:term.envDump)",
+    "unknown": "기타 명령"
+  },
+  "impact": {
+    "thread_dump": "에이전트가 애플리케이션 스레드를 잠깐 멈추고(보통 수 밀리초, 스레드가 수천 개면 더 길게) 모든 스레드의 상태·락·프레임(최대 64개)을 기록합니다.",
+    "thread_stack": "에이전트가 스레드 하나의 상태·락·프레임(최대 64개)을 기록합니다. 애플리케이션은 멈추지 않습니다.",
+    "self_diagnosis": "에이전트가 자기 상태(메모리·CPU 사용, 유실 데이터, 모듈 상태, 적용 중인 설정)를 보고합니다. 애플리케이션에는 영향이 없습니다.",
+    "reload_config": "에이전트가 로컬 설정 파일을 다시 읽습니다. 실행 중 바꿀 수 있는 키는 바로 적용되고, 나머지는 재기동해야 적용됩니다.",
+    "env_dump": "에이전트가 JVM 옵션·환경변수·시스템 프로퍼티를 보냅니다. 비밀로 보이는 키의 값은 에이전트가 가린 뒤 보냅니다."
+  },
+  "visibility": {
+    "thread_dump": "결과는 요청한 본인과 관리자만 볼 수 있습니다. 30일 동안 암호화해 보관하며, 열람할 때마다 감사 기록이 남습니다.",
+    "thread_stack": "결과는 요청한 본인과 관리자만 볼 수 있습니다. 30일 동안 암호화해 보관하며, 열람할 때마다 감사 기록이 남습니다.",
+    "self_diagnosis": "전체 보고서는 요청한 본인과 관리자만 볼 수 있습니다. 30일 동안 암호화해 보관합니다.",
+    "reload_config": "결과는 관리자만 볼 수 있습니다. 요청은 감사 기록에 남습니다.",
+    "env_dump": "결과는 관리자만 볼 수 있습니다. 30일 동안 암호화해 보관하며, 열람할 때마다 감사 기록이 남습니다."
+  },
+  "status": {
+    "queued": "전송 대기",
+    "sent": "전송됨, 에이전트 응답 대기",
+    "done": "완료",
+    "failed": "실패",
+    "expired": "만료",
+    "unknown": "알 수 없는 상태",
+    "withReason": "{{status}}: {{reason}}"
+  },
+  "reason": {
+    "ttl": "60초 안에 전송되지 않음(인스턴스 세션이 바쁘거나 끊김)",
+    "timeout": "120초 안에 결과가 다 오지 않음",
+    "session_ended": "인스턴스 세션이 끝남",
+    "rejected": "에이전트가 거부함(설정에서 꺼짐)",
+    "cooldown": "에이전트가 잠시 뒤 다시 실행하라고 요청함",
+    "agent_failed": "에이전트가 실행하지 못함",
+    "agent_expired": "에이전트가 만료로 버림",
+    "invalid_result": "에이전트 결과를 읽을 수 없음",
+    "unknown": "이 버전이 모르는 사유"
+  },
+  "error": {
+    "instance_offline": "인스턴스가 연결되어 있지 않습니다. 에이전트가 연결된 동안에만 명령을 보낼 수 있습니다.",
+    "busy": "이 인스턴스에서 다른 명령이 실행 중입니다. 끝난 뒤 다시 시도하세요.",
+    "rate_limited": "이 인스턴스에 명령이 너무 많습니다. 1분 뒤 다시 시도하세요.",
+    "rate_limitedWait": "이 인스턴스에 명령이 너무 많습니다. {{seconds, number}}초 뒤 다시 시도하세요.",
+    "secret_unavailable": "서버에 마스터 키가 없어 명령 결과를 저장할 수 없습니다. 관리자에게 설정을 요청하세요.",
+    "forbidden": "현재 역할로는 이 명령을 실행하거나 결과를 볼 수 없습니다.",
+    "not_owner": "이 명령은 요청한 사용자와 관리자만 볼 수 있습니다.",
+    "not_found": "명령이 더 이상 없습니다.",
+    "no_result": "명령에 결과가 없습니다.",
+    "network": "서버에 연결할 수 없습니다. 연결을 확인하고 다시 시도하세요.",
+    "other": "요청이 실패했습니다. 다시 시도하고, 계속 실패하면 서버 로그를 확인하세요."
+  },
+  "run": {
+    "requesting": "요청을 보내는 중…",
+    "noAnswer": "에이전트가 제시간에 응답하지 않았습니다. 최종 상태는 이력에서 확인하세요."
+  },
+  "tab": {
+    "run": "명령 실행",
+    "viewerNotice": "명령 실행과 이력 열람은 운영자 역할이 필요합니다.",
+    "offlineHint": "지금 인스턴스가 연결되어 있지 않아, 에이전트가 연결될 때까지 명령이 거부됩니다.",
+    "limits": "인스턴스당 한 번에 하나, 분당 최대 10개입니다. 60초 안에 전송되지 않은 명령은 만료됩니다."
+  },
+  "dialog": {
+    "title": "{{command}}을(를) 실행할까요?",
+    "cancel": "취소",
+    "confirm": "실행",
+    "stackTarget": "기록할 스레드",
+    "tx_id": "트랜잭션 ID",
+    "thread_id": "스레드 ID",
+    "argHint": "숫자만 입력합니다. 트랜잭션 ID를 주면 지금 그 트랜잭션을 실행 중인 스레드를 기록합니다.",
+    "digitsOnly": "숫자만 입력하세요(최대 20자리)."
+  },
+  "history": {
+    "title": "명령 이력",
+    "caption": "이 인스턴스의 명령, 최신순",
+    "auditNote": "이 이력이 인스턴스 명령의 감사 흔적입니다: 누가, 언제 요청했고, 얼마나 걸렸으며, 무엇이 돌아왔는지. 요청과 결과 열람은 모두 감사 기록에도 남습니다.",
+    "auditLink": "감사 로그에서 보기",
+    "operatorOnly": "명령 이력은 운영자와 관리자에게 보입니다.",
+    "type": "명령",
+    "requester": "요청자",
+    "requesterUnknown": "서버가 사용자 이름을 보내지 않았습니다.",
+    "requestedAt": "요청 시각",
+    "duration": "소요 시간",
+    "size": "결과 크기",
+    "status": "상태",
+    "result": "결과",
+    "truncated": "잘림",
+    "truncatedTitle": "결과가 크기 상한(1 MiB)에 닿아 잘렸습니다.",
+    "open": "결과 보기",
+    "openDump": "덤프 뷰어에서 열기",
+    "notYours": "요청자와 관리자만",
+    "empty": "이 인스턴스에서 실행한 명령이 없습니다.",
+    "emptyHint": "위에서 명령을 실행하면 요청과 결과가 여기에 나타납니다."
+  },
+  "result": {
+    "title": "결과: {{command}}",
+    "close": "닫기",
+    "truncated": "결과가 크기 상한에서 잘렸습니다. 끝부분이 없습니다.",
+    "raw": "결과가 예상한 형식이 아니라 에이전트가 보낸 그대로 보여 줍니다.",
+    "rawLabel": "원본 결과",
+    "key": "키",
+    "value": "값",
+    "other": "기타 필드",
+    "entries_other": "{{section}} ({{count, number}})",
+    "noEntries": "{{section}}: 보고된 항목이 없습니다."
+  },
+  "latest": {
+    "title": {
+      "env_dump": "환경변수·시스템 프로퍼티·JVM 옵션",
+      "self_diagnosis": "최근 자가 진단"
+    },
+    "adminOnly": "관리자 권한이 필요합니다. 환경변수·시스템 프로퍼티·JVM 옵션은 관리자에게만 보입니다.",
+    "operatorOnly": "자가 진단 실행과 전체 보고서 열람은 운영자 역할이 필요합니다. 위의 에이전트 상태 요약은 누구나 볼 수 있습니다.",
+    "empty": {
+      "env_dump": "아직 $t(common:term.envDump)가 없습니다. 실행하면 인스턴스 환경을 볼 수 있습니다(비밀로 보이는 키의 값은 가려진 채 옵니다).",
+      "self_diagnosis": "아직 열람할 수 있는 자가 진단이 없습니다. 실행하면 에이전트 자체 상태와 각 설정의 출처를 볼 수 있습니다."
+    },
+    "asOf": "{{at}} 기준",
+    "by": "요청자",
+    "run": "지금 실행",
+    "refresh": "다시 실행",
+    "newerUnreadable": "다른 사용자가 더 최근에 실행했습니다. 그 결과는 요청자와 관리자만 볼 수 있습니다.",
+    "show": {
+      "env_dump": "최근 환경 덤프 보기",
+      "self_diagnosis": "최근 자가 진단 보기"
+    },
+    "showHint": "결과를 열람하면 감사 기록에 남습니다."
+  },
+  "selfDiagnosis": {
+    "gauges": "에이전트 상태",
+    "noGauges": "에이전트가 보고한 측정값이 없습니다.",
+    "gauge": {
+      "threadlocal_contexts_live": "살아 있는 스레드 로컬 컨텍스트",
+      "active_registry_size": "추적 중인 실행 트랜잭션",
+      "weakmap_size": "트랜잭션을 가진 컨텍스트 저장소 항목",
+      "weakmap_entries": "컨텍스트 저장소 항목",
+      "agent_threads_cpu_seconds_total": "에이전트 스레드 CPU(초)",
+      "direct_memory_bytes": "다이렉트 메모리(바이트)",
+      "premain_ms": "기동 시간(ms)"
+    },
+    "modules": "계측 모듈",
+    "noModules": "에이전트가 보고한 모듈이 없습니다.",
+    "module": "모듈",
+    "moduleState": "상태",
+    "moduleErrors": "에러",
+    "moduleReason": "사유",
+    "effectiveConfig": "적용 중인 설정",
+    "noConfig": "에이전트가 보고한 설정이 없습니다.",
+    "source": "출처",
+    "counters": "카운터"
+  },
+  "envDump": {
+    "maskNote": "비밀로 보이는 키의 값은 에이전트가 가린 뒤 보낸 그대로 보여 줍니다. Argos는 원래 값을 저장하거나 보여 주지 않습니다.",
+    "masked": "가림",
+    "maskedTitle": "에이전트가 가린 값: 길이만 알 수 있습니다.",
+    "jvmArguments": "JVM 옵션",
+    "noJvmArguments": "에이전트가 보고한 JVM 옵션이 없습니다.",
+    "env": "환경변수",
+    "systemProperties": "시스템 프로퍼티",
+    "truncated": "에이전트가 이 덤프를 256 KiB에서 잘랐습니다. 일부 항목이 빠져 있습니다.",
+    "unavailable": "JVM이 다음 구획을 주지 않았습니다: {{sections}}.",
+    "section": {
+      "env": "환경변수",
+      "properties": "시스템 프로퍼티",
+      "args": "JVM 옵션"
+    }
+  },
+  "dumps": {
+    "take": "스레드 덤프 받기",
+    "compare": "두 덤프 비교",
+    "compareLater": "두 덤프 비교는 다음 버전에서 제공합니다.",
+    "recent_other": "최근 덤프 {{count, number}}개",
+    "listEmpty": "이 인스턴스의 스레드 덤프가 아직 없습니다.",
+    "notYours": "요청자와 관리자만",
+    "emptyTitle": "보여 줄 스레드 덤프가 없습니다.",
+    "emptyHint": "스레드 덤프를 받으면 이 인스턴스의 모든 스레드가 무엇을 하고 있는지 볼 수 있습니다.",
+    "operatorOnly": "스레드 덤프는 애플리케이션의 스택 트레이스를 담고 있어 운영자와 관리자에게만 보입니다.",
+    "notDump": "주소의 명령은 스레드 덤프가 아닙니다."
+  },
+  "viewer": {
+    "total_other": "스레드 {{count, number}}개",
+    "byState": "상태별 스레드",
+    "state": {
+      "RUNNABLE": "실행 가능",
+      "BLOCKED": "블록됨",
+      "WAITING": "대기",
+      "TIMED_WAITING": "시간 제한 대기",
+      "OTHER": "기타"
+    },
+    "sectionCount_other": "스레드 {{count, number}}개, 서로 다른 스택 {{stacks, number}}개",
+    "virtual": "VT",
+    "virtualTitle": "가상 스레드",
+    "virtualCount_other": "가상 스레드 {{count, number}}개",
+    "deadlock": "데드락",
+    "deadlockBadge_other": "데드락: 순환 {{count, number}}개",
+    "deadlocks_other": "데드락(순환 {{count, number}}개)",
+    "deadlockFromAgent": "에이전트가 찾았습니다(JVM 데드락 탐지).",
+    "deadlockFromGraph": "덤프의 락에서 추론했습니다: 각 스레드가 다음 스레드가 가진 락을 기다립니다.",
+    "waitsFor": "기다리는 락",
+    "waitingOn": "대기 대상",
+    "locksHeld": "보유 락",
+    "locks_other": "대기 중인 락({{count, number}})",
+    "lock": "락",
+    "holder": "보유 스레드",
+    "waiters": "대기 스레드",
+    "noHolder": "보유 스레드가 덤프에 없음",
+    "moreLocks_other": "보이지 않은 락 {{count, number}}개가 더 있습니다.",
+    "transactions_other": "트랜잭션을 실행 중인 스레드({{count, number}})",
+    "snapshotNote": "덤프 시점 기준입니다: 트랜잭션은 그 뒤 끝났을 수 있고, 상세는 수집된 뒤에 나타납니다.",
+    "openTransaction": "트랜잭션 열기",
+    "openTransactionId": "트랜잭션 {{txId}}",
+    "search": "스레드 검색",
+    "searchPlaceholder": "스레드 이름, 클래스 또는 메서드",
+    "searchCount": "스레드 {{total, number}}개 중 {{count, number}}개 일치",
+    "noMatch": "검색과 일치하는 스레드가 없습니다.",
+    "noThreads": "덤프에 스레드가 없습니다.",
+    "download": ".txt 다운로드",
+    "truncated": "덤프가 크기 상한(1 MiB)에 닿아 잘렸습니다: 일부 스레드가 없습니다. 남은 내용은 전체 파일을 다운로드해 확인하세요.",
+    "depthCut": "일부 스택이 에이전트 상한인 프레임 {{count, number}}개에 닿아 아래쪽이 잘렸습니다. 기록된 그대로의 텍스트는 전체 파일을 다운로드해 확인하세요.",
+    "depthCutBadge": "프레임 {{count, number}}개(잘림)",
+    "sameStackTitle": "같은 스택을 가진 스레드",
+    "threads": "스레드",
+    "moreNames_other": "{{count, number}}개 더 보기",
+    "fewerNames": "접기",
+    "moreStacks_other": "스택 {{count, number}}개 더 보기",
+    "frames_other": "스택, 프레임 {{count, number}}개",
+    "noFrames": "기록된 프레임이 없습니다.",
+    "threadId": "ID {{id}}"
+  },
+  "stack": {
+    "title": "이 스레드의 스택",
+    "none": "에이전트가 스레드를 돌려주지 않았습니다.",
+    "frames_other": "스택, 프레임 {{count, number}}개",
+    "depthCut": "스택이 에이전트 상한인 프레임 {{count, number}}개에 닿아 아래쪽이 잘렸습니다.",
+    "match": {
+      "match": "이 스레드가 트랜잭션 {{txId}}을(를) 실행 중입니다.",
+      "other": "이 스레드는 더 이상 트랜잭션 {{txId}}을(를) 실행하지 않습니다: 다른 트랜잭션으로 넘어갔습니다.",
+      "unknown": "에이전트가 이 스레드의 트랜잭션을 알려 주지 않았습니다. {{txId}}은(는) 끝났을 수 있습니다."
+    }
+  }
+}

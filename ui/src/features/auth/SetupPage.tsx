@@ -3,9 +3,9 @@
 // /setup, the installation wizard (docs/15 §9.11, docs/16 §6.10, §7.8, SEC-47, ADR-0010 C-168
 // (2)): only while /setup/status says setup is needed, otherwise a "setup is complete" view.
 // Steps: 1 setup token, 2 administrator (password policy hint), 3 IP collection mode (a choice is
-// required, `masked` preselected, every mode explained), 4 finish with the agent installation
-// hint. The "first application" step of docs/15 §9.11 is left out: there is no application
-// create API yet (WO-26 adds it, C-168 (2)).
+// required, `masked` preselected, every mode explained), 4 the optional first application with its
+// agent token shown once (SetupFirstApp; only when the browser kept the administrator's session,
+// skippable), 5 finish with the agent installation hint.
 import { useQuery } from '@tanstack/react-query';
 import { useId, useState, type SubmitEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -27,13 +27,15 @@ import {
 } from './authErrors';
 import { AuthPageFrame } from './LoginPage';
 import { confirmNewSession } from './session';
+import { SetupFirstApp } from './SetupFirstApp';
 
-type Step = 'token' | 'admin' | 'ipMode' | 'finish';
-const STEPS: readonly Step[] = ['token', 'admin', 'ipMode', 'finish'];
+type Step = 'token' | 'admin' | 'ipMode' | 'firstApp' | 'finish';
+const STEPS: readonly Step[] = ['token', 'admin', 'ipMode', 'firstApp', 'finish'];
 const STEP_LABELS = {
   token: 'setup.stepToken',
   admin: 'setup.stepAdmin',
   ipMode: 'setup.stepIpMode',
+  firstApp: 'setup.stepFirstApp',
   finish: 'setup.stepFinish',
 } as const;
 const MODE_LABELS = {
@@ -54,13 +56,34 @@ export function SetupPage({ version }: SetupPageProps) {
     retry: false,
     staleTime: Infinity,
   });
-  // null until the administrator exists; then whether the browser kept the session cookies.
-  const [finished, setFinished] = useState<{ readonly sessionKept: boolean } | null>(null);
+  // null until the administrator exists; then whether the browser kept the session cookies and
+  // the outcome of the first-application step (null while it is open).
+  const [finished, setFinished] = useState<{
+    readonly sessionKept: boolean;
+    readonly firstApp: { readonly tokenIssued: boolean } | null;
+  } | null>(null);
   useDocumentTitle(t('auth:setup.documentTitle'));
 
   let body: ReactNode;
-  if (finished !== null) {
-    body = <SetupFinish sessionKept={finished.sessionKept} />;
+  if (finished !== null && finished.sessionKept && finished.firstApp === null) {
+    body = (
+      <section className="auth-section" data-testid="setup-wizard-first-app">
+        <h2>{t('auth:setup.title')}</h2>
+        <SetupSteps current="firstApp" />
+        <SetupFirstApp
+          onDone={(outcome) => {
+            setFinished({ sessionKept: true, firstApp: outcome });
+          }}
+        />
+      </section>
+    );
+  } else if (finished !== null) {
+    body = (
+      <SetupFinish
+        sessionKept={finished.sessionKept}
+        tokenIssued={finished.firstApp?.tokenIssued ?? false}
+      />
+    );
   } else if (status.isPending) {
     body = (
       <p role="status" className="auth-form__info">
@@ -79,12 +102,30 @@ export function SetupPage({ version }: SetupPageProps) {
     body = (
       <SetupWizard
         onFinished={(sessionKept) => {
-          setFinished({ sessionKept });
+          setFinished({ sessionKept, firstApp: null });
         }}
       />
     );
   }
   return <AuthPageFrame version={version}>{body}</AuthPageFrame>;
+}
+
+/** The step list; `current` is marked as the current step. */
+function SetupSteps({ current }: { readonly current: Step }) {
+  const { t } = useTranslation(['common', 'auth']);
+  return (
+    <ol className="setup-steps" aria-label={t('auth:setup.steps')}>
+      {STEPS.map((s) => (
+        <li
+          key={s}
+          aria-current={s === current ? 'step' : undefined}
+          className={s === current ? 'setup-steps__current' : undefined}
+        >
+          {t(`auth:${STEP_LABELS[s]}`)}
+        </li>
+      ))}
+    </ol>
+  );
 }
 
 /** Setup is not needed: the wizard answers like a missing page (docs/15 §3.1 "관리자 존재 시 404"). */
@@ -167,7 +208,6 @@ function SetupWizard({ onFinished }: { readonly onFinished: (sessionKept: boolea
           }
           sessionKept = false;
         }
-        go('finish');
         onFinished(sessionKept);
       })
       .catch((failure: unknown) => {
@@ -200,17 +240,7 @@ function SetupWizard({ onFinished }: { readonly onFinished: (sessionKept: boolea
   return (
     <section className="auth-section" aria-labelledby={`${id}-title`} data-testid="setup-wizard">
       <h2 id={`${id}-title`}>{t('auth:setup.title')}</h2>
-      <ol className="setup-steps" aria-label={t('auth:setup.steps')}>
-        {STEPS.map((s) => (
-          <li
-            key={s}
-            aria-current={s === step ? 'step' : undefined}
-            className={s === step ? 'setup-steps__current' : undefined}
-          >
-            {t(`auth:${STEP_LABELS[s]}`)}
-          </li>
-        ))}
-      </ol>
+      <SetupSteps current={step} />
 
       {step === 'token' && (
         <form className="auth-form" onSubmit={submitToken} noValidate data-testid="setup-token">
@@ -363,11 +393,18 @@ function SetupWizard({ onFinished }: { readonly onFinished: (sessionKept: boolea
 }
 
 /**
- * Last step: what to do next (agent token and -javaagent; C-168 (2), C-173). When the browser did
- * not keep the session cookies, it says so instead of "you are signed in" and leads to the sign-in
- * page (ADR-0010 C-201 (2)).
+ * Last step: what to do next (agent token and -javaagent; C-168 (2), C-173). After a token issued
+ * in the first-application step it says to store that token; otherwise it points to the token
+ * create command. When the browser did not keep the session cookies, it says so instead of "you
+ * are signed in" and leads to the sign-in page (ADR-0010 C-201 (2)).
  */
-function SetupFinish({ sessionKept }: { readonly sessionKept: boolean }) {
+function SetupFinish({
+  sessionKept,
+  tokenIssued,
+}: {
+  readonly sessionKept: boolean;
+  readonly tokenIssued: boolean;
+}) {
   const { t } = useTranslation(['common', 'auth']);
   const navigate = useNavigate();
   return (
@@ -382,7 +419,11 @@ function SetupFinish({ sessionKept }: { readonly sessionKept: boolean }) {
       )}
       <h3>{t('auth:setup.finish.agentTitle')}</h3>
       <ol className="setup-next-steps">
-        <li>{t('auth:setup.finish.agentToken')}</li>
+        {tokenIssued ? (
+          <li data-testid="setup-finish-token-issued">{t('auth:setup.finish.agentTokenIssued')}</li>
+        ) : (
+          <li data-testid="setup-finish-token-hint">{t('auth:setup.finish.agentToken')}</li>
+        )}
         <li>{t('auth:setup.finish.agentAttach')}</li>
       </ol>
       {sessionKept ? (

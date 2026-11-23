@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -47,6 +48,9 @@ public final class TransformBaseline {
     }
   }
 
+  /** Baseline files {@link #record} wrote in this JVM (absolute, normalized). */
+  private static final Set<Path> RECORDED_IN_THIS_JVM = new HashSet<>();
+
   private TransformBaseline() {}
 
   /** {@code <app>-<jdk>[-vt].txt}. */
@@ -69,8 +73,20 @@ public final class TransformBaseline {
     return Boolean.getBoolean(RECORD_PROPERTY);
   }
 
-  /** Writes the baseline of {@code log} to {@code file}. */
-  public static void record(Path file, String title, TransformLog log) {
+  /**
+   * Writes the baseline of {@code log} to {@code file}. Several test classes verify the same
+   * baseline ({@code e2e.SampleAppAgentTest} and the WO-15 {@code async} suite both run shop-boot3
+   * on JDK 21, with different requests): the first recording of a file in this JVM replaces it, a
+   * later one adds its lines (the union), so that every run that verifies the file passes against
+   * it whatever the order of the test classes.
+   */
+  public static synchronized void record(Path file, String title, TransformLog log) {
+    Path key = file.toAbsolutePath().normalize();
+    Set<String> lines = new TreeSet<>(log.baselineLines());
+    if (RECORDED_IN_THIS_JVM.contains(key) && Files.exists(file)) {
+      lines.addAll(read(file));
+    }
+    RECORDED_IN_THIS_JVM.add(key);
     StringBuilder text =
         new StringBuilder()
             .append("# Transformed-class baseline (18 §5.6, DSN-18-05, T-AG-005):")
@@ -80,7 +96,7 @@ public final class TransformBaseline {
             .append(
                 ". Re-record: ./gradlew :agent:agent-testing:integrationTest"
                     + " -Pagent.baseline.record=true; review the diff in the PR.\n");
-    for (String line : log.baselineLines()) {
+    for (String line : lines) {
       text.append(line).append('\n');
     }
     try {

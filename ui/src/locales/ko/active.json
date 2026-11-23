@@ -52,7 +52,9 @@
     "max": "최장",
     "approximate": "추정",
     "approximateTitle": "추정 분포: 에이전트가 경과가 긴 트랜잭션만 보냈고, 나머지는 첫 구간 밖에 있을 수 있습니다.",
-    "truncated": "에이전트가 경과가 긴 500건만 보냄"
+    "truncated": "에이전트가 경과가 긴 500건만 보냄",
+    "detail": "상세",
+    "detailOf": "인스턴스 {{id}} 상세"
   },
   "band": {
     "legend": "경과 시간 색",
@@ -99,15 +101,19 @@
     "virtualThread": "VT",
     "virtualThreadTitle": "가상 스레드에서 실행 중",
     "notCollected": "수집 안 함",
-    "notCollectedTitle": "이 인스턴스의 에이전트는 이 값을 수집하지 않습니다."
+    "notCollectedTitle": "이 인스턴스의 에이전트는 이 값을 수집하지 않습니다.",
+    "instanceLink": "인스턴스 상세 열기"
   },
   "actions": {
     "label": "선택한 트랜잭션 동작",
     "selected": "선택:",
     "stack": "이 스레드 스택",
     "dump": "이 인스턴스 스레드 덤프",
+    "stackHint": "이 스레드의 현재 스택을 기록합니다(단일 스레드 스택 명령).",
+    "dumpHint": "이 인스턴스의 스레드 덤프를 받아 덤프 뷰어에서 엽니다.",
+    "instance": "인스턴스 상세",
+    "operatorRequired": "운영자 역할이 필요합니다(에이전트 명령)",
     "recent": "같은 서비스의 최근 완료 트랜잭션",
-    "commandsUnavailable": "에이전트 명령이 필요하며, 이 버전에서는 사용할 수 없습니다",
     "noService": "이 트랜잭션에는 아직 서비스가 없습니다.",
     "finished": "최신 스냅샷에서는 더 이상 진행 중이 아님",
     "clear": "선택 해제"

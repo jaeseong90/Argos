@@ -17,7 +17,7 @@ import type { App } from '../../../api/apps';
 import { safeHref } from '../../../components/safeHref';
 import { SafeLink } from '../../../components/SafeLink';
 import { SafeText } from '../../../components/SafeText';
-import { EnvSelect, AppSelect  } from '../../../routes/Shell';
+import { EnvSelect, AppSelect } from '../../../routes/Shell';
 import { channelTypeLabel } from '../common/labels';
 
 import { useMetricLabel, useRuleLabels } from './labels';

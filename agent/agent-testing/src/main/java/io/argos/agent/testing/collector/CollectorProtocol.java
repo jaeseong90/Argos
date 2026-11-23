@@ -186,6 +186,17 @@ public interface CollectorProtocol {
     void command(
         String commandId, String type, Map<String, String> args, int ttlSeconds, long issuedAtMs);
 
+    /**
+     * Sends {@code Command} with the raw wire number of {@code type}, also one the enum does not
+     * define (a closed-list check of the agent, SEC-24).
+     */
+    void commandNumber(
+        String commandId,
+        int typeNumber,
+        Map<String, String> args,
+        int ttlSeconds,
+        long issuedAtMs);
+
     /** Sends {@code DictionaryRequest} for these hashes of {@code kind}. */
     void dictionaryRequest(String kind, long[] hashes);
 

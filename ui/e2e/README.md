@@ -47,6 +47,7 @@ fails before the stack starts.
 | `ARGOS_E2E_KEEP=1`                            | Leave the stack running after the run, also after a failed setup (`e2e:stack:down` removes it)                                  |
 | `ARGOS_E2E_ALLOW_STALE_JARS=1`                | Accept a stale server boot jar (warning)                                                                                        |
 | `ARGOS_E2E_BASH`                              | `bash.exe` of Git for Windows, if it is not in the default location                                                             |
+| `ARGOS_LOCK_WAIT_SECONDS`                     | How long a new stack waits for the working tree's `server-it` lock (default 1200 s; see [The lock](#the-server-it-lock))        |
 
 ## Projects (`playwright.config.ts`)
 
@@ -104,6 +105,33 @@ objects with the run's label.
 - **Secrets**: generated per run into `ui/e2e/.stack/<run>/secrets/` (git-ignored) and deleted at
   teardown. Passwords reach containers as files, hashes or stdin, and Gradle through environment
   variables. They never appear on a command line or in a log.
+- **Run directories**: a run deletes only its own `ui/e2e/.stack/<run>/` (secrets and outputs at
+  teardown; the logs stay). A new run never deletes the directory of another run. When it removes
+  the containers of a dead earlier run, it logs that run's directory for removal by hand.
+
+### The server-it lock
+
+Several engineers and agents share one working tree. Everything that runs the real server or
+rebuilds its boot jar takes the directory lock `.gradle/argos-locks/server-it` (ADR-0010 C-235 (8);
+`e2e/stack/lock.ts`, the same protocol as `test/lock/argos-lock.sh`).
+
+- A new stack (`e2e:stack`, `e2e`, `e2e:docker`, `perf` with `XLOG_PERF_TARGET=route`,
+  `e2e:stack:up`, `cli.ts restart-server`) takes the lock before it reads the jars. It releases the
+  lock at teardown, and also when the setup fails or with `ARGOS_E2E_KEEP=1`. `e2e:stack:up`
+  releases the lock once the detached stack is seeded. A reused stack (`ARGOS_E2E_STACK_URL`) takes
+  no lock.
+- The owner is the Playwright runner, or the CLI process. Right after `mkdir`, the run writes
+  `owner.json` into the lock: `token`, `pid` (on Windows the Windows PID, `pid_kind`), `host`,
+  `started_at` (UTC) and `purpose`.
+- While another run holds the lock, the setup waits up to `ARGOS_LOCK_WAIT_SECONDS` (default
+  1200 s). It names the owner every minute, then fails.
+- The setup removes a lock by itself only when the owner PID is dead on this host. It never removes
+  a lock without `owner.json` or from another host. The error message gives the
+  `rm -rf .gradle/argos-locks/server-it` to run by hand, once you have checked that the owner is
+  gone.
+- To hold the lock across a Gradle build and the stack in one go, wrap the whole command:
+  `bash test/lock/argos-lock.sh run server-it --purpose "..." -- corepack pnpm e2e:stack`. The stack
+  sees `ARGOS_LOCK_TOKEN_SERVER_IT` and uses the held lock.
 
 ### Seeds and the manifest
 
@@ -132,6 +160,17 @@ The manifest is `ui/e2e/.stack/seed-manifest.json`, typed by `e2e/stack/manifest
      (the failure class of its outgoing call) into the manifest's `hop_traces`. A scenario it
      cannot resolve within 150 s is left out and `missing_optional` (category `hop_traces`)
      names why; `T-E2E-trace-12` and `T-ACC-05` then fail with that reason.
+   - **Async calls** (WO-15, `ASYNC_SERVICE` of `e2e/stack/seed/traffic.ts`): after the hop calls
+     the setup sends `GET /api/async/executor?work=sql` three times, `ASYNC_GAP_MS` (2.5 s) apart
+     so that a start shifted by the agent and host clock difference stays nearest to its own call.
+     Each async branch of the app
+     (`@Async`, `supplyAsync`, the scheduled task, the app pool, the virtual-thread-per-task
+     executor on JDK 21+) runs its own SQL statement on its own thread, and the app answers
+     `asyncSql`, the number of statements it ran off the request thread. The agent keeps every
+     profile of that service only (slow threshold 0, as for the hop service). `async.step` stays
+     off, so the step counts of other screens do not change. The manifest's `async_calls` holds
+     the host clock times of each call and its `asyncSql` (or the `problem` when the call or its
+     answer failed); `specs/async.spec.ts` finds each call's transaction through the API.
    - The setup then waits until the XSS seed service is queryable and the XLog total is stable.
    - **Collection outage** (WO-22, docs/05 §2.1-10, `e2e/stack/seed/outage.ts`), side by side
      with step 4: the proxy is frozen (nothing reaches the server, the agent keeps running) until
@@ -264,6 +303,76 @@ markers) run on the dashboard (`T-E2E-common-2`, `T-E2E-common-7`); the outage s
 STALE/WARN tiles, the firing list and the real server WebSocket are `test.fixme` for WO-22 and WO-25.
 Partial run: `corepack pnpm e2e:stack --grep "T-E2E-08[0-9]|T-E2E-dashboard|T-E2E-common-(2|7) "`.
 
+The instance detail (WO-37) has `required/instance.yaml` (docs/05 §2.7-1 to 2.7-6,
+`T-E2E-instance-1..6`) and `required/instanceChecks.ts` (header, panels and self-diagnosis summary
+against the API of the real agent instance `e2e-shop-1`); `specs/instance.spec.ts` (T-E2E-instance-20
+to 28, visual 40 to 43) adds the environment tab per role on the command feed
+(`fixtures/commandFeed.ts`, needs `:server:activeFeedJar`), T-ACPT-06/07/14 automated parts, layout,
+axe and XSS. Partial run: `corepack pnpm e2e:stack --grep "T-E2E-instance|T-E2E-053"`.
+
+The commands tab and the thread dump viewer (WO-37) have `required/dumps.yaml` (docs/05 §2.7-4 and
+2.7-5, `T-E2E-dumps-1..2`) and `required/dumpsChecks.ts` (oracle of GET /commands/{id}/result,
+command slots within 10 per instance per minute); `specs/dumps.spec.ts` (T-E2E-dumps-20 to 30) runs
+the command round trip on the command feed (app `e2e-cmd`, needs `:server:activeFeedJar`), the role
+matrix with the server's 403, the download, the truncated dump, the masked environment dump, stub
+error states and T-E2E-dumps-30 with the real agent (shop-boot3, `SAMPLE_VT=true`); the visual
+baselines T-E2E-dumps-40/41 are in `specs/screenshots.spec.ts`. The active screen's stack and dump
+actions are T-E2E-active-8, -9 and -30 on the same feed. Partial run (about 8 min plus 2 to 4 min of stack start and seed):
+`corepack pnpm e2e:stack --grep "T-E2E-dumps|T-E2E-active"`.
+
+## Async work (WO-15)
+
+`specs/async.spec.ts` checks the seed's async calls end to end. For each call it takes the
+`GET /api/async/executor` transaction whose start lies inside or nearest to the call (`asyncCallOf`) from the
+traffic app's XLog, and polls for up to 90 s until the profile is captured.
+
+- `T-E2E-async-1`: the detail API has at least `asyncSql` SQL steps with as many distinct
+  statements, and every step lies inside the transaction (an end may pass `elapsed_ms` by 1 ms of
+  rounding). The timeline shows the oracle's rows, its SQL rows by their text, a root bar that
+  spans the whole axis and no clipped bar. The summary equals the API (`expectSummaryMatches`).
+- `T-E2E-async-2`: the call tree tab shows the same rows and statements.
+- `T-E2E-async-3` starts its own `shop-boot3` (instance `e2e-shop-async-vt`, `SAMPLE_VT=true`)
+  with `startShop` of `e2e/stack/liveShop.ts`. One request on a Tomcat virtual thread must show:
+  `flags.virtual_thread`, CPU and allocation null in the API and "Not measurable" on the screen
+  (D-23, T-ACC-23), the virtual thread badge, the normalized thread name `tomcat-handler-`
+  (10 U-16), and its async SQL steps. It needs a host JVM 21, so it is skipped inside the
+  Playwright image of `e2e:docker`. Its log is `async-vt-shop-boot3.log`.
+
+Partial run: `corepack pnpm e2e:stack --grep "T-E2E-async"`.
+
+## Agent commands and remote configuration (WO-17)
+
+`specs/agent-commands.spec.ts` (describe `agent commands (WO-17)`) runs the real agent against the
+real server through the public REST API with the seeded admin and operator sessions. It starts its
+own `shop-boot3` with `startShop` (`SAMPLE_VT=true`, the `ARGOS_SEED` sentinel secrets in the
+environment, `JAVA_TOOL_OPTIONS` and a `-D` property) as its own application `e2e-wo17`
+(instance `wo17-cmd`): remote configuration and the kill switch are held per application and reach
+later agents in `ServerHello.config`, so the seed's `e2e-shop` is never touched. The app's agent
+token is created through psql like the active feed's and kept only in the run's
+`secrets/wo17-agent.token`; `startShop` takes it through the `app` option of `ShopOptions`.
+
+- `T-AG-054 (stack)`: `thread_dump` of a running request on a virtual thread, parsed by the server
+  into `threads[]` with `virtual=true` and the request's `tx_id`.
+- `T-SEC-24 (stack)`: `thread_stack` of that `tx_id`; a `thread_dump` right after a `thread_dump`
+  fails with the agent's cooldown.
+- `T-AG-072 (stack)`: `env_dump` (admin) shows `****(len=N)` and none of the sentinels, neither in the
+  result nor anywhere in the agent log directory; an operator gets 403.
+- `T-SEC-21 (stack)`: `self_diagnosis` (operator) with version and effective configuration;
+  `reload_config` is 403 for an operator and done for an admin.
+- `T-AG-069 (stack)`: a `sampling.profile.normal-rate` change is applied by the instance within
+  10 s (`[wo17-n25]` line on the console and annotation `wo17-n25`, a shared machine's numbers are
+  references only) and shows as `remote` on the server and in the agent.
+- `T-SEC-23 (stack)`: `capture.sql-parameters` is refused with 422 `remote_key_not_allowed` and the
+  agent's local value and source stay.
+- `T-AG-043 (stack)`: the kill switch for this instance makes it WARN `kill_switch`, no
+  transactions while off, the session stays; turned on, new transactions arrive. `afterAll` always
+  turns it back on and stops the shop.
+
+It needs a host JVM 21, so every test skips inside the Playwright image of `e2e:docker`. Logs:
+`logs/wo17-cmd-shop-boot3.log` and the agent log directory `logs/wo17-cmd-agent/`. Partial run:
+`corepack pnpm e2e:stack --grep "WO-17"`; after changing `liveShop.ts` also run
+`--grep "T-E2E-active|T-E2E-099|T-E2E-async"`.
+
 ## CSP (T-SEC-46)
 
 SEC-46 is judged as ADR-0010 C-188 decides (it replaces docs/16 §9.5 ST-46-1, the server counter
@@ -346,7 +455,10 @@ They also read these attributes:
 
 - **Leftovers of a killed run**: the next setup removes them when the owning process is gone. To
   remove them by hand, use `corepack pnpm e2e:stack:down`, or `docker rm -f` on the containers that
-  `docker ps -a --filter label=io.argos.e2e` lists.
+  `docker ps -a --filter label=io.argos.e2e` lists. Their directory `ui/e2e/.stack/<run>/` stays.
+  Delete it by hand when you no longer need its logs.
+- **Waiting for the server-it lock**: `bash test/lock/argos-lock.sh status server-it` shows the
+  owner. See [The server-it lock](#the-server-it-lock).
 - **Logs**: `ui/e2e/.stack/<run>/logs/` holds `*-server.log`, `*-ch.log`, `*-pg.log`,
   `shop-boot3.log` and `ext-stub.log` (and `realtime-server-shop-boot3.log` of `T-SV-020e`).
   After a normal run only these logs remain.

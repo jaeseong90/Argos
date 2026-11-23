@@ -56,7 +56,7 @@ Generated or operator files that are never committed (`.gitignore`): `.env`, `se
 | `./argos-compose.sh up [--timeout S]` | Checks `.env`, `secrets/` and `tls/`, then `docker compose up -d --wait` |
 | `./argos-compose.sh down [--volumes]` | Stops the stack; `--volumes` deletes all data |
 | `./argos-compose.sh status` / `logs [SERVICE] [-f]` | Containers and health / logs |
-| `./argos-compose.sh token create --app NAME --env ENV [--expires-days N]` | Issues an agent token, printed once (at most 5 active per app) |
+| `./argos-compose.sh token create --app NAME --env ENV [--expires-days N]` | Issues an agent token through the server (`argos-admin token create` in the healthy server container), printed once (at most 5 active per app, default expiry 365 days) |
 | `./argos-compose.sh compose ARGS...` | `docker compose` with the files of this installation |
 | `./argos-compose.sh upgrade` / `backup` / `diag` | Not provided in this version (exit 2) |
 | `./smoke.sh [--complete-setup --admin-password-file F]` | Installation checks; read-only unless `--complete-setup` |
@@ -89,3 +89,11 @@ bash deploy/compose/test/run-all.sh             # Docker: env-init in Linux cont
                                                 # and unattended mode. Not part of check. On a Linux Docker
                                                 # Engine run Gradle as root (the secrets go to uid 10001)
 ```
+
+`compose-smoke.sh` runs under the working tree's `server-it` lock (`test/lock/argos-lock.sh`,
+ADR-0010 C-235 (8)). It re-executes itself under `argos-lock.sh run server-it` and waits up to
+`ARGOS_LOCK_WAIT_SECONDS` (default 1800 s) while another run holds the lock. The image build of
+`:deploy:composeSmoke` rebuilds the server boot jar before the script starts. To cover the build as
+well, wrap the whole Gradle command:
+`bash test/lock/argos-lock.sh run server-it --purpose composeSmoke -- ./gradlew :deploy:composeSmoke`.
+The script then uses the held lock (`ARGOS_LOCK_TOKEN_SERVER_IT`).

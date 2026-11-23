@@ -24,5 +24,17 @@ final class EndState {
   static final AtomicLongFieldUpdater<TraceContext> EXT_NANOS =
       AtomicLongFieldUpdater.newUpdater(TraceContext.class, "extNanos");
 
+  /** {@link TraceContext#addSqlExecution(long)} (WO-15: SQL of async work on other threads). */
+  static final AtomicIntegerFieldUpdater<TraceContext> SQL_COUNT =
+      AtomicIntegerFieldUpdater.newUpdater(TraceContext.class, "sqlCount");
+
+  /** {@link TraceContext#addSqlExecution(long)}, {@link TraceContext#addSqlNanos(long)}. */
+  static final AtomicLongFieldUpdater<TraceContext> SQL_NANOS =
+      AtomicLongFieldUpdater.newUpdater(TraceContext.class, "sqlNanos");
+
+  /** {@link TraceContext#addDbcWait(long)}. */
+  static final AtomicLongFieldUpdater<TraceContext> DBC_NANOS =
+      AtomicLongFieldUpdater.newUpdater(TraceContext.class, "dbcNanos");
+
   private EndState() {}
 }

@@ -81,17 +81,20 @@ export const DEFAULT_CSV_FILE_NAME = 'argos-export.csv';
  * the trace JSON of ADR-0010 C-207 (1)).
  */
 export const DEFAULT_JSON_FILE_NAME = 'argos-export.json';
+/** File name of a plain-text download without a usable name (the thread dump of WO-37). */
+export const DEFAULT_TEXT_FILE_NAME = 'argos-export.txt';
 /** Longest file name kept (the server's names are about 60 characters). */
 export const MAX_CSV_FILE_NAME_LENGTH = 128;
 
 /** The extension a saved file always ends in and the name used when nothing usable is left. */
 interface FileKind {
-  readonly extension: '.csv' | '.json';
+  readonly extension: '.csv' | '.json' | '.txt';
   readonly fallback: string;
 }
 
 const CSV_FILE: FileKind = { extension: '.csv', fallback: DEFAULT_CSV_FILE_NAME };
 const JSON_FILE: FileKind = { extension: '.json', fallback: DEFAULT_JSON_FILE_NAME };
+const TEXT_FILE: FileKind = { extension: '.txt', fallback: DEFAULT_TEXT_FILE_NAME };
 /** The object URL lives this long after the click, so that the browser can start the download. */
 export const REVOKE_DELAY_MS = 10_000;
 
@@ -144,6 +147,11 @@ export function sanitizeCsvFileName(raw: string | null): string {
 /** sanitizeFileName for JSON downloads: always ends in `.json`, else DEFAULT_JSON_FILE_NAME. */
 export function sanitizeJsonFileName(raw: string | null): string {
   return sanitizeFileName(raw, JSON_FILE);
+}
+
+/** sanitizeFileName for plain-text downloads: always ends in `.txt`, else DEFAULT_TEXT_FILE_NAME. */
+export function sanitizeTextFileName(raw: string | null): string {
+  return sanitizeFileName(raw, TEXT_FILE);
 }
 
 /**
@@ -271,6 +279,8 @@ export async function requestCsv<M extends CsvMethod, P extends CsvPath<M>>(
 
 /** Media type of the blobs saveFile() names `.json`. */
 const JSON_BLOB_TYPE = /^application\/json\s*(;|$)/i;
+/** Media type of the blobs saveFile() names `.txt` (a thread dump's text, WO-37). */
+const TEXT_BLOB_TYPE = /^text\/plain\s*(;|$)/i;
 
 /** Timer and document seams of saveFile (tests replace them). */
 export interface SaveFileEnvironment {
@@ -283,7 +293,8 @@ export interface SaveFileEnvironment {
  * the URL is revoked after REVOKE_DELAY_MS. The only place in src/ that creates object URLs
  * (argos/no-object-url; eslint-allow.json). A blob typed `application/json` (the transaction
  * export's server bytes, the received trace response of ADR-0010 C-207 (1)) is saved under a
- * `.json` name (sanitizeJsonFileName); every other blob under a `.csv` name (sanitizeCsvFileName).
+ * `.json` name (sanitizeJsonFileName), a blob typed `text/plain` (a thread dump, WO-37) under a
+ * `.txt` name (sanitizeTextFileName); every other blob under a `.csv` name (sanitizeCsvFileName).
  */
 export function saveFile(blob: Blob, fileName: string, env: SaveFileEnvironment = {}): void {
   const doc = env.document ?? document;
@@ -294,7 +305,9 @@ export function saveFile(blob: Blob, fileName: string, env: SaveFileEnvironment 
     link.href = url;
     link.download = JSON_BLOB_TYPE.test(blob.type)
       ? sanitizeJsonFileName(fileName)
-      : sanitizeCsvFileName(fileName);
+      : TEXT_BLOB_TYPE.test(blob.type)
+        ? sanitizeTextFileName(fileName)
+        : sanitizeCsvFileName(fileName);
     link.rel = 'noopener';
     link.hidden = true;
     doc.body.append(link);

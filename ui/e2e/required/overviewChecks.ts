@@ -876,10 +876,14 @@ export interface OverviewFiringRowOracle {
 
 /**
  * The all-application firing panel that a GET /overview/alerts answer asks for (WO-25 item schema,
- * ADR-0010 C-212 (2), docs/15 §9.1): critical first, then the newest firing start (`ts`), at most
- * eight rows, "more" for the rest; the counts by severity; "empty" for no item.
+ * ADR-0010 C-212 (2), docs/15 §9.1): critical first, then the newest firing start (`ts`), the
+ * first `drawn` rows (at most eight; fewer when only they fit the height, C-234 (5)), "more" for
+ * the rest; the counts by severity; "empty" for no item.
  */
-export function expectedOverviewFiring(items: readonly unknown[]): {
+export function expectedOverviewFiring(
+  items: readonly unknown[],
+  drawn: number = OVERVIEW_FIRING_ROWS,
+): {
   state: 'empty' | 'list';
   rows: OverviewFiringRowOracle[];
   more: number;
@@ -905,7 +909,8 @@ export function expectedOverviewFiring(items: readonly unknown[]): {
     (a, b) =>
       Number(b.severity === 'critical') - Number(a.severity === 'critical') || b.since - a.since,
   );
-  const rows = sorted.slice(0, OVERVIEW_FIRING_ROWS).map(({ id, severity }) => ({ id, severity }));
+  const limit = Math.max(0, Math.min(drawn, OVERVIEW_FIRING_ROWS));
+  const rows = sorted.slice(0, limit).map(({ id, severity }) => ({ id, severity }));
   return {
     state: items.length === 0 ? 'empty' : 'list',
     rows,
@@ -946,10 +951,20 @@ async function shownOverviewFiring(page: Page): Promise<{
   rows: OverviewFiringRowOracle[];
   more: string | null;
   summary: string | null;
+  /** Pixels the side column ends below the page box (0 or less: it fits, C-234 (5)). */
+  overflow: number;
 }> {
   return page.evaluate(() => {
     const panel = document.querySelector('[data-testid="overview-firing-panel"]');
+    const side = panel === null ? null : (panel.closest('.overview-page__side') ?? panel);
+    const box = document.getElementById('argos-main');
+    const limit =
+      box === null
+        ? window.innerHeight
+        : Math.min(box.getBoundingClientRect().bottom, window.innerHeight) -
+          (Number.parseFloat(getComputedStyle(box).paddingBottom) || 0);
     return {
+      overflow: side === null ? 0 : side.getBoundingClientRect().bottom - limit,
       state: panel?.getAttribute('data-state') ?? null,
       total: panel?.getAttribute('data-total') ?? null,
       rows: [...(panel?.querySelectorAll('[data-testid="overview-firing-row"]') ?? [])].map(
@@ -971,7 +986,15 @@ export function overviewFiringMismatches(
   total: number | null,
 ): string[] {
   const out: string[] = [];
-  const expected = expectedOverviewFiring(items);
+  // The panel draws the first rows that fit (C-234 (5)): the drawn count, at most eight, sets the
+  // oracle's rows and "more"; the side column must end inside the page box (no page scroll).
+  const expected = expectedOverviewFiring(items, shown.rows.length);
+  if (shown.rows.length > OVERVIEW_FIRING_ROWS) {
+    out.push(`${String(shown.rows.length)} rows drawn, at most ${String(OVERVIEW_FIRING_ROWS)}`);
+  }
+  if (shown.overflow > 0.5) {
+    out.push(`the side column ends ${String(shown.overflow)} px below the page (a page scroll)`);
+  }
   if (total === null) {
     out.push('alerts_firing_total is null: the alert engine always counts (WO-25, C-212 (2))');
   } else if (total !== items.length) {

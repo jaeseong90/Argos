@@ -133,6 +133,30 @@ final class AuthDtos {
       @JsonProperty("session_expires_at") Instant sessionExpiresAt,
       @JsonProperty("kiosk_allowed") boolean kioskAllowed) {}
 
+  /**
+   * One of the caller's live sessions ({@code GET /auth/sessions}, 16 §7.10, ADR-0010 C-136 (3)).
+   *
+   * @param sessionId the session's id (UUIDv4, stable across refresh rotations)
+   * @param current whether it is the session of this request
+   * @param createdAt the login
+   * @param lastSeenAt the last refresh
+   * @param expiresAt when it ends without further use (the earlier of the idle and the absolute
+   *     expiry)
+   * @param userAgent the browser's {@code User-Agent} at the login (at most 256 characters)
+   * @param ip the client address at the login
+   * @param kiosk whether it is a long kiosk session (16 §7.5)
+   */
+  @Schema(name = "OwnSession")
+  record OwnSessionView(
+      @JsonProperty("session_id") String sessionId,
+      boolean current,
+      @JsonProperty("created_at") Instant createdAt,
+      @JsonProperty("last_seen_at") Instant lastSeenAt,
+      @JsonProperty("expires_at") Instant expiresAt,
+      @JsonProperty("user_agent") @ArgosUntrusted @Nullable String userAgent,
+      @Nullable String ip,
+      boolean kiosk) {}
+
   /** {@code GET /auth/csrf}: the one token a response body carries (14 §4.1). */
   record CsrfResponse(@JsonProperty("csrf_token") String csrfToken) {
 

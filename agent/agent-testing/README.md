@@ -294,6 +294,87 @@ shop-boot3/4: hurl, hc5, okhttp, jdk11, webclient, resttemplate):
 - Times on this laptop (shared, reference only): about 2.5 minutes for shop-boot3@21 alone and
   2 minutes for shop-boot2@8 with shop-boot4@21, with the agent jar already built.
 
+## Async suite (package `async`, WO-15, 10 §6.6, §8)
+
+`io.argos.agent.testing.async.AsyncPropagationTest` runs each shop jar app of `-Pagent.e2e` with the
+release agent jar over gRPC to a TLS FakeCollector (`AsyncRuns`: `async.step=true`,
+`sampling.profile.normal-rate=1.0`), first on platform request threads, then (shop-boot3/4 on JDK
+21+) with `SAMPLE_VT=true`. Each run starts once, its tests run in order, and it stops after its
+T-AG-005 baseline check (`<app>-<jdk>.txt`, `<app>-<jdk>-vt.txt`). The requests are the WO-15
+variants of `GET /api/async/executor` (`?work=sql`, `?work=detached`, sample-apps README).
+
+```
+./gradlew :agent:agent-testing:integrationTest --tests '*async*'                 # shop-boot3@21 (default)
+./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot3@25,shop-boot4@21 --tests '*async*'
+./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot3@21 --tests '*async*' --tests '*SampleAppAgentTest*' -Pagent.baseline.record=true
+```
+
+- Platform run: `work=sql` 20 times, every transaction has exactly one SQL step per async branch
+  (`@Async`, `supplyAsync`, scheduled task, app pool, per-task virtual thread on JDK 21+), the
+  branch statements, `sql_count` = `asyncSql` (T-AG-052g), each SQL step under an ASYNC step
+  (T-AG-052h); `removed`, `cancelled`, `queueAfterCancel` unchanged (T-AG-051m); the
+  `newVirtualThreadPerTaskExecutor` branch (T-AG-051n, JDK 21+); two `work=detached` rounds on the
+  pool thread that ran request tasks: no step in any transaction and `sql_outside_tx_total` grows by
+  exactly their statements (T-AG-052i, no leaked context); CPU and allocation present (T-ACC-23m
+  contrast); a batch count for the virtual-thread run.
+- `SAMPLE_VT=true` run: the same batch gives as many transactions (T-AG-054m); the async SQL steps
+  again, `@Async` on the virtual-thread `SimpleAsyncTaskExecutor` (T-AG-052j); `cpu_time_ms` and
+  `alloc_bytes` absent with `virtual_thread` and flag bit 1 (T-ACC-23n/T-AG-054n); request threads
+  `tomcat-handler-<n>` normalized to `tomcat-handler-` (T-AG-054o, 10 U-16); 2,000 requests: THREAD
+  dictionary at most 1,000 names, no `_other_`, overflow counter 0 (T-AG-054p); an active snapshot
+  item of a running request with `virtual_thread` and `tomcat-handler-` (T-AG-054q). Thread dumps
+  with virtual threads are WO-17.
+- Recording: `SampleAppAgentTest` verifies the same `<app>-<jdk>.txt`; within one recording run the
+  first recording of a file replaces it and later ones add their lines (`TransformBaseline.record`),
+  so record both test classes together as above.
+- Evidence: `[wo15-run]`, `[wo15-sql]`, `[wo15-leak]`, `[wo15-batch]`, `[wo15-vt]` and
+  `[wo15-baseline]` lines in the results' `system-out`; agent log and console of each run as
+  `build/reports/agent-e2e/wo15-<app>-jdk<N>-{platform,vt}-*`.
+
+## Remote commands and remote configuration (packages `command`, `remoteconfig`, WO-17, 10 §12, 11 §8, 16 §5)
+
+The release agent jar over gRPC to a TLS FakeCollector; the server side of the same round trips
+(real bootJar, PostgreSQL, ClickHouse) is `ui/e2e/specs/agent-commands.spec.ts` (`pnpm -C ui
+e2e:stack --grep "WO-17"`, needs a host JVM, skipped inside `e2e:docker`).
+
+```
+./gradlew :agent:agent-testing:integrationTest -Pagent.attach.jdks=8,11,17,21,25 \
+  -Pagent.e2e=shop-boot2@8,shop-boot3@21,shop-boot3@25 \
+  --tests 'io.argos.agent.testing.command.*' --tests 'io.argos.agent.testing.remoteconfig.*'
+```
+
+- `command` (shop-boot3 entries of `-Pagent.e2e`): `CommandRoundTripTest` (all five command types
+  with their content types, multi-chunk results joined, COOLDOWN, unknown type 99 REJECTED, handler
+  FAILED, TTL measured from receipt (`issued_at_ms` two minutes old with `ttl_s=1` still runs; the
+  EXPIRED path itself is `CommandDispatcherTest` with an injected clock), CONFIG_RELOAD after a
+  real yml edit with `CONFIG_FILE_RELOADED`); `EnvDumpSeedTest` (T-AG-072/T-SEC-20: `ARGOS_SEED`
+  sentinel secrets in the environment, `-D` and `JAVA_TOOL_OPTIONS`, 0 occurrences in the result
+  and the agent log); `ThreadDumpVirtualTest` (T-AG-054 dump item: `SAMPLE_VT=true` on each
+  `shop-boot3@N` with N >= 21, a `virtual=true` thread with the running `tx_id`, THREAD_STACK of
+  that `tx_id` matches; 10 U-2 on each `-Pagent.attach.jdks` JDK); `SelfDiagCommandE2eTest` (C-95:
+  the SELF_DIAGNOSTICS command and the `-Dargos.test.selfdiag-file` snapshot agree on every shared
+  value).
+- `remoteconfig`: `RemoteConfigE2eTest` (T-AG-069/T-SEC-23 on every shop-boot2/shop-boot3 entry:
+  `normal-rate=0` stops profiles, `ignore-paths` stops transactions, a widened allow list applies
+  with source `remote`; not allowed, immutable, unknown, invalid and `reduce_masking` keys are
+  rejected and SELF_DIAGNOSTICS still shows the local value and source; `InstanceUpdate.config_hash`;
+  the WARN names keys only; push to result <= 10 s), `KillSwitchRemoteTest` (T-AG-043 on the first
+  shop-boot3: push `enabled=false/true`, no transactions while off, heartbeats and metrics go on,
+  `KILL_SWITCH_ON/OFF`; `ServerHello.config enabled=false` at start and across reconnects, C-231
+  (4)), `RetransformLimitTest` (T-AG-046: more than 50 classes rejected `retransform_limit` without
+  using the minute, 2 classes retransformed, a second change within a minute rejected),
+  `CustomMethodPolicyE2eTest` (T-SEC-25: forbidden local items ignored with a WARN, a pushed
+  `jakarta.` item `FORBIDDEN_PATTERN`, an item over 500 classes disabled).
+- `transport.SessionTransportTest#remoteConfigAndCommandsOnTheSession` replaces the WO-11
+  reject-all check; `jdbc.VirtualThreadDbTargetTest` (C-233 (6), `--tests
+  '*VirtualThreadDbTargetTest'`, about 40 s) pins the rule that only a cold DBC step that ends
+  before the data source's first SQL has no DB target, on virtual and platform request threads
+  alike (the target becomes known at the first statement; a designed behaviour, C-143 (4)).
+- Evidence: `[wo17-u2]`, `[wo17-vt]`, `[wo17-env]`, `[wo17-selfdiag]`, `[wo17-roundtrip]`,
+  `[wo17-n25]`, `[wo17-retransform]`, `[wo17-killswitch]` and `[c233]` lines in the results'
+  `system-out`; logs as `build/reports/agent-e2e/wo17-*` and `c233-<app>-jdk<N>-{vt,platform}-agent.log`.
+  Timings on a shared machine are references only.
+
 ## FakeCollector (`collector`, 18 §5.3)
 
 ```java
@@ -394,9 +475,20 @@ try (FakeCollector collector = FakeCollector.builder().tls(true).heartbeatInterv
   also waits up to 2 s for what its matches still miss, so read through it, not `transactions()`,
   right after a request. An unknown dictionary id reads `#<id>`. `CollectorWiringTest` compares the
   two views on the same request.
-- Server messages: `pushConfig(...)` and `command(...)` complete with the agent's
-  `ConfigApplyResult` and joined `CommandResult` chunks; `requestDictionary(kind, hashes...)`
-  (11 §7 step 3, the answer lands in `dictionary()`); `sendThrottle(rate, backoff)` (11 §6).
+- Server messages: `pushConfig(values[, revert])` and `command(type, args[, ttlS[, issuedAtMs]])`
+  (default `ttl_s` 60) complete with the agent's `ConfigApplyResult` (`ConfigApplyOutcome`:
+  applied keys, rejected key → `RejectCode`, `message(key)`, `effectiveConfigHash`, `durationMs`,
+  `roundTripMs` measured by the collector) and joined `CommandResult` chunks (`CommandOutcome`:
+  `ok()`, `chunks()`, `durationMs`, `roundTripMs`); `commandRaw(typeNumber, args)` sends a number
+  outside the enum; `helloConfig(map)` replaces the `ServerHello.config` of the next sessions
+  (reconnect with `faults().closeStream()`); `requestDictionary(kind, hashes...)` (11 §7 step 3, the
+  answer lands in `dictionary()`); `sendThrottle(rate, backoff)` (11 §6). Agent events and config
+  hashes: `agentEvents([type])`, `awaitAgentEvents(type, n, timeout)` (`AgentEventInfo`),
+  `configHashes()`, `configHashUpdates()`, `awaitConfigHash(hash, timeout)`.
+- Self-diagnostics over the command path (C-95): `SelfDiagnostics.fromCommand(collector[,
+  timeout])` or `app.selfDiagnostics(collector)` sends SELF_DIAGNOSTICS and parses the result like
+  the snapshot file; members the file lacks read as `diagnostics.member("effective_config.<key>.source")`; a
+  non-OK answer (COOLDOWN) is not-available with the status as its reason.
 - Accessors: `batches()`, `seqs(kind)` (arrival order, retries and duplicates included),
   `batchesAfter(instant)`, `counts()` (`KindCounts` per kind), `maxConcurrentUnaryCalls()` (the
   high-water mark of data calls between arrival and answer, never above the client's own

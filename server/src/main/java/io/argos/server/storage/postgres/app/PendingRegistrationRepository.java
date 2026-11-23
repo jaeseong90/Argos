@@ -25,8 +25,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       registered variants, upserts (name, env, host): a new row starts at 1 attempt, a known row
  *       counts one more attempt and moves its last attempt. At most {@value #MAX_ROWS} rows: a new
  *       row beyond them replaces the least recently attempted one (ties: the lowest id).
- *   <li>{@link #list}, {@link #approve}, {@link #reject}: for the administration API of WO-26
- *       ({@code /admin/pending-registrations*}, not built here).
+ *   <li>{@link #list}, {@link #find}, {@link #approve}, {@link #reject}: the administration API of
+ *       WO-26 ({@code /admin/pending-registrations*}, {@code admin.apps.ApprovalService}).
  * </ul>
  *
  * <p>Writers of the queue serialize on one transaction-scoped advisory lock ({@value #LOCK_KEY}),
@@ -83,13 +83,18 @@ public class PendingRegistrationRepository {
           + " FROM argos.pending_registrations WHERE env = ?"
           + " ORDER BY last_attempt_at DESC NULLS LAST, id DESC LIMIT ?";
 
+  private static final String FIND =
+      "SELECT " + COLUMNS + " FROM argos.pending_registrations WHERE id = ?";
+
   private static final String FIND_FOR_UPDATE =
       "SELECT " + COLUMNS + " FROM argos.pending_registrations WHERE id = ? FOR UPDATE";
 
-  private static final String LOCK_HOME = "SELECT id FROM argos.apps WHERE id = ? FOR UPDATE";
+  private static final String LOCK_HOME =
+      "SELECT id FROM argos.apps WHERE id = ? AND deleted_at IS NULL FOR UPDATE";
 
   private static final String FIND_APP =
-      "SELECT id, name, env, registered_from_app_id FROM argos.apps WHERE name = ? AND env = ?";
+      "SELECT id, name, env, registered_from_app_id FROM argos.apps WHERE name = ? AND env = ?"
+          + " AND deleted_at IS NULL";
 
   private static final String INSERT_APP =
       "INSERT INTO argos.apps (name, env, auto_register, registered_from_app_id)"
@@ -172,6 +177,11 @@ public class PendingRegistrationRepository {
     return env == null
         ? jdbc.query(LIST_ALL, ROW, MAX_ROWS)
         : jdbc.query(LIST_ENV, ROW, env, MAX_ROWS);
+  }
+
+  /** Request {@code id}, if queued. */
+  public Optional<PendingRegistration> find(int id) {
+    return jdbc.query(FIND, ROW, id).stream().findFirst();
   }
 
   /**

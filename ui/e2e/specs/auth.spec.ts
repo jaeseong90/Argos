@@ -8,7 +8,7 @@ import type { Page, Route } from '@playwright/test';
 
 import { t } from '../fixtures/i18n';
 import { expect, rolePassword, test } from '../fixtures/stack';
-import { expectShell, expectUrl } from '../fixtures/ui';
+import { expectShell, expectUrl, horizontalOverflow } from '../fixtures/ui';
 import { manifestVariables } from '../required/variables';
 import { ApiSession } from '../stack/api';
 import { credentialFile } from '../stack/paths';
@@ -306,6 +306,195 @@ test.describe('password change', () => {
         expect: [204],
       });
       await api.logout();
+    },
+  );
+});
+
+/** An enveloped answer (docs/14 §2.5) for the routed setup calls. */
+function enveloped(data: unknown): { data: unknown; meta: Record<string, string> } {
+  return { data, meta: { request_id: 'e2e-setup-route', generated_at: new Date().toISOString() } };
+}
+
+test.describe('setup wizard first application', () => {
+  test.use({ role: 'admin' });
+
+  test(
+    'T-E2E-057 the setup wizard first-application step registers an app and shows its agent token once',
+    {
+      tag: '@security',
+      annotation: [
+        { type: 'req', description: 'SEC-02' },
+        { type: 'req', description: 'SEC-47' },
+        { type: 'req', description: 'F-U14' },
+        {
+          type: 'note',
+          description:
+            'The stack server is set up already, so /setup/status and /setup/admin are routed ' +
+            '(needs_setup, a created administrator); the signed-in administrator session, ' +
+            'POST /apps and POST /admin/apps/{appId}/tokens are the real server (ADR-0010 C-168 (2)).',
+        },
+      ],
+    },
+    async ({ page, apiAs, seed }) => {
+      await page.route('**/api/v1/setup/status', (route) =>
+        route.fulfill({ json: enveloped({ needs_setup: true, server_version: 'e2e' }) }),
+      );
+      await page.route('**/api/v1/setup/admin', (route) =>
+        route.fulfill({
+          status: 201,
+          json: enveloped({
+            user: { id: 'e2e-setup', username: 'e2e-setup', roles: ['admin'], permissions: [] },
+          }),
+        }),
+      );
+      await page.goto('/setup');
+      await page.getByTestId('setup-token-input').fill('e2e-routed-setup-token');
+      await page.getByTestId('setup-next').click();
+      await page.getByTestId('setup-admin-username').fill('e2e-setup');
+      await page.getByTestId('setup-admin-password').fill('e2e-setup-password-0');
+      await page.getByTestId('setup-admin-confirm').fill('e2e-setup-password-0');
+      await page.getByTestId('setup-next').click();
+      await page.getByTestId('setup-create').click();
+      // The real /auth/me answers for the administrator's cookies: the first-app step opens.
+      await expect(page.getByTestId('setup-first-app')).toBeVisible();
+
+      const name = `e2e-first-app-${Date.now().toString(36)}`;
+      await page.getByTestId('setup-first-app-name').fill(name);
+      await page.getByTestId('setup-first-app-env').fill('e2e');
+      const created = page.waitForResponse(
+        (r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/apps',
+      );
+      const issued = page.waitForResponse(
+        (r) =>
+          r.request().method() === 'POST' &&
+          /^\/api\/v1\/admin\/apps\/\d+\/tokens$/.test(new URL(r.url()).pathname),
+      );
+      await page.getByTestId('setup-first-app-create').click();
+      const createdResponse = await created;
+      expect(createdResponse.status()).toBe(201);
+      const appId = ((await createdResponse.json()) as { data: { app_id: number } }).data.app_id;
+      const admin = await apiAs('admin');
+      try {
+        const issuedResponse = await issued;
+        expect(issuedResponse.status()).toBe(201);
+        // SEC-02: the one answer that carries the token is not cached.
+        expect(issuedResponse.headers()['cache-control'] ?? '').toContain('no-store');
+
+        const value = page.getByTestId('setup-first-app-token-value');
+        await expect(value).toBeVisible();
+        const token = await value.inputValue();
+        expect(token).toMatch(/^argos_[A-Za-z0-9_-]{40,}$/);
+        await expect(page.getByTestId('setup-first-app-snippet')).toContainText(
+          `-Dargos.app.name=${name}`,
+        );
+        await expect(page.getByTestId('setup-first-app-snippet')).not.toContainText(token);
+        // docs/15 §13: no horizontal page scroll at 1366x768 with the token and options shown.
+        await page.setViewportSize({ width: 1366, height: 768 });
+        const wide = await horizontalOverflow(page);
+        expect(wide.scrollWidth, 'scrollWidth <= clientWidth').toBeLessThanOrEqual(
+          wide.clientWidth,
+        );
+
+        // The server keeps the prefix only and lists the new token as active.
+        const tokens = await admin.data<{ prefix: string; state: string }[]>(
+          `/admin/apps/${String(appId)}/tokens`,
+        );
+        expect(tokens.map((x) => [x.prefix, x.state])).toEqual([[token.slice(0, 14), 'active']]);
+        // The issued token authenticates as the application (C-12 Bearer event write).
+        const event = await fetch(`${seed.stack_url}/api/v1/events`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ app_id: appId, type: 'custom', title: 'T-E2E-057 token check' }),
+        });
+        expect(event.status).toBe(201);
+
+        // Never kept by the page: not in storage, cookies or the URL.
+        const kept = await page.evaluate(() => {
+          const values = [location.href, document.cookie];
+          for (const storage of [localStorage, sessionStorage]) {
+            for (let i = 0; i < storage.length; i += 1) {
+              const key = storage.key(i) ?? '';
+              values.push(key, storage.getItem(key) ?? '');
+            }
+          }
+          return values.join('\n');
+        });
+        expect(kept).not.toContain(token);
+
+        await page.getByTestId('setup-first-app-continue').click();
+        await expect(page.getByTestId('setup-finish-token-issued')).toHaveText(
+          t('auth:setup.finish.agentTokenIssued'),
+        );
+        // Shown once: gone from the page after the step.
+        expect(await page.locator('body').innerText()).not.toContain(token);
+        expect(
+          await page.evaluate(
+            (secret) =>
+              Array.from(document.querySelectorAll('input')).some((i) => i.value === secret),
+            token,
+          ),
+        ).toBe(false);
+      } finally {
+        // Leave no application behind for the other specs (C-153 delete revokes its tokens).
+        await admin.request('DELETE', `/apps/${String(appId)}`, {
+          query: { confirm: name },
+          expect: [202],
+        });
+        await admin.logout();
+      }
+    },
+  );
+});
+
+test.describe('own sessions', () => {
+  test(
+    'T-E2E-058 /account lists the own sessions with the current one marked and ends another at once',
+    {
+      tag: '@security',
+      annotation: [
+        { type: 'req', description: 'SEC-42' },
+        { type: 'req', description: 'F-U14' },
+      ],
+    },
+    async ({ page, apiAs }) => {
+      // A second session of the same user (the Node client), the one to end from the browser.
+      const other = await apiAs('viewer');
+      const own = await other.data<{ session_id: string; current: boolean }[]>('/auth/sessions');
+      const otherId = own.find((s) => s.current)?.session_id ?? '';
+      expect(otherId).toMatch(/^[0-9a-f-]{36}$/);
+
+      await page.setViewportSize({ width: 1366, height: 768 });
+      await page.goto('/account');
+      const list = page.getByTestId('account-sessions-list');
+      await expect(list).toBeVisible();
+      // docs/15 §13: the session list fits 1366x768 without horizontal page scroll.
+      const wide = await horizontalOverflow(page);
+      expect(wide.scrollWidth, 'scrollWidth <= clientWidth').toBeLessThanOrEqual(wide.clientWidth);
+      const current = list.locator('[data-testid="account-session"][data-current="true"]');
+      await expect(current).toHaveCount(1);
+      await expect(current.getByTestId('account-session-current')).toHaveText(
+        t('auth:account.sessions.current'),
+      );
+      await expect(current.getByTestId('account-session-revoke')).toHaveCount(0);
+      const target = list.locator(`[data-session-id="${otherId}"]`);
+      await expect(target).toBeVisible();
+      await expect(target).not.toHaveAttribute('data-current', 'true');
+
+      const ended = page.waitForResponse(
+        (r) =>
+          r.request().method() === 'DELETE' &&
+          new URL(r.url()).pathname === `/api/v1/auth/sessions/${otherId}`,
+      );
+      await target.getByTestId('account-session-revoke').click();
+      expect((await ended).status()).toBe(204);
+      await expect(page.getByTestId('account-sessions-revoked')).toBeVisible();
+      await expect(target).toHaveCount(0);
+      // Ended on the server at once: the other session's next request is refused.
+      const after = await other.request('GET', '/auth/me', { expect: [401] });
+      expect(after.status).toBe(401);
+      // The browser's own session goes on.
+      await page.reload();
+      await expect(page.getByTestId('account-page')).toBeVisible();
     },
   );
 });

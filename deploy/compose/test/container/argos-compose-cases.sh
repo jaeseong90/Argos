@@ -4,8 +4,9 @@
 # Cases of argos-compose.sh without a stack (docs/17 section 3.1, ADR-0010 C-171 (4) and C-173,
 # docs/03 section 2 "input limits", T-SEC-74): the commands of later work orders refuse, the up
 # preflight refuses without starting anything, token create refuses out-of-range input before any
-# docker or psql call, gives psql only the hash of the token, takes the agent's host from
-# tls/server.crt (never from the public URL), and an interrupt ends it with exit 130. Run as root
+# docker call, issues through argos-admin token create in the running, healthy server container
+# (C-173 (4)) and passes its exit codes 0, 4 and 1 on, prints the token once, takes the agent's
+# host from tls/server.crt (never from the public URL), and an interrupt ends it with exit 130. Run as root
 # in pinned Linux containers by ../argos-compose.test.sh. SRC is a read-only copy of deploy/compose,
 # /deploy the read-only deploy/clickhouse and deploy/postgres, T this test directory. docker is the
 # test double container/fake-bin/docker, which records every call in FAKE_DOCKER_LOG.
@@ -162,14 +163,14 @@ check "argos-compose up: with the daemon down docker compose up is not called" n
 unset FAKE_DOCKER_DOWN
 expect_exit 0 "argos-compose up: starts again after every restore (control case)" ac up
 
-# --- token create: input limits (docs/03 section 2), refused before any docker or psql call ------
+# --- token create: input limits (docs/03 section 2), refused before any docker call ---------------
 A64=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 E32=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 tc_refused() { # tc_refused <description> <token create arguments...>
   case_name="input limit: token create $1" # expect_exit of lib.sh sets desc
   shift
   expect_exit 2 "$case_name: exit 2" ac token create "$@"
-  check "$case_name: no docker or psql call" no_docker_call
+  check "$case_name: no docker call" no_docker_call
 }
 tc_refused "--app of 65 characters" --app "${A64}a" --env prod
 tc_refused "--app with a space" --app "order api" --env prod
@@ -194,31 +195,57 @@ expect_exit 2 "token: a subcommand other than create exits 2" ac token revoke --
 output_has "only 'create' is provided in this version" "token: the other subcommand is refused by name"
 check "token: a subcommand other than create calls no docker" no_docker_call
 
-# --- token create: the accepted path (fake psql) ---------------------------------------------------
+# --- token create: the accepted path (fake argos-admin in the server container) -------------------
 # token_run <arguments...>: token create; the raw output stays in /tmp/token.raw (umask 077), the
 # test output shows it with the token replaced by argos_****.
 token_run() {
   : >"$LOG"
   rc=0
-  (umask 077 && env FAKE_DOCKER_OS="$LINUX" FAKE_PSQL_INPUT=/tmp/psql.in sh ./argos-compose.sh token create "$@" \
+  (umask 077 && env FAKE_DOCKER_OS="$LINUX" FAKE_ADMIN_ARGS=/tmp/admin.args sh ./argos-compose.sh token create "$@" \
     >/tmp/token.raw 2>&1) || rc=$?
   sed "s/$TOKEN_RE/argos_****/g" /tmp/token.raw
   return "$rc"
 }
 expect_exit 0 "input limit: token create accepts --app of 64, --env of 32 characters and --expires-days 3650" \
   token_run --app "$A64" --env "$E32" --expires-days 3650
-hash_only() {
+server_issues() {
   n=$(grep -c "$TOKEN_RE" /tmp/token.raw)
   [ "$n" -eq 1 ] || { echo "the token is printed $n times"; return 1; }
   t=$(grep -o "$TOKEN_RE" /tmp/token.raw | head -n 1)
-  h=$(printf '%s' "$t" | sha256sum | awk '{ print $1 }')
   p=$(printf '%s' "$t" | cut -c1-14)
-  grep -qF "\\set token_hash '$h'" /tmp/psql.in || { echo "psql did not get the SHA-256 of the printed token"; return 1; }
-  grep -qF "\\set token_prefix '$p'" /tmp/psql.in || { echo "psql did not get the 14-character prefix"; return 1; }
-  ! grep -qF "$t" /tmp/psql.in || { echo "psql got the token itself"; return 1; }
+  grep -qF "prefix $p" /tmp/token.raw || { echo "the prefix of the printed token is not named"; return 1; }
+  grep -qF "admin token create --app $A64 --env $E32 --actor argos-compose --json --expires-days 3650" /tmp/admin.args \
+    || { echo "argos-admin did not get the options:"; cat /tmp/admin.args; return 1; }
+  grep -q 'compose .*exec -T -e JAVA_TOOL_OPTIONS= server java -Xmx256m .*-cp @/opt/argos/app/jib-classpath-file io.argos.server.ServerApplication admin token create' "$LOG" \
+    || { echo "argos-admin did not run in the server container with its classpath:"; cat "$LOG"; return 1; }
+  ! grep -q 'psql' "$LOG" || { echo "psql was called"; return 1; }
+  ! grep -qF "$t" "$LOG" || { echo "the token is on a docker command line"; return 1; }
   t=
 }
-check "C-173: the token is printed once; psql gets only its SHA-256 and 14-character prefix" hash_only
+check "C-173 (4): argos-admin token create issues in the server container; the token is printed once and never on a command line" server_issues
+token_run --app order-api --env prod >/dev/null || true
+no_expiry_option() { ! grep -q -- '--expires-days' /tmp/admin.args; }
+check "C-173 (4): without --expires-days the server's default (365 days) applies" no_expiry_option
+
+# Refusals and failures of the server's command pass on: 4 (limit) and 1, without a token.
+no_token_printed() { ! grep -q "$TOKEN_RE" /tmp/token.raw; }
+limit_run() { (FAKE_ADMIN_EXIT=4 && export FAKE_ADMIN_EXIT && token_run "$@"); }
+expect_exit 4 "C-173 (4): the limit of 5 active tokens exits 4" limit_run --app order-api --env prod
+output_has "maximum of 5 active agent tokens" "C-173 (4): the limit is named"
+check "C-173 (4): no token after the limit" no_token_printed
+failed_run() { (FAKE_ADMIN_EXIT=1 && export FAKE_ADMIN_EXIT && token_run "$@"); }
+expect_exit 1 "C-173 (4): a failure of argos-admin exits 1" failed_run --app order-api --env prod
+output_has "cannot connect as argos_app" "C-173 (4): the failure's message is shown"
+output_has "the token was not created" "C-173 (4): the failure says no token was created"
+check "C-173 (4): no token after a failure" no_token_printed
+not_running_run() { (FAKE_PS_EMPTY=1 && export FAKE_PS_EMPTY && token_run "$@"); }
+expect_exit 2 "C-173 (4): without a running server exits 2" not_running_run --app order-api --env prod
+output_has "the server service is not running" "C-173 (4): the stopped server is named"
+unhealthy_run() { (FAKE_HEALTH=starting && export FAKE_HEALTH && token_run "$@"); }
+expect_exit 2 "C-173 (4): with a server that is not healthy exits 2" unhealthy_run --app order-api --env prod
+output_has "the server service is not healthy (starting)" "C-173 (4): the server's health is named"
+no_admin_call() { ! grep -q 'admin token create' "$LOG"; }
+check "C-173 (4): argos-admin is not run before the server is healthy" no_admin_call
 
 # The agent configuration example: the host of tls/server.crt (its first DNS name, else its first
 # IP address), never the public URL of the UI (ui.example.test); <argos-host> when unknown.
@@ -276,10 +303,10 @@ if command -v openssl >/dev/null 2>&1; then
 else
   echo "SKIP  C-173 example: the host from the certificate needs openssl (covered on the PostgreSQL image)"
 fi
-rm -f /tmp/token.raw /tmp/psql.in
+rm -f /tmp/token.raw /tmp/admin.args
 
 # --- token create: an interrupt (Ctrl-C) ends it with exit 130, no token, no temporary files ------
-# fake-bin/docker sends SIGINT to argos-compose.sh while it waits for psql.
+# fake-bin/docker sends SIGINT to argos-compose.sh while it waits for argos-admin in the server.
 mkdir -p /tmp/tc-tmp
 tc_interrupted() {
   : >"$LOG"
@@ -289,8 +316,7 @@ tc_interrupted() {
   sed "s/$TOKEN_RE/argos_****/g" /tmp/token.raw
   return "$rc"
 }
-expect_exit 130 "token create: SIGINT during the database transaction ends it with exit 130" tc_interrupted
-no_token_printed() { ! grep -q "$TOKEN_RE" /tmp/token.raw; }
+expect_exit 130 "token create: SIGINT while argos-admin runs ends it with exit 130" tc_interrupted
 check "token create: after SIGINT no token is printed" no_token_printed
 tc_tmp_empty() { [ -z "$(ls -A /tmp/tc-tmp)" ] || { ls -A /tmp/tc-tmp; return 1; }; }
 check "token create: after SIGINT its temporary directory is removed" tc_tmp_empty

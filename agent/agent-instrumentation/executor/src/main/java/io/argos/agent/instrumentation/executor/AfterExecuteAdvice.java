@@ -8,10 +8,11 @@ import io.argos.agent.bootstrap.TraceContext;
 import net.bytebuddy.asm.Advice;
 
 /**
- * Inlined into {@code ThreadPoolExecutor.afterExecute(Runnable, Throwable)} (java.base, 10 §6.6):
- * on the worker thread, right after the task, closes the ASYNC step (error flag when the task
- * threw) and the scope that {@link BeforeExecuteAdvice} opened, restoring the worker's previous
- * binding.
+ * Inlined into {@code afterExecute(Runnable, Throwable)} of the pools of {@link
+ * BeforeExecuteAdvice} (10 §6.6): on the worker thread, right after the task, closes the ASYNC step
+ * (error flag when the task threw) and the scope that {@link BeforeExecuteAdvice} opened, restoring
+ * the worker's previous binding. An override that calls {@code super.afterExecute} finds the scope
+ * already closed in the nested call and does nothing there.
  */
 public final class AfterExecuteAdvice {
   private AfterExecuteAdvice() {}

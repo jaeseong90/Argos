@@ -2,8 +2,8 @@
 //
 // Representative stack of the error group detail (05 §2.5-5 "애플리케이션 패키지 프레임 굵게"): the
 // transaction detail's FrameList, which the error detail reuses, puts application frames in bold
-// once the application's packages are known. The API has no `app_packages` until WO-26 (ADR-0010
-// C-207 (3)), so this fixture stands in for them: frames of `com.shop` are bold, library frames and
+// for the application's packages (`app_packages` of GET /apps/{appId}, ADR-0010 C-207 (3)); this
+// fixture stands in for them: frames of `com.shop` are bold, library frames and
 // look-alike packages (`com.shopping`) are not, and with no packages nothing is bold.
 // Requirements (test/README.md §5): { type: 'req', description: 'F-U07' }
 import { render, screen, within } from '@testing-library/react';
@@ -14,7 +14,7 @@ import { withI18n } from '../../../components/testing/withI18n';
 import { FrameList } from '../../transaction/FrameList';
 import { SAMPLE_STACK } from '../testing/fixtures';
 
-/** The fixture standing in for the API's app_packages (WO-26). */
+/** The fixture standing in for the API's app_packages (C-207 (3)). */
 const APP_PACKAGES = ['com.shop'] as const;
 
 const FRAMES = [...SAMPLE_STACK, 'com.shopping.cart.Cart.add(Cart.java:12)'].map((frame) =>
@@ -44,7 +44,7 @@ describe('representative stack application frames (05 §2.5-5, C-207 (3))', () =
     ]);
   });
 
-  it('puts nothing in bold without application packages (until WO-26)', () => {
+  it('puts nothing in bold without application packages', () => {
     render(<FrameList source={SOURCE} data-testid="stack" />, {
       wrapper: withI18n('en'),
     });

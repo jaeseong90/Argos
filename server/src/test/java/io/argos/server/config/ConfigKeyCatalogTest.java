@@ -127,7 +127,7 @@ class ConfigKeyCatalogTest {
           case "long" -> Long.toString((Long) current + 1);
           case "double" -> Double.toString((Double) current / 2);
           case "boolean" -> Boolean.toString(!(Boolean) current);
-          case "duration" -> plusOneDay((Duration) current).toMillis() + "ms";
+          case "duration" -> plusOneSecond((Duration) current).toMillis() + "ms";
           case "data-size" -> plusOneMegabyte((DataSize) current).toBytes() + "B";
           case "time-zone" -> "UTC".equals(String.valueOf(current)) ? "Europe/Berlin" : "UTC";
           case "string" -> "round-trip-value";
@@ -142,8 +142,10 @@ class ConfigKeyCatalogTest {
     return Map.of(name, value);
   }
 
-  private static Duration plusOneDay(Duration current) {
-    return current == null ? Duration.ofDays(1) : current.plusDays(1);
+  // One second more, not one day: range-checked durations (argos.commands.ttl <= 1h, WO-26) must
+  // stay valid, and one second is still a value other than the default.
+  private static Duration plusOneSecond(Duration current) {
+    return current == null ? Duration.ofDays(1) : current.plusSeconds(1);
   }
 
   private static DataSize plusOneMegabyte(DataSize current) {

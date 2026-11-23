@@ -20,6 +20,8 @@ import io.argos.server.collector.grpc.Inbound;
 import io.argos.server.collector.limits.LimitsChecker;
 import io.argos.server.collector.limits.Violation;
 import io.argos.server.ingest.api.DictionaryIntake;
+import io.argos.server.session.api.CommandResultSink;
+import io.argos.server.session.api.ConfigApplyResultSink;
 import io.grpc.Status;
 import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.ServerCalls;
@@ -56,9 +58,13 @@ import org.slf4j.LoggerFactory;
  *       for the instance merge below;
  *   <li>{@code AgentBye} (the 5 minute grace and a {@code stop} event, S-17) and {@code AgentEvent}
  *       (WARN conditions) go to the {@link InstanceStateTracker} (WO-22) and are counted;
- *   <li>{@code ConfigApplyResult}, {@code CommandResult}, a second Hello and unknown bodies:
- *       counted ({@code argos_collector_session_messages_total}) and ignored; they never fail the
- *       stream (commands and configuration are WO-26's).
+ *   <li>{@code CommandResult} and {@code ConfigApplyResult}: counted and handed, with the instance
+ *       of this session, to the {@link CommandResultSink} and the {@link ConfigApplyResultSink}
+ *       (WO-26; {@link #commandResults}, {@link #configApplyResults}); a sink that throws is
+ *       counted ({@code type="command_result_failed"}, {@code "config_apply_result_failed"}) and
+ *       the stream continues; without a sink they are ignored;
+ *   <li>a second Hello and unknown bodies: counted ({@code argos_collector_session_messages_total})
+ *       and ignored; they never fail the stream.
  * </ul>
  *
  * <p>End of the stream: the agent's half-close keeps the session valid for its last data calls (the
@@ -107,6 +113,8 @@ public final class SessionHandler
   private final InstanceStateTracker states;
   private final Duration idleTimeout;
   private final LongSupplier ticker;
+  private volatile CommandResultSink commandResults;
+  private volatile ConfigApplyResultSink configApplyResults;
 
   /** The handler without instance states (every heartbeat is acknowledged {@code UP}). */
   public SessionHandler(
@@ -188,6 +196,22 @@ public final class SessionHandler
     this.clock = Objects.requireNonNull(clock, "clock");
     this.timer = Objects.requireNonNull(timer, "timer");
     this.helloTimeout = Objects.requireNonNull(helloTimeout, "helloTimeout");
+  }
+
+  /**
+   * Sets the receiver of {@code CommandResult} messages (WO-26 {@code CommandRouter}); null drops
+   * them. Set once at startup, before the collector listener starts.
+   */
+  public void commandResults(CommandResultSink sink) {
+    this.commandResults = sink;
+  }
+
+  /**
+   * Sets the receiver of {@code ConfigApplyResult} messages (WO-26 {@code ConfigChangeService});
+   * null drops them. Set once at startup, before the collector listener starts.
+   */
+  public void configApplyResults(ConfigApplyResultSink sink) {
+    this.configApplyResults = sink;
   }
 
   /**
@@ -289,8 +313,8 @@ public final class SessionHandler
             states.onEvent(session, message.getEvent());
           }
         }
-        case CONFIG_APPLY_RESULT -> metrics.sessionMessage("config_apply_result");
-        case COMMAND_RESULT -> metrics.sessionMessage("command_result");
+        case CONFIG_APPLY_RESULT -> configApplyResult(message);
+        case COMMAND_RESULT -> commandResult(message);
         case BODY_NOT_SET -> metrics.sessionMessage("unknown");
       }
     }
@@ -418,6 +442,41 @@ public final class SessionHandler
         session.clock().acked(hb.getT1Ms(), t2, t3);
       } else {
         metrics.sessionMessage("heartbeat_ack_skipped");
+      }
+    }
+
+    /** Hands a {@code CommandResult} to the sink with this session's instance (never throws). */
+    private void commandResult(AgentMessage message) {
+      metrics.sessionMessage("command_result");
+      CommandResultSink sink = commandResults;
+      if (sink == null) {
+        return;
+      }
+      try {
+        sink.onResult(session.instanceId(), message.getCommandResult());
+      } catch (RuntimeException e) {
+        // The payload is collected data: only the exception type is logged.
+        metrics.sessionMessage("command_result_failed");
+        LOG.warn(
+            "A CommandResult of {} was not processed: {}", session, e.getClass().getSimpleName());
+      }
+    }
+
+    /** Hands a {@code ConfigApplyResult} to the sink with this session's instance. */
+    private void configApplyResult(AgentMessage message) {
+      metrics.sessionMessage("config_apply_result");
+      ConfigApplyResultSink sink = configApplyResults;
+      if (sink == null) {
+        return;
+      }
+      try {
+        sink.onResult(session.instanceId(), message.getConfigApplyResult());
+      } catch (RuntimeException e) {
+        metrics.sessionMessage("config_apply_result_failed");
+        LOG.warn(
+            "A ConfigApplyResult of {} was not processed: {}",
+            session,
+            e.getClass().getSimpleName());
       }
     }
 

@@ -944,6 +944,7 @@ public final class AlertEngine implements SmartLifecycle {
               s.targetName,
               lr.row.id(),
               lr.spec.name(),
+              lr.metric.wire(),
               c.severity() == null ? null : c.severity().wire(),
               c.to().name(),
               s.value,

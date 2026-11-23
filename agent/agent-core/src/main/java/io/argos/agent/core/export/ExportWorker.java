@@ -12,6 +12,7 @@ import io.argos.agent.core.transport.Queues;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
@@ -51,6 +52,15 @@ public final class ExportWorker {
   private volatile Exporter exporter;
   private volatile boolean running;
   private volatile Thread thread;
+
+  /**
+   * Counted down when the sender loop has returned ({@link #stop} waits on it). Not {@code
+   * Thread.join(millis)}: on Java 8 that measures its timeout with the wall clock, so a clock step
+   * back during the shutdown hook's join stretches the wait by the step (ADR-0010 C-230 (2)); the
+   * latch waits on {@code System.nanoTime}. It also tells exactly whether the loop returned, i.e.
+   * whether the sender state has no owner left.
+   */
+  private final CountDownLatch loopReturned = new CountDownLatch(1);
 
   /**
    * The worker of the agent: drains {@code runtime}'s queues and runs {@link
@@ -132,6 +142,14 @@ public final class ExportWorker {
   }
 
   private void loop() {
+    try {
+      runLoop();
+    } finally {
+      loopReturned.countDown();
+    }
+  }
+
+  private void runLoop() {
     if (beforeExport != null) {
       try {
         beforeExport.run();
@@ -277,12 +295,14 @@ public final class ExportWorker {
     if (worker != null) {
       LockSupport.unpark(worker);
       try {
-        worker.join(
+        // The result is read again below (loopReturned.getCount()).
+        loopReturned.await(
             Math.max(
                 1,
                 created instanceof QueueExporter
                     ? Math.min(QUEUE_EXPORTER_JOIN_MILLIS, timeoutMillis)
-                    : timeoutMillis));
+                    : timeoutMillis),
+            TimeUnit.MILLISECONDS);
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
       }
@@ -293,8 +313,8 @@ public final class ExportWorker {
     }
     if (target instanceof QueueExporter) {
       long joined = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
-      boolean loopReturned = worker == null || !worker.isAlive();
-      ((QueueExporter) target).shutdown(Math.max(0L, timeoutMillis - joined), loopReturned);
+      boolean returned = worker == null || loopReturned.getCount() == 0;
+      ((QueueExporter) target).shutdown(Math.max(0L, timeoutMillis - joined), returned);
       return;
     }
     List<Transaction> transactions = new ArrayList<Transaction>(batchSize);

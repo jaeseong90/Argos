@@ -705,7 +705,9 @@ terminates TLS itself.
 
 ### Create an agent token
 
-Each application needs an agent token. Create one on the Argos host while the stack runs:
+Each application needs an agent token. Create one on the Argos host while the stack runs (the server
+must be healthy: the command runs the server's own token service, `argos-admin token create`, inside the
+server container):
 
 ```sh
 sudo ./argos-compose.sh token create --app order-api --env prod
@@ -715,7 +717,7 @@ sudo ./argos-compose.sh token create --app order-api --env prod
 |---|---|
 | `--app <name>` | application name, as the agent reports it in `app.name` (1 to 64 characters `A-Z a-z 0-9 . _ -`); created if it does not exist |
 | `--env <env>` | environment, as in `app.env` (`prod`, `staging`, ...; at most 32 characters) |
-| `--expires-days <N>` | optional: the token expires after N days (1 to 3650) |
+| `--expires-days <N>` | optional: the token expires after N days (1 to 3650; default 365). The default server alert rule for certificate and token expiry warns before a token expires |
 
 The command prints the token **once**, with an agent configuration example. Argos keeps only its
 SHA-256 hash, so keep the output on the screen until you store the token
@@ -857,6 +859,7 @@ database passwords, which no longer match the accounts stored in the volumes.
 | a warning that file modes cannot be checked | the files are on a file system without POSIX modes (Windows, NTFS). This is not a supported production setup; install on a Linux file system |
 | an agent logs a TLS or certificate error | `server.address` is not in the certificate's names, or `server.tls.ca-file` is not the CA that signed it |
 | `token create` exits with code 4 | the application already has 5 active agent tokens |
+| `token create` says the server service is not running or not healthy | start the stack (`sudo ./argos-compose.sh up`) and wait until `sudo ./argos-compose.sh status` shows the server healthy: the token is issued by the running server |
 
 ## 12. Not available in this version
 
@@ -868,8 +871,9 @@ These are planned and not part of this version:
   2): upgrades, backups and diagnostic bundles for Compose installations;
 - installation from a `tar.gz` archive with systemd, and an air-gapped bundle;
 - released, signed server images for amd64 and arm64;
-- agent tokens and applications managed in the UI (use `argos-compose.sh token create`);
-- the `argos-admin` command line (for example, resetting an administrator's password) and user
+- agent tokens and applications managed in the UI (use `argos-compose.sh token create`; the server also
+  offers the administration API for listing, rotating and revoking tokens, `/api/v1/admin/apps/{appId}/tokens`);
+- the other `argos-admin` commands (for example, resetting an administrator's password) and user
   management in the UI;
 - the UI screens for applications, instances and transactions (check an agent's connection as in
   [section 9](#check-the-connection)).

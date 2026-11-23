@@ -263,3 +263,93 @@
   display: flex;
   gap: var(--space-4);
 }
+
+/* Setup wizard: first application with its agent token, shown once (ADR-0010 C-168 (2)). */
+.setup-first-app h3 {
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-md);
+}
+
+.setup-first-app p {
+  margin: 0;
+}
+
+.auth-form__field input.setup-first-app__token {
+  font-family: var(--font-mono);
+}
+
+.setup-first-app__copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* /account: own sessions (docs/16 §7.10, ADR-0010 C-136 (3)). */
+.account-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.account-sessions__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+
+.account-sessions__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.account-sessions__agent {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.account-sessions__badge {
+  flex: none;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius);
+  background: var(--color-selected);
+  font-size: var(--fs-sm);
+}
+
+.account-sessions__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.account-sessions__facts div {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.account-sessions__facts dt {
+  color: var(--color-text-muted);
+}
+
+.account-sessions__facts dd {
+  margin: 0;
+}
+
+.account-sessions__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}

@@ -136,7 +136,7 @@ public final class JdbcHelper {
       }
       int seq = tracer.stepStart(context, StepType.DBC, nameId, target, startNanos);
       tracer.stepEnd(context, seq, 0, error != null, 0L, end);
-      context.dbcNanos += Math.max(0L, end - startNanos);
+      context.addDbcWait(end - startNanos);
     } catch (Throwable t) {
       Argos.tracer().moduleError(JdbcModule.MODULE_ID, t);
     }
@@ -285,8 +285,7 @@ public final class JdbcHelper {
       }
       state.clearParams();
       if (!context.isEnded()) {
-        context.sqlCount++;
-        context.sqlNanos += elapsed;
+        context.addSqlExecution(elapsed);
         tracer.recordSqlStat(state.execSqlId, state.dbId, elapsed, failed, 0L);
       }
       if (!failed && seq >= 0 && result instanceof ResultSet) {
@@ -469,7 +468,7 @@ public final class JdbcHelper {
     tracer.stepFetch(context, fetch.seq, fetch.rows, nanos);
     tracer.recordSqlFetch(context, fetch.sqlId, fetch.dbId, nanos, fetch.rows);
     if (!context.isEnded()) {
-      context.sqlNanos += nanos;
+      context.addSqlNanos(nanos);
     }
   }
 
