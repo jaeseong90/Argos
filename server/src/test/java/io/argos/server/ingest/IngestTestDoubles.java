@@ -13,13 +13,16 @@ import io.argos.server.wal.api.WalDataPayload;
 import io.argos.server.wal.api.WalPosition;
 import io.argos.server.wal.api.WalRecordType;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -36,6 +39,10 @@ final class IngestTestDoubles {
     final Map<String, DictionaryRow> dictionary = new ConcurrentHashMap<>();
     final List<ErrorGroupRow> errorGroups = new CopyOnWriteArrayList<>();
     final Map<Integer, Integer> apdex = new ConcurrentHashMap<>();
+    final Map<Integer, Map<Long, Integer>> overrides = new ConcurrentHashMap<>();
+    final List<ApdexChange> events = new CopyOnWriteArrayList<>();
+    final List<StackCandidate> withoutStack = new CopyOnWriteArrayList<>();
+    final Map<String, String> stacks = new ConcurrentHashMap<>();
     volatile boolean failing;
 
     static String key(int appId, String kind, long hash) {
@@ -80,6 +87,100 @@ final class IngestTestDoubles {
     @Override
     public Map<Integer, Integer> apdexByApp() {
       return new HashMap<>(apdex);
+    }
+
+    @Override
+    public Map<Integer, Map<Long, Integer>> serviceApdexOverrides(int perAppLimit) {
+      Map<Integer, Map<Long, Integer>> out = new HashMap<>();
+      overrides.forEach(
+          (app, rows) -> {
+            Map<Long, Integer> sorted = new TreeMap<>(rows);
+            Map<Long, Integer> cut = new java.util.LinkedHashMap<>();
+            for (Map.Entry<Long, Integer> e : sorted.entrySet()) {
+              if (cut.size() > perAppLimit) {
+                break;
+              }
+              cut.put(e.getKey(), e.getValue());
+            }
+            out.put(app, cut);
+          });
+      return out;
+    }
+
+    @Override
+    public Optional<ApdexChange> changeAppApdex(int appId, int tMs, UUID actor, Instant ts) {
+      Integer old = apdex.get(appId);
+      if (old == null) {
+        return Optional.empty();
+      }
+      apdex.put(appId, tMs);
+      ApdexChange c =
+          new ApdexChange(appId, null, old, tMs, old == tMs ? null : UUID.randomUUID(), ts);
+      if (c.changed()) {
+        events.add(c);
+      }
+      return Optional.of(c);
+    }
+
+    @Override
+    public Optional<ApdexChange> changeServiceApdex(
+        int appId, long serviceId, Integer tMs, UUID actor, Instant ts, int maxPerApp)
+        throws OverrideLimitException {
+      Integer app = apdex.get(appId);
+      if (app == null) {
+        return Optional.empty();
+      }
+      Map<Long, Integer> rows = overrides.computeIfAbsent(appId, k -> new ConcurrentHashMap<>());
+      Integer current = rows.get(serviceId);
+      if (tMs != null && current == null && rows.size() >= maxPerApp) {
+        throw new OverrideLimitException("limit");
+      }
+      if (tMs == null) {
+        rows.remove(serviceId);
+      } else {
+        rows.put(serviceId, tMs);
+      }
+      int before = current != null ? current : app;
+      int after = tMs != null ? tMs : app;
+      ApdexChange c =
+          new ApdexChange(
+              appId, serviceId, before, after, before == after ? null : UUID.randomUUID(), ts);
+      if (c.changed()) {
+        events.add(c);
+      }
+      return Optional.of(c);
+    }
+
+    @Override
+    public List<StackCandidate> groupsWithoutStack(Instant lastSeenFrom, int limit)
+        throws Exception {
+      if (failing) {
+        throw new Exception("store down");
+      }
+      List<StackCandidate> out = new ArrayList<>();
+      for (StackCandidate c : withoutStack) {
+        if (!stacks.containsKey(c.appId() + "/" + c.groupId()) && out.size() < limit) {
+          out.add(c);
+        }
+      }
+      return out;
+    }
+
+    @Override
+    public Map<Long, String> dictionaryTexts(int appId, String kind, Collection<Long> hashes) {
+      Map<Long, String> out = new HashMap<>();
+      for (long h : hashes) {
+        DictionaryRow row = dictionary.get(key(appId, kind, h));
+        if (row != null) {
+          out.put(h, row.text());
+        }
+      }
+      return out;
+    }
+
+    @Override
+    public boolean fillSampleStack(int appId, long groupId, String stack) {
+      return stacks.putIfAbsent(appId + "/" + groupId, stack) == null;
     }
   }
 

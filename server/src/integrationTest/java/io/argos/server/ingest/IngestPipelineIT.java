@@ -770,6 +770,7 @@ class IngestPipelineIT {
             "service_stat_1m",
             "service_stat_1h",
             "instance_stat_1m",
+            "instance_stat_1h",
             "error_stat_1m",
             "sql_stat_1m",
             "sql_stat_1h",

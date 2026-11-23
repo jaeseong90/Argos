@@ -2,7 +2,8 @@
 --
 -- Dashboard metric keys per bucket: the average of each instance in the bucket first (value sum /
 -- samples), then over the instances: total (sum of the instance averages: heap, Tomcat threads,
--- pool connections), mean (cpu) and the counter increase (gc pause, drops, excluded).
+-- pool connections, active transactions), mean (cpu) and the counter increase (gc pause, drops,
+-- excluded).
 SELECT b,
        k,
        l,

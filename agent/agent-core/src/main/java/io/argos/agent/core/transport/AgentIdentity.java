@@ -2,6 +2,7 @@
 package io.argos.agent.core.transport;
 
 import io.argos.agent.core.config.AgentConfig;
+import io.argos.agent.core.metric.CgroupReader;
 import io.argos.proto.ProtocolLimits;
 import io.argos.proto.ProtocolVersion;
 import io.argos.proto.v1.AgentHello;
@@ -31,9 +32,10 @@ import java.util.Locale;
  *       (else {@code host:pid} until the connector port is known), {@code config_hash} (token
  *       excluded), {@code remote_config_allow}, the four capture modes;
  *   <li>runtime: agent version, {@code protocol_version} ({@code ProtocolVersion.CURRENT}), host
- *       name, pid, JVM version and vendor, OS, architecture, process start, {@code cgroup} {@code
- *       none} (WO-16 detects it), {@code virtual_threads} false until WO-15 reports their use,
- *       loaded instrumentation modules, {@code plaintext};
+ *       name, pid, JVM version and vendor, OS, architecture, process start, {@code cgroup} ({@code
+ *       v1}, {@code v2} or {@code none}, {@link CgroupReader#systemMode()}), {@code
+ *       virtual_threads} false until WO-15 reports their use, loaded instrumentation modules,
+ *       {@code plaintext};
  *   <li>per process: {@code agent_epoch} (random, C-3).
  * </ul>
  *
@@ -41,7 +43,6 @@ import java.util.Locale;
  * lookup (no DNS query, DSN-02-22). Strings are cut to their 11 §4 caps.
  */
 final class AgentIdentity implements SessionClient.HelloSource {
-  static final String CGROUP_UNKNOWN = "none";
 
   private final AgentHello.Builder base;
   private final String host;
@@ -83,7 +84,7 @@ final class AgentIdentity implements SessionClient.HelloSource {
                     System.getProperty("os.name", "") + " " + System.getProperty("os.version", ""),
                     string))
             .setArch(Utf8.cut(System.getProperty("os.arch"), string))
-            .setCgroup(CGROUP_UNKNOWN)
+            .setCgroup(cgroup())
             .setIpMode(ipMode(config.captureRemoteIp()))
             .setUserIdMode(userIdMode(config.captureUserIdMode()))
             .setQueryStringMode(queryStringMode(config.captureQueryString()))
@@ -99,6 +100,15 @@ final class AgentIdentity implements SessionClient.HelloSource {
       hello.addInstrumentationModules(Utf8.cut(module, string));
     }
     this.base = hello;
+  }
+
+  /** {@code v1}, {@code v2} or {@code none} of this machine (10 §11); {@code none} on a failure. */
+  static String cgroup() {
+    try {
+      return CgroupReader.systemMode();
+    } catch (Throwable t) {
+      return CgroupReader.NONE;
+    }
   }
 
   @Override

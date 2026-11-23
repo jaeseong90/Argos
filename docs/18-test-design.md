@@ -422,6 +422,7 @@ FAIL: N-xx 목표 초과. WARN: 직전 승인 보고서 대비 상대 CPU +1.5%p
 | T-ACC-15 | 타임스탬프 가드 | ts = now+10s / now−8d / now−90s 배치 → clamp / 거부 카운트 / 저장만·실시간 미발행; 실시간 TPS가 ts 버킷 기준 |
 | T-ACC-16 | 메트릭 종류 | counter 리셋 주입(재기동) → 1m increase 보정값, gauge avg·max·min, `sample_count`; 시리즈 501번째 드롭 + 카운트 |
 | T-ACC-17 | Apdex T 기록 | T 500→1000 변경 → 이전 분 불변, 이후 분 새 T, 재구축 소급 옵션, API 마커 |
+| T-ACC-17b | Apdex T 변경 이벤트 | 앱·서비스 T 변경 → `apdex_t_change` 이벤트 1건(이전·새 값·서비스), 스탬프 즉시 재적재; 변경 없음 → 이벤트 0; 1,001번째 오버라이드 거부 → 단위 |
 | T-ACC-18 | 수집 중단 음영 | 세션 끊김 5분 → 수집 상태 API `gaps[]`에 구간, 대시보드 API 응답에 `gaps` 포함(0과 구분) |
 | T-ACC-19 | 제외 카운터 | 노이즈 100회 → 트랜잭션 0, `transactions_ignored_total{reason}` = 100, 수집 상태 "제외 100" |
 | T-ACC-20 | kind 분리 | shop-batch Job 실행 + HTTP 1,000 → HTTP 통계·Apdex·TPS에 배치 미포함, BATCH 통계 별도, 컨텍스트 없는 SQL은 `sql_outside_tx_total` |
@@ -493,6 +494,8 @@ FAIL: N-xx 목표 초과. WARN: 직전 승인 보고서 대비 상대 CPU +1.5%p
 | T-SEC-39 | 템플릿 변수 | 금지 변수 참조 저장 거부, 변수 집합 스냅샷 |
 | T-SEC-3A | 바인드 모드 | masked/partial/full 저장값, full 열람 권한·감사 |
 | T-SEC-40~44 | 세션 | Playwright: `document.cookie`·localStorage 토큰 부재, Set-Cookie 플래그; 액세스 만료 401; 리프레시 재사용 → 전체 무효화; 로그아웃·역할 강등 즉시 반영; CSRF 토큰 없는 POST 403, 교차 Origin 403, 세션 id 재발급; WS 무인증 close 4401, 교차 Origin 거부, 로그아웃 후 1초 내 종료 |
+| T-SEC-44c | 실서버 WS 세션 폐기(E2E) | 페이지 밖에서 세션을 폐기(API 로그아웃)하면 서버가 1초 안에 소켓을 끝내고(reauth 또는 close 4401) 페이지는 `/login?next=<현재 경로>`로 이동, 재접속 없음 |
+| T-SEC-44d | WS 폐기 종료 경로 | 폐기된 세션(가족 중 어느 행이든)은 reauth 뒤 1초 안에 close 4401, 종료 요청 시 구독 종료·대기 프레임 폐기, 막힌 송신이 있어도 강제 종료(900ms)로 4401 지연 없음, 프레임은 한 번에 하나의 송신 작업이 순서대로 보냄 |
 | T-SEC-45·46 | 헤더·CSP | 모든 응답 헤더 단언; E2E 전 실행 중 CSP 위반 리포트 0(`securitypolicyviolation` 수집) |
 | T-SEC-47·48 | 부트스트랩·비밀번호 | 토큰 없이 마법사 403, 재사용 403, 관리자 존재 시 404; 11자 거부·12자 허용, 잠금·누진, bcrypt cost 12 |
 | T-SEC-49 | 권한 매트릭스 생성 | OpenAPI 스펙 파싱 → 엔드포인트 × 역할 3 → 기대(2xx/403) 자동 생성 실행; `x-argos-role` 누락 엔드포인트 린트 실패 |
@@ -703,6 +706,11 @@ WO 수락 기준은 아래 ID를 인용한다. 번호는 예약이며 구현 시
 | T-AG-055 | WebClient `block()` 지점 전파, WebFlux 앱 메트릭만 | 통합 | F-A33 |
 | T-AG-056 | HTTP 클라이언트 6종 step·헤더 주입, 실패 분류 3종 | 통합 | F-A05 |
 | T-AG-057 | 기존 `traceparent` 보존, `tracestate` 벤더 엔트리, `exclude-hosts` | 통합 | F-A32, SEC-38 |
+| T-AG-056a~d | (WO-14 세분, ADR-0010 C-223 (9)) a: 실패 분류(원인 기준, 원인 체인 8단계, 순환·던지는 `getCause()` 안전, Netty `ConnectTimeoutException`도 TIMEOUT C-223 (3)) / b: HOST 사전 원문 `scheme://host:port`(C-142)·step detail(쿼리·프래그먼트·`;` 매개변수 제거, 4KiB 절단) / c: HTTP step(이름·대상 = HOST id, 상태·실패, 리프 step, 외부 호출 합계 동시성 정확) / d: 배치의 WO-14 필드(`incoming_trace`·부모 span·`caller_app_id`·`ext_count`/`ext_time_ms`). 모듈 단위 시험은 접미사 `m` | 단위 | F-A05, C-142 |
+| T-AG-057a~d | (WO-14 세분, C-223 (9)) a: `traceparent` 파싱·생성(55자, 입력 256자 상한)·보존한 앱 `traceparent`를 step detail에 덧붙임 / b: `tracestate` 검사(512자·32멤버 초과는 통째로 버림)·`argos` 엔트리 형식·`caller_app_id` / c: 들어온·나가는 전파(앱 `traceparent` 보존, `argos-state.hosts`일 때만 `argos` 엔트리, 첫 ServerHello 전 엔트리 없음) / d: 서블릿 들어온 헤더(`traceparent` 없으면 `tracestate` 안 읽음, 여러 줄 513자·32줄 상한). 모듈 단위 시험은 접미사 `m` | 단위 | F-A32, SEC-38 |
+| T-AG-056m | (WO-16, ADR-0010 C-224 (1)·C-229 (2), 클라이언트 모듈 단위) OkHttp 3.14.9·4.12.0 `callTimeout`: 취소된 호출 + `Call.timeout()` 설정 + 경과 ≥ timeout − min(20ms, timeout/2)이면 TIMEOUT, 앱이 받는 예외는 바꾸지 않음(`OkHttpCallTimeoutTest`). 다른 클라이언트 모듈의 단위 시험도 이 접미사를 쓴다 | 단위 | F-A05 |
+| T-SEC-38 | (에이전트 측 보안, WO-14) 실제 샘플 앱·ext-stub에서 클라이언트별 `exclude-hosts` 호스트에 두 헤더 부재, 기본 설정에서 `tracestate` `argos` 엔트리 미주입(`PropagationHeadersTest`) | 통합 | SEC-38 |
+| T-SEC-38a | (WO-14 세분) 호스트 글롭(`*`·`?` 대소문자 무시, 정확 호스트·IP·IPv6·끝 점, 글롭 256개·256자 상한, 역추적 없는 선형 매칭)·기본값(글롭 없음 = 매칭 없음, `argos` 엔트리 없음)·`argos-state.hosts` 밖으로 들어온 `argos` 엔트리 미전달. 모듈 단위 시험은 `T-SEC-38m` | 단위 | SEC-38 |
 | T-AG-058 | `@Scheduled`·Quartz·Spring Batch Step → kind=BATCH, 청크 요약 | 통합 | F-A24 |
 | T-AG-060 | 로그 허용목록: ERROR 0, 허용 외 WARN 0, stdout/stderr 0바이트 | 통합 | F-A35 |
 | T-AG-061 | 전수 통계 10초 창 집계가 실제 실행 수와 일치 | 통합 | F-A22, D-12 |
@@ -730,13 +738,28 @@ WO 수락 기준은 아래 ID를 인용한다. 번호는 예약이며 구현 시
 | T-SV-013 | 인스턴스 쿼터 드롭 구분 표시 | 보안 | SEC-12 |
 | T-SV-014 | 사전 폭증·인스턴스 등록 상한 | 보안 | SEC-13·14 |
 | T-SV-015 | 타임스탬프 가드·늦은 도착 실시간 미발행 | 통합 | D-15 |
+| T-SV-015b | 실시간 버스가 수신보다 60초 넘게 오래된 점을 발행하지 않음(`argos_realtime_dropped_total{reason=late}`) | 단위 | D-15 |
 | T-SV-016 | 에러 그룹 지문(마스킹 후) 계산·`error_group_id` 기록 | 단위·통합 | F-S19 |
+| T-SV-016e | 에러 그룹 대표 스택: 첫 ERROR step의 프레임을 다시 마스킹(이메일·IPv4)·줄바꿈 제거해 `sample_stack`에 한 번 기록, 늦게 온 프레임 사전은 채워질 때 기록, 실행당 100그룹 상한, CH·PG 읽기 실패 카운트 | 단위·통합 | F-S19 |
 | T-SV-017 | Apdex T 행 기록, T 변경 이후 적용 | 통합 | D-17 |
+| T-SV-017b | 서비스 Apdex T 오버라이드: 해당 서비스에만 적용(id 부호 없는 비교), 앱당 1,000개·T 1~65535 상한, `xlog.apdex_t_ms`는 수신 시점 스냅숏의 오버라이드 또는 앱 T | 단위 | D-17, F-S16 |
+| T-SV-017c | WAL 페이로드: 오버라이드 없으면 형식 1과 바이트 동일, 있으면 형식 2, 빈 항목·1,000개 초과·중복 id·잘린 목록은 거부 | 단위 | D-17, C-129 |
 | T-SV-018 | 전수 통계 적재·1m·1h 롤업 | 통합 | F-S21 |
 | T-SV-019 | 야간 정합 검사 탐지·재구축, `rollup rebuild` 바이트 동일 | 통합 | D-14, F-S22 |
 | T-SV-020 | 수집 지연: 수신 → WS 1초, → 조회 5초 | 통합 | N-15 |
+| T-SV-020d | 실시간 버스 xlog 100ms 묶음: 한 번 비우면 앱당 한 묶음(도착 순), 발행한 점을 100ms 라운드 안에 push | 단위 | N-15 |
+| T-SV-020e | 실서버 WS(E2E `wsMode: 'server'`): 에이전트를 붙인 shop-boot3 요청이 XLog 실시간 화면에 실제 xlog push로 표시되고(저장 행과 tx id 일치), 인스턴스 상태가 REST·counter 토픽에서 UP | E2E | N-15 |
+| T-SV-020f | counter push의 JVM 값(C-212 (1)): 5초 창의 `heap_used`(인스턴스 합)·`gc_pause_ms`(증가 합)·`cpu`(평균), 표본 없으면 null, 닫힌 초·5초 넘게 앞선 표본과 상한 밖 표본은 제외하고 `argos_realtime_dropped_total{reason=metric}`으로 셈(C-220 (9)), 실시간 경로만 발행 | 단위 | F-S03, D-23 |
+| T-SV-020g | FakeAgent MetricBatch → 실서버 counter push: heap·GC·CPU 값이 보낸 값과 같고 null 아님, 90초 늦은 표본은 push 안 함 | 통합 | F-S03, D-23 |
+| T-SV-020h | (WO-25, ADR-0010 C-226 (13)) `alert` 토픽은 제어 프레임: 같은 구독에 전이 2건이 모두 남고(최신 병합 없음) 발행 순서·`t`·`topic=alert`가 맞으며, app·env 필터와 서버 자기 알림(app null)은 필터 없는 구독에만, 작은 outbox 예산에서도 잘리지 않음(`RealtimeBusTest`) | 단위 | F-S06 |
+| T-SV-020i | (WO-25, C-226 (13)) overview 행의 `firing`이 알림 엔진 보고(`updateFiring`)에서 온다: 보고 전 null, 보고 뒤 `{critical, warn}`(항목 없는 앱 0/0, 입력 맵 복사), 빈 보고면 모두 0/0(`RealtimeBusTest`) | 단위 | C-212, F-U17 |
 | T-SV-021 | 실시간 버스 느린 구독자 최신 우선 드롭 | 통합 | F-S03 |
-| T-SV-022 | 인스턴스 상태 UP/STALE/DOWN/WARN 전이·이벤트 | 통합 | F-S28 |
+| T-SV-021a | 느린 구독자는 가장 오래된 xlog push부터 잃고 notice `backpressure`와 드롭 카운터를 받음 | 단위 | F-S03 |
+| T-SV-021b | 같은 토픽의 빠른 구독자는 모든 점을 받음(드롭 0) | 단위 | F-S03 |
+| T-SV-021c | counter·active·overview는 느린 구독자에게 최신 push만 유지 | 단위 | F-S03 |
+| T-SV-021d | `publishXlog`는 블로킹하지 않음: 막힌 구독자는 버스 스레드만 지연, 큐 가득은 드롭·카운트 | 단위 | F-S03 |
+| T-SV-021e | 제어 프레임과 최신 우선 push는 드롭하지 않고 xlog push부터 버림 | 단위 | F-S03 |
+| T-SV-022 | 인스턴스 상태 UP/STALE/DOWN/WARN 전이·이벤트. 전체 현황·앱 목록의 `status`(최악 상태)·`instances_up`(UP + WARN)과 `GET /apps/{id}/active`의 `per_instance.state`가 상태 머신을 따름(WO-31, C-216 (3)·C-218 (2)(4)) | 단위·통합 | F-S28, F-U17 |
 | T-SV-023 | AgentBye 후 5분 내 재접속 시 다운 알림 없음, 기동 유예 3분 | 통합 | F-S25, S-17 |
 | T-SV-030 | 알림: 조건 충족 → 전송 요청 ≤ 30초 | 통합 | N-23 |
 | T-SV-031 | 설정 푸시·킬 스위치 50 인스턴스 ≤ 10초, 결과 집계 | 통합 | N-25 |
@@ -764,7 +787,7 @@ WO 수락 기준은 아래 ID를 인용한다. 번호는 예약이며 구현 시
 | T-ST-030~033 | 1/100 CI: 생성·적재·Q12·Q13·Q15·Q16 정합 0 | D-03·12·13 |
 | T-ST-040 | TTL 동작·보존 변경 리허설(연장 MODIFY TTL, 단축 DROP PARTITION) | N-08 |
 | T-ST-041 | 코덱·압축률 테이블별 기준 | N-19 |
-| T-ST-042 | 백분위 상태 병합 값 오차(1m·1h·1d) | A-11 |
+| T-ST-042 | 백분위 상태 병합 값 오차(1m·1h·1d). 적재 데이터 p99는 버킷별로 꼬리 표본(n × 0.01) 100 미만이면 순위 오차 ≤ 0.5pp, 이상이면 값 오차 ≤ 5%, 값 판정 버킷 0개면 실패(C-219). ci 프로파일은 모든 버킷을 순위 오차 ≤ 0.5pp로 판정하고 값 오차는 기록만(C-221) | A-11 |
 | T-ST-050 | 행당 바이트 실측 vs 공식 ±30% | N-19 |
 | T-ST-051 | ClickHouse 이전 LTS → 현재 업그레이드, 롤업 읽기 정상 | N-21 |
 | T-ST-052 | 마이그레이션 두 경로·MV 4단계 교체 | N-22 |
@@ -777,9 +800,17 @@ WO 수락 기준은 아래 ID를 인용한다. 번호는 예약이며 구현 시
 | T-API-005 | ID 단건 조회(ts 복원), trace 24h 기본 | D-11 |
 | T-API-006 | XLog 10만 점 초과 결정적 샘플링 `shown/total` | A-5 |
 | T-API-007 | WS 프레임 스키마·구독 상한·인증 | SEC-44 |
+| T-API-007a | WS 클라이언트 프레임(14 §5.2) 파싱: subscribe·unsubscribe·ping, 잘못된 프레임은 `invalid_params`(유효한 id는 유지, 보낸 값은 되돌리지 않음) | SEC-44 |
+| T-API-007b | 구독: ack(id·topic·since) 뒤 push, 구독 20개 상한(21번째 `limit_exceeded`, 연결 유지), 연결당 구독 레이트 리밋(용량 20·초당 1), `topic_unknown`, admin 토픽 권한·역할 강등 시 해당 구독만 종료, ping → pong | SEC-44 |
+| T-API-007c | 연결 상한: 메시지 4,096 UTF-8 바이트 처리·4,097바이트 close 4413, 60초 무수신 close 4408(59초 유지), 사용자당 5연결(6번째 4429), 서버 종료 시 1012 | SEC-44 |
+| T-API-007d | 서버 프레임 벡터 고정본 = 서버가 쓰는 프레임(모든 종류), 생성 결과 결정적 | SEC-44 |
 | T-API-008 | 웹훅 페이로드 `schema_version`·템플릿 변수 집합 | SEC-39, O-R03 |
 | T-API-009 | 설정 키 스냅샷(에이전트·서버) | O-R03 |
 | T-API-010 | 권한 매트릭스 생성 실행 | SEC-49 |
+| T-API-011a | (WO-36, ADR-0010 C-222 (3)·(9)) sql·external 통계 `sort=p95_ms`가 행의 버킷 p95(C-14) 순서(내림·오름), 생성기 데이터에서도 내림차순(`StatsScreenParamsIT`, 실제 CH·PG) | F-U05·U06, 14 §4.8 |
+| T-API-011b | (WO-36, C-222 (3)·(9)) errors/groups `compare_prev`: `delta.count` = (현재 − 직전) / 직전, 직전 0이면 null, 생성기 데이터에서 직접 계산한 값과 일치 | F-U07, 14 §4.8 |
+| T-API-011c | (쌍 9 마무리, ADR-0010 C-222 (7)) `external/{hostId}` 시계열에 버킷별 `timeouts`·`connect_failures`(덮인 빈 버킷 0), 다른 통계 시계열에는 없음(`StatsScreenParamsIT`, 실제 CH·PG). 14 §4.8 정정(비파괴 가산) | F-U05, 14 §4.8 |
+| T-API-012a | (WO-38, ADR-0010 C-227 (3)·C-228 (2)(7)) 알림 응답 추가 필드: 실제 엔진의 모든 이벤트에 `reason`(닫힌 목록, V009 이전 행 null), events·`/overview/alerts`·대시보드 `firing[]`의 `rule` {id, name, metric, unit}, 규칙 이력 `changed_by_name`, `AlertRuleRef.metric`·`unit` 열거값 = `AlertMetric`(`AlertsApiIT`, `AlertSchemaEnumsTest`) | F-S17, F-S26 |
 | T-UI-001 | XLog 좌표·선택 영역 계산·결정적 샘플 표시 | F-U02 |
 | T-UI-002 | 시간 범위 상태 리듀서(드래그·프리셋·이동·실시간 해제) | 05 §2.0 |
 | T-UI-003 | URL ↔ 상태 직렬화·스키마 검증·1KB 상한 | F-U14, SEC-64 |
@@ -788,6 +819,22 @@ WO 수락 기준은 아래 ID를 인용한다. 번호는 예약이며 구현 시
 | T-UI-006 | 하드코딩 문자열 린트, en 키 누락 0, ko 용어표 적용 | F-U13 |
 | T-UI-007 | 결측 표시(`—`/"측정 불가")가 0과 구분 | D-23 |
 | T-UI-008 | 상태 모델 색 매핑, 알림 상태 라벨(ko) | F-S28, 부록 B |
+| T-E2E-090~099 | 전체 현황(WO-31): 1366×768 30개 앱 무스크롤, 환경·그룹 필터, 카드/표 전환 유지, 키오스크, 앱별 이름·10개 항목 = API 응답(결측은 결측), 정렬·이상 앱 상단 고정, FIRING 패널, 서버 상태 패널, 행 클릭 시 범위 유지, 실서버 WS 갱신 | F-U16·U17, T-ACPT-16 |
+| T-E2E-090a~d | 전체 현황 시각 기준 이미지(e2e:docker): 로딩(2초 뒤 안내 'Still loading…', C-218 (4))·앱 없는 환경·오류(요청 ID·재시도)·정상 | F-U16, 05 §2.0-8 |
+| T-E2E-stats-1~10 | 통계 화면(WO-36, ADR-0010 C-222 (9)): `required/stats.yaml`의 05 §2.5 체크리스트(2.5-1 표 공통 4종·2.5-2 서비스 상세·2.5-3 SQL 상세·2.5-4 외부 호출 호스트별 timeout·connect fail·2.5-5 에러 분석). 8(맵 외부 노드 링크)은 owner WO-70(F-U11), 10(대표 스택 앱 프레임 굵게)은 owner WO-26, 둘 다 컴포넌트·fixme까지 | F-U05~U07, 05 §2.5 |
+| T-E2E-stats-20~28 | 20~23: STATISTICS 메뉴 4종이 실화면(= API, 1366×768 가로 스크롤 없음, axe Critical 0, 증거 스크린샷) / 24: 키보드 목록 → 상세 → 뒤로(범위 유지) / 25~27: T-ACPT-03(SQL 1일 Top N, 배치 제외)·T-ACPT-11(호스트별 timeout·connect fail = API)·T-ACPT-01 마지막 구간의 자동 부분 / 28: 시드 XSS 서비스 이름이 텍스트 | F-U05~U07, SEC-61 |
+| T-E2E-stats-30~36 | 통계 시각 기준 이미지(e2e:docker): 로딩·빈 범위(다음 행동)·API 상한 초과 오류(요청 ID)·4종 목록 정상 | F-U16, 05 §2.0-8 |
+| T-E2E-stats-37~39 | fixme(owner 명시): 37 에이전트가 분류한 TIMEOUT·CONNECT_FAIL의 외부 통계(owner WO-16, C-223 (7)), 38 대표 스택 앱 프레임 굵게(owner WO-26), 39 외부 호출 → 맵 외부 노드 링크(owner WO-70, F-U11) | F-U05~U07, F-U11 |
+| T-E2E-service-version-1·2 | T-ACPT-04: 서비스 상세의 버전별 p95(= `by_version`)와 배포 마커(= `GET /events`), 목록의 버전 분리 | F-U05 |
+| T-E2E-errors-1~4 | T-ACPT-13: 1 대시보드·메뉴·new 필터에서 3클릭 안에 신규 그룹 대표 스택 / 2 new 목록 = `new_only=true`, 버전·인스턴스 분포 = API / 3 최근 10건 = `recent_tx`, 상세 링크 / 4 실데이터 대표 스택이 비어 있지 않음(fixme, owner WO-19, C-222 (1)) | F-U07 |
+| T-E2E-active-1~12 | 액티브 트랜잭션(WO-35, ADR-0010 C-225 (8)): `required/active.yaml`의 05 §2.6 체크리스트(필수). 인스턴스 막대·경과 4구간(= 마지막 push·REST), 경과 색 임계 설정, 막대 클릭 `f.instance`, 9개 열(수집 안 함 표시), 경과 정렬·5초 갱신·서버 시계 'N초 전', 일시 정지·재개, 상태·서비스·종류 필터, 스택·스레드 덤프(명령 API 전까지 사유와 함께 비활성, WO-26·WO-17), 최근 완료 링크, 규칙 링크, 갱신 멈춤 배지 | F-U04, 05 §2.6 |
+| T-E2E-active-20~31 | 20~23: 실서버(개발 전용 FakeAgent 피더 `:server:activeFeedJar`, C-225 (1)) 화면 값 = 실제 push·REST, 5초 갱신·'N초 전' ≤ 11초(C-225 (6)), 일시 정지, 필터 → URL / 24·25: 스텁 갱신 멈춤·재연결, WARN·STALE 배지·잘림 안내 / 26: 사용자 임계 2/5/10초(localStorage, C-225 (3)) / 27: 8초 이상 행의 명령 비활성 사유·최근 완료 XLog 링크 / 28: 수집 문자열 XSS → 텍스트 / 29: 1366×768 가로 스크롤 없음·axe Critical 0 / 30: fixme T-ACPT-02 스택 30초(owner WO-26·WO-17·WO-37) / 31: fixme 실제 에이전트 스냅숏(owner WO-16) | F-U04, SEC-61, T-ACPT-02 |
+| T-E2E-active-31a·31b | (WO-16, ADR-0010 C-225 (1)·C-229 (9)) 실제 에이전트의 액티브 스냅숏: a 단위(`ActiveSnapshotterTest`·`PreparedBatchDictionaryTest`) 경과 내림차순·최대 500개·고정 크기 힙·상태(IN_SQL sql_id·IN_DBC_WAIT·IN_HTTP·IN_ASYNC)·캡처 모드 적용된 user_id·remote_ip·SQL 문 사전 선전송·`max_active_items` / b 통합(`ActiveSnapshotE2eTest`) 샘플 앱의 느린 요청이 IN_SQL과 sql_id 사전과 함께 5초 안에 보고됨 | F-A10, F-U08 |
+| T-E2E-active-40~43 | 액티브 시각 기준 이미지(e2e:docker): 로딩·연결된 인스턴스 없음·오류(요청 ID)·정상(고정 스텁 스냅숏, 느린 행 선택) | F-U16, 05 §2.0-8 |
+| T-E2E-alerts-1~3 | 알림(WO-25, C-226 (13)): 1 앱 대시보드 'Firing alerts' 패널 = 알림 엔진 firing 응답(시드의 실제 FIRING 포함), 행 → `/alerts?app=<id>&alert=<event id>` / 2 전체 현황에 시드의 실제 FIRING이 나열되고 앱 알림 셀에 셈, 행 → `/alerts?state=firing&alert=<event id>` / 3 기본 템플릿 추천 규칙이 주 앱에 적용(GET /alerts/rules, 활성) | F-S06, F-S24, 05 §2.3-5·§2.10-4 |
+| T-E2E-alerts-4~12 | 알림 화면(WO-38, ADR-0010 C-228 (7)), 실스택 직렬: 4 오류율 템플릿에서 만든 규칙(변경 필드 표시)의 7일 미리보기 = API 재질의, 저장·목록 / 5 저장한 규칙이 발화해 고정 패널·목록에 FIRING(API와 같음), 메모와 함께 ACK → ACKED(사용자·메모), 배지 감소 / 6 행에서 대상 일시 중지 → GET /alerts/mutes에 나열, 해제 / 7 채널: 웹훅 목적지 검증(10.0.0.1·169.254.169.254 → 422), URL 마스킹만, 가짜 수신기로 테스트 전송과 상태, 이메일 `o***@도메인`, Slack, 서명 키 회전 1회 표시 / 8 이력 10열·필터 = 서버 매개변수와 같은 질문의 응답·7·30일 통계·전 앱 보기 / 9 전체 현황의 ACKED 행 → ACKED 이력과 그 알림(C-226 (8)) / 10 1366에서 규칙 이름 잘림 없음·대시보드 값/임계치 단위 / 11 비로그인 알림 링크가 로그인 뒤 복귀, 이력 딥 링크가 대시보드를 발화 ±15분 절대 범위로 / 12 실시간 이력이 서버 `alert` push로 고정 패널 갱신 | F-S17, F-S24~27, 05 §2.4·§2.9 |
+| T-E2E-alerts-20~25 | 알림 시각 기준 이미지(e2e:docker): 20 이력 로딩 / 21 이벤트 없는 범위(다음 행동 안내) / 22 오류(요청 ID·재시도) / 23 고정 알림·채널 상태·10열 이력 / 24 오류율 템플릿 규칙 편집기와 미리보기 / 25 마스킹된 대상과 상태의 채널 목록 | F-U16, 05 §2.0 |
+| T-E2E-alerts-30~40 | `required/alerts.yaml`의 05 §2.4-1~5·§2.9-1~6 체크리스트(필수): 편집기 전 필드·허용 변수만, 7일 미리보기(500ms 디바운스) = API, 템플릿 생성·변경 표시, 복제·비활성≠삭제·이력 = API, 채널 목적지 검증·마스킹·테스트 전송, FIRING·ACKED 고정·채널 상태, 10열 = /alerts/events, 필터 = 서버 매개변수, 행 동작, 7·30일 통계 = /alerts/stats, 전체 현황 → 전 앱 이력 | F-S17, F-S24~27, 05 §2.4·§2.9 |
 | T-BLD-001 | major version 52 전수 | 03 3.1 |
 | T-BLD-002 | jar 클래스는 `io.argos.`·`io.argos.agent.shaded.`만 | 03 3.1 |
 | T-BLD-003 | `META-INF` LICENSE·NOTICE·THIRD-PARTY-NOTICES·argos-deps.txt·sbom 존재·형식 | O-L04, SEC-77 |

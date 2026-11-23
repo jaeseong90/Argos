@@ -94,6 +94,11 @@ describe('TimeSeriesChart (docs/15 §6.1, DSN-15-04)', () => {
     await renderChart();
     const table = screen.getByTestId('chart-a11y-table');
     expect(table).toHaveClass('visually-hidden');
+    // A table ignores `height: 1px`: the hidden 1 px block around it keeps its rows out of the
+    // page's scroll height (WO-32 dashboard, nine charts).
+    expect(table.parentElement?.tagName).toBe('DIV');
+    expect(table.parentElement).toHaveClass('visually-hidden');
+    expect(table.parentElement).toHaveAttribute('data-testid', 'chart-a11y-table-box');
     expect(table.querySelector('caption')).toHaveTextContent('Data of Throughput');
     const bodyRows = table.querySelectorAll('tbody tr');
     expect(bodyRows).toHaveLength(100);

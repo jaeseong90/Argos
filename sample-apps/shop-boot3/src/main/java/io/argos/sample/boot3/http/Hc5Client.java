@@ -2,6 +2,7 @@
 package io.argos.sample.boot3.http;
 
 import io.argos.sample.common.http.OutboundClient;
+import io.argos.sample.common.http.OutboundRequest;
 import io.argos.sample.common.http.OutboundResponse;
 import java.io.Closeable;
 import java.io.IOException;
@@ -20,8 +21,10 @@ import org.apache.hc.core5.util.Timeout;
 public final class Hc5Client implements OutboundClient, Closeable {
 
   private final CloseableHttpClient client;
+  private final int readTimeoutMs;
 
   public Hc5Client(int connectTimeoutMs, int readTimeoutMs) {
+    this.readTimeoutMs = readTimeoutMs;
     this.client =
         HttpClients.custom()
             .setConnectionManager(
@@ -49,8 +52,25 @@ public final class Hc5Client implements OutboundClient, Closeable {
 
   @Override
   public OutboundResponse get(URI uri) throws IOException {
+    return send(OutboundRequest.get(uri));
+  }
+
+  @Override
+  public OutboundResponse send(OutboundRequest request) throws IOException {
+    if (!OutboundRequest.SYNC.equals(request.mode())) {
+      throw new IllegalArgumentException("Client 'hc5' supports mode sync only");
+    }
+    HttpGet get = new HttpGet(request.uri());
+    request.headers().forEach(get::setHeader);
+    if (request.hop()) {
+      get.setConfig(
+          RequestConfig.custom()
+              .setConnectionRequestTimeout(Timeout.ofSeconds(5))
+              .setResponseTimeout(Timeout.ofMilliseconds(request.readTimeoutMs(readTimeoutMs)))
+              .build());
+    }
     return client.execute(
-        new HttpGet(uri),
+        get,
         response ->
             new OutboundResponse(
                 response.getCode(),

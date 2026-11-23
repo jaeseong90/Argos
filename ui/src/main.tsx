@@ -7,7 +7,7 @@ import { App } from './app/App';
 import { logCspViolation, watchCspViolations } from './app/cspViolations';
 import { createAppRouter } from './app/router';
 import { installSessionHandlers } from './features/auth/session';
-import { bindDocumentLanguage, createI18n, resolveInitialLanguage } from './i18n';
+import { bindDocumentLanguage, createAppI18n, resolveInitialLanguage } from './i18n';
 import { readLanguagePreference } from './state/preferences';
 import './styles/global.css';
 
@@ -16,7 +16,7 @@ if (container === null) {
   throw new Error('Missing #root element in index.html');
 }
 
-const i18n = createI18n(resolveInitialLanguage(navigator.languages, readLanguagePreference()));
+const i18n = createAppI18n(resolveInitialLanguage(navigator.languages, readLanguagePreference()));
 bindDocumentLanguage(i18n, document);
 // Session expiry from the API transport (failed refresh) and the WebSocket (4401, reauth).
 installSessionHandlers();

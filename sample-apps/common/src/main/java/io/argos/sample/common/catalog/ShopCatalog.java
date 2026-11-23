@@ -54,6 +54,8 @@ public final class ShopCatalog {
     List<CatalogEntry> e = new ArrayList<>();
     core(e);
     pay(e);
+    payModes(e);
+    hop(e);
     seeds(e);
     return Collections.unmodifiableList(e);
   }
@@ -285,6 +287,96 @@ public final class ShopCatalog {
               .phase(CatalogEntry.Phase.CONCURRENT)
               .check(Check.jsonEquals("outcome", "OK"))
               .purpose("ext-stub answers 302, the client follows it; redirect handling")
+              .build());
+    }
+  }
+
+  /**
+   * Client call styles of GET /api/pay/{id} ({@code mode=}, WO-14: 10 U-10 jdk11 {@code sendAsync},
+   * U-11 OkHttp {@code enqueue}, DSN-10-14 WebClient {@code block|future|subscribe}) and the app's
+   * own trace headers ({@code preset=1}, 10 §8).
+   */
+  private static void payModes(List<CatalogEntry> e) {
+    String[][] modes = {
+      {"okhttp", "async"},
+      {"jdk11", "async"},
+      {"webclient", "block"},
+      {"webclient", "future"},
+      {"webclient", "subscribe"}
+    };
+    for (String[] mode : modes) {
+      String client = mode[0];
+      String path = "/api/pay/1?client=" + client + "&mode=" + mode[1];
+      e.add(
+          CatalogEntry.get("pay." + client + "." + mode[1], path)
+              .route("/api/pay/{id}")
+              .requires("client:" + client)
+              .phase(CatalogEntry.Phase.CONCURRENT)
+              .check(Check.jsonEquals("outcome", "OK"))
+              .check(Check.jsonEquals("mode", mode[1]))
+              .purpose("One ext-stub call with " + client + " in mode " + mode[1] + "; HTTP step")
+              .build());
+      e.add(
+          CatalogEntry.get("pay." + client + "." + mode[1] + ".timeout", path + "&timeout=1")
+              .route("/api/pay/{id}")
+              .requires("client:" + client)
+              .phase(CatalogEntry.Phase.CONCURRENT)
+              .status(504)
+              .check(Check.jsonEquals("outcome", "TIMEOUT"))
+              .purpose("Read timeout in mode " + mode[1] + "; TIMEOUT")
+              .build());
+    }
+    e.add(
+        CatalogEntry.get("pay.hurl.preset", "/api/pay/1?client=hurl&preset=1")
+            .route("/api/pay/{id}")
+            .requires("client:hurl")
+            .phase(CatalogEntry.Phase.CONCURRENT)
+            .check(Check.jsonEquals("outcome", "OK"))
+            .check(Check.bodyContains("presetTraceparent"))
+            .purpose("The app sets its own traceparent and tracestate; kept by the agent (10 §8)")
+            .build());
+  }
+
+  /**
+   * GET /api/hop/{id}: a chain of calls to SAMPLE_HOP_URL (default: the app itself) that ends with
+   * the ext-stub call (HopService, distributed traces, T-ACC-05). A failure at the end of the chain
+   * reaches the first app as the status of the next hop (502 with {@code upstreamStatus}).
+   */
+  private static void hop(List<CatalogEntry> e) {
+    for (String client : CLIENTS) {
+      e.add(
+          CatalogEntry.get("hop." + client, "/api/hop/1?depth=1&client=" + client)
+              .route("/api/hop/{id}")
+              .requires("client:" + client)
+              .phase(CatalogEntry.Phase.CONCURRENT)
+              .check(Check.jsonEquals("outcome", "OK"))
+              .check(Check.jsonEquals("hop", 1))
+              .purpose("2-hop chain with " + client + "; distributed trace, propagation")
+              .build());
+    }
+    e.add(
+        CatalogEntry.get("hop.depth2", "/api/hop/1?depth=2&client=hurl")
+            .route("/api/hop/{id}")
+            .requires("client:hurl")
+            .phase(CatalogEntry.Phase.CONCURRENT)
+            .check(Check.jsonEquals("outcome", "OK"))
+            .check(Check.jsonEquals("hop", 2))
+            .purpose("3-hop chain; 3 transactions of one trace")
+            .build());
+    Object[][] failures = {{"timeout", 504}, {"refuse", 503}, {"status500", 502}};
+    for (Object[] failure : failures) {
+      e.add(
+          CatalogEntry.get("hop." + failure[0], "/api/hop/1?depth=1&client=hurl&fail=" + failure[0])
+              .route("/api/hop/{id}")
+              .requires("client:hurl")
+              .phase(CatalogEntry.Phase.CONCURRENT)
+              .status(502)
+              .check(Check.jsonEquals("outcome", "UPSTREAM_ERROR"))
+              .check(Check.jsonEquals("upstreamStatus", failure[1]))
+              .purpose(
+                  "Chain whose last call fails ("
+                      + failure[0]
+                      + "); the failure class sits on the last hop's external call")
               .build());
     }
   }

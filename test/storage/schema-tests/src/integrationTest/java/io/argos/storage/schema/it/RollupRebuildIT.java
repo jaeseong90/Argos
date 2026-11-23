@@ -59,6 +59,9 @@ class RollupRebuildIT {
         "service_stat_1h",
         new String[] {"xlog", "count()", "sum(count)", "app_id, kind, service_id, app_version_id"});
     HOURLY_RAW.put(
+        "instance_stat_1h",
+        new String[] {"xlog", "count()", "sum(count)", "app_id, kind, instance_id"});
+    HOURLY_RAW.put(
         "sql_stat_1h",
         new String[] {"sql_stat_raw", "sum(count)", "sum(count)", "app_id, kind, sql_id, db_id"});
     HOURLY_RAW.put(
@@ -81,7 +84,7 @@ class RollupRebuildIT {
     List<String> minuteTables = tables(renderer, false);
     List<String> hourTables = tables(renderer, true);
     assertThat(minuteTables).hasSize(7);
-    assertThat(hourTables).hasSize(5);
+    assertThat(hourTables).hasSize(6).contains("instance_stat_1h");
     assertConsistent(migrator, renderer, p);
 
     Map<String, List<List<String>>> otherDayBefore = otherDay(migrator, p, minuteTables);
@@ -98,6 +101,9 @@ class RollupRebuildIT {
         .isEqualTo(2 * rawDay);
     assertThat(appCount(migrator, p, "app_stat_1h", "hour = '" + HOUR_23 + "'"))
         .isEqualTo(2 * rawHour23);
+    assertThat(appCount(migrator, p, "instance_stat_1h", "hour = '" + HOUR_23 + "'"))
+        .as("instance_stat_1h cascade (C-212 (1))")
+        .isEqualTo(2 * rawHour23);
 
     // Repair the 1m day. REPLACE PARTITION does not feed the 1h views: 1h is still doubled.
     for (String table : minuteTables) {
@@ -112,6 +118,8 @@ class RollupRebuildIT {
     for (String table : hourTables) {
       Rollups.rebuildPartition(migrator, renderer, p, table);
     }
+    assertThat(appCount(migrator, p, "instance_stat_1h", "hour = '" + HOUR_23 + "'"))
+        .isEqualTo(rawHour23);
 
     assertConsistent(migrator, renderer, p);
     assertThat(otherDay(migrator, p, minuteTables)).isEqualTo(otherDayBefore);

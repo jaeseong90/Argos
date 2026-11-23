@@ -17,8 +17,9 @@ import java.util.UUID;
  *       clamp, 7-day rejection, {@code late}) and of {@code argos_ingest_lag_seconds} (N-15);
  *   <li>{@code tsCorrectionMs}: the C-84 correction decided at receipt ({@link
  *       ClockOffsetProvider#tsCorrectionMs}, ADR-0010 C-129 (3));
- *   <li>{@code apdexTMs}: the app's Apdex T at receipt (D-17 forward only, T-SV-017), so that a
- *       replay of the record stamps the same value.
+ *   <li>{@code apdexTMs} and {@code apdexOverrides}: the app's Apdex T and its service overrides at
+ *       receipt (D-17 forward only, T-SV-017, WO-27), so that a replay of the record stamps the
+ *       same values.
  * </ul>
  *
  * <p>Everything here survives a restart in the WAL (D-13, DSN-12-01): {@code instanceId}, {@code
@@ -44,6 +45,9 @@ import java.util.UUID;
  *     app_version_id} when a record sends 0 (ADR-0010 C-143 (6))
  * @param tsCorrectionMs milliseconds subtracted from the agent timestamps of this batch (C-129): 0
  *     or a positive multiple of 10 s
+ * @param apdexOverrides the app's service Apdex T overrides at receipt ({@code
+ *     service_apdex_overrides}, WO-27); a transaction of an overridden service is stamped with its
+ *     override instead of {@code apdexTMs}
  */
 public record SessionContext(
     int appId,
@@ -56,10 +60,12 @@ public record SessionContext(
     int apdexTMs,
     long receivedAtMs,
     String appVersion,
-    long tsCorrectionMs) {
+    long tsCorrectionMs,
+    ApdexOverrides apdexOverrides) {
 
   /** Validates the components that every consumer relies on. */
   public SessionContext {
+    Objects.requireNonNull(apdexOverrides, "apdexOverrides");
     Objects.requireNonNull(env, "env");
     Objects.requireNonNull(sessionId, "sessionId");
     Objects.requireNonNull(ipMode, "ipMode");
@@ -73,6 +79,39 @@ public record SessionContext(
     }
   }
 
+  /** A context without service Apdex overrides ({@link ApdexOverrides#NONE}). */
+  public SessionContext(
+      int appId,
+      int instanceId,
+      String env,
+      UUID sessionId,
+      long agentEpoch,
+      IpMode ipMode,
+      UserIdMode userIdMode,
+      int apdexTMs,
+      long receivedAtMs,
+      String appVersion,
+      long tsCorrectionMs) {
+    this(
+        appId,
+        instanceId,
+        env,
+        sessionId,
+        agentEpoch,
+        ipMode,
+        userIdMode,
+        apdexTMs,
+        receivedAtMs,
+        appVersion,
+        tsCorrectionMs,
+        ApdexOverrides.NONE);
+  }
+
+  /** The Apdex T of a transaction of {@code serviceId}: its override, else {@link #apdexTMs}. */
+  public int apdexTMsFor(long serviceId) {
+    return apdexOverrides.tFor(serviceId, apdexTMs);
+  }
+
   /**
    * This session's context for one received batch: the receipt values replaced, everything else
    * kept.
@@ -83,6 +122,19 @@ public record SessionContext(
    * @param apdexTMs the app's Apdex T now
    */
   public SessionContext atReceipt(long receivedAtMs, long tsCorrectionMs, int apdexTMs) {
+    return atReceipt(receivedAtMs, tsCorrectionMs, apdexTMs, ApdexOverrides.NONE);
+  }
+
+  /**
+   * This session's context for one received batch with the app's service Apdex overrides now.
+   *
+   * @param receivedAtMs server receive time of the batch
+   * @param tsCorrectionMs the C-129 correction decided now
+   * @param apdexTMs the app's Apdex T now
+   * @param overrides the app's service Apdex T overrides now
+   */
+  public SessionContext atReceipt(
+      long receivedAtMs, long tsCorrectionMs, int apdexTMs, ApdexOverrides overrides) {
     return new SessionContext(
         appId,
         instanceId,
@@ -94,7 +146,8 @@ public record SessionContext(
         apdexTMs,
         receivedAtMs,
         appVersion,
-        tsCorrectionMs);
+        tsCorrectionMs,
+        overrides);
   }
 
   /** This context with another current {@code app_version} (InstanceUpdate, C-146). */
@@ -110,6 +163,7 @@ public record SessionContext(
         apdexTMs,
         receivedAtMs,
         newAppVersion,
-        tsCorrectionMs);
+        tsCorrectionMs,
+        apdexOverrides);
   }
 }

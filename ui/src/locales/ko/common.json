@@ -108,6 +108,9 @@
         "drops": "$t(term.drop)",
         "outdatedAgent": "구버전 에이전트",
         "moduleDisabled": "모듈 비활성",
+        "killSwitch": "킬 스위치 작동",
+        "configDrift": "설정 불일치",
+        "contextLeak": "컨텍스트 누수",
         "other": "기타"
       }
     },
@@ -122,6 +125,24 @@
     "severity": {
       "warn": "경고",
       "critical": "심각"
+    },
+    "alertValue": {
+      "up": "UP",
+      "down": "DOWN"
+    },
+    "alertTarget": {
+      "app": "애플리케이션",
+      "instance": "인스턴스",
+      "service": "서비스",
+      "extHost": "외부 호스트",
+      "server": "Argos 서버"
+    },
+    "alertBanner": {
+      "loading": "알림을 불러오는 중…",
+      "failed": "알림을 불러오지 못했습니다.",
+      "missing": "선택한 시간 범위에 이 알림의 상태 전이가 없습니다.",
+      "history": "알림 이력에서 보기",
+      "truncated": "이 범위의 최근 알림 전이 {{count}}건만 표시합니다."
     },
     "delta": {
       "noBasis": "비교 데이터 없음",
@@ -165,7 +186,8 @@
     },
     "loading": {
       "label": "불러오는 중",
-      "slow": "조회 중… 기간을 좁히면 빨라집니다."
+      "slow": "조회 중… 기간을 좁히면 빨라집니다.",
+      "slowWait": "아직 불러오는 중입니다…"
     },
     "partial": {
       "sampling": "표시 {{shown}} / 전체 {{total}}",

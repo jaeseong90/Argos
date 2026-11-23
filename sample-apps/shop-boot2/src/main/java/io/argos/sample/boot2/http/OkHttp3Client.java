@@ -1,13 +1,21 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.sample.boot2.http;
 
+import io.argos.sample.common.http.AsyncCalls;
 import io.argos.sample.common.http.OutboundClient;
+import io.argos.sample.common.http.OutboundRequest;
 import io.argos.sample.common.http.OutboundResponse;
 import java.io.Closeable;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.net.URI;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import okhttp3.Call;
+import okhttp3.Callback;
 import okhttp3.ConnectionPool;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -15,13 +23,18 @@ import okhttp3.Response;
 import okhttp3.ResponseBody;
 
 /**
- * {@code ?client=okhttp}: OkHttp 3 (3.14, Java 8), redirects followed. {@link #close()} stops the
- * dispatcher, empties the connection pool and ends the pool's cleanup task, so that after a WAR
- * undeploy no OkHttp work holds the web app class loader for long (see {@link #close()}).
+ * {@code ?client=okhttp}: OkHttp 3 (3.14, Java 8), redirects followed; {@code mode=async} uses
+ * {@code enqueue} and waits for the callback; hop calls use a client derived with {@code
+ * newBuilder()} with the hop read timeout. {@link #close()} stops the dispatcher, empties the
+ * connection pool and ends the pool's cleanup task, so that after a WAR undeploy no OkHttp work
+ * holds the web app class loader for long (see {@link #close()}).
  */
 public final class OkHttp3Client implements OutboundClient, Closeable {
 
   private final OkHttpClient client;
+  private final OkHttpClient hopClient;
+  private final int connectTimeoutMs;
+  private final int readTimeoutMs;
 
   public OkHttp3Client(int connectTimeoutMs, int readTimeoutMs) {
     this.client =
@@ -30,6 +43,14 @@ public final class OkHttp3Client implements OutboundClient, Closeable {
             .readTimeout(readTimeoutMs, TimeUnit.MILLISECONDS)
             .followRedirects(true)
             .build();
+    // Same dispatcher and connection pool (close() below covers both), hop read timeout.
+    this.hopClient =
+        client
+            .newBuilder()
+            .readTimeout(OutboundRequest.hopReadTimeoutMs(readTimeoutMs), TimeUnit.MILLISECONDS)
+            .build();
+    this.connectTimeoutMs = connectTimeoutMs;
+    this.readTimeoutMs = readTimeoutMs;
   }
 
   @Override
@@ -37,13 +58,52 @@ public final class OkHttp3Client implements OutboundClient, Closeable {
     return "okhttp";
   }
 
+  /** {@code sync} ({@code execute}) and {@code async} ({@code enqueue}, 10 U-11). */
   @Override
-  public OutboundResponse get(URI uri) throws IOException {
-    Request request = new Request.Builder().url(uri.toString()).get().build();
-    try (Response response = client.newCall(request).execute()) {
-      ResponseBody body = response.body();
-      return new OutboundResponse(response.code(), body == null ? "" : body.string());
+  public List<String> modes() {
+    return Arrays.asList(OutboundRequest.SYNC, OutboundRequest.ASYNC);
+  }
+
+  @Override
+  public OutboundResponse get(URI uri) throws Exception {
+    return send(OutboundRequest.get(uri));
+  }
+
+  @Override
+  public OutboundResponse send(OutboundRequest request) throws Exception {
+    Request.Builder builder = new Request.Builder().url(request.uri().toString()).get();
+    for (Map.Entry<String, String> header : request.headers().entrySet()) {
+      builder.header(header.getKey(), header.getValue());
     }
+    Call call = (request.hop() ? hopClient : client).newCall(builder.build());
+    if (!OutboundRequest.ASYNC.equals(request.mode())) {
+      try (Response response = call.execute()) {
+        return read(response);
+      }
+    }
+    final CompletableFuture<OutboundResponse> result = new CompletableFuture<>();
+    call.enqueue(
+        new Callback() {
+          @Override
+          public void onFailure(Call failed, IOException e) {
+            result.completeExceptionally(e);
+          }
+
+          @Override
+          public void onResponse(Call done, Response response) {
+            try (Response closing = response) {
+              result.complete(read(closing));
+            } catch (IOException | RuntimeException e) {
+              result.completeExceptionally(e);
+            }
+          }
+        });
+    return AsyncCalls.await(result, request.asyncWaitMs(connectTimeoutMs, readTimeoutMs));
+  }
+
+  private static OutboundResponse read(Response response) throws IOException {
+    ResponseBody body = response.body();
+    return new OutboundResponse(response.code(), body == null ? "" : body.string());
   }
 
   /**

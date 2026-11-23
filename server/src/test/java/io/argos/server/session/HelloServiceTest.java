@@ -224,9 +224,10 @@ class HelloServiceTest {
 
   @Test
   @DisplayName(
-      "11 §5 check 5: an unknown app with auto-register off is APP_NOT_REGISTERED, stream OK, retry"
-          + " 300, no pending row; on, it is created as an environment variant of the token's app"
-          + " (C-155)")
+      "T-SV-043 11 §5 check 5: an unknown app with auto-register off is APP_NOT_REGISTERED, stream"
+          + " OK, retry 300, queued for approval (name, env, host, the token's home app); on, it is"
+          + " created as an environment variant of the token's app (C-155)")
+  @Tag("req:F-S30")
   void check5Registration() {
     HelloService off =
         service(
@@ -240,6 +241,10 @@ class HelloServiceTest {
         Status.Code.OK,
         300);
     assertThat(store.apps).containsOnlyKeys("order-api/prod");
+    assertThat(store.pending)
+        .containsExactly(
+            new InMemorySessionStore.Pending(
+                "order-api", "qa", "host-a", home.id(), clock.instant()));
     assertThat(run(off, hello(), accepted(), false).accepted())
         .as("the token's own app needs no registration")
         .isTrue();
@@ -248,6 +253,42 @@ class HelloServiceTest {
     assertThat(store.apps).containsKey("order-api/qa");
     assertThat(store.apps.get("order-api/qa").registeredFromAppId()).isEqualTo(home.id());
     assertThat(on.session().appId()).isEqualTo(store.apps.get("order-api/qa").id());
+  }
+
+  @Test
+  @Tag("req:F-S30")
+  @DisplayName(
+      "T-SV-043 a failed approval-queue write does not change the answer: APP_NOT_REGISTERED, stream"
+          + " OK, retry 300 (the agent's retry queues it)")
+  void queueFailureKeepsAnswer() {
+    store.pendingFailing = true;
+    HelloService off =
+        service(
+            x -> {
+              x.autoRegister = Map.of("default", true, "qa", false);
+              return x;
+            });
+    rejected(
+        run(off, hello().setEnv("qa"), accepted(), false),
+        RejectReason.APP_NOT_REGISTERED,
+        Status.Code.OK,
+        300);
+    assertThat(store.pending).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "C-158 (2) a Hello whose instance name is its host:pid (no port yet) has a temporary name;"
+          + " a configured or host:port name does not")
+  void temporaryName() {
+    assertThat(HelloService.temporaryName(hello().setInstanceName("host-a:42").build())).isTrue();
+    assertThat(HelloService.temporaryName(hello().setInstanceName("").build())).isTrue();
+    assertThat(HelloService.temporaryName(hello().setInstanceName("host-a:8080").build()))
+        .isFalse();
+    assertThat(HelloService.temporaryName(hello().setInstanceName("order-1").build())).isFalse();
+    assertThat(
+            HelloService.temporaryName(hello().setHost("").setInstanceName("unknown:42").build()))
+        .isTrue();
   }
 
   @Test
@@ -289,9 +330,10 @@ class HelloServiceTest {
   @Tag("req:SEC-14")
   @Tag("req:C-155")
   @DisplayName(
-      "C-155 (3) a token's app registers at most 8 environment variants: the 9th environment is"
-          + " APP_NOT_REGISTERED, stream OK, retry 300, counted as app_variant_limit; the existing"
-          + " variants stay usable")
+      "T-SV-043 C-155 (3) a token's app registers at most 8 environment variants: the 9th"
+          + " environment is APP_NOT_REGISTERED, stream OK, retry 300, counted as app_variant_limit"
+          + " and queued for approval; the existing variants stay usable")
+  @Tag("req:F-S30")
   void variantCap() {
     assertThat(HelloService.MAX_APP_VARIANTS).isEqualTo(8);
     HelloService s = service(x -> x);
@@ -303,6 +345,9 @@ class HelloServiceTest {
     rejected(ninth, RejectReason.APP_NOT_REGISTERED, Status.Code.OK, 300);
     assertThat(ninth.hello().getRejectMessage()).contains("maximum of 8");
     assertThat(store.apps).hasSize(1 + 8).doesNotContainKey("order-api/env9");
+    assertThat(store.pending)
+        .extracting(InMemorySessionStore.Pending::env, InMemorySessionStore.Pending::homeAppId)
+        .containsExactly(org.assertj.core.groups.Tuple.tuple("env9", home.id()));
     assertThat(rejectedCount("app_variant_limit")).isEqualTo(1);
     assertThat(rejectedCount("app_not_registered")).isZero();
     assertThat(run(s, hello().setEnv("env3"), accepted(), false).accepted())

@@ -37,6 +37,12 @@ public record SessionSettings(
   /** 11 §2, SEC-15: a connection must send its Hello within 10 s. */
   public static final Duration HELLO_TIMEOUT = Duration.ofSeconds(10);
 
+  /**
+   * Heartbeat intervals without any agent message after which the server closes a session with
+   * {@code IDLE_TIMEOUT} (11 open item 6, ADR-0002 C-19: 3 × 30 s = 90 s).
+   */
+  public static final int IDLE_HEARTBEATS = 3;
+
   /** The environment of a Hello with an empty {@code env} (11 §4.2). */
   public static final String DEFAULT_ENV = "default";
 

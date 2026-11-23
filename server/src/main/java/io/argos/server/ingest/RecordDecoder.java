@@ -23,6 +23,7 @@ import io.argos.proto.v1.TransactionBatch;
 import io.argos.proto.v1.TransactionKind;
 import io.argos.proto.v1.TransactionProfile;
 import io.argos.proto.v1.TransactionRecord;
+import io.argos.server.ingest.api.MetricPoint;
 import io.argos.server.ingest.api.XlogPoint;
 import io.argos.server.ingest.hash.Xxh3;
 import io.argos.server.session.api.SessionContext;
@@ -49,7 +50,8 @@ import org.springframework.stereotype.Component;
  * proto/README.md "Mapping to the ClickHouse V001 columns" plus the V002 columns of ADR-0010 C-144,
  * the writer rules of ADR-0010 C-143, C-138 and C-141, the timestamp guard ({@link TimestampGuard},
  * D-15 with C-129), the error group fingerprint ({@link ErrorGroupFingerprinter}, C-131), the Apdex
- * stamp of the receipt and the dictionary overflow mapping ({@link DictionaryResolver}).
+ * stamp of the receipt (the app's T, or the service's override of the receipt's snapshot, {@link
+ * SessionContext#apdexTMsFor}) and the dictionary overflow mapping ({@link DictionaryResolver}).
  *
  * <p>Everything comes from the record: its header ({@code instance_id}, {@code epoch}, {@code
  * received_ms}, {@code ts_correction_ms}) and its payload ({@link WalDataPayload}: session values
@@ -113,11 +115,21 @@ public final class RecordDecoder {
    *     unreadable)
    * @param rows rows per table (only tables with rows)
    * @param points XLog points of rows with {@code late = 0}
+   * @param metrics samples of the realtime {@code counter} series ({@link MetricPoint.Series}) of
+   *     rows with {@code late = 0}, only on the normal path ({@code sideEffects})
    */
   public record Decoded(
-      SessionContext session, Map<Table, EncodedRows> rows, List<XlogPoint> points) {
+      SessionContext session,
+      Map<Table, EncodedRows> rows,
+      List<XlogPoint> points,
+      List<MetricPoint> metrics) {
 
-    static final Decoded EMPTY = new Decoded(null, Map.of(), List.of());
+    static final Decoded EMPTY = new Decoded(null, Map.of(), List.of(), List.of());
+
+    /** A decoded record without metric samples. */
+    public Decoded(SessionContext session, Map<Table, EncodedRows> rows, List<XlogPoint> points) {
+      this(session, rows, points, List.of());
+    }
   }
 
   /**
@@ -245,7 +257,8 @@ public final class RecordDecoder {
     out.u8(error ? 1 : 0);
     out.i64(c.resolve(DictionaryKind.CLASS, r.getErrorClassId()));
     out.i64(errorGroupId);
-    out.u16(u16(s.apdexTMs()));
+    // D-17: the T of the receipt, the service's override when the app had one (WO-27).
+    out.u16(u16(s.apdexTMsFor(r.getServiceId())));
     out.ipv6(s.ipMode().storesRemoteIp() ? r.getRemoteIp().toByteArray() : null);
     out.u8(s.ipMode().enum8());
     out.string(s.userIdMode().storesUserId() ? r.getUserId() : "");
@@ -447,6 +460,13 @@ public final class RecordDecoder {
     metricRow(
         out, s, m.getName(), kind.getNumber(), t.tsMs(), sample.getValue(), sample.getDelta());
     c.rows(Table.METRIC);
+    if (!t.late() && c.sideEffects) {
+      MetricPoint.Series series = MetricPoint.Series.of(m.getName());
+      if (series != null) {
+        double v = series == MetricPoint.Series.GC_PAUSE ? sample.getDelta() : sample.getValue();
+        c.jvmPoints.add(new MetricPoint(series, t.tsMs(), v));
+      }
+    }
   }
 
   private static void metricRow(
@@ -654,6 +674,7 @@ public final class RecordDecoder {
     final Map<Table, RowBinaryBuffer> buffers = new EnumMap<>(Table.class);
     final Map<Table, Integer> counts = new EnumMap<>(Table.class);
     final List<XlogPoint> points = new ArrayList<>();
+    final List<MetricPoint> jvmPoints = new ArrayList<>();
 
     Context(SessionContext session, boolean sideEffects) {
       this.session = session;
@@ -712,6 +733,7 @@ public final class RecordDecoder {
       int mark = before == null ? 0 : before.length();
       Integer rowsBefore = counts.get(table);
       int pointsBefore = points.size();
+      int jvmPointsBefore = jvmPoints.size();
       try {
         body.run();
       } catch (RuntimeException e) {
@@ -725,6 +747,7 @@ public final class RecordDecoder {
           counts.put(table, rowsBefore);
         }
         points.subList(pointsBefore, points.size()).clear();
+        jvmPoints.subList(jvmPointsBefore, jvmPoints.size()).clear();
         error("decode");
         if (sideEffects) {
           warnSkipped(table, e);
@@ -737,7 +760,7 @@ public final class RecordDecoder {
       for (Map.Entry<Table, Integer> e : counts.entrySet()) {
         rows.put(e.getKey(), new EncodedRows(e.getValue(), buffers.get(e.getKey()).toByteString()));
       }
-      return new Decoded(session, rows, points);
+      return new Decoded(session, rows, points, jvmPoints);
     }
   }
 }

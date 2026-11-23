@@ -84,7 +84,8 @@ class DurabilityIT {
             "app_stat_1h",
             "service_stat_1m",
             "service_stat_1h",
-            "instance_stat_1m")) {
+            "instance_stat_1m",
+            "instance_stat_1h")) {
       t.put(rollup, count("SELECT sum(count) FROM argos." + rollup + " WHERE app_id = " + appId));
     }
     return t;
@@ -149,7 +150,8 @@ class DurabilityIT {
         .containsEntry("app_stat_1h", (long) n)
         .containsEntry("service_stat_1m", (long) n)
         .containsEntry("service_stat_1h", (long) n)
-        .containsEntry("instance_stat_1m", (long) n);
+        .containsEntry("instance_stat_1m", (long) n)
+        .containsEntry("instance_stat_1h", (long) n);
   }
 
   @Test

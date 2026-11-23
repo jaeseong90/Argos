@@ -2,8 +2,8 @@
 --
 -- Dashboard transaction series (14 §4.4): merges the fragments per bucket and over the whole range
 -- (the row with total = 1). Percentiles are quantilesDDMerge of the states (C-53): [p50, p95, p99].
--- Fragments: dashboard/tx_series.{raw,1m,1h} (application) or dashboard/tx_series_inst.{raw,1m}
--- (selected instances).
+-- Fragments: dashboard/tx_series.{raw,1m,1h} (application) or dashboard/tx_series_inst.{raw,1m,1h}
+-- (selected or excluded instances).
 SELECT b,
        grouping(b) AS total,
        sum(c) AS cnt,

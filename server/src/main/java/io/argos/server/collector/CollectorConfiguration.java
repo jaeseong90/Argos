@@ -24,9 +24,16 @@ import io.argos.server.session.AgentVersionRange;
 import io.argos.server.session.CachingSessionStore;
 import io.argos.server.session.HelloService;
 import io.argos.server.session.InMemorySessionRegistry;
+import io.argos.server.session.InstanceRetentionJob;
+import io.argos.server.session.InstanceRetentionStore;
+import io.argos.server.session.InstanceStateMachine;
+import io.argos.server.session.InstanceStateStore;
+import io.argos.server.session.InstanceStateTracker;
+import io.argos.server.session.InstanceStateWriter;
 import io.argos.server.session.RegistrySessionMessenger;
 import io.argos.server.session.SessionClockOffsets;
 import io.argos.server.session.SessionHandler;
+import io.argos.server.session.SessionMonitor;
 import io.argos.server.session.SessionRegistry;
 import io.argos.server.session.SessionSettings;
 import io.argos.server.session.SessionStore;
@@ -43,6 +50,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -102,6 +110,50 @@ public class CollectorConfiguration {
     return registry;
   }
 
+  /**
+   * The PostgreSQL writer of instance states and events (WO-22); discards writes when no {@link
+   * InstanceStateStore} exists (a collector test context).
+   */
+  @Bean(destroyMethod = "close")
+  public InstanceStateWriter instanceStateWriter(
+      ObjectProvider<InstanceStateStore> store, MeterRegistry meters) {
+    return new InstanceStateWriter(store.getIfAvailable(), meters);
+  }
+
+  /**
+   * The instance states (12 §4.2, WO-22): STALE, DOWN and the {@code AgentBye} grace from {@code
+   * argos.collector.stale-after}, {@code down-after} and {@code bye-grace}; transitions published
+   * as {@link io.argos.server.session.api.InstanceStateChange}.
+   */
+  @Bean
+  public InstanceStateTracker instanceStateTracker(
+      ArgosProperties properties,
+      Clock clock,
+      SessionRegistry registry,
+      ServerBuild build,
+      InstanceStateWriter writer,
+      ApplicationEventPublisher events) {
+    ArgosProperties.Collector c = properties.collector();
+    return new InstanceStateTracker(
+        new InstanceStateMachine(
+            clock, c.staleAfter(), c.downAfter(), c.byeGrace(), InstanceStateMachine.SKEW_WARN_MS),
+        registry,
+        new AgentVersionRange(build.version()),
+        writer,
+        events::publishEvent);
+  }
+
+  /** The 10 s state monitor, the server's start and stop events and the instance meters. */
+  @Bean(destroyMethod = "close")
+  public SessionMonitor sessionMonitor(
+      InstanceStateTracker tracker,
+      InstanceStateWriter writer,
+      ObjectProvider<InstanceStateStore> store,
+      Clock clock,
+      MeterRegistry meters) {
+    return new SessionMonitor(tracker, writer, store.getIfAvailable(), clock, meters);
+  }
+
   /** The clock offsets of live instances (input of the C-84 correction). */
   @Bean
   public SessionClockOffsets clockOffsetProvider(SessionRegistry registry) {
@@ -135,25 +187,29 @@ public class CollectorConfiguration {
       ClockOffsetProvider offsets,
       ApdexProvider apdex,
       ObjectProvider<ClickHouseWriter> writer,
-      Clock clock) {
-    return new AgentServiceImpl(
-        limits,
-        dedup,
-        new RequiredEnumFilter(metrics),
-        new QuotaTrimmer(new InstanceQuotas(properties.collector().quota(), System::nanoTime)),
-        wal,
-        pipeline,
-        offsets,
-        apdex,
-        new ThrottleAdvisor(
+      Clock clock,
+      InstanceStateTracker states) {
+    AgentServiceImpl service =
+        new AgentServiceImpl(
+            limits,
+            dedup,
+            new RequiredEnumFilter(metrics),
+            new QuotaTrimmer(new InstanceQuotas(properties.collector().quota(), System::nanoTime)),
             wal,
-            () -> {
-              ClickHouseWriter w = writer.getIfAvailable();
-              return w == null ? 0 : w.maxQueueRatio();
-            },
-            properties.wal().warnRatio()),
-        metrics,
-        clock);
+            pipeline,
+            offsets,
+            apdex,
+            new ThrottleAdvisor(
+                wal,
+                () -> {
+                  ClickHouseWriter w = writer.getIfAvailable();
+                  return w == null ? 0 : w.maxQueueRatio();
+                },
+                properties.wal().warnRatio()),
+            metrics,
+            clock);
+    service.instanceStates(states);
+    return service;
   }
 
   /**
@@ -190,9 +246,13 @@ public class CollectorConfiguration {
     return new SessionTimer();
   }
 
-  /** The session stream. */
+  /**
+   * The session stream; its idle timeout is 3 heartbeat intervals ({@code
+   * argos.collector.heartbeat-interval}, 90 s by default; ADR-0002 C-19, 11 open item 6).
+   */
   @Bean
   public SessionHandler sessionHandler(
+      ArgosProperties properties,
       HelloService hellos,
       SessionRegistry registry,
       SessionStore store,
@@ -200,7 +260,8 @@ public class CollectorConfiguration {
       DictionaryIntake dictionary,
       CollectorMetrics metrics,
       Clock clock,
-      SessionTimer timer) {
+      SessionTimer timer,
+      InstanceStateTracker states) {
     return new SessionHandler(
         hellos,
         registry,
@@ -210,7 +271,26 @@ public class CollectorConfiguration {
         metrics,
         clock,
         timer.executor(),
-        SessionSettings.HELLO_TIMEOUT);
+        SessionSettings.HELLO_TIMEOUT,
+        states,
+        properties.collector().heartbeatInterval().multipliedBy(SessionSettings.IDLE_HEARTBEATS),
+        System::nanoTime);
+  }
+
+  /**
+   * The daily instance retention (12 §4.3: {@code argos.instance.archive-after}, {@code
+   * purge-after}); does nothing without an {@link InstanceRetentionStore} (a collector test
+   * context).
+   */
+  @Bean
+  public InstanceRetentionJob instanceRetentionJob(
+      ArgosProperties properties,
+      ObjectProvider<InstanceRetentionStore> store,
+      SessionRegistry registry,
+      Clock clock) {
+    ArgosProperties.Instance i = properties.instance();
+    return new InstanceRetentionJob(
+        store.getIfAvailable(), registry, clock, i.archiveAfter(), i.purgeAfter());
   }
 
   /** The listener with the interceptor chain, its start and its 12 §3.9 stop. */

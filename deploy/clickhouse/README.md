@@ -7,6 +7,8 @@ decisions C-50 to C-71 of `docs/adr/0007-storage-alignment-decisions.md` take pr
 |---|---|
 | `image.properties` | The bundled ClickHouse: exact LTS version and multi-arch digest (26.8.34.13). Previous LTS for the upgrade test. |
 | `schema/V001__init.sql` | Database, 5 raw tables, 12 rollup tables, 12 materialized views (template, see placeholders). |
+| `schema/V002__ingest_columns.sql` | Columns appended for the ingest path (ADR-0010 C-144): `xlog.url_path`, `xlog.headers`, `profile_step.truncated`, `profile_step.total_steps`. |
+| `schema/V003__instance_stat_1h.sql` | The hourly instance rollup `instance_stat_1h` and its view (ADR-0010 C-212 (1)). |
 | `rollups/<table>.sql` | The SELECT of each rollup. The materialized view and the rollup rebuild use the same file (D-14). |
 | `config.d/argos.xml` | Server settings (13 §7.2): memory, merges, default compression ZSTD(1), listeners (HTTP 8123 and native 9000 only), empty `remote_url_allow_hosts` (no outbound URL), a TTL or removal for every system log of the bundled image. |
 | `users.d/argos.xml` | Profiles and the three accounts (13 §7.3, SEC-74, SEC-76, ADR-0007 C-60). |
@@ -29,10 +31,13 @@ single-file mount only. The password hashes reach the container as environment v
 |---|---|---|---|
 | raw | `xlog`, `profile_step`, `metric`, `sql_stat_raw`, `ext_stat_raw` | day | 30 / 7 / 14 / 14 / 14 days |
 | 1m rollup | `app_stat_1m`, `service_stat_1m`, `instance_stat_1m`, `error_stat_1m`, `sql_stat_1m`, `ext_stat_1m`, `metric_1m` | day | 90 days |
-| 1h rollup | `app_stat_1h`, `service_stat_1h`, `sql_stat_1h`, `ext_stat_1h`, `metric_1h` | month | 365 days |
+| 1h rollup | `app_stat_1h`, `service_stat_1h`, `instance_stat_1h`, `sql_stat_1h`, `ext_stat_1h`, `metric_1h` | month | 365 days |
 
 Views: `<rollup>_mv`. 1m views read the raw tables (`xlog` feeds app, service, instance and error), 1h views read
-the 1m tables (cascade). All views are `SQL SECURITY DEFINER` (definer: the migration account), so the writer
+the 1m tables (cascade). `instance_stat_1h` (V003, ADR-0010 C-212 (1)) replaces "instance_stat_1m has no 1h table"
+of docs/13 §4.7: it has the columns of `instance_stat_1m` with `hour` instead of `minute`, and its view cascades from
+`instance_stat_1m`. An installation upgraded to V003 has no `instance_stat_1h` rows for the hours before the upgrade;
+`argos-admin rollup rebuild --date <D>` fills them day by day (below). All views are `SQL SECURITY DEFINER` (definer: the migration account), so the writer
 needs INSERT on the raw tables only.
 
 Column names follow C-17 in every layer (ADR-0007 C-67): `xlog.dbc_wait_ms`, `xlog.timed_out`,
@@ -99,8 +104,37 @@ A rebuild replaces whole partitions through a staging table; it never inserts in
 Inserting the rebuild SELECT directly into a rollup table counts twice: the 1h views cascade from the 1m tables,
 so every row inserted into a 1m table is added to its 1h table again (even after `DROP PARTITION` of the 1m day).
 A rebuild covers whole partitions (all apps): a staging table that holds one app would remove the other apps of the
-partition, so there is no per-application rebuild. `RollupRebuildIT` (test/storage/schema-tests) checks the procedure,
+partition, so there is no per-application rebuild (C-59 (c)). `RollupRebuildIT` (test/storage/schema-tests) checks the procedure,
 the double count and the byte identity of the rebuilt `quantilesDD` states.
+
+The server runs the procedure with the migration account (`io.argos.server.ops.rollup.RollupRebuilder`, the nightly
+consistency check and the operator command):
+
+```
+java -jar argos-server-<version>.jar admin rollup rebuild --date 2026-11-20 [--table sql_stat_1m]... [--json]
+```
+
+It reads the server configuration like the server (packaged application.yml, the operator's configuration file,
+`ARGOS_*` environment; `--argos.<key>=<value>` arguments too), opens only ClickHouse (`argos.clickhouse.migrator.*`)
+and PostgreSQL (`argos.postgres.*`: the rollup lock, the applied schema versions and `settings.rollup_alias`, which
+maps a logical `--table` name to its current table), and starts no listener, so it can run next to a running server. Without `--table` it
+rebuilds every 1m rollup for day D and every 1h rollup for the month of D; `--table` names 1m or 1h rollups, and a
+1m table brings its 1h cascade along (C-59 (b)). Before and after each table it computes a digest of the partition:
+the number of keys and the sum of one `cityHash64` per key over the key columns, the merged
+`SimpleAggregateFunction` values and the hex of the merged aggregate states (`quantilesDDMergeState`,
+`sumForEachMergeState`). `anyLast` columns (`metric_*.last_v`) are left out, because their merged value depends on
+the order in which parts are read. Equal digests mean the stored aggregates were already what the raw data gives
+(D-14); a different digest means the rebuild repaired the partition. Output is a table (or JSON with `--json`) on
+standard output, logs go to standard error; exit code 0 when every table was rebuilt, 1 on a failure (the failed table
+keeps its old partition, earlier tables keep their new ones), 2 for invalid arguments. A day must lie inside the
+retention of every source it reads (`xlog-days` for transaction rollups, `raw-days` for SQL, outgoing call and metric
+rollups), and the month of a 1h rebuild inside `rollup-1m-days`; otherwise the command refuses to run, because the
+rebuilt partition would lose the expired rows. It also refuses to run while a bundled schema script is not applied
+(start the server of the same version first). Two rebuilds must not overlap (they share the staging table
+`<t>_rebuild`): the command holds the PostgreSQL advisory lock `AdminDatabase.ROLLUP_LOCK_KEY` and exits with 1 when
+another rebuild holds it. Rows that arrive while today's day or the current month is being rebuilt can miss the swap;
+the nightly consistency check finds and rebuilds such partitions. Float sums (`metric_*.avg_sum`, `increase`) are
+compared bit for bit: a merge order that rounds differently shows as "changed" with the same key count.
 
 ## Substitution variables (environment of clickhouse-server)
 

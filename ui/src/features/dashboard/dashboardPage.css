@@ -1,0 +1,111 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* Dashboard layout (docs/15 §9.2, §13): title and toggles, the six tiles on one line, the nine
+   charts in three columns from the 1366 px minimum up, then the instance and collection parts.
+   One vertical scroll; the page never scrolls sideways (panels shrink, charts follow their box). */
+.dashboard-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  min-width: 0;
+}
+
+.dashboard-page__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2, 8px) var(--space-4, 16px);
+  min-width: 0;
+}
+
+.dashboard-page__title {
+  margin: 0;
+  font-size: var(--fs-lg, 15px);
+  font-weight: 600;
+}
+
+.dashboard-page__toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 8px) var(--space-4, 16px);
+}
+
+.dashboard-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.dashboard-segmented__label,
+.dashboard-page__note,
+.dashboard-page__excluded,
+.dashboard-charts__note {
+  margin: 0;
+  font-size: var(--fs-sm, 12px);
+  color: var(--color-text-muted, #5f6774);
+}
+
+.dashboard-page__filter {
+  display: inline-flex;
+  gap: 4px;
+  margin-right: var(--space-2, 8px);
+  max-width: 40ch;
+}
+
+.dashboard-page__loading,
+.dashboard-page__empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+}
+
+.dashboard-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-2, 8px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dashboard-tiles__tile {
+  display: flex;
+  min-width: 0;
+}
+
+.dashboard-tiles__tile > .stat-tile {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Three columns at 1366 px (content about 1,100 px): each panel keeps the chart's 320 px minimum
+   plot width plus its padding; fewer columns below. */
+.dashboard-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--space-3, 12px);
+  min-width: 0;
+}
+
+.dashboard-charts__panel {
+  min-width: 0;
+  padding: var(--space-2, 8px);
+  border: 1px solid var(--color-border, #d9dde3);
+  border-radius: var(--radius, 6px);
+  background: var(--color-surface, #ffffff);
+}
+
+.dashboard-charts__title {
+  margin: 0 0 var(--space-1, 4px);
+  font-size: var(--fs-md, 13px);
+  font-weight: 600;
+}
+
+.dashboard-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  min-width: 0;
+}

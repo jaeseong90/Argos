@@ -1,0 +1,149 @@
+{
+  "page": {
+    "title": "Distributed trace",
+    "id": "Trace ID",
+    "refreshing": "Updating…"
+  },
+  "notFound": {
+    "title": "Trace not found",
+    "notInWindow": "No transaction of this trace was found in the searched range. Search a longer window, or open the trace from one of its transactions.",
+    "other": "The trace was not found. It may be outside the retention period, or the link may be wrong.",
+    "invalidId": "This is not a trace ID. Trace IDs have 32 hexadecimal digits.",
+    "searchWeek": "Search the last 7 days",
+    "searchMonth": "Search the last 30 days…"
+  },
+  "actions": {
+    "label": "Trace actions",
+    "copyId": "Copy trace ID",
+    "copied": "Trace ID copied",
+    "copyFailed": "Copy failed. Select the trace ID and copy it by hand.",
+    "openLogs": "Open logs",
+    "openLogsUnavailable": "Open the root transaction first, or no log link template is configured.",
+    "exportJson": "Export JSON (loaded data)",
+    "exportJsonHint": "Saves the trace exactly as this page loaded it.",
+    "exported": "Saved {{file}}",
+    "queryAgain": "Query again"
+  },
+  "window": {
+    "label": "Searched range",
+    "basis": {
+      "tsHint": "±1 hour around the time hint",
+      "idHint": "±1 hour around the time in the trace ID",
+      "window1h": "Last hour",
+      "window24h": "Last 24 hours",
+      "window7d": "Last 7 days",
+      "window30d": "Last 30 days",
+      "default": "Last 24 hours (default)",
+      "idHintThenDefault": "Last 24 hours (nothing was found near the time in the trace ID)",
+      "unknown": "Range reported by the server"
+    },
+    "hint": "Time hint",
+    "search7d": "Search the last 7 days",
+    "search30d": "Search the last 30 days…",
+    "confirmTitle": "Search the last 30 days?",
+    "confirmBody": "A 30-day search is a heavy query. It counts against the rate limit shared by heavy queries, so it may be refused for a while.",
+    "confirm": "Search 30 days",
+    "cancel": "Cancel"
+  },
+  "summary": {
+    "root": "Root transaction",
+    "noRoot": "No root transaction in the response",
+    "start": "Start",
+    "duration": "Duration",
+    "transactions": "Transactions",
+    "apps": "Applications",
+    "external": "External calls",
+    "missing": "Missing transactions",
+    "criticalPath": "Critical path",
+    "criticalServer": "From the server",
+    "criticalClient": "Computed in the browser (the server sent none)",
+    "criticalNone": "None"
+  },
+  "partial": {
+    "truncated": "This trace has more than {{limit, number}} transactions. Only the first {{limit, number}} are shown.",
+    "notYetCollected_one": "{{count, number}} transaction of this trace is not collected yet. Query again in a moment.",
+    "notYetCollected_other": "{{count, number}} transactions of this trace are not collected yet. Query again in a moment.",
+    "clockOffset_one": "{{count, number}} caller step is shorter than its callee: the hosts' clocks or measurements disagree. Both values are shown and no network / wait time is derived.",
+    "clockOffset_other": "{{count, number}} caller steps are shorter than their callees: the hosts' clocks or measurements disagree. Both values are shown and no network / wait time is derived."
+  },
+  "legend": {
+    "label": "Legend",
+    "transaction": "Transaction",
+    "call": "Caller HTTP step",
+    "wait": "Network / wait",
+    "external": "External call (not instrumented)",
+    "critical": "Critical path",
+    "failed": "Failed",
+    "estimated": "Caller steps and external calls are placed by their duration: the trace response does not include their start times."
+  },
+  "list": {
+    "label": "Trace tree and timeline",
+    "column": {
+      "node": "Node",
+      "instance": "Instance",
+      "version": "Version",
+      "status": "Status",
+      "elapsed": "Time"
+    }
+  },
+  "row": {
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "call": "HTTP call to",
+    "wait": "network / wait {{value}}",
+    "clockOffset": "Caller step {{caller}} shorter than callee {{callee}} (durations disagree)",
+    "external": "External",
+    "noResponse": "No response",
+    "missingCallerNotYet": "Caller not collected yet",
+    "missingCallerNotInstrumented": "Caller not in the trace (not instrumented, or not collected)",
+    "missingCalleeNotYet": "Transaction not collected yet",
+    "missingCalleeNotInstrumented": "Transaction not instrumented",
+    "queryAgain": "Query again",
+    "error": "Error",
+    "critical": "On the critical path",
+    "root": "Root",
+    "callerAbsent": "Caller not in the response",
+    "profileSampledOut": "No profile",
+    "profileLost": "Profile lost",
+    "noTime": "No time data"
+  },
+  "tip": {
+    "timing": "{{elapsed}} ({{share}} of the trace), starts at +{{offset}}",
+    "status": "Status {{status}}",
+    "profile": "Profile: {{value}}",
+    "call": "Caller HTTP step {{caller}}, callee transaction {{callee}}",
+    "wait": "Network / wait {{value}} ({{source}})"
+  },
+  "node": {
+    "label": "Selected node",
+    "app": "Application",
+    "env": "Environment",
+    "service": "Service",
+    "instance": "Instance",
+    "version": "Version",
+    "status": "Status",
+    "error": "Error",
+    "elapsed": "Elapsed",
+    "start": "Start",
+    "offset": "From the trace start",
+    "profile": "Profile",
+    "profileCaptured": "Captured",
+    "profileUnknown": "Unknown",
+    "txId": "Transaction ID",
+    "yes": "Yes",
+    "no": "No",
+    "openDetail": "Open transaction",
+    "openDashboard": "Open application dashboard",
+    "callerStep": "Caller HTTP step",
+    "callee": "Callee transaction",
+    "wait": "Network / wait",
+    "waitServer": "reported by the server",
+    "waitComputed": "difference of the two",
+    "clockOffset": "The caller step is shorter than the callee: the hosts' clocks or measurements disagree. Network / wait is not shown.",
+    "host": "Host",
+    "path": "Path pattern",
+    "caller": "Caller transaction",
+    "reason": "Reason",
+    "estimated": "Position estimated from the duration"
+  }
+}

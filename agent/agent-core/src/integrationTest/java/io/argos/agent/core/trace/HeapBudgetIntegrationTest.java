@@ -3,6 +3,7 @@ package io.argos.agent.core.trace;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.argos.agent.core.stats.StatsAggregator;
 import io.argos.agent.core.transport.Queues;
 import java.io.BufferedReader;
 import java.io.File;
@@ -64,6 +65,21 @@ class HeapBudgetIntegrationTest {
         .isLessThanOrEqualTo(ServiceNames.DEFAULT_MAX_BYTES)
         .isGreaterThan(ServiceNames.DEFAULT_MAX_BYTES - ServiceNames.bytesOf(1024));
     assertThat(values.get("service_names_overflow")).isPositive();
+    // Full statistics (WO-16): two windows at stats.max-keys (5,000 SQL) and 1,000 EXT keys plus
+    // the overflow keys of three kinds, every key beyond the caps counted.
+    long cellBytes = StatsAggregator.estimatedCellBytes();
+    long windowCap =
+        (StatsAggregator.DEFAULT_MAX_SQL_KEYS + StatsAggregator.MAX_EXT_KEYS + 2L * 3) * cellBytes;
+    assertThat(values.get("stats_two_windows_bytes"))
+        .as("two full statistics windows")
+        .isGreaterThan(windowCap)
+        .isLessThanOrEqualTo(2 * windowCap);
+    assertThat(values.get("stats_bytes")).isPositive().isLessThanOrEqualTo(2 * windowCap);
+    assertThat(values.get("stats_overflow_sql"))
+        .as("SQL keys beyond stats.max-keys, two windows")
+        .isGreaterThanOrEqualTo(2L * (StatsAggregator.DEFAULT_MAX_SQL_KEYS / 10));
+    assertThat(values.get("stats_overflow_ext"))
+        .isEqualTo(2L * (StatsAggregator.MAX_EXT_KEYS / 10));
 
     // Every item is kept or counted as dropped.
     assertThat(values.get("queue_size.transaction") + values.get("dropped.transaction"))

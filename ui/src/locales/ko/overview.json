@@ -1,0 +1,92 @@
+{
+  "page": {
+    "title": "$t(shell:screen.overview)",
+    "basis": "값: 최근 5분 · 추이: 최근 1시간",
+    "basisTitle": "전체 현황은 항상 최근 5분 값과 최근 1시간 분 단위 추이를 보입니다. 전역 시간 범위는 앱을 열 때 적용됩니다.",
+    "truncated": "앞의 앱 {{count, number}}개만 보입니다. 나머지는 환경이나 그룹을 고르면 보입니다.",
+    "empty": {
+      "title": "보일 앱이 없습니다.",
+      "description": "환경·그룹 필터를 지우거나 에이전트를 연결하세요. 에이전트가 처음 접속하면 앱이 등록됩니다.",
+      "noFilter": "아직 접속한 앱이 없습니다. Argos 에이전트로 앱을 기동하면 여기에 보입니다."
+    },
+    "clearFilters": "환경·그룹 지우기"
+  },
+  "table": {
+    "caption": "앱 목록",
+    "name": "앱",
+    "status": "상태",
+    "instances": "인스턴스",
+    "tps": "TPS",
+    "p95": "p95",
+    "errorRate": "에러율",
+    "active": "액티브",
+    "batches": "배치",
+    "firing": "알림",
+    "deploy": "최근 배포",
+    "trend": "1시간 추이"
+  },
+  "row": {
+    "open": "이 앱의 대시보드 열기",
+    "pinned": "주의 필요: 상단 고정"
+  },
+  "instances": {
+    "title": "인스턴스 {{total, number}}개 중 {{up, number}}개 UP"
+  },
+  "firing": {
+    "notAvailableShort": "n/a",
+    "notAvailable": "사용할 수 없음: 이 서버는 아직 알림을 평가하지 않습니다.",
+    "critical_other": "심각 알림 {{count, number}}건",
+    "warn_other": "경고 알림 {{count, number}}건",
+    "none": "발생 중인 알림 없음"
+  },
+  "deploy": {
+    "title": "배포 {{time}}"
+  },
+  "spark": {
+    "tps": "TPS, 최근 1시간",
+    "p95": "p95, 최근 1시간",
+    "err": "에러율, 최근 1시간",
+    "summary": "{{label}}: 최저 {{min}}, 최고 {{max}}, 최근 {{last}}",
+    "empty": "{{label}}: 데이터 없음"
+  },
+  "group": {
+    "label": "앱 그룹",
+    "all": "전체 그룹",
+    "groups": "그룹"
+  },
+  "sort": {
+    "label": "정렬",
+    "status": "상태",
+    "errorRate": "에러율",
+    "p95": "p95",
+    "firing": "알림",
+    "pinnedHint": "주의가 필요한 앱은 정렬과 관계없이 위에 고정됩니다."
+  },
+  "view": {
+    "label": "보기",
+    "table": "표",
+    "cards": "카드"
+  },
+  "panel": {
+    "firing": {
+      "title": "발생 중 알림",
+      "unavailable": "사용할 수 없음: 이 서버는 아직 알림을 평가하지 않습니다.",
+      "none": "발생 중인 알림이 없습니다.",
+      "summary": "심각 {{critical, number}} · 경고 {{warn, number}}",
+      "more_other": "알림 {{count, number}}건 더 있음",
+      "all": "발생 중 알림 보기",
+      "loading": "발생 중 알림을 불러오는 중…"
+    },
+    "server": {
+      "title": "수집 서버",
+      "ingestLag": "적재 지연",
+      "disk": "디스크 사용률",
+      "channelFailures": "채널 실패(24시간)",
+      "sessions": "에이전트 세션",
+      "certExpiry": "인증서 만료",
+      "days_other": "{{count, number}}일",
+      "notAvailable": "사용할 수 없음",
+      "notAvailableTitle": "이 서버는 아직 이 값을 측정하지 않습니다."
+    }
+  }
+}

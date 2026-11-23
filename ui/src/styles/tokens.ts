@@ -77,6 +77,22 @@ export const colorTokens = {
   'series-6': '#be185d',
   'series-7': '#a16207',
   'series-8': '#475569',
+  // XLog colour-by-instance / top-services palette (docs/15 §7.2: 12 colours + grey, Gate 0 C-9,
+  // WO-33). Adjacent pairs pass the CVD and normal-vision separation checks on white; the legend
+  // and the summary always name each entity, so colour is never the only cue (docs/15 §13).
+  'xlog-cat-1': '#2a78d6',
+  'xlog-cat-2': '#eb6834',
+  'xlog-cat-3': '#1baf7a',
+  'xlog-cat-4': '#eda100',
+  'xlog-cat-5': '#e87ba4',
+  'xlog-cat-6': '#008300',
+  'xlog-cat-7': '#6250d6',
+  'xlog-cat-8': '#e34948',
+  'xlog-cat-9': '#2fa4c8',
+  'xlog-cat-10': '#a8551c',
+  'xlog-cat-11': '#7c9c00',
+  'xlog-cat-12': '#b54bc4',
+  'xlog-cat-other': '#9ca3af',
   // Chart chrome.
   'chart-grid': '#eceef1',
   'chart-axis': '#5f6774',

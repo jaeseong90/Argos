@@ -198,6 +198,12 @@ val preloadAgentJar =
 val attachJdks =
   providers.gradleProperty("agent.attach.jdks").getOrElse("8,21").split(',').map { it.trim().toInt() }
 
+// WO-16 GcLabelsTest (T-ACC-25, 10 U-14): the JDKs whose collectors are started under the agent,
+// -Pagent.gc.jdks=8,11,17,21,25 (default: the attach JDKs). Each one is a Gradle toolchain.
+val gcJdks =
+  providers.gradleProperty("agent.gc.jdks").map { list -> list.split(',').map { it.trim().toInt() } }
+    .getOrElse(attachJdks)
+
 // --- Spring-free servlet WAR fixture (WO-12, T-AG-020 "Spring 없는 앱 HttpServletMapping 폴백") ----
 // Two tiny web applications without Spring: src/servletFixtureJakarta (jakarta.servlet 5.0 API,
 // deployed next to shop-war-jakarta on Tomcat 10.1/11) and src/servletFixtureJavax (javax.servlet
@@ -357,7 +363,7 @@ tasks.withType<Test>().configureEach {
 
 tasks.named<Test>("integrationTest") {
   val launchers =
-    (attachJdks + e2eJdks).distinct().associateWith { version ->
+    (attachJdks + e2eJdks + gcJdks).distinct().associateWith { version ->
       javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(version) }
     }
   val appFiles: Map<String, FileCollection> = e2eRequestedApps.associateWith { sampleAppJars.getValue(it).get() }
@@ -401,6 +407,8 @@ tasks.named<Test>("integrationTest") {
   val e2eReportDir = layout.buildDirectory.dir("reports/agent-e2e")
   outputs.dir(e2eReportDir).withPropertyName("e2eReports")
   val attachJdkList = attachJdks.joinToString(",")
+  val gcJdkList = gcJdks.joinToString(",")
+  inputs.property("gcJdks", gcJdkList)
   inputs.property("e2eCombos", combos)
   inputs.property("containerMode", containerMode)
   systemProperty("argos.test.container", containerMode.toString())
@@ -448,6 +456,7 @@ tasks.named<Test>("integrationTest") {
         "-Dargos.test.trivialAppClasses=" + appClasses.files.joinToString(File.pathSeparator) { it.absolutePath },
         "-Dargos.test.preloadAgentJar=" + preloadJar.get().asFile.absolutePath,
         "-Dargos.test.jdks=" + attachJdkList,
+        "-Dargos.test.gc.jdks=" + gcJdkList,
       ) +
         launchers.map { (version, launcher) ->
           "-Dargos.test.java$version=" + launcher.get().executablePath.asFile.absolutePath

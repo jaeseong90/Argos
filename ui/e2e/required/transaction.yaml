@@ -1,0 +1,117 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# docs/05 §2.2 "트랜잭션 상세" as data-driven E2E tests (docs/18 §13, DSN-18-10): one entry per item of
+# the WO-34 checklist (docs/04 WO-34 "05 §2.2 체크표", 2.2-1 .. 2.2-10), in checklist order. Each item
+# opens a seed manifest transaction with its ts hint and runs a named check of
+# e2e/required/transactionChecks.ts that compares the screen with the API asked the same question
+# inside the test (GET /transactions/{txId}, /baseline, /export, GET /traces; no fixed values or
+# dates). The shared engine (specs/required.spec.ts) declares these tests (T-E2E-transaction-<n>);
+# `coverage` names the component tests behind each item. A property the manifest transaction lacks
+# but the generator seed holds (ERROR frames, two or more STACK captures, folded runs, a normal
+# sample to compare with) is searched in the seed's profile window by the check (annotation
+# seed-search). Kinds the seed cannot produce yet (full-mode parameters masked by role, application
+# frames before WO-26) are component tests on typed fixtures plus test.fixme entries of
+# specs/transaction.spec.ts naming the owner (ADR-0010 C-207 (5)).
+screen: transaction
+title: Transaction detail
+source: docs/05 §2.2
+items:
+  - id: 2.2-1
+    title: top summary - service, response time, status, time, instance, environment, version, kind, thread, CPU time and allocated memory, SQL count and time, connection wait, external calls, error, trace id, user id, remote IP, headers, request id, caller
+    req: [F-U02, D-23, SEC-60]
+    owner: WO-34
+    coverage: E2E (T-E2E-transaction-1); component SummaryBar.test.tsx (T-UI-007, T-ACC-23 display, T-UI-005)
+    route: /apps/{tx.captured_sql_stack.app_id}/transactions/{tx.captured_sql_stack.tx_id}?ts={tx.captured_sql_stack.ts}
+    assert:
+      - visible: transaction-summary
+      - check: txSummaryFields
+
+  - id: 2.2-2
+    title: p50 and p95 of the same service and period with this request's percentile; a normal request side by side
+    req: [F-U02]
+    owner: WO-34
+    coverage: E2E (T-E2E-transaction-2; the compare path on a searched seed transaction when the manifest one has no normal sample, annotation baseline-path); component TransactionPage.actions.test.tsx (compare, scale toggle, empty baseline)
+    route: /apps/{tx.captured_sql_stack.app_id}/transactions/{tx.captured_sql_stack.tx_id}?ts={tx.captured_sql_stack.ts}
+    assert:
+      - visible: transaction-percentile
+      - check: txPercentileCompare
+
+  - id: 2.2-3
+    title: timeline - bars, indentation and share, uninstrumented time in grey, highlight from 20 %, stack capture icons
+    req: [F-U02, DSN-15-11]
+    owner: WO-34
+    coverage: E2E (T-E2E-transaction-3, uninstrumented time = the grey time of the transaction row); component TimelineView.test.tsx and model/selfTime.test.ts (union, async overlap, past the end, orphans, 20 % boundary, server value named when it differs)
+    route: /apps/{tx.captured_sql_stack.app_id}/transactions/{tx.captured_sql_stack.tx_id}?ts={tx.captured_sql_stack.ts}
+    assert:
+      - visible: transaction-timeline
+      - check: txTimeline
+
+  - id: 2.2-4
+    title: call tree - consecutive repeats folded with count and sum, batch chunk repetitions folded
+    req: [F-U02, DSN-15-12]
+    owner: WO-34
+    coverage: E2E (T-E2E-transaction-4 on a searched folded run, work steps first, else STACK captures; T-E2E-transaction-30 batch chunks, fixme while the seed has none); component model/tree.test.ts (run 2/3, sql_id key, nested runs, batch chunks) and TimelineView.test.tsx (STACK runs as captures)
+    route: /apps/{tx.captured_sql_stack.app_id}/transactions/{tx.captured_sql_stack.tx_id}?ts={tx.captured_sql_stack.ts}&tab=tree
+    assert:
+      - visible: transaction-tree
+      - check: txTreeFolding
+
+  - id: 2.2-5
+    title: SQL tab - normalized text, parameters by mode and role (masked_by_role), execute, fetch and rows, wait apart from execution with pool names, SQL statistics link
+    req: [F-U02, SEC-3A]
+    owner: WO-34
+    coverage: E2E (T-E2E-transaction-5); component detailViews.test.tsx (C-13 masked_by_role, totals, statistics link)
+    route: /apps/{tx.captured_sql_stack.app_id}/transactions/{tx.captured_sql_stack.tx_id}?ts={tx.captured_sql_stack.ts}&tab=sql
+    assert:
+      - visible: transaction-sql
+      - check: txSqlTab
+
+  - id: 2.2-6
+    title: external tab - host, path, time and status (TIMEOUT / CONNECT_FAIL / 5xx), host statistics and trace links
+    req: [F-U02, F-U03]
+    owner: WO-34
+    coverage: E2E (T-E2E-transaction-6; failure classes of the seed in T-E2E-transaction-24a..c, each a fixme when the search finds none); component detailViews.test.tsx and model/calls.test.ts
+    route: /apps/{tx.trace_root_two_apps.app_id}/transactions/{tx.trace_root_two_apps.tx_id}?ts={tx.trace_root_two_apps.ts}&tab=ext
+    assert:
+      - visible: transaction-ext
+      - check: txExtTab
+
+  - id: 2.2-7
+    title: error tab - exception class, masked message, stack with application frames, error group link
+    req: [F-U02, SEC-60]
+    owner: WO-34
+    coverage: E2E (T-E2E-transaction-7 on a searched failed transaction with ERROR frames); component detailViews.test.tsx (frames, group link, message note)
+    route: /apps/{tx.error.app_id}/transactions/{tx.error.tx_id}?ts={tx.error.ts}&tab=error
+    assert:
+      - visible: transaction-error
+      - check: txErrorTab
+
+  - id: 2.2-8
+    title: STACK view - consecutive captures side by side, common frames highlighted
+    req: [F-U02]
+    owner: WO-34
+    coverage: E2E (T-E2E-transaction-8 on a searched transaction with two or more captures sharing frames); component detailViews.test.tsx (common and deepest frame)
+    route: /apps/{tx.captured_sql_stack.app_id}/transactions/{tx.captured_sql_stack.tx_id}?ts={tx.captured_sql_stack.ts}&tab=stack
+    assert:
+      - visible: transaction-stack
+      - check: txStackView
+
+  - id: 2.2-9
+    title: the reason a profile was not captured (sampling / lost, D-07)
+    req: [F-U02, D-07]
+    owner: WO-34
+    coverage: E2E (T-E2E-transaction-9 sampled_out, T-E2E-transaction-23 lost); component detailViews.test.tsx
+    route: /apps/{tx.sampled_out.app_id}/transactions/{tx.sampled_out.tx_id}?ts={tx.sampled_out.ts}
+    assert:
+      - visible: transaction-profile-banner
+      - check: txProfileReason
+
+  - id: 2.2-10
+    title: go to the calling transaction, open logs (F-U18), JSON export, copy the URL
+    req: [F-U02, F-U18]
+    owner: WO-34
+    coverage: E2E (T-E2E-transaction-10, caller navigation and the callee summary with the caller instance); component TransactionPage.actions.test.tsx (export name, 429, clipboard, SafeLink blocking javascript:)
+    route: /apps/{tx.trace_root_two_apps.app_id}/transactions/{tx.trace_root_two_apps.tx_id}?ts={tx.trace_root_two_apps.ts}
+    assert:
+      - visible: transaction-actions
+      - check: txActions

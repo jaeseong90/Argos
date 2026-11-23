@@ -786,12 +786,26 @@ export const TxDetailQ = {
     'timeline',
   ),
   compare: id64Field('compare'),
+  /**
+   * The list a detail link came from (ADR-0010 C-206 (1)): the XLog path and query, a same-origin
+   * path (safeNextPath rules). Back-to-list returns to it; previous/next re-query its list.
+   */
+  back: stringField(
+    'back',
+    z.string().refine((value) => safeNextPath(value) === value),
+  ),
 } as const satisfies UrlSchema;
+
+/** Trace search windows of docs/14 §4.7 (`window`; absent = the server's ts/24 h rule). */
+export const TRACE_WINDOWS = ['1h', '24h', '7d', '30d'] as const;
 
 export const TraceQ = {
   ...CommonQ,
   ts: instantField('ts'),
+  window: stringField('window', z.enum(TRACE_WINDOWS)),
 } as const satisfies UrlSchema;
+
+export type TraceState = UrlStateOf<typeof TraceQ>;
 
 export const DashboardQ = {
   ...CommonQ,
@@ -799,12 +813,56 @@ export const DashboardQ = {
   tileRef: enumField('tileRef', ['prev', '7d'], 'prev'),
 } as const satisfies UrlSchema;
 
+/** An alert rule id (docs/14 §4.13: UUID; server ids are v4, accepted in either case). */
+const RULE_ID_PATTERN =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+/** An alert template key (docs/01 appendix A keys such as `error_rate`, `instance_down`). */
+const TEMPLATE_KEY_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+
+/** Alert states of the history filter (`state`; the API takes the upper-case state). */
+export const ALERT_STATE_FILTERS = [
+  'firing',
+  'acked',
+  'resolved',
+  'nodata',
+  'pending',
+  'ok',
+  'all',
+] as const;
+
+/**
+ * Alert history (docs/15 §9.9, 05 §2.9, WO-38): the filters of the event list (state, severity,
+ * failed deliveries only, application, rule; env and the range are global keys), the tab (event
+ * history or statistics) and the statistics period. `app` absent = every application (05 §2.9-6,
+ * entered from the overview). CommonQ `alert` highlights one event and turns live off.
+ */
 export const AlertsQ = {
   ...CommonQ,
-  state: enumField('state', ['firing', 'acked', 'resolved', 'nodata', 'all'], 'all'),
+  state: enumField('state', ALERT_STATE_FILTERS, 'all'),
   severity: enumField('severity', ['warn', 'critical', 'all'], 'all'),
   failedOnly: flagField('failedOnly'),
   app: intField('app'),
+  rule: stringField('rule', z.string().regex(RULE_ID_PATTERN)),
+  tab: enumField('tab', ['history', 'stats'], 'history'),
+  days: enumField('days', ['7', '30'], '7'),
+} as const satisfies UrlSchema;
+
+/** Alert rule list (05 §2.4): application and enabled filters. */
+export const AlertRulesQ = {
+  ...CommonQ,
+  app: intField('app'),
+  enabled: enumField('enabled', ['all', 'enabled', 'disabled'], 'all'),
+} as const satisfies UrlSchema;
+
+/**
+ * Alert rule editor (new and existing rule): `app` is the default application of a new rule and
+ * `template` the template key chosen in the "create from template" drawer (05 §2.4-3).
+ */
+export const AlertRuleQ = {
+  ...CommonQ,
+  app: intField('app'),
+  template: stringField('template', z.string().regex(TEMPLATE_KEY_PATTERN)),
 } as const satisfies UrlSchema;
 
 export const InstanceQ = {
@@ -827,11 +885,45 @@ export const SearchQ = {
   ),
 } as const satisfies UrlSchema;
 
+/** Top N choices of the statistics lists (docs/14 §4.8 `limit`, at most 500; default 100). */
+export const STATS_LIMITS = ['10', '50', '100', '500'] as const;
+export type StatsLimit = (typeof STATS_LIMITS)[number];
+
+/**
+ * Statistics lists (docs/15 §9.7, 05 §2.5): the common keys (the sort is CommonQ `sort`, read as
+ * `-p95_ms` or `p95_ms:desc` and written as the API form), Top N and the per-version split of
+ * the services list (`split=1` → `split_version=true`).
+ */
+export const StatsListQ = {
+  ...CommonQ,
+  limit: enumField('limit', STATS_LIMITS, '100'),
+  split: flagField('split'),
+} as const satisfies UrlSchema;
+
+/** The error groups list: the statistics list keys plus the "new" filter (`new=1` → new_only). */
+export const ErrorsQ = {
+  ...StatsListQ,
+  new: flagField('new'),
+} as const satisfies UrlSchema;
+
+/** Cross-view tabs of the service detail (05 §2.5-2: SQL, external calls, error groups Top N). */
+export const SERVICE_DETAIL_TABS = ['sql', 'external', 'errors'] as const;
+
+export const ServiceDetailQ = {
+  ...CommonQ,
+  tab: enumField('tab', SERVICE_DETAIL_TABS, 'sql'),
+} as const satisfies UrlSchema;
+
 export type CommonState = UrlStateOf<typeof CommonQ>;
+export type StatsListState = UrlStateOf<typeof StatsListQ>;
+export type ErrorsState = UrlStateOf<typeof ErrorsQ>;
+export type ServiceDetailState = UrlStateOf<typeof ServiceDetailQ>;
 export type XLogState = UrlStateOf<typeof XLogQ>;
 export type TxDetailState = UrlStateOf<typeof TxDetailQ>;
 export type DashboardState = UrlStateOf<typeof DashboardQ>;
 export type AlertsState = UrlStateOf<typeof AlertsQ>;
+export type AlertRulesState = UrlStateOf<typeof AlertRulesQ>;
+export type AlertRuleState = UrlStateOf<typeof AlertRuleQ>;
 
 /** zod object of a route schema's state (used by the writer to refuse invalid state). */
 export function stateSchema<S extends UrlSchema>(schema: S): z.ZodType<UrlStateOf<S>> {

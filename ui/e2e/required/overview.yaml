@@ -1,0 +1,121 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# docs/05 §2.10 "전체 현황" as data-driven E2E tests (docs/18 §13, DSN-18-10): one entry per part
+# of each bullet of the checklist (2.10-1 .. 2.10-6), in checklist order. Each item opens the
+# overview of the seeded stack and runs a named check of e2e/required/overviewChecks.ts that
+# compares the page with the GET /overview answers the page received from the real server and with
+# the API asked the same question. Where the seed cannot show something, the check says how the
+# real answer was changed in the browser (30 rows: padded with typed rows; mixed states and firing
+# counts: typed rows; app groups: an option added to GET /apps). The firing panel lists the real
+# alerts of the alert engine and the seed's FIRING alert (manifest `alert`, WO-25). Parts that need
+# later work orders are test.fixme entries naming them (disk and certificate expiry WO-28).
+screen: overview
+title: Overview
+source: docs/05 §2.10
+items:
+  - id: 2.10-1
+    title: the overview is the screen after sign-in (the root path opens it) with the rows of the server
+    req: [F-U17]
+    owner: WO-31
+    route: /
+    assert:
+      - visible: overview-page
+      - check: overviewDefaultScreen
+
+  - id: 2.10-1
+    title: environment and application group filters are URL state, the server's query and the rows of its answer
+    req: [F-U17, F-U16]
+    owner: WO-31
+    route: /overview
+    assert:
+      - visible: overview-page
+      - check: overviewFilters
+
+  - id: 2.10-1
+    title: card and table views, the choice kept across a reload
+    req: [F-U17]
+    owner: WO-31
+    route: /overview
+    assert:
+      - visible: overview-view-cards
+      - check: overviewViewToggle
+
+  - id: 2.10-1
+    title: status board mode (kiosk=1) without top bar and menu, with the badge and the rows
+    req: [F-U21]
+    owner: WO-31
+    route: /overview?kiosk=1
+    assert:
+      - visible: kiosk-badge
+      - hidden: topbar
+      - check: overviewKiosk
+
+  - id: 2.10-2
+    title: every row shows the name, worst-instance status, instances up of total, TPS, p95, error rate, active, running batches, firing alerts by severity, last deploy and the three one-hour sparklines of the API answer, missing values as missing
+    req: [F-U17, D-23]
+    owner: WO-31
+    route: /overview
+    assert:
+      - visible: overview-table
+      - check: overviewRowFields
+
+  - id: 2.10-3
+    title: sort by status, error rate, p95 and alerts with abnormal applications pinned on top
+    req: [F-U17]
+    owner: WO-31
+    route: /overview
+    assert:
+      - visible: overview-sort-status
+      - check: overviewSortPinned
+
+  - id: 2.10-4
+    title: the all-application firing panel equals GET /overview/alerts (FIRING and ACKED, critical first) and alerts_firing_total counts its rows
+    req: [F-U17]
+    owner: WO-31
+    route: /overview
+    assert:
+      - visible: overview-firing-panel
+      - check: overviewFiringPanel
+
+  - id: 2.10-4
+    title: firing alerts of every application listed by severity (the seed's real FIRING alert among them), a click opens that alert in the history
+    req: [F-U17]
+    owner: WO-25
+    coverage: the not available (alerts_firing_total null), loading and error states are component tests of src/features/overview FiringPanel (T-UI-007); the stack's alert engine always counts
+    route: /overview
+    assert:
+      - visible: overview-firing-panel
+      - check: overviewFiringAlerts
+
+  - id: 2.10-4
+    title: the collection server panel equals server.* of the answer (ingest lag, disk, channel failures, sessions, certificate expiry), unmeasured values not available
+    req: [F-U17, D-23]
+    owner: WO-31
+    route: /overview
+    assert:
+      - visible: overview-server-panel
+      - check: overviewServerPanel
+
+  - id: 2.10-4
+    title: disk usage and certificate expiry measured by the server itself
+    req: [F-U17]
+    owner: WO-28
+    coverage: component tests of src/features/overview ServerHealthPanel (values, warnings, Not available for null); the 2.10-4 check above shows them as Not available while GET /overview server.disk_usage_ratio and cert_expiry_days are null (DSN-12-14 server metrics, WO-28)
+
+  - id: 2.10-5
+    title: a row opens the dashboard of its application with the same time range, kind, environment and live state
+    req: [F-U17, F-U14]
+    owner: WO-31
+    route: /overview
+    assert:
+      - visible: overview-page
+      - check: overviewOpensDashboard
+
+  - id: 2.10-6
+    title: 30 applications fit in the table at 1366x768 without scrolling (T-ACPT-16, automated part)
+    req: [F-U17, F-U16, S-16]
+    owner: WO-31
+    route: /overview
+    assert:
+      - visible: overview-table
+      - check: overviewThirtyRowsFit

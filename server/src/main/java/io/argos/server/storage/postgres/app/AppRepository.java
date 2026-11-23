@@ -14,8 +14,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * {@code apps} (PostgreSQL V001, DSN-02-14) for the session start of the collector (11 §5 check 5,
  * 12 §4.4): the read by (name, env) and the automatic registration of an environment variant of an
- * agent token's home app ({@code registered_from_app_id}, V003, ADR-0010 C-155). App administration
- * is WO-26's and later.
+ * agent token's home app ({@code registered_from_app_id}, V003, ADR-0010 C-155). The approval queue
+ * is {@link PendingRegistrationRepository} (WO-22); app administration is WO-26's and later.
  */
 @Repository
 public class AppRepository {
@@ -38,8 +38,13 @@ public class AppRepository {
   /** Locks the home app's row: one variant registration per home app at a time, on any server. */
   private static final String LOCK_HOME = "SELECT id FROM argos.apps WHERE id = ? FOR UPDATE";
 
+  /**
+   * Variants the home app's Hellos registered themselves ({@code auto_register}); a variant an
+   * administrator approved from the queue ({@link PendingRegistrationRepository#approve}) is not
+   * counted (C-155 (3): the approval does not take the cap).
+   */
   private static final String COUNT_VARIANTS =
-      "SELECT count(*) FROM argos.apps WHERE registered_from_app_id = ?";
+      "SELECT count(*) FROM argos.apps WHERE registered_from_app_id = ? AND auto_register";
 
   /**
    * {@code auto_register} marks a row created by an agent's Hello (12 §4.4), as opposed to one an

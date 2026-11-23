@@ -4,11 +4,18 @@ package io.argos.server.ingest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.argos.proto.v1.ActiveTransactionSnapshot;
 import io.argos.proto.v1.DictionaryKind;
+import io.argos.proto.v1.MetricBatch;
+import io.argos.proto.v1.MetricKind;
+import io.argos.proto.v1.MetricSample;
+import io.argos.proto.v1.MetricSeries;
 import io.argos.proto.v1.TransactionBatch;
 import io.argos.proto.v1.TransactionKind;
 import io.argos.proto.v1.TransactionRecord;
+import io.argos.server.ingest.api.MetricPoint;
 import io.argos.server.ingest.api.RealtimePublisher;
+import io.argos.server.ingest.api.XlogPoint;
 import io.argos.server.session.api.IpMode;
 import io.argos.server.session.api.SessionContext;
 import io.argos.server.session.api.UserIdMode;
@@ -27,6 +34,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.AfterEach;
@@ -59,15 +67,17 @@ class IngestServiceTest {
   private IngestService ingest;
 
   private void start(RecordDecoder decoder) throws IOException {
+    start(decoder, RealtimePublisher.noop());
+  }
+
+  private void start(RecordDecoder decoder, RealtimePublisher publisher) throws IOException {
     wal = new FileWal(dir, 1 << 20, 1 << 24, 1, 0.8, registry, Clock.systemUTC());
     directory = WalDirectory.open(dir);
     scan = WalRecovery.scan(directory, r -> {});
     wal.start(directory, scan.segments());
     writer = new ClickHouseBatchWriter(wal, 50, 1_000, 10_000, null, registry, Clock.systemUTC());
     writer.start((table, token, data) -> inserts.add(table));
-    ingest =
-        new IngestService(
-            wal, writer, decoder, metrics, RealtimePublisher.noop(), Clock.systemUTC());
+    ingest = new IngestService(wal, writer, decoder, metrics, publisher, Clock.systemUTC());
   }
 
   @AfterEach
@@ -175,5 +185,69 @@ class IngestServiceTest {
     assertThat(writer.durableThrough(Table.XLOG)).isNotNegative();
     assertThat(ingest.isDispatcherStopped()).isFalse();
     assertThat(health.health().getStatus()).isEqualTo(Status.UP);
+  }
+
+  private WalPosition appendHeap(long receivedMs, long tsMs, double value, long seq)
+      throws Exception {
+    SessionContext s = IngestTestDoubles.session(IpMode.FULL, UserIdMode.PLAIN, receivedMs, 0, "");
+    MetricBatch batch =
+        MetricBatch.newBuilder()
+            .addSeries(
+                MetricSeries.newBuilder()
+                    .setIndex(0)
+                    .setName("jvm_memory_used_bytes{area=\"heap\"}")
+                    .setKind(MetricKind.GAUGE))
+            .addSamples(MetricSample.newBuilder().setSeriesIndex(0).setTsMs(tsMs).setValue(value))
+            .build();
+    return wal.append(
+        WalRecordType.METRIC,
+        s.instanceId(),
+        s.agentEpoch(),
+        seq,
+        s.receivedAtMs(),
+        s.tsCorrectionMs(),
+        WalDataPayload.of(s, batch.toByteString()).encode());
+  }
+
+  @Test
+  @Tag("req:D-15")
+  @DisplayName(
+      "T-SV-020f heap, GC and CPU samples reach the realtime metric port only from the live path:"
+          + " never from WAL recovery, never for a late row")
+  void metricsPublishedLiveOnly() throws Exception {
+    List<List<MetricPoint>> published = new CopyOnWriteArrayList<>();
+    RealtimePublisher recording =
+        new RealtimePublisher() {
+          @Override
+          public void publishXlog(SessionContext session, List<XlogPoint> points) {}
+
+          @Override
+          public void publishActive(SessionContext session, ActiveTransactionSnapshot snapshot) {}
+
+          @Override
+          public void publishMetrics(SessionContext session, List<MetricPoint> points) {
+            published.add(points);
+          }
+        };
+    start(IngestTestDoubles.decoder(new IngestTestDoubles.MemoryStore(), metrics), recording);
+    long now = System.currentTimeMillis();
+    long grid = Math.floorDiv(now, 5_000L) * 5_000L;
+    appendHeap(now, grid, 1.0, 1); // read by the recovery: never published
+    ingest.recover(scan);
+    assertThat(published).isEmpty();
+
+    now = System.currentTimeMillis();
+    grid = Math.floorDiv(now, 5_000L) * 5_000L;
+    appendHeap(now, now - 90_000, 3.0, 2); // late = 1
+    appendHeap(now, grid, 2.0, 3);
+    // Records are handed to the port in WAL order after they are marked processed: wait for the
+    // last one's publish.
+    long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+    while (published.isEmpty() && System.nanoTime() < deadline) {
+      Thread.sleep(20);
+    }
+    assertThat(ingest.isProcessedThrough(wal.durableMark())).as("live records loaded").isTrue();
+    assertThat(published)
+        .containsExactly(List.of(new MetricPoint(MetricPoint.Series.HEAP_USED, grid, 2.0)));
   }
 }

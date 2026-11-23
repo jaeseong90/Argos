@@ -8,6 +8,7 @@ import io.argos.agent.core.config.AgentConfig;
 import io.argos.agent.core.config.HttpSettings;
 import io.argos.agent.core.guard.AgentCounters;
 import io.argos.agent.core.sql.SqlNormalizer;
+import io.argos.agent.core.stats.StatsAggregator;
 import io.argos.agent.core.transport.AgentQueue;
 import io.argos.agent.core.transport.QueueItem;
 import io.argos.agent.core.transport.Queues;
@@ -75,6 +76,12 @@ public final class TraceRuntime {
   private final Dictionary dictionary;
   private final TracerImpl tracerImpl;
   private final AtomicBoolean afterPremainDone = new AtomicBoolean();
+
+  /**
+   * {@code ServerHello.active_snapshot_interval_s} of the current session (11 §3), 0 when none was
+   * given; {@code argos-metrics} prefers it to {@code active.snapshot-interval-seconds}.
+   */
+  private volatile int serverActiveSnapshotIntervalSeconds;
 
   /** The parts given; {@link #create} is the factory of the agent. */
   public TraceRuntime(Tracer tracer, Queues queues, ActiveRegistry activeRegistry) {
@@ -145,9 +152,11 @@ public final class TraceRuntime {
             .sqlNormalizer(
                 new SqlNormalizer(
                     config.sqlBackslashEscape(), config.sqlMaxLength(), config.sqlKeepHints()))
+            .statsSettings(config.statsWindowSeconds(), config.statsMaxKeys())
             .build();
     tracer.setIgnoreRules(HttpSettings.ignoreRules(config));
     tracer.setServiceNames(HttpSettings.serviceNames(config));
+    tracer.setPropagation(HttpSettings.propagation(config));
     return new TraceRuntime(tracer, queues, registry, dictionary);
   }
 
@@ -213,6 +222,27 @@ public final class TraceRuntime {
   /** The dictionary of the tracer (exporters resolve ids with it). */
   public Dictionary dictionary() {
     return dictionary;
+  }
+
+  /**
+   * The full statistics aggregator of the tracer (10 §9.3), or null when this runtime was built
+   * around another tracer.
+   */
+  public StatsAggregator stats() {
+    return tracerImpl == null ? null : tracerImpl.stats();
+  }
+
+  /**
+   * Keeps {@code ServerHello.active_snapshot_interval_s} of an accepted session (called on {@code
+   * argos-io}); 0 or less: the server gave none.
+   */
+  public void serverActiveSnapshotIntervalSeconds(int seconds) {
+    serverActiveSnapshotIntervalSeconds = Math.max(0, seconds);
+  }
+
+  /** {@code ServerHello.active_snapshot_interval_s} of the current session, 0 when none. */
+  public int serverActiveSnapshotIntervalSeconds() {
+    return serverActiveSnapshotIntervalSeconds;
   }
 
   /**

@@ -110,6 +110,9 @@ class ConfigKeyCatalogTest {
       String now = current == null ? null : ConfigKeyCatalog.render(current);
       return Map.of(name, constants.stream().filter(c -> !c.equals(now)).findFirst().orElseThrow());
     }
+    if (type.equals("list<duration>")) {
+      return Map.of(name + "[0]", "1s");
+    }
     if (type.startsWith("list<")) {
       return Map.of(name + "[0]", "round-trip-value");
     }
@@ -188,7 +191,8 @@ class ConfigKeyCatalogTest {
             "argos.master-key",
             "argos.metrics.token",
             "argos.postgres.owner.password",
-            "argos.postgres.password");
+            "argos.postgres.password",
+            "argos.security.master-key.previous");
     assertThat(
             KEYS.values().stream().filter(k -> k.kind() == Kind.SECRET_FILE).map(ConfigKey::name))
         .hasSize(secrets.size())

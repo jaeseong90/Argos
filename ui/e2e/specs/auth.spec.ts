@@ -37,6 +37,9 @@ test.describe('sign-in', () => {
         (s) => s.path === '/overview',
         'the default screen after sign-in is /overview',
       );
+      // The overview screen itself (WO-31), not a placeholder.
+      await expect(page.getByTestId('overview-page')).toBeVisible();
+      await expect(page.getByTestId('route-pending')).toHaveCount(0);
       await page.getByTestId('account-menu').click();
       await expect(page.getByText(t('shell:role.viewer'), { exact: false })).toBeVisible();
     },

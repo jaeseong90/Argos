@@ -2,6 +2,7 @@
 package io.argos.server.api.overview;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.argos.server.api.alerts.AlertViews;
 import io.argos.server.api.health.HealthViews;
 import io.argos.server.api.openapi.ArgosUntrusted;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -18,20 +19,20 @@ public final class OverviewViews {
    * The overview.
    *
    * @param apps the applications, at most 500
-   * @param alertsFiringTotal firing alerts of every application: null until the alert engine exists
-   *     (WO-25)
+   * @param alertsFiringTotal the active (FIRING and ACKED) alerts of {@code GET /overview/alerts}
+   *     with the same {@code env}: the applications' and the server's own
    * @param server the server summary
    */
   @Schema(name = "Overview")
   public record Overview(
       List<App> apps,
-      @JsonProperty("alerts_firing_total") @Nullable Long alertsFiringTotal,
+      @JsonProperty("alerts_firing_total") long alertsFiringTotal,
       HealthViews.Server server) {}
 
   /**
    * Instance counts.
    *
-   * @param up instances with a live session
+   * @param up instances in {@code UP} or {@code WARN} (connected and collecting)
    * @param total instances that are not archived
    */
   @Schema(name = "OverviewInstances")
@@ -69,16 +70,16 @@ public final class OverviewViews {
    * @param name name
    * @param env environment
    * @param group group, or null
-   * @param status the worst instance state: {@code UP} when every instance has a live session,
-   *     {@code DOWN} otherwise or without instances (C-160: {@code STALE} and {@code WARN} come
-   *     with WO-22)
+   * @param status the worst state of the instances that are not archived ({@code DOWN} &gt; {@code
+   *     STALE} &gt; {@code WARN} &gt; {@code UP}), {@code DOWN} without instances (12 §4.2, {@code
+   *     InstanceStates})
    * @param instances instance counts
    * @param tps TPS of the last 5 minutes
    * @param p95Ms p95 of the last 5 minutes (DD states, C-53), null without transactions
    * @param errorRate error rate of the last 5 minutes, null without transactions
    * @param active active transactions now, null without a recent snapshot
    * @param batchRunning running batch transactions now, null without a recent snapshot
-   * @param firing firing alerts by severity: null until WO-25
+   * @param firing the application's active (FIRING and ACKED) alerts by severity
    * @param lastDeploy the last deploy marker, or null
    * @param sparkline the last hour per minute
    */
@@ -95,7 +96,7 @@ public final class OverviewViews {
       @JsonProperty("error_rate") @Nullable Double errorRate,
       @Nullable Long active,
       @JsonProperty("batch_running") @Nullable Long batchRunning,
-      @Nullable Object firing,
+      AlertViews.FiringCounts firing,
       @JsonProperty("last_deploy") @Nullable Deploy lastDeploy,
       Sparkline sparkline) {}
 }

@@ -186,9 +186,14 @@ class HelloPathsIT {
       rejected(a.connect(), RejectReason.APP_NOT_REGISTERED, Status.Code.OK, 300);
     }
     assertThat(countApps(app, "qa")).isZero();
-    assertThat(count("SELECT count(*) FROM argos.pending_registrations WHERE name = ?", app))
-        .as("no approval queue in the slice (WO-22)")
-        .isZero();
+    assertThat(
+            count(
+                "SELECT count(*) FROM argos.pending_registrations WHERE name = ? AND env = 'qa'"
+                    + " AND attempts = 1 AND home_app_id = ?",
+                app,
+                home.appId()))
+        .as("the refused Hello is queued for approval (C-155 (3), 12 §4.4, WO-22)")
+        .isEqualTo(1);
 
     int stageId;
     try (FakeAgent a = collector.agent(token).appName(app).env("stage").build()) {
@@ -662,10 +667,12 @@ class HelloPathsIT {
     }
   }
 
-  private static int count(String sql, Object arg) throws Exception {
+  private static int count(String sql, Object... args) throws Exception {
     try (Connection c = env.connect(PgAccount.APP);
         PreparedStatement ps = c.prepareStatement(sql)) {
-      ps.setObject(1, arg);
+      for (int i = 0; i < args.length; i++) {
+        ps.setObject(i + 1, args[i]);
+      }
       try (ResultSet rs = ps.executeQuery()) {
         rs.next();
         return rs.getInt(1);

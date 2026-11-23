@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.server.api.health;
 
+import io.argos.server.alert.AlertStatusService;
 import io.argos.server.api.apps.InstanceStates;
 import io.argos.server.api.dashboard.MetricKeys;
 import io.argos.server.api.dashboard.SeriesGrid;
@@ -50,6 +51,7 @@ public class HealthService {
   private final InstanceStates states;
   private final CatalogRepository catalog;
   private final EventService events;
+  private final AlertStatusService alerts;
   private final String database;
 
   public HealthService(
@@ -60,6 +62,7 @@ public class HealthService {
       InstanceStates states,
       CatalogRepository catalog,
       EventService events,
+      AlertStatusService alerts,
       ArgosProperties properties) {
     this.queries = queries;
     this.metrics = metrics;
@@ -68,13 +71,17 @@ public class HealthService {
     this.states = states;
     this.catalog = catalog;
     this.events = events;
+    this.alerts = alerts;
     this.database = properties.clickhouse().database();
   }
 
-  /** The server summary (14 §4.2 {@code data.server}). */
+  /**
+   * The server summary (14 §4.2 {@code data.server}); {@code channel_failures_24h} are the
+   * notification deliveries that failed in the last 24 hours (WO-25).
+   */
   public HealthViews.Server server() {
     return new HealthViews.Server(
-        meters.ingestLagSeconds(), null, null, states.sessionCount(), null);
+        meters.ingestLagSeconds(), null, alerts.channelFailures24h(), states.sessionCount(), null);
   }
 
   /**

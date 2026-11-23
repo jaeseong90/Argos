@@ -40,7 +40,10 @@ import org.springframework.stereotype.Component;
  *   <li>otherwise the last 24 hours.
  * </ul>
  *
- * At most {@value #MAX_NODES} transactions ({@code truncated}).
+ * At most {@value #MAX_NODES} transactions ({@code truncated}). A callee's caller is the caller
+ * application's transaction covering its start ({@code caller_app_id}, sent only to hosts in {@code
+ * propagation.argos-state.hosts}) or, without one, the transaction whose {@code span_id} is the
+ * callee's {@code parent_span_id} (the default configuration, ADR-0010 C-223 (1)).
  */
 @Component
 public class TraceService {
@@ -221,8 +224,18 @@ public class TraceService {
           .add(new Call((int) s.getLong("app_id"), tx, start, start + s.getLong("elapsed_ms"), s));
     }
 
-    // Callers: the caller app's transaction whose run covers the callee's start.
+    // Callers: the caller app's transaction whose run covers the callee's start. Without a caller
+    // application (the default agent configuration sends no Argos tracestate entry, so
+    // caller_app_id is 0), the incoming traceparent's parent-id is the caller transaction's own
+    // span id (ADR-0010 C-223 (1)(2)): the transaction of the trace with that span_id.
     long tol = TOLERANCE.toMillis();
+    Map<Long, Tx> bySpan = new HashMap<>();
+    for (Tx t : txs) {
+      long span = t.row().getLong("span_id");
+      if (span != 0) {
+        bySpan.putIfAbsent(span, t);
+      }
+    }
     String[] parent = new String[txs.size()];
     TraceView.CallerStep[] steps = new TraceView.CallerStep[txs.size()];
     Set<Call> usedCalls = new HashSet<>();
@@ -230,22 +243,27 @@ public class TraceService {
     Map<Integer, List<Integer>> children = new HashMap<>();
     for (Tx c : txs) {
       boolean incoming = c.row().getBoolean("incoming_trace");
-      if (c.callerApp() == 0) {
-        if (incoming && c.row().getLong("parent_span_id") != 0) {
-          missing.add(new TraceView.Missing(null, c.txId(), reason(c, now)));
-        }
-        continue;
-      }
       Tx best = null;
-      long bestScore = Long.MAX_VALUE;
-      for (Tx p : txs) {
-        if (p.index() == c.index() || p.appId() != c.callerApp()) {
+      if (c.callerApp() == 0) {
+        long parentSpan = c.row().getLong("parent_span_id");
+        if (!incoming || parentSpan == 0) {
           continue;
         }
-        long score = cover(p.start(), p.end(), c.start(), tol);
-        if (score < bestScore) {
-          best = p;
-          bestScore = score;
+        Tx bySpanId = bySpan.get(parentSpan);
+        if (bySpanId != null && bySpanId.index() != c.index()) {
+          best = bySpanId;
+        }
+      } else {
+        long bestScore = Long.MAX_VALUE;
+        for (Tx p : txs) {
+          if (p.index() == c.index() || p.appId() != c.callerApp()) {
+            continue;
+          }
+          long score = cover(p.start(), p.end(), c.start(), tol);
+          if (score < bestScore) {
+            best = p;
+            bestScore = score;
+          }
         }
       }
       if (best == null) {

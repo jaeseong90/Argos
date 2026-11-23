@@ -15,6 +15,9 @@
 --   accuracy_day      1m states -> -MergeState per hour -> -Merge per day
 --   stored_hour       the stored quantilesDD states of app_stat_1m merged per hour (dataset source)
 --   stored_day        the stored quantilesDD states of app_stat_1h merged per day (dataset source)
+-- The stored steps also return rank2 of the three DD estimates (see below), so the runner can judge
+-- the stored p99 per bucket on the C-219 rule (rank error when the bucket has fewer than 100 tail
+-- values, value error otherwise).
 -- The histogram column counts the values per 13 section 2 bucket (value <= bound; the 15th bucket
 -- is above 30,000 ms); the runner estimates the bucket p95 from it (BucketQuantile, as Q08).
 -- rank2 holds, for each of the nine estimates (td, bf, dd x p50/p95/p99), count(value < estimate) +
@@ -238,40 +241,68 @@ GROUP BY g.g_app, g.g_kind, g.g_t, g.n, g.exact, g.td, g.bf, g.dd, g.hist
 ORDER BY g.g_app, g.g_kind, g.g_t
 
 -- @step stored_hour
-SELECT st.app_id, st.kind, st.t, ex.n, ex.exact, st.dd
+SELECT g.g_app, g.g_kind, g.g_t, g.n, g.exact, g.dd,
+       [countIf(r.elapsed_ms < g.dd[1]) + countIf(r.elapsed_ms <= g.dd[1]),
+        countIf(r.elapsed_ms < g.dd[2]) + countIf(r.elapsed_ms <= g.dd[2]),
+        countIf(r.elapsed_ms < g.dd[3]) + countIf(r.elapsed_ms <= g.dd[3])] AS rank2
 FROM
 (
-    SELECT app_id, kind, toStartOfHour(minute) AS t, quantilesDDMerge(0.01, 0.5, 0.95, 0.99)(q_elapsed) AS dd
-    FROM {db}.{p}app_stat_1m
-    WHERE minute >= {from:DateTime64(3)} AND minute < {to:DateTime64(3)}
-    GROUP BY app_id, kind, t
-) AS st
-INNER JOIN
-(
-    SELECT app_id, kind, toStartOfHour(ts) AS t, count() AS n, quantilesExact(0.5, 0.95, 0.99)(elapsed_ms) AS exact
+    SELECT app_id, kind, toStartOfHour(ts) AS t, elapsed_ms
     FROM {db}.{p}xlog
     WHERE ts >= {from:DateTime64(3)} AND ts < {to:DateTime64(3)}
-    GROUP BY app_id, kind, t
-) AS ex ON st.app_id = ex.app_id AND st.kind = ex.kind AND st.t = ex.t
-ORDER BY st.app_id, st.kind, st.t
+) AS r
+INNER JOIN
+(
+    SELECT st.app_id AS g_app, st.kind AS g_kind, st.t AS g_t, ex.n AS n, ex.exact AS exact, st.dd AS dd
+    FROM
+    (
+        SELECT app_id, kind, toStartOfHour(minute) AS t, quantilesDDMerge(0.01, 0.5, 0.95, 0.99)(q_elapsed) AS dd
+        FROM {db}.{p}app_stat_1m
+        WHERE minute >= {from:DateTime64(3)} AND minute < {to:DateTime64(3)}
+        GROUP BY app_id, kind, t
+    ) AS st
+    INNER JOIN
+    (
+        SELECT app_id, kind, toStartOfHour(ts) AS t, count() AS n, quantilesExact(0.5, 0.95, 0.99)(elapsed_ms) AS exact
+        FROM {db}.{p}xlog
+        WHERE ts >= {from:DateTime64(3)} AND ts < {to:DateTime64(3)}
+        GROUP BY app_id, kind, t
+    ) AS ex ON st.app_id = ex.app_id AND st.kind = ex.kind AND st.t = ex.t
+) AS g ON r.app_id = g.g_app AND r.kind = g.g_kind AND r.t = g.g_t
+GROUP BY g.g_app, g.g_kind, g.g_t, g.n, g.exact, g.dd
+ORDER BY g.g_app, g.g_kind, g.g_t
 
 -- @step stored_day
-SELECT st.app_id, st.kind, st.t, ex.n, ex.exact, st.dd
+SELECT g.g_app, g.g_kind, g.g_t, g.n, g.exact, g.dd,
+       [countIf(r.elapsed_ms < g.dd[1]) + countIf(r.elapsed_ms <= g.dd[1]),
+        countIf(r.elapsed_ms < g.dd[2]) + countIf(r.elapsed_ms <= g.dd[2]),
+        countIf(r.elapsed_ms < g.dd[3]) + countIf(r.elapsed_ms <= g.dd[3])] AS rank2
 FROM
 (
-    SELECT app_id, kind, toStartOfDay(hour) AS t, quantilesDDMerge(0.01, 0.5, 0.95, 0.99)(q_elapsed) AS dd
-    FROM {db}.{p}app_stat_1h
-    WHERE hour >= {from:DateTime64(3)} AND hour < {to:DateTime64(3)}
-    GROUP BY app_id, kind, t
-) AS st
-INNER JOIN
-(
-    SELECT app_id, kind, toStartOfDay(ts) AS t, count() AS n, quantilesExact(0.5, 0.95, 0.99)(elapsed_ms) AS exact
+    SELECT app_id, kind, toStartOfDay(ts) AS t, elapsed_ms
     FROM {db}.{p}xlog
     WHERE ts >= {from:DateTime64(3)} AND ts < {to:DateTime64(3)}
-    GROUP BY app_id, kind, t
-) AS ex ON st.app_id = ex.app_id AND st.kind = ex.kind AND st.t = ex.t
-ORDER BY st.app_id, st.kind, st.t
+) AS r
+INNER JOIN
+(
+    SELECT st.app_id AS g_app, st.kind AS g_kind, st.t AS g_t, ex.n AS n, ex.exact AS exact, st.dd AS dd
+    FROM
+    (
+        SELECT app_id, kind, toStartOfDay(hour) AS t, quantilesDDMerge(0.01, 0.5, 0.95, 0.99)(q_elapsed) AS dd
+        FROM {db}.{p}app_stat_1h
+        WHERE hour >= {from:DateTime64(3)} AND hour < {to:DateTime64(3)}
+        GROUP BY app_id, kind, t
+    ) AS st
+    INNER JOIN
+    (
+        SELECT app_id, kind, toStartOfDay(ts) AS t, count() AS n, quantilesExact(0.5, 0.95, 0.99)(elapsed_ms) AS exact
+        FROM {db}.{p}xlog
+        WHERE ts >= {from:DateTime64(3)} AND ts < {to:DateTime64(3)}
+        GROUP BY app_id, kind, t
+    ) AS ex ON st.app_id = ex.app_id AND st.kind = ex.kind AND st.t = ex.t
+) AS g ON r.app_id = g.g_app AND r.kind = g.g_kind AND r.t = g.g_t
+GROUP BY g.g_app, g.g_kind, g.g_t, g.n, g.exact, g.dd
+ORDER BY g.g_app, g.g_kind, g.g_t
 
 -- @step state_groups
 -- Number of 1m states of the state size sample.

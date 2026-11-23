@@ -1,0 +1,265 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* Statistics screens (docs/15 §9.7, §13): title with links, controls, notes, the shared table,
+   trend charts side by side from the 1366 px minimum, breakdowns in two columns. One vertical
+   scroll; the page never scrolls sideways (wide tables scroll inside their own box). */
+.stats-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  min-width: 0;
+}
+
+/* The four lists: a column filter panel (Popup) opens inside the table's scroll box, which clips
+   it (overflow-x auto makes overflow-y auto too), so a list of a few rows keeps room for the panel
+   and its Apply button. */
+.data-table:is(
+    [data-table-id='stats-services'],
+    [data-table-id='stats-sql'],
+    [data-table-id='stats-external'],
+    [data-table-id='stats-errors']
+  )
+  .data-table__scroll {
+  min-height: 18rem;
+}
+
+/* Cells of the statistics tables hold a value with its change, or a name with a badge: one line
+   at the fixed DataTable row height (28 px), clipped at the cell edge (the full text is in the
+   title), never wrapped over the next row. */
+.data-table[data-table-id^='stats-'] .data-table__value {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.data-table[data-table-id^='stats-'] .data-table__value > * {
+  min-width: 0;
+}
+
+.data-table[data-table-id^='stats-'] .data-table__value > .stats-badge {
+  flex: none;
+}
+
+.stats-page__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2, 8px) var(--space-4, 16px);
+  min-width: 0;
+}
+
+.stats-page__title {
+  margin: 0;
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--fs-lg, 15px);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.stats-page__actions,
+.stats-page__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 8px) var(--space-4, 16px);
+  min-width: 0;
+}
+
+.stats-control {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.stats-control__label,
+.stats-note,
+.stats-summary__note,
+.stats-trend__caption {
+  margin: 0;
+  font-size: var(--fs-sm, 12px);
+  color: var(--color-text-muted, #5f6774);
+}
+
+.stats-select {
+  min-height: 28px;
+  padding: 2px 6px;
+  border: 1px solid var(--color-border, #d0d5dd);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-surface, #fff);
+  color: inherit;
+  font: inherit;
+}
+
+.stats-toggle--on {
+  border-color: var(--color-primary, #1f6feb);
+  font-weight: 600;
+}
+
+.stats-source {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+}
+
+.stats-filter-scope p {
+  margin: 0;
+}
+
+.stats-chip {
+  display: inline-block;
+  max-width: 40ch;
+  margin-right: 4px;
+  padding: 0 4px;
+  border: 1px solid var(--color-border, #d0d5dd);
+  border-radius: var(--radius-sm, 4px);
+  vertical-align: bottom;
+}
+
+.stats-banner {
+  margin: 0;
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  border-left: 3px solid var(--color-primary, #1f6feb);
+  background: var(--color-surface-muted, #f4f6f8);
+  font-size: var(--fs-sm, 12px);
+}
+
+.stats-badge {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 4px;
+  border: 1px solid var(--color-border, #d0d5dd);
+  border-radius: var(--radius-sm, 4px);
+  font-size: var(--fs-xs, 11px);
+  font-weight: 400;
+  line-height: 16px;
+  color: var(--color-text-muted, #5f6774);
+  white-space: nowrap;
+}
+
+.stats-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-delta {
+  margin-left: 6px;
+  font-size: var(--fs-sm, 12px);
+  white-space: nowrap;
+}
+
+.stats-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  min-width: 0;
+}
+
+.stats-section__title {
+  margin: 0;
+  font-size: var(--fs-md, 14px);
+  font-weight: 600;
+}
+
+.stats-trend__charts,
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3, 12px);
+  min-width: 0;
+}
+
+.stats-trend__chart {
+  min-width: 0;
+}
+
+.stats-trend__caption {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stats-tabs {
+  align-self: flex-start;
+}
+
+.stats-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3, 12px) var(--space-6, 32px);
+  margin: 0;
+}
+
+.stats-summary__item dt {
+  font-size: var(--fs-sm, 12px);
+  color: var(--color-text-muted, #5f6774);
+}
+
+.stats-summary__item dd {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  font-size: var(--fs-lg, 15px);
+  font-weight: 600;
+}
+
+.stats-summary__note {
+  max-width: 48ch;
+  font-weight: 400;
+}
+
+.stats-badge--new {
+  border-color: var(--color-primary, #1f6feb);
+  color: var(--color-primary-text, #1a5fcc);
+}
+
+.stats-inline-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stats-message {
+  margin: 0;
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  border: 1px solid var(--color-border, #d0d5dd);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-surface-muted, #f4f6f8);
+  overflow-wrap: anywhere;
+}
+
+/* Representative stack: FrameList of the transaction detail, styled here so that the error
+   detail chunk does not load the whole transaction stylesheet. */
+.stats-stack .tx-frames {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  max-height: 480px;
+  margin: 0;
+  padding-left: var(--space-6, 32px);
+  overflow: auto;
+  font-size: var(--fs-sm, 12px);
+}
+
+.stats-stack .tx-frame {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.stats-stack .tx-frame--app {
+  font-weight: 700;
+}
+
+@media (max-width: 1100px) {
+  .stats-trend__charts,
+  .stats-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

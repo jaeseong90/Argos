@@ -59,6 +59,9 @@ public interface SessionRegistry {
   /** The live sessions of {@code appId}. */
   Collection<AgentSession> byApp(int appId);
 
+  /** Every live session (a snapshot; WO-22's state monitor). */
+  Collection<AgentSession> all();
+
   /** Live sessions opened with {@code tokenId} (11 §5 check 6: at most 100). */
   int countByToken(UUID tokenId);
 

@@ -17,10 +17,6 @@ import io.argos.server.testing.fakeagent.FakeAgent;
 import io.argos.server.testing.fakeagent.HelloResult;
 import io.argos.server.testing.fakeagent.Records;
 import io.argos.server.wal.FileWal;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -45,7 +41,6 @@ class ShutdownE2eIT {
       "T-SV-010d graceful stop in the 12 §3.9 order (SessionClose and drain, ingest, writer flush,"
           + " WAL), then a restart on the same WAL: count(xlog) = sent, every rollup = sent")
   void stopInOrderThenRestart() throws Exception {
-    Path log = IntegrationLogs.logFile();
     try (ServerTestEnvironment env = ServerTestEnvironment.start()) {
       String app = "e2e-shutdown";
       long sent = 0;
@@ -71,10 +66,11 @@ class ShutdownE2eIT {
           assertThat(r.ackStatus()).as(r.toString()).isEqualTo(AckStatus.ACK_OK);
           sent += 20;
         }
-        long before = Files.exists(log) ? Files.size(log) : 0;
+        long before = IntegrationLogs.offset();
         // The last batches are still in the writer's 2 s window: the stop's last flush takes them.
         first.close();
-        stopLog = appendedSince(log, before);
+        // The log may roll over between the offset and now (IntegrationLogs.since).
+        stopLog = IntegrationLogs.since(before);
         close =
             agent
                 .awaitServerMessage(ServerMessage::hasClose, Duration.ofSeconds(10))
@@ -107,11 +103,5 @@ class ShutdownE2eIT {
         assertThat(totals).isEqualTo(E2e.expected(sent));
       }
     }
-  }
-
-  private static String appendedSince(Path log, long offset) throws IOException {
-    byte[] all = Files.readAllBytes(log);
-    int from = (int) Math.min(offset, all.length);
-    return new String(all, from, all.length - from, StandardCharsets.UTF_8);
   }
 }

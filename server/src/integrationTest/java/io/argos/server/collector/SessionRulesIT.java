@@ -177,7 +177,9 @@ class SessionRulesIT {
         Optional<HeartbeatAck> second = a.heartbeatRound(Duration.ofSeconds(5));
         assertThat(first).isPresent();
         assertThat(second).isPresent();
-        assertThat(second.get().getState()).isEqualTo(InstanceState.UP);
+        assertThat(second.get().getState())
+            .as("|offset| >= 1 s is WARN clock_skew (12 §4.2, WO-22)")
+            .isEqualTo(InstanceState.WARN);
         assertThat(second.get().getT1Ms()).isPositive();
         assertThat((long) second.get().getClockOffsetMs())
             .as("server − agent for an agent %d ms ahead", skew)

@@ -57,7 +57,9 @@ public final class IgnoreMatchers {
                   "java.util.concurrent.FutureTask",
                   "java.util.concurrent.CompletableFuture",
                   "java.util.concurrent.ThreadPerTaskExecutor",
-                  "jdk.internal.net.http.HttpClientImpl")));
+                  "jdk.internal.net.http.HttpClientImpl",
+                  // httpclient-jdk11: completion of sendAsync (U-10, WO-14)
+                  "jdk.internal.net.http.MultiExchange")));
 
   /** Prefixes of allowed JDK classes (nested classes, implementation packages). */
   public static final List<String> JDK_ALLOWLIST_PREFIXES =

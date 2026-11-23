@@ -171,7 +171,7 @@ class ResourceBudgetTransportTest {
 
     assertThat(threads)
         .as("agent threads (10 §14 budget)")
-        .contains("argos-sender", "argos-io", "argos-logger", "argos-watch")
+        .contains("argos-sender", "argos-io", "argos-logger", "argos-watch", "argos-metrics")
         .hasSizeLessThanOrEqualTo(6);
     assertThat(ThreadCounter.names(dump))
         .as(

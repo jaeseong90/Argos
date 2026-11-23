@@ -3,6 +3,19 @@
 // Settings of the XLog performance spec, read from environment variables. Invalid values fall back
 // to the default; the number of runs never drops below 3 (docs/03: repeated measurement).
 //
+//   XLOG_PERF_TARGET     page under measurement                     poc
+//                        poc   = /xlog-poc with synthetic points (vite preview of the perf build,
+//                                `vite build --mode perf`, ADR-0010 C-203)
+//                        route = the XLog screen /apps/<app>/xlog on the WO-30 E2E stack (real
+//                                server, ClickHouse, seed data; started, or reused with
+//                                ARGOS_E2E_STACK_URL), the manifest window of XLOG_PERF_ROUTE_WINDOW;
+//                                every scenario (realtime: the live screen with the `xlog` topic
+//                                played by the docs/14 §5 stub, perf/lib/routeLive.ts; the real
+//                                WebSocket server is WO-22)
+//   XLOG_PERF_ROUTE_WINDOW  seed manifest window of the route target  generator-range
+//   XLOG_PERF_ROUTE_UNSAMPLED  1 = the route opens the longest start   0
+//                        of that window with at most 100,000 points (every point drawn, no
+//                        server sampling; titles say "unsampled")
 //   XLOG_PERF_POINTS     static point counts                       10000,50000,100000
 //   XLOG_PERF_RENDER     point drawing modes (default = the page's) default
 //                        values: default | path | rect | pixels
@@ -16,7 +29,9 @@
 //   XLOG_PERF_SCENARIOS  scenarios to run              static,static-worst,realtime,interaction,
 //                        values as in the default                   selection
 //                        static-worst: 100k points, y = log and colour = service (judged)
-//                        selection: 100k full-plot drag selections (timing, not judged)
+//                        selection: 100k drag selections, judged per run (ADR-0003 C-36):
+//                        selection query p95 <= 5 ms and "screen reflect" (pointer up to the
+//                        frame with the summary count and the first list row, C-204) p95 <= 100 ms
 //   XLOG_PERF_DPR        devicePixelRatios, 1-3 (up to 2 decimals)  1,2
 //                        every scenario runs once per ratio (ADR-0003 C-34: DPR 1 and 2)
 //   XLOG_PERF_COLOR      colour basis of the scenarios              status
@@ -49,6 +64,12 @@ export type ColorSetting = (typeof COLOR_SETTINGS)[number];
 export const Y_SETTINGS = ['linear', 'log'] as const;
 export type YSetting = (typeof Y_SETTINGS)[number];
 
+export const TARGETS = ['poc', 'route'] as const;
+export type TargetSetting = (typeof TARGETS)[number];
+
+/** Seed manifest windows have names like `generator-range` (e2e/stack/seed/resolve.ts). */
+const WINDOW_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
 /** Drawing configuration of the "static-worst" scenario (the slowest one measured, perf-3). */
 export const WORST_CONFIG: { readonly color: ColorSetting; readonly y: YSetting } = {
   color: 'service',
@@ -56,6 +77,12 @@ export const WORST_CONFIG: { readonly color: ColorSetting; readonly y: YSetting 
 };
 
 export interface PerfSettings {
+  /** Page under measurement (XLOG_PERF_TARGET). */
+  readonly target: TargetSetting;
+  /** Seed manifest window the route target opens (XLOG_PERF_ROUTE_WINDOW). */
+  readonly routeWindow: string;
+  /** The route opens the window's longest unsampled start (XLOG_PERF_ROUTE_UNSAMPLED). */
+  readonly routeUnsampled: boolean;
   readonly points: readonly number[];
   readonly renders: readonly RenderSetting[];
   readonly scenarios: readonly ScenarioSetting[];
@@ -134,7 +161,11 @@ function choice<T extends string>(raw: string | undefined, allowed: readonly T[]
 }
 
 export function perfSettings(env: Env): PerfSettings {
+  const routeWindow = env.XLOG_PERF_ROUTE_WINDOW?.trim() ?? '';
   return {
+    target: choice(env.XLOG_PERF_TARGET, TARGETS, 'poc'),
+    routeWindow: WINDOW_NAME.test(routeWindow) ? routeWindow : 'generator-range',
+    routeUnsampled: flag(env.XLOG_PERF_ROUTE_UNSAMPLED),
     points: list(
       env.XLOG_PERF_POINTS,
       (item) => {

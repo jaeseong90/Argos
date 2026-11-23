@@ -12,7 +12,9 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * GET /api/pay/{id}: one call to ext-stub with {@code ?client=}; {@code timeout=1}, {@code
  * refuse=1}, {@code status=5xx} and {@code redirect=1} select the failure classes (common:
- * PayService). The answer status follows OutboundOutcome (200, 502, 503, 504).
+ * PayService). {@code mode=} picks the client call style ({@code async} for okhttp and jdk11,
+ * {@code block|future|subscribe} for webclient) and {@code preset=1} makes the app set its own
+ * {@code traceparent}. The answer status follows OutboundOutcome (200, 502, 503, 504).
  */
 @RestController
 public class PayController {
@@ -30,7 +32,9 @@ public class PayController {
       @RequestParam(name = "timeout", defaultValue = "false") boolean timeout,
       @RequestParam(name = "refuse", defaultValue = "false") boolean refuse,
       @RequestParam(name = "status", required = false) Integer status,
-      @RequestParam(name = "redirect", defaultValue = "false") boolean redirect) {
+      @RequestParam(name = "redirect", defaultValue = "false") boolean redirect,
+      @RequestParam(name = "mode", required = false) String mode,
+      @RequestParam(name = "preset", defaultValue = "false") boolean preset) {
     PayService.Result result =
         pay.pay(
             id,
@@ -39,7 +43,9 @@ public class PayController {
                 .timeout(timeout)
                 .refuse(refuse)
                 .status(status)
-                .redirect(redirect));
+                .redirect(redirect)
+                .mode(mode)
+                .preset(preset));
     return ResponseEntity.status(result.httpStatus()).body(result.body());
   }
 }

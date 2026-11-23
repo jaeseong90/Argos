@@ -3,6 +3,7 @@
 // Change against a comparison basis (docs/15 §6.2 StatTile delta, §6.3 delta columns, 05 §2.5).
 // An arrow and a signed number carry the direction; the colour (good/bad per metric) only repeats
 // it, and screen readers get "better"/"worse" as text (never colour alone, docs/15 §13).
+import { Tooltip } from 'antd';
 import { useTranslation } from 'react-i18next';
 
 import { formatSignedPercent, formatValue, type ValueUnit } from '../utils/format';
@@ -25,6 +26,12 @@ export interface DeltaValueProps {
   readonly goodWhen: GoodDirection;
   readonly mode?: 'relative' | 'absolute';
   readonly unit?: ValueUnit;
+  /** Without a value, say "No comparison data" as text instead of the dash (ADR-0010 C-211 (3)). */
+  readonly noBasisText?: boolean;
+  /** The change as already formatted text (e.g. a clamped ">+999%"), instead of formatting it. */
+  readonly text?: string;
+  /** A tooltip with the details of the change (e.g. both raw values of a clamped change). */
+  readonly detail?: string;
   readonly 'data-testid'?: string;
 }
 
@@ -43,6 +50,9 @@ export function DeltaValue({
   goodWhen,
   mode = 'relative',
   unit = 'none',
+  noBasisText = false,
+  text: givenText,
+  detail,
   'data-testid': testId,
 }: DeltaValueProps) {
   const { t, i18n } = useTranslation();
@@ -53,16 +63,18 @@ export function DeltaValue({
         className="delta delta--neutral"
         title={t('component.delta.noBasis')}
         data-testid={testId ?? 'delta'}
+        data-missing="true"
       >
-        {MISSING_DASH}
+        {noBasisText ? t('component.delta.noBasis') : MISSING_DASH}
       </span>
     );
   }
   const tone = deltaTone(value, goodWhen);
   const text =
-    mode === 'relative'
+    givenText ??
+    (mode === 'relative'
       ? formatSignedPercent(value, locale)
-      : `${value > 0 ? '+' : value < 0 ? '−' : ''}${formatValue(Math.abs(value), unit, locale)}`;
+      : `${value > 0 ? '+' : value < 0 ? '−' : ''}${formatValue(Math.abs(value), unit, locale)}`);
   const arrow = value > 0 ? ARROW_UP : value < 0 ? ARROW_DOWN : null;
   const toneText =
     tone === 'good'
@@ -72,11 +84,13 @@ export function DeltaValue({
         : value === 0
           ? t('component.delta.unchanged')
           : '';
-  return (
+  const node = (
     <span className={`delta delta--${tone}`} data-tone={tone} data-testid={testId ?? 'delta'}>
       {arrow === null ? null : <span aria-hidden="true">{arrow}</span>}
       <span>{text}</span>
       {toneText === '' ? null : <span className="visually-hidden">{toneText}</span>}
+      {detail === undefined ? null : <span className="visually-hidden">{detail}</span>}
     </span>
   );
+  return detail === undefined ? node : <Tooltip title={detail}>{node}</Tooltip>;
 }

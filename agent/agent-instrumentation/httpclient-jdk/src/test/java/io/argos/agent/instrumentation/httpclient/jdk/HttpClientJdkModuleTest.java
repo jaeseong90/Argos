@@ -14,7 +14,7 @@ import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 import org.junit.jupiter.api.Test;
 
-/** HttpClientJdkModule: identity, no helpers, the one JDK point (tests run on JDK 8). */
+/** HttpClientJdkModule: identity, no helpers, the JDK state-machine points (tests run on JDK 8). */
 class HttpClientJdkModuleTest {
   private final HttpClientJdkModule module = new HttpClientJdkModule();
 
@@ -27,7 +27,7 @@ class HttpClientJdkModuleTest {
   }
 
   @Test
-  void matchesTheJdkImplementationsGetInputStream() throws Exception {
+  void matchesTheStateMachinePointsOfTheJdkImplementation() throws Exception {
     Class<?> impl = Class.forName(HttpClientJdkModule.CONNECTION_CLASS);
     TypeInstrumentation rule = module.types().get(0);
     assertThat(rule.typeMatcher().matches(TypeDescription.ForLoadedType.of(impl))).isTrue();
@@ -46,15 +46,27 @@ class HttpClientJdkModuleTest {
           }
         });
     assertThat(methods).hasSize(1);
-    assertThat(
-            methods
-                .get(0)
-                .matches(new MethodDescription.ForLoadedMethod(impl.getMethod("getInputStream"))))
-        .isTrue();
-    assertThat(
-            methods
-                .get(0)
-                .matches(new MethodDescription.ForLoadedMethod(impl.getMethod("getOutputStream"))))
+    for (String name : new String[] {"connect", "getOutputStream", "getInputStream"}) {
+      assertThat(methods.get(0).matches(declared(impl, name))).as(name).isTrue();
+    }
+    assertThat(methods.get(0).matches(declared(impl, "getErrorStream"))).isTrue();
+    for (String name : new String[] {"plainConnect", "disconnect", "getHeaderFields"}) {
+      assertThat(methods.get(0).matches(declared(impl, name))).as(name).isFalse();
+    }
+    assertThat(declares(impl, "getResponseCode"))
+        .as("getResponseCode is inherited and calls getInputStream (the exchange point)")
         .isFalse();
+  }
+
+  private static MethodDescription declared(Class<?> type, String name) throws Exception {
+    return new MethodDescription.ForLoadedMethod(type.getDeclaredMethod(name));
+  }
+
+  private static boolean declares(Class<?> type, String name) {
+    try {
+      return type.getDeclaredMethod(name) != null;
+    } catch (NoSuchMethodException e) {
+      return false;
+    }
   }
 }

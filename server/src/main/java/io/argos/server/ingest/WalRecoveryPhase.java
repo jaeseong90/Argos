@@ -23,9 +23,10 @@ import org.springframework.stereotype.Component;
  * <ol>
  *   <li>opens {@code argos.wal.dir} (mode 0700) and its identity (ADR-0007 C-61);
  *   <li>scans every segment, cuts torn tails and restores the deduplication window from every data
- *       record (instance, epoch, kind, seq; C-3);
+ *       record of an agent (instance, epoch, kind, seq; C-3), not of the server's gauge;
  *   <li>starts the WAL writer on a new segment, the ClickHouse writer ({@code argos_writer}), the
- *       dictionary writer, the error group writer and the Apdex cache;
+ *       dictionary writer, the error group writer, the Apdex cache and the representative stack
+ *       filler of the error groups ({@link ErrorGroupStackFiller}, WO-27);
  *   <li>re-inserts every intent without a commit with its recorded token, then loads the records
  *       after the last intent of each table, and waits until all of them are committed (no time
  *       limit, progress logged).
@@ -46,6 +47,7 @@ public class WalRecoveryPhase implements StartupPhase {
   private final DictionaryResolver dictionary;
   private final ErrorGroupRecorder errorGroups;
   private final ApdexStamper apdex;
+  private final ErrorGroupStackFiller errorStacks;
   private final ObjectProvider<DedupWindow> dedupWindows;
 
   public WalRecoveryPhase(
@@ -55,6 +57,7 @@ public class WalRecoveryPhase implements StartupPhase {
       DictionaryResolver dictionary,
       ErrorGroupRecorder errorGroups,
       ApdexStamper apdex,
+      ErrorGroupStackFiller errorStacks,
       ObjectProvider<DedupWindow> dedupWindows) {
     this.wal = wal;
     this.writer = writer;
@@ -62,6 +65,7 @@ public class WalRecoveryPhase implements StartupPhase {
     this.dictionary = dictionary;
     this.errorGroups = errorGroups;
     this.apdex = apdex;
+    this.errorStacks = errorStacks;
     this.dedupWindows = dedupWindows;
   }
 
@@ -94,7 +98,9 @@ public class WalRecoveryPhase implements StartupPhase {
           WalRecovery.scan(
               dir,
               record -> {
-                if (dedup != null) {
+                // Records the server wrote itself (the active gauge, C-178 (1)) never passed the
+                // window and must not enter it: their seqs are not the agent's.
+                if (dedup != null && !ActiveGauge.isServerRecord(record.seq())) {
                   dedup.restore(
                       new DedupKey(
                           record.instanceId(), record.epoch(), record.type(), record.seq()));
@@ -112,6 +118,7 @@ public class WalRecoveryPhase implements StartupPhase {
     dictionary.start();
     errorGroups.start();
     apdex.start();
+    errorStacks.start();
     try {
       ingest.recover(scan);
     } catch (IOException e) {

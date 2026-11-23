@@ -61,6 +61,22 @@ public final class AgentVersionRange {
     return Verdict.ACCEPTED;
   }
 
+  /**
+   * Whether {@code agentVersion} is accepted and is the lowest minor the server accepts while newer
+   * minors exist (12 §4.2 WARN "에이전트 버전이 호환 범위 하한": the next server minor will refuse it). False
+   * for an unknown server version, an unparsable or refused agent version, and a server that
+   * accepts a single minor.
+   */
+  public boolean atLowerBound(String agentVersion) {
+    if (!known || minMinor() >= minor || check(agentVersion) != Verdict.ACCEPTED) {
+      return false;
+    }
+    Matcher m = SEMVER.matcher(agentVersion.strip());
+    return m.matches()
+        && Integer.parseInt(m.group(1)) == major
+        && Integer.parseInt(m.group(2)) == minMinor();
+  }
+
   /** {@code ServerHello.min_agent_version}: {@code X.(Y-2)}; empty when unknown. */
   public String min() {
     return known ? major + "." + minMinor() : "";

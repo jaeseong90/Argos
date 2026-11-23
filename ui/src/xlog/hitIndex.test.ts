@@ -155,6 +155,109 @@ describe('HitIndex (docs/15 §7.3, 8 px grid)', () => {
     expect(elapsed).toBeLessThan(250);
   });
 
+  it('reports whether ensure rebuilt the index: once per buffer or scale change (WO-33 r1-new-3)', () => {
+    const buffer = randomBuffer(3000, 7, 4000);
+    const index = new HitIndex();
+    expect(index.ensure(buffer, scale)).toBe(true);
+    expect(index.ensure(buffer, scale)).toBe(false);
+    // The same scale values in a new object: still current.
+    expect(index.ensure(buffer, createScale(FROM, TO, 800, 300, 5000, 'linear'))).toBe(false);
+    expect(index.ensure(buffer, createScale(FROM, TO, 790, 300, 5000, 'linear'))).toBe(true);
+    expect(index.ensure(buffer, scale)).toBe(true);
+    buffer.append([
+      {
+        ts: FROM + 1000,
+        elapsed: 10,
+        status: 0,
+        instance: 0,
+        service: 0,
+        txIdLo: 99_999,
+        txIdHi: 0,
+        kind: 1,
+        httpStatus: 200,
+        errorClass: 0,
+      },
+    ]);
+    expect(index.ensure(buffer, scale)).toBe(true);
+    expect(index.ensure(buffer, scale)).toBe(false);
+  });
+
+  it.each([
+    ['a small box', { x1: 100, y1: 50, x2: 180, y2: 120 }],
+    ['the whole plot', { x1: 0, y1: 0, x2: 800, y2: 300 }],
+    ['an empty box', { x1: 10, y1: 290, x2: 12, y2: 291 }],
+  ])(
+    'queries %s in place: the count and copyMatches equal queryData and a brute-force scan',
+    (_, rect) => {
+      const buffer = randomBuffer(20_000, 8);
+      const index = new HitIndex();
+      index.build(buffer, scale);
+      const data = pixelRectToData(scale, rect);
+      const expected: number[] = [];
+      for (let p = 0; p < buffer.size; p += 1) {
+        if (inDataRect(data, buffer.ts[p] ?? 0, buffer.elapsed[p] ?? 0)) {
+          expected.push(p);
+        }
+      }
+      const found = index.queryDataInPlace(buffer, rect, data);
+      const token = index.queryToken;
+      expect(found).toBe(expected.length);
+      const copied = index.copyMatches(token, found);
+      expect(copied).not.toBeNull();
+      expect(Array.from(copied ?? []).sort((a, b) => a - b)).toEqual(expected);
+      // The same order as the copying query (cells row by row).
+      expect(Array.from(index.queryData(buffer, rect, data))).toEqual(Array.from(copied ?? []));
+    },
+  );
+
+  it('copies a query in place only until a later query writes the scratch', () => {
+    const buffer = randomBuffer(5000, 9);
+    const index = new HitIndex();
+    index.build(buffer, scale);
+    const whole = { x1: 0, y1: 0, x2: 800, y2: 300 };
+    const found = index.queryDataInPlace(buffer, whole, pixelRectToData(scale, whole));
+    const token = index.queryToken;
+    const first = index.copyMatches(token, found);
+    expect(first?.length).toBe(index.size);
+    // A copy is its own array; asking again gives an equal one.
+    expect(Array.from(index.copyMatches(token, found) ?? [])).toEqual(Array.from(first ?? []));
+    const part = { x1: 100, y1: 50, x2: 180, y2: 120 };
+    index.queryDataInPlace(buffer, part, pixelRectToData(scale, part));
+    expect(index.queryToken).not.toBe(token);
+    expect(index.copyMatches(token, found)).toBeNull();
+    // A copying query also ends the earlier token, and the first copy kept its contents.
+    const token2 = index.queryToken;
+    index.queryData(buffer, whole, pixelRectToData(scale, whole));
+    expect(index.copyMatches(token2, 1)).toBeNull();
+    expect(first?.length).toBe(index.size);
+  });
+
+  it('queries in place after eviction from a wrapped ring: only the remaining points, like a brute-force scan', () => {
+    const buffer = randomBuffer(3000, 10, 2000);
+    const index = new HitIndex();
+    const whole = { x1: 0, y1: 0, x2: 800, y2: 300 };
+    expect(index.ensure(buffer, scale)).toBe(true);
+    buffer.evictBefore(FROM + 30_000);
+    expect(index.ensure(buffer, scale)).toBe(true);
+    const data = pixelRectToData(scale, whole);
+    const found = index.queryDataInPlace(buffer, whole, data);
+    const copied = Array.from(index.copyMatches(index.queryToken, found) ?? []).sort(
+      (a, b) => a - b,
+    );
+    const expected: number[] = [];
+    for (let logical = 0; logical < buffer.size; logical += 1) {
+      const p = buffer.physical(logical);
+      const ts = buffer.ts[p] ?? 0;
+      if (ts >= FROM && ts <= TO && inDataRect(data, ts, buffer.elapsed[p] ?? 0)) {
+        expected.push(p);
+      }
+    }
+    expect(copied).toEqual(expected.sort((a, b) => a - b));
+    for (const p of copied) {
+      expect(buffer.ts[p]).toBeGreaterThanOrEqual(FROM + 30_000);
+    }
+  });
+
   it('returns its own array: a later query does not change an earlier result', () => {
     const buffer = randomBuffer(5000, 6);
     const index = new HitIndex();

@@ -153,6 +153,80 @@ class BatchAssemblerTest {
   }
 
   @Test
+  @Tag("req:F-A06")
+  @Tag("req:F-A05")
+  @DisplayName(
+      "T-AG-056d WO-14 fields: incoming_trace, parent span, caller_app_id, ext_count/ext_time_ms"
+          + " and ProfileStep.failure of HTTP steps reach the messages")
+  void propagationFields() {
+    TracerImpl tracer = runtime.tracerImpl();
+    TraceContext ctx =
+        tracer.begin(
+            Kind.HTTP,
+            "GET /hop",
+            0,
+            "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+            "argos=2a:1:abc");
+    long host = tracer.hostId("http", "127.0.0.1", 18080);
+    int timeout = tracer.httpStart(ctx, host, "GET", "127.0.0.1:18080", "/timeout?x=1", null, 0);
+    tracer.httpEnd(
+        ctx, timeout, host, 0, new java.net.SocketTimeoutException("Read timed out"), 0, 3_000_000);
+    int error = tracer.httpStart(ctx, host, "GET", "127.0.0.1:18080", "/status/500", null, 0);
+    tracer.httpEnd(ctx, error, host, 500, null, 3_000_000, 5_000_000);
+    tracer.end(ctx, 200, null, null, null, 6_000_000);
+
+    TransactionRecord record = assembler.record(endedTransaction());
+    assertThat(record.getIncomingTrace()).isTrue();
+    assertThat(record.getParentSpanId()).isEqualTo(0xb7ad6b7169203331L);
+    assertThat(record.getCallerAppId()).isEqualTo(0x2a);
+    assertThat(record.getExtCount()).isEqualTo(2);
+    assertThat(record.getExtTimeMs()).isEqualTo(5);
+
+    TransactionProfile profile = assembler.profile(endedProfile());
+    ProfileStep first = profile.getSteps(0);
+    assertThat(first.getType()).isEqualTo(io.argos.proto.v1.StepType.HTTP_CALL);
+    assertThat(first.getNameId()).isEqualTo(host);
+    assertThat(first.getTargetId()).isEqualTo(host);
+    assertThat(first.getStatus()).isZero();
+    assertThat(first.getFailure()).isEqualTo(io.argos.proto.v1.FailureKind.TIMEOUT);
+    assertThat(first.getError()).isTrue();
+    assertThat(first.getDetail()).isEqualTo("GET 127.0.0.1:18080/timeout");
+    ProfileStep second = profile.getSteps(1);
+    assertThat(second.getStatus()).isEqualTo(500);
+    assertThat(second.getFailure()).isEqualTo(io.argos.proto.v1.FailureKind.HTTP_5XX);
+    assertThat(runtime.dictionary().text(host)).isEqualTo("http://127.0.0.1:18080");
+
+    TraceContext plain = tracer.begin(Kind.HTTP, "GET /a", 0);
+    tracer.end(plain, 200, null, null, null, 1);
+    TransactionRecord root = assembler.record(endedTransaction());
+    assertThat(root.getIncomingTrace()).isFalse();
+    assertThat(root.getCallerAppId()).isZero();
+    assertThat(root.getExtCount()).isZero();
+  }
+
+  @Test
+  @Tag("req:SEC-38")
+  @DisplayName(
+      "T-SEC-38a the runtime installs propagation.* from the configuration (defaults: no argos"
+          + " entry, nothing excluded)")
+  void propagationConfiguration() {
+    assertThat(runtime.tracerImpl().propagation().argosStateHosts().isEmpty()).isTrue();
+    assertThat(runtime.tracerImpl().propagation().excludeHosts().isEmpty()).isTrue();
+    assertThat(runtime.tracerImpl().propagation().preserveIncoming()).isTrue();
+    Map<String, String> values = new HashMap<String, String>();
+    values.put("app.name", "orders");
+    values.put("propagation.exclude-hosts", "*.partner.example");
+    values.put("propagation.argos-state.hosts", "127.0.0.1, *.internal");
+    values.put("propagation.preserve-incoming", "false");
+    TracerImpl configured =
+        TraceRuntime.create(AgentConfig.of(values), new AgentCounters()).tracerImpl();
+    assertThat(configured.propagation().excludeHosts().matches("api.partner.example")).isTrue();
+    assertThat(configured.propagation().argosStateHosts().matches("127.0.0.1")).isTrue();
+    assertThat(configured.propagation().argosStateHosts().matches("db.internal")).isTrue();
+    assertThat(configured.propagation().preserveIncoming()).isFalse();
+  }
+
+  @Test
   @Tag("req:C-4")
   @Tag("req:D-23")
   @DisplayName("C-4: CPU time and allocation that were not measured stay absent optional fields")

@@ -1,0 +1,175 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* XLog selection summary (docs/15 §9.3 layout, §13 tokens): compact tables side by side that wrap
+   on narrow screens; long collected names are clamped to one line inside their cell (the full
+   text is the SafeText tooltip), so the page never scrolls horizontally at 1366 px. */
+.xlog-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.xlog-summary__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-4);
+}
+
+.xlog-summary__title {
+  margin: 0;
+  font-size: var(--fs-lg);
+}
+
+.xlog-summary__counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+.xlog-summary__count {
+  margin: 0;
+  font-weight: 600;
+}
+
+.xlog-summary__server-count,
+.xlog-summary__muted {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}
+
+.xlog-summary__sampled {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius);
+  background: var(--color-info-bg);
+  color: var(--color-info-text);
+  font-size: var(--fs-sm);
+}
+
+.xlog-summary__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
+  align-items: start;
+  min-width: 0;
+}
+
+.xlog-summary__grid > :first-child {
+  grid-column: span 2;
+}
+
+.xlog-summary__block {
+  min-width: 0;
+}
+
+.xlog-summary__table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: var(--fs-sm);
+}
+
+.xlog-summary__table caption {
+  padding-bottom: var(--space-1);
+  text-align: left;
+  font-weight: 600;
+}
+
+.xlog-summary__table th,
+.xlog-summary__table td {
+  padding: 2px var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.xlog-summary__table th:first-child {
+  width: 46%;
+  text-align: left;
+}
+
+.xlog-summary__table thead th {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.xlog-summary__name {
+  overflow: hidden;
+  max-width: 0;
+  font-weight: 400;
+}
+
+.xlog-summary__filter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-primary-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.xlog-summary__filter > .safe-text {
+  min-width: 0;
+}
+
+.xlog-summary__filter[aria-pressed='true'] {
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.xlog-summary__filter:disabled {
+  color: var(--color-text);
+  cursor: default;
+}
+
+.xlog-summary__filter:focus-visible {
+  outline: var(--focus-ring-w) solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.xlog-summary__source {
+  display: inline-block;
+  margin-left: var(--space-1);
+  padding: 0 var(--space-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+}
+
+.xlog-summary__source--server {
+  border-color: var(--color-border-strong);
+  color: var(--color-info-text);
+}
+
+.xlog-summary__dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.xlog-summary__dot--0 {
+  background: var(--point-normal);
+}
+
+.xlog-summary__dot--1 {
+  background: var(--point-slow);
+}
+
+.xlog-summary__dot--2 {
+  background: var(--point-error);
+}

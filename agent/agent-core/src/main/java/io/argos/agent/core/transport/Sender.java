@@ -634,7 +634,9 @@ final class Sender {
         return null;
       }
       if (item instanceof PreparedBatch && ((PreparedBatch) item).kind() == kind) {
-        return new Batch(kind, ((PreparedBatch) item).body(), 1, nextSeq(kind));
+        // WO-16: dictionary pre-send and the active item cap of the session's Limits (11 §7).
+        return new Batch(
+            kind, assembler.prepared(kind, ((PreparedBatch) item).body()), 1, nextSeq(kind));
       }
       counters.incDropped(kind.queue());
     }

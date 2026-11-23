@@ -636,8 +636,44 @@ public record ArgosProperties(
    *
    * @param cookie session cookies
    * @param kiosk long sessions of approved viewer accounts (F-U21)
+   * @param masterKey the previous master key of a rotation and the file permission override (16
+   *     §8.2; WO-25)
    */
-  public record Security(@Valid @DefaultValue Cookie cookie, @Valid @DefaultValue Kiosk kiosk) {
+  public record Security(
+      @Valid @DefaultValue Cookie cookie,
+      @Valid @DefaultValue Kiosk kiosk,
+      @Valid @DefaultValue MasterKey masterKey) {
+
+    /**
+     * Master key settings besides {@code argos.master-key} and {@code argos.master-key-file} (16
+     * §8.2; WO-25). The previous key only decrypts (a rotation in progress: the server reads
+     * envelopes of both key ids, 16 §8.2); new envelopes always use the current key.
+     *
+     * @param previous the previous key as a value (64 hex characters or base64 of 32 bytes),
+     *     normally from the environment variable {@code ARGOS_SECURITY_MASTER_KEY_PREVIOUS}
+     * @param previousFile file holding the previous key
+     * @param permissive accept a key file that group or others can read (16 §8.2; warned at every
+     *     start). Without it such a file is ignored with a warning
+     */
+    public record MasterKey(
+        String previous, String previousFile, @DefaultValue("false") boolean permissive) {
+
+      public MasterKey {
+        previous = blankToNull(previous);
+        previousFile = blankToNull(previousFile);
+      }
+
+      @Override
+      public String toString() {
+        return "MasterKey[previous="
+            + Credential.mask(previous)
+            + ", previousFile="
+            + previousFile
+            + ", permissive="
+            + permissive
+            + "]";
+      }
+    }
 
     /**
      * Session cookies (16 §7.1).
@@ -731,6 +767,8 @@ public record ArgosProperties(
      * @param checkServerIdentity verify the host name of the server certificate
      * @param insecure allow plaintext and unverified connections (explicit opt-out, warned)
      * @param allowedRecipientDomains recipient domains allowed (empty: all)
+     * @param from sender address of the alert mails ({@code MAIL FROM} and {@code From}); none: the
+     *     user name when it is an address, otherwise {@code argos@<public-url host>} (WO-25)
      */
     public record Smtp(
         String host,
@@ -741,13 +779,15 @@ public record ArgosProperties(
         @NotNull @DefaultValue("required") StartTls starttls,
         @DefaultValue("true") boolean checkServerIdentity,
         @DefaultValue("false") boolean insecure,
-        List<String> allowedRecipientDomains) {
+        List<String> allowedRecipientDomains,
+        String from) {
 
       public Smtp {
         host = blankToNull(host);
         username = blankToNull(username);
         passwordFile = blankToNull(passwordFile);
         password = blankToNull(password);
+        from = blankToNull(from);
         allowedRecipientDomains =
             allowedRecipientDomains == null ? List.of() : List.copyOf(allowedRecipientDomains);
       }
@@ -780,6 +820,8 @@ public record ArgosProperties(
             + insecure
             + ", allowedRecipientDomains="
             + allowedRecipientDomains
+            + ", from="
+            + from
             + "]";
       }
     }
@@ -931,17 +973,31 @@ public record ArgosProperties(
    * @param holdFile the hold lasts while this file exists; {@code <hold-file>.reached} is created
    *     when the hold begins
    * @param holdTimeout the start fails when the hold lasts longer
+   * @param notifyRetryDelays the waits before the retries of a failed notification delivery instead
+   *     of 1 s, 5 s and 30 s (12 §5.5; WO-25 T-SV-034); exactly three values
+   * @param alertCaFile a PEM file of CA certificates that the notification channels (webhook,
+   *     Slack, SMTP) trust in addition to the JDK's trust store (in-process fake receivers of the
+   *     tests; WO-25)
    */
   public record Testing(
-      PhaseOrder holdBeforePhase, String holdFile, @DefaultValue("5m") Duration holdTimeout) {
+      PhaseOrder holdBeforePhase,
+      String holdFile,
+      @DefaultValue("5m") Duration holdTimeout,
+      List<Duration> notifyRetryDelays,
+      String alertCaFile) {
 
     public Testing {
       holdFile = blankToNull(holdFile);
+      notifyRetryDelays = notifyRetryDelays == null ? List.of() : List.copyOf(notifyRetryDelays);
+      alertCaFile = blankToNull(alertCaFile);
     }
 
     /** Whether any hook is configured. */
     public boolean anySet() {
-      return holdBeforePhase != null || holdFile != null;
+      return holdBeforePhase != null
+          || holdFile != null
+          || !notifyRetryDelays.isEmpty()
+          || alertCaFile != null;
     }
   }
 }

@@ -1,0 +1,255 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* The dashboard's lower part (docs/15 §9.2, §13): instance tiles in wrapping rows, the comparison
+   table across the content width, then the firing alerts and collection status panels side by
+   side (stacked when narrow). Nothing here is wider than its box: the page never scrolls sideways
+   at the 1366 px minimum. */
+.dashboard-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 16px);
+  min-width: 0;
+}
+
+.dashboard-sections__title {
+  margin: 0 0 var(--space-2, 8px);
+  font-size: var(--fs-md, 13px);
+  font-weight: 600;
+}
+
+.dashboard-sections__note {
+  margin: 0;
+  font-size: var(--fs-sm, 12px);
+  color: var(--color-text-muted, #5f6774);
+}
+
+.dashboard-instances,
+.dashboard-compare {
+  min-width: 0;
+}
+
+/* Instance tiles: the state colour on the left edge (F-S28), WARN with the orange border. */
+.dashboard-instance-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-2, 8px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dashboard-instance-tiles__item {
+  display: flex;
+  min-width: 0;
+}
+
+.dashboard-instance-tile {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-1, 4px);
+  min-width: 0;
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--status-unknown);
+  border-radius: var(--radius, 4px);
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.dashboard-instance-tile:hover {
+  background: var(--color-hover);
+}
+
+.dashboard-instance-tile:focus-visible {
+  outline: var(--focus-ring-w, 2px) solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.dashboard-instance-tile--up {
+  border-left-color: var(--status-up);
+}
+
+.dashboard-instance-tile--stale {
+  border-left-color: var(--status-stale);
+}
+
+.dashboard-instance-tile--down {
+  border-left-color: var(--status-down);
+}
+
+.dashboard-instance-tile--warn {
+  border: 2px solid var(--status-warn);
+  border-left: 4px solid var(--status-up);
+}
+
+.dashboard-instance-tile__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  min-width: 0;
+}
+
+.dashboard-instance-tile__name {
+  min-width: 0;
+  font-weight: 600;
+}
+
+.dashboard-instance-tile__reasons {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-sm, 12px);
+  color: var(--status-warn-text);
+}
+
+.dashboard-instance-tile__active,
+.dashboard-instance-tile__metrics {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  min-width: 0;
+  font-size: var(--fs-sm, 12px);
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-instance-tile__metrics {
+  justify-content: space-between;
+}
+
+.dashboard-instance-tile__label,
+.dashboard-instance-tile__pending {
+  color: var(--color-text-muted, #5f6774);
+}
+
+.dashboard-instance-tile__bar {
+  flex: 1 1 auto;
+  height: 6px;
+  min-width: 24px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--color-border);
+}
+
+.dashboard-instance-tile__bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--series-1);
+}
+
+/* Comparison table: a flagged value is bold on the warning background (the hidden label says it). */
+.dashboard-compare__outlier {
+  display: inline-flex;
+  padding: 0 4px;
+  border-radius: var(--radius, 4px);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  font-weight: 600;
+}
+
+/* Firing alerts and collection status. */
+.dashboard-sections__panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-3, 12px);
+  min-width: 0;
+}
+
+.dashboard-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  min-width: 0;
+  padding: var(--space-3, 12px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius, 4px);
+  background: var(--color-surface);
+}
+
+.dashboard-panel .dashboard-sections__title {
+  margin: 0;
+}
+
+.dashboard-panel__link {
+  align-self: flex-start;
+  font-size: var(--fs-sm, 12px);
+}
+
+.dashboard-firing__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 4px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Rows are the shared AlertSummaryRow (components/alerts.css, ADR-0010 C-227 (4)). */
+
+.dashboard-collection__items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: var(--space-2, 8px) var(--space-3, 12px);
+  margin: 0;
+}
+
+.dashboard-collection__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dashboard-collection__label {
+  font-size: var(--fs-sm, 12px);
+  color: var(--color-text-muted, #5f6774);
+}
+
+.dashboard-collection__value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  margin: 0;
+  font-size: var(--fs-md, 13px);
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-collection__item--warn .dashboard-collection__value {
+  color: var(--color-warning-text);
+  font-weight: 600;
+}
+
+.dashboard-collection__sub {
+  font-size: var(--fs-xs, 11px);
+  color: var(--color-text-muted, #5f6774);
+  font-weight: 400;
+}
+
+.dashboard-collection__reasons-button {
+  padding: 0;
+  border: 0;
+  border-bottom: 1px dotted currentcolor;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: help;
+}
+
+.dashboard-collection__reasons-button:focus-visible {
+  outline: var(--focus-ring-w, 2px) solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.dashboard-collection__reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dashboard-collection__reason {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3, 12px);
+  max-width: 40ch;
+}

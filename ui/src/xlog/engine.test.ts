@@ -3,7 +3,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { installCanvasMock, mockLayout, type RecordingContext } from '../../test/canvasMock';
 
-import { XLogEngine, type EngineEnvironment, type EngineProps } from './engine';
+import {
+  XLogEngine,
+  type EngineEnvironment,
+  type EngineProps,
+  type EngineSelection,
+} from './engine';
 import { HitIndex } from './hitIndex';
 import type { FrameSample } from './perf';
 import {
@@ -13,7 +18,7 @@ import {
   pointLayerScale,
   statusColorMapping,
 } from './renderer';
-import { inDataRect, xOf, yOf } from './scale';
+import { inDataRect, xOf, yOf, type DataRect } from './scale';
 import { STATUS_ERROR, XLogBuffer, type XLogPoint } from './XLogBuffer';
 
 const FROM = 1_700_000_000_000;
@@ -666,5 +671,157 @@ describe('XLogEngine resize and devicePixelRatio changes (docs/15 §7.2, §15 �
     h.engine.destroy();
     expect(h.resolutionWatchers.every((w) => !w.active)).toBe(true);
     expect(h.resizeWatchers.every((w) => !w.active)).toBe(true);
+  });
+});
+
+describe('XLogEngine selection query cost (ADR-0003 C-36, WO-33 review r1-new-3)', () => {
+  function drag(h: Harness, x0: number, y0: number, x1: number, y1: number): void {
+    pointer(h.overlay, 'pointerdown', x0, y0);
+    pointer(h.overlay, 'pointermove', x1, y1);
+    pointer(h.overlay, 'pointerup', x1, y1);
+  }
+
+  /** Physical indices inside `rect`, ascending (brute force over the logical points). */
+  function brute(buffer: XLogBuffer, rect: DataRect): number[] {
+    const out: number[] = [];
+    for (let logical = 0; logical < buffer.size; logical += 1) {
+      const p = buffer.physical(logical);
+      if (inDataRect(rect, buffer.ts[p] ?? 0, buffer.elapsed[p] ?? 0)) {
+        out.push(p);
+      }
+    }
+    return out.sort((a, b) => a - b);
+  }
+
+  function sorted(values: ArrayLike<number>): number[] {
+    return Array.from(values).sort((a, b) => a - b);
+  }
+
+  function lastSelection(onSelect: ReturnType<typeof vi.fn>): EngineSelection {
+    const selection = onSelect.mock.lastCall?.[0] as EngineSelection | undefined;
+    if (selection === undefined) {
+      throw new Error('no selection reported');
+    }
+    return selection;
+  }
+
+  it('T-UI-001 reports a hit index rebuild inside the query only when the buffer or the scale changed', () => {
+    const onSelect = vi.fn();
+    const onFrame = vi.fn();
+    const buffer = gridBuffer();
+    const h = setup({ buffer, onSelect, onFrame });
+    h.runFrames();
+    let clock = 1000;
+    h.setNow(clock);
+    // Every rebuild takes 3 ms of the injected clock.
+    const realBuild = Object.getOwnPropertyDescriptor(HitIndex.prototype, 'build')?.value as (
+      this: HitIndex,
+      ...args: Parameters<HitIndex['build']>
+    ) => void;
+    vi.spyOn(HitIndex.prototype, 'build').mockImplementation(function (
+      this: HitIndex,
+      ...args: Parameters<HitIndex['build']>
+    ) {
+      clock += 3;
+      h.setNow(clock);
+      realBuild.apply(this, args);
+    });
+
+    // Nothing built the index yet (no hover): the first drag's query includes the rebuild.
+    drag(h, 100, 50, 300, 350);
+    expect(lastSelection(onSelect)).toMatchObject({
+      indexRebuilt: true,
+      indexBuildMs: 3,
+      queryMs: 3,
+    });
+    // Same buffer and scale: the index is current.
+    drag(h, 120, 50, 320, 350);
+    expect(lastSelection(onSelect)).toMatchObject({
+      indexRebuilt: false,
+      indexBuildMs: 0,
+      queryMs: 0,
+    });
+
+    // A realtime append is drawn incrementally (only the new point); the next query rebuilds.
+    h.pointsCtx().reset();
+    buffer.append([point(FROM + 99_950, 10)]);
+    h.runFrames();
+    // Frames advance the harness clock; the queries below start from the injected one.
+    h.setNow(clock);
+    expect(h.pointsCtx().count('rect')).toBe(1);
+    expect(onFrame.mock.lastCall?.[0]).toMatchObject({ full: false, pointsDrawn: true });
+    drag(h, 100, 50, 300, 350);
+    const afterAppend = lastSelection(onSelect);
+    expect(afterAppend).toMatchObject({ indexRebuilt: true, indexBuildMs: 3 });
+    expect(sorted(afterAppend.indices)).toEqual(brute(buffer, afterAppend.rect));
+
+    // Eviction: rebuilt, and no evicted point is selected.
+    buffer.evictBefore(FROM + 20_000);
+    h.runFrames();
+    h.setNow(clock);
+    drag(h, 0, 0, PLOT_W, PLOT_H);
+    const all = lastSelection(onSelect);
+    expect(all.indexRebuilt).toBe(true);
+    expect(sorted(all.indices)).toEqual(brute(buffer, all.rect));
+    expect(all.indices.length).toBe(buffer.size);
+    for (const p of all.indices) {
+      expect(buffer.ts[p]).toBeGreaterThanOrEqual(FROM + 20_000);
+    }
+
+    // A hover after a change rebuilds the index first (the screen's path: the pointer reaches the
+    // plot before the press), so the drag's query does not.
+    buffer.append([point(FROM + 99_960, 20)]);
+    h.runFrames();
+    h.setNow(clock);
+    pointer(h.overlay, 'pointermove', 400, 200);
+    drag(h, 100, 50, 300, 350);
+    expect(lastSelection(onSelect)).toMatchObject({ indexRebuilt: false, indexBuildMs: 0 });
+    h.engine.destroy();
+  });
+
+  it('T-UI-001 copies no matches for a consumer that reads only rect; indices are made once, on read', () => {
+    const onSelect = vi.fn();
+    const buffer = gridBuffer();
+    const h = setup({ buffer, onSelect });
+    h.runFrames();
+    const copy = vi.spyOn(HitIndex.prototype, 'copyMatches');
+    const copyingQuery = vi.spyOn(HitIndex.prototype, 'queryData');
+    drag(h, 0, 0, PLOT_W, PLOT_H);
+    const selection = lastSelection(onSelect);
+    expect(selection.rect.t1).toBe(FROM);
+    expect(copy).not.toHaveBeenCalled();
+    expect(copyingQuery).not.toHaveBeenCalled();
+    const indices = selection.indices;
+    expect(copy).toHaveBeenCalledTimes(1);
+    expect(sorted(indices)).toEqual(brute(buffer, selection.rect));
+    expect(indices.length).toBe(1000);
+    // Read again: the same array, no second copy.
+    expect(selection.indices).toBe(indices);
+    expect(copy).toHaveBeenCalledTimes(1);
+    // The keyboard path (selectTimeBand) makes no copy either until its indices are read.
+    copy.mockClear();
+    const band = h.engine.selectTimeBand({ t1: FROM + 10_000, t2: FROM + 30_000 });
+    expect(copy).not.toHaveBeenCalled();
+    expect(sorted(band?.indices ?? [])).toEqual(brute(buffer, band?.rect ?? selection.rect));
+    expect(copyingQuery).not.toHaveBeenCalled();
+    h.engine.destroy();
+  });
+
+  it('T-UI-001 gives an earlier selection its own points when it is read after a later query', () => {
+    const onSelect = vi.fn();
+    const buffer = gridBuffer();
+    const h = setup({ buffer, onSelect });
+    h.runFrames();
+    drag(h, 100, 50, 300, 350);
+    drag(h, 400, 0, 700, PLOT_H);
+    const first = onSelect.mock.calls[0]?.[0] as EngineSelection;
+    const second = onSelect.mock.calls[1]?.[0] as EngineSelection;
+    // The first one's matches were overwritten by the second query: scanned from the buffer.
+    const firstExpected = brute(buffer, first.rect);
+    expect(firstExpected.length).toBeGreaterThan(50);
+    expect(sorted(first.indices)).toEqual(firstExpected);
+    expect(sorted(second.indices)).toEqual(brute(buffer, second.rect));
+    expect(sorted(first.indices)).not.toEqual(sorted(second.indices));
+    h.engine.destroy();
   });
 });

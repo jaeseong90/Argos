@@ -6,27 +6,42 @@ import io.argos.proto.v1.TransactionKind;
 import io.argos.server.config.ServerBuild;
 import io.argos.server.session.AgentSession;
 import io.argos.server.session.AgentVersionRange;
+import io.argos.server.session.InstanceStateMachine;
+import io.argos.server.session.InstanceStateTracker;
 import io.argos.server.session.SessionRegistry;
+import io.argos.server.session.api.InstanceState;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
+import java.util.function.IntFunction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 /**
  * Instance states and live values of the query API from the in-memory session registry (WO-21,
- * {@code session/api}).
+ * {@code session/api}) and the instance state machine (WO-22).
  *
- * <p><b>State (ADR-0010 C-160).</b> Until the state machine of WO-22 exists an instance is {@code
- * UP} while the registry has a session for it and {@code DOWN} otherwise; {@code STALE} and {@code
- * WARN} (12 §4.2) never appear before WO-22.
+ * <p><b>State (12 §4.2, F-S28).</b> The value of the server's {@link InstanceStateTracker}: {@code
+ * UP}, {@code STALE} (60 s without a heartbeat), {@code DOWN} (180 s without a heartbeat, 5 minutes
+ * after an {@code AgentBye}, or never connected since) or {@code WARN} (up with a WARN condition).
+ * A context without the collector (no state machine) falls back to "live session = UP, otherwise
+ * DOWN".
+ *
+ * <p><b>Application summary.</b> The status of an application is the worst state of its instances
+ * that are not archived ({@code DOWN} &gt; {@code STALE} &gt; {@code WARN} &gt; {@code UP}; {@code
+ * DOWN} without instances), and its up count is the number of those instances in {@code UP} or
+ * {@code WARN} (a {@code WARN} instance is connected and collecting; ADR-0010 C-216 (3), WO-31
+ * assumption): {@link #summarize(Collection)}, used by the overview and the application views.
  *
  * <p><b>Live values.</b> Active transactions, running batches and clock offsets exist only now
  * (latest active snapshot of each session, 5 s; 14 §4.9): {@link #live} answers them only for a
@@ -40,11 +55,23 @@ import org.springframework.stereotype.Component;
 @Component
 public class InstanceStates {
 
-  /** A state of 14 §4.3 that exists before WO-22. */
+  /** A state of 14 §4.3: connected, no WARN condition. */
   public static final String UP = "UP";
 
-  /** A state of 14 §4.3 that exists before WO-22. */
+  /** A state of 14 §4.3: no heartbeat for 180 s, after a Bye grace, or never connected. */
   public static final String DOWN = "DOWN";
+
+  /** A state of 14 §4.3: no heartbeat for 60 s. */
+  public static final String STALE = "STALE";
+
+  /** A state of 14 §4.3: up with a WARN condition. */
+  public static final String WARN = "WARN";
+
+  /**
+   * Most instance ids read for the summaries of one application list (the overview and {@code GET
+   * /apps}: 500 applications); far above any installation of 1.0 (N-12).
+   */
+  public static final int SUMMARY_INSTANCES_MAX = 100_000;
 
   /** How recent the end of a range must be for live values. */
   public static final int LIVE_WINDOW_MINUTES = 2;
@@ -53,23 +80,119 @@ public class InstanceStates {
   static final Duration SNAPSHOT_MAX_AGE = Duration.ofSeconds(15);
 
   /** Clock offsets from this size on count as skewed (12 §4.2 WARN condition, D-02). */
-  public static final long SKEW_WARN_MS = 1_000;
+  public static final long SKEW_WARN_MS = InstanceStateMachine.SKEW_WARN_MS;
 
   private static final Pattern MAJOR_MINOR = Pattern.compile("(\\d{1,9})\\.(\\d{1,9}).*");
 
   private final SessionRegistry registry;
   private final AgentVersionRange versions;
   private final Clock clock;
+  private final InstanceStateTracker tracker;
 
-  public InstanceStates(SessionRegistry registry, ServerBuild build, Clock clock) {
+  public InstanceStates(
+      SessionRegistry registry,
+      ServerBuild build,
+      Clock clock,
+      ObjectProvider<InstanceStateTracker> tracker) {
     this.registry = registry;
     this.versions = new AgentVersionRange(build.version());
     this.clock = clock;
+    this.tracker = tracker.getIfAvailable();
   }
 
-  /** {@code UP} with a live session, {@code DOWN} without (C-160). */
+  /**
+   * {@code UP}, {@code STALE}, {@code DOWN} or {@code WARN} (12 §4.2); without a state machine (no
+   * collector in the context) {@code UP} with a live session and {@code DOWN} without.
+   */
   public String state(int instanceId) {
+    if (tracker != null) {
+      return tracker.state(instanceId).name();
+    }
     return session(instanceId).isPresent() ? UP : DOWN;
+  }
+
+  /**
+   * The rank of a state for {@link #worst}: {@code UP} 0, {@code WARN} 1, {@code STALE} 2, {@code
+   * DOWN} 3; an unknown value ranks as {@code DOWN} (never hide a state the API does not know).
+   */
+  static int rank(String state) {
+    if (UP.equals(state)) {
+      return 0;
+    }
+    if (WARN.equals(state)) {
+      return 1;
+    }
+    if (STALE.equals(state)) {
+      return 2;
+    }
+    return 3;
+  }
+
+  /**
+   * The worst of {@code states} ({@code DOWN} &gt; {@code STALE} &gt; {@code WARN} &gt; {@code
+   * UP}); {@code DOWN} when there is none (an application without instances collects nothing).
+   */
+  public static String worst(Collection<String> states) {
+    String out = null;
+    for (String s : states) {
+      String known = rank(s) == 3 ? DOWN : s;
+      if (out == null || rank(known) > rank(out)) {
+        out = known;
+      }
+    }
+    return out == null ? DOWN : out;
+  }
+
+  /** Whether an instance in {@code state} counts as up: {@code UP} or {@code WARN}. */
+  public static boolean countsAsUp(String state) {
+    return UP.equals(state) || WARN.equals(state);
+  }
+
+  /**
+   * The status and up count of an application whose instances (not archived) are {@code
+   * instanceIds}, their states read through {@code state} (class comment).
+   */
+  public static Summary summarize(Collection<Integer> instanceIds, IntFunction<String> state) {
+    List<String> states = new ArrayList<>(instanceIds.size());
+    int up = 0;
+    for (int id : instanceIds) {
+      String s = state.apply(id);
+      states.add(s);
+      if (countsAsUp(s)) {
+        up++;
+      }
+    }
+    return new Summary(worst(states), up);
+  }
+
+  /** The status and up count of an application from the states of {@link #state(int)}. */
+  public Summary summarize(Collection<Integer> instanceIds) {
+    return summarize(instanceIds, this::state);
+  }
+
+  /**
+   * An application's instance summary (class comment).
+   *
+   * @param status the worst instance state, {@code DOWN} without instances
+   * @param up instances in {@code UP} or {@code WARN}
+   */
+  public record Summary(String status, int up) {}
+
+  /** The WARN conditions of an instance while it is {@code WARN}, sorted; otherwise empty. */
+  public List<String> warnReasons(int instanceId) {
+    if (tracker == null || tracker.state(instanceId) != InstanceState.WARN) {
+      return List.of();
+    }
+    return new TreeSet<>(tracker.reasons(instanceId)).stream().toList();
+  }
+
+  /**
+   * The modules the agent of a tracked instance reported disabled ({@code AgentEvent
+   * MODULE_DISABLED}), sorted; null for an instance that is not tracked (DOWN) or without a state
+   * machine (unknown).
+   */
+  public List<String> modulesDisabled(int instanceId) {
+    return tracker == null ? null : tracker.modulesDisabled(instanceId);
   }
 
   /** The live session of an instance. */

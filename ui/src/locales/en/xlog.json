@@ -28,7 +28,71 @@
     "threshold": "Latency threshold {{value}}",
     "live": "Live",
     "pause": "Pause",
-    "resume": "Resume live"
+    "resume": "Resume live",
+    "resumeWindow": "Resume",
+    "selectVisible": "Select visible range",
+    "thresholdUnknown": "Latency threshold —",
+    "itemLabel": "{{group}}: {{item}}"
+  },
+  "page": {
+    "title": "$t(common:term.xlog)",
+    "unapplied": "Not applied to the chart:",
+    "refreshing": "Updating the chart…",
+    "empty": {
+      "title": "No transactions in the selected range.",
+      "description": "Widen the range or check the filters and the kind.",
+      "impossible": "The filters cannot match any transaction. Clear them or check their values."
+    },
+    "rangeLimit": {
+      "title": "The XLog shows at most {{hours, number}} hours at a time.",
+      "description": "Choose a shorter range to load the points.",
+      "last24h": "Last 24 hours of this range",
+      "last1h": "Last 1 hour"
+    }
+  },
+  "live": {
+    "running": "Live: the last 5 minutes",
+    "paused": "Paused: data keeps arriving",
+    "window": "5-minute window",
+    "fillError": "The data of the gap could not be loaded. Resume again to retry.",
+    "polling": "No realtime updates: loading the points from the server every {{seconds, number}} s."
+  },
+  "a11y": {
+    "selected_one": "{{count, number}} point selected",
+    "selected_other": "{{count, number}} points selected",
+    "table": {
+      "caption": "Transactions per time interval and status",
+      "time": "Time",
+      "max": "Slowest",
+      "range": "{{from}} to {{to}}"
+    }
+  },
+  "chart": {
+    "markers": {
+      "label": "Events",
+      "emphasized": "Highlighted event",
+      "more_one": "{{count, number}} more event",
+      "more_other": "{{count, number}} more events",
+      "type": {
+        "deploy": "Deployment",
+        "start": "Start",
+        "stop": "Stop",
+        "config": "Configuration change",
+        "alert": "Alert",
+        "state": "State change",
+        "apdex": "Apdex change",
+        "custom": "Event"
+      }
+    },
+    "outages": {
+      "legend_one": "{{count, number}} collection outage (hatched)",
+      "legend_other": "{{count, number}} collection outages (hatched)"
+    },
+    "keyboard": {
+      "instructions": "Arrow keys move a time band, Shift with the arrow keys resizes it, Home and End move it to the start or the end, Enter selects its transactions, Escape cancels.",
+      "band": "Band from {{from}} to {{to}}. Press Enter to select it.",
+      "noBand": "No band yet. Press an arrow key to start one."
+    }
   },
   "canvas": {
     "label_one": "$t(common:term.xlog): response time of {{count, number}} transaction over time",
@@ -65,6 +129,18 @@
     "sampled": "Based on the points shown: the data is sampled.",
     "clear": "Clear selection",
     "filterHint": "Select a row to filter the list.",
+    "emptyKeyboard": "Drag across the chart to select transactions, or focus the chart and select a region with the keyboard. Their summary and list appear here.",
+    "serverCount_one": "{{count, number}} transaction in the region on the server",
+    "serverCount_other": "{{count, number}} transactions in the region on the server",
+    "rowFilterHint": "Select a row to filter the chart and the list by it; select it again to remove the filter. The selection stays.",
+    "unapplied": "Not applied to the chart and this summary:",
+    "loadingServer": "Loading the server summary…",
+    "source": {
+      "client": "Points shown",
+      "clientHint": "Counted in the browser from the points drawn in the chart.",
+      "server": "Server aggregate",
+      "serverHint": "Counted by the server over every transaction in the region, also the ones the chart does not draw."
+    },
     "services": {
       "title": "Top services",
       "more": "{{shown, number}} of {{total, number}} services",
@@ -107,6 +183,38 @@
     "filterField": "Filter: {{field}} =",
     "clearFilter": "Clear filter",
     "empty": "No transaction in the selection matches the filter. Clear the filter to see all of them.",
+    "caption": "Transactions of the selected region",
+    "topLatest": "Latest {{shown, number}} of {{matching, number}}",
+    "noSelection": "Drag across the chart, or select a region with the keyboard, to list its transactions.",
+    "noMatch": {
+      "title": "No transaction in the selected region.",
+      "description": "Widen the selection or check the filters and the kind.",
+      "impossible": "The filters cannot match any transaction: check the values listed above."
+    },
+    "userNotCollected": "User IDs are not collected for this application, so the user ID column is hidden.",
+    "preview": "Preview from the chart's points. Loading the list from the server…",
+    "filterLimit": "A link holds at most {{max, number}} filters: remove one before adding another.",
+    "csvError": {
+      "limit": "The export has more than 10,000 rows. Narrow the selection or the filters.",
+      "rateLimited": "Too many exports. Try again in {{seconds, number}} s.",
+      "other": "The export failed (HTTP {{status}}). Try again."
+    },
+    "unapplied": {
+      "title": "Not applied to the list:",
+      "reason": {
+        "unknownField": "(unknown field)",
+        "operator": "(operator not supported)",
+        "exclude": "(the server cannot exclude values)",
+        "invalidValue": "(not a valid value)",
+        "multipleValues": "(only one value is supported)",
+        "tooManyValues": "(too many values)",
+        "notSupportedHere": "(the chart and the summary cannot filter by it)"
+      }
+    },
+    "profile": {
+      "yes": "Yes",
+      "no": "No"
+    },
     "columns": {
       "time": "Time",
       "service": "Service",
@@ -115,7 +223,15 @@
       "http": "HTTP",
       "errorClass": "Error class",
       "instance": "Instance",
-      "txId": "Transaction ID"
+      "txId": "Transaction ID",
+      "sqlCount": "SQL",
+      "sqlTime": "SQL time",
+      "extCount": "Ext. calls",
+      "extTime": "Ext. time",
+      "userId": "User ID",
+      "profile": "Profile",
+      "kind": "Kind",
+      "version": "Version"
     }
   },
   "value": {

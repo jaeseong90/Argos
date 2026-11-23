@@ -22,6 +22,8 @@ import io.argos.proto.v1.TransactionBatch;
 import io.argos.proto.v1.TransactionKind;
 import io.argos.proto.v1.TransactionProfile;
 import io.argos.proto.v1.TransactionRecord;
+import io.argos.server.ingest.api.MetricPoint;
+import io.argos.server.ingest.api.MetricPoint.Series;
 import io.argos.server.ingest.api.XlogPoint;
 import io.argos.server.ingest.hash.Xxh3;
 import io.argos.server.session.api.IpMode;
@@ -341,6 +343,56 @@ class RecordDecoderTest {
         .containsEntry("ts", (RECEIVED - 5_000) / 1000)
         .containsEntry("value", 42.0);
     assertThat(rows.get(1)).containsEntry("kind", 2).containsEntry("delta", 3.0);
+  }
+
+  @Test
+  @Tag("req:D-15")
+  @DisplayName(
+      "T-SV-020f metric samples for the counter push: heap (area heap), GC pause increase and"
+          + " process CPU of rows with late = 0 only; other series, late rows and the recovery"
+          + " path give none")
+  void realtimeMetricPoints() {
+    SessionContext s = IngestTestDoubles.session(IpMode.FULL, UserIdMode.PLAIN, RECEIVED, 0, "");
+    String[] names = {
+      "jvm_memory_used_bytes{area=\"heap\"}",
+      "jvm_memory_used_bytes{area=\"nonheap\"}",
+      "jvm_gc_pause_seconds_total{gc=\"G1 Young Generation\"}",
+      "process_cpu_usage_ratio",
+      "system_cpu_usage_ratio"
+    };
+    MetricBatch.Builder b = MetricBatch.newBuilder();
+    for (int i = 0; i < names.length; i++) {
+      b.addSeries(
+          MetricSeries.newBuilder()
+              .setIndex(i)
+              .setName(names[i])
+              .setKind(i == 2 ? MetricKind.COUNTER : MetricKind.GAUGE));
+    }
+    long ts = RECEIVED - 5_000;
+    b.addSamples(MetricSample.newBuilder().setSeriesIndex(0).setTsMs(ts).setValue(5e8))
+        .addSamples(MetricSample.newBuilder().setSeriesIndex(1).setTsMs(ts).setValue(1e8))
+        .addSamples(
+            MetricSample.newBuilder().setSeriesIndex(2).setTsMs(ts).setValue(12.5).setDelta(0.04))
+        .addSamples(MetricSample.newBuilder().setSeriesIndex(3).setTsMs(ts).setValue(0.37))
+        .addSamples(MetricSample.newBuilder().setSeriesIndex(4).setTsMs(ts).setValue(0.9))
+        // 90 s before receipt: stored with late = 1, never published.
+        .addSamples(
+            MetricSample.newBuilder().setSeriesIndex(0).setTsMs(RECEIVED - 90_000).setValue(4e8));
+    WalRecord record = IngestTestDoubles.record(WalRecordType.METRIC, s, b.build(), 5);
+
+    RecordDecoder.Decoded d = decoder.decode(record, EnumSet.allOf(Table.class), true);
+    assertThat(d.rows().get(Table.METRIC).rowCount()).isEqualTo(6);
+    assertThat(d.metrics())
+        .containsExactly(
+            new MetricPoint(Series.HEAP_USED, ts, 5e8),
+            new MetricPoint(Series.GC_PAUSE, ts, 0.04),
+            new MetricPoint(Series.CPU, ts, 0.37));
+    assertThat(d.points()).isEmpty();
+
+    RecordDecoder.Decoded replay = decoder.decode(record, EnumSet.allOf(Table.class), false);
+    assertThat(replay.rows().get(Table.METRIC).rowBinary())
+        .isEqualTo(d.rows().get(Table.METRIC).rowBinary());
+    assertThat(replay.metrics()).isEmpty();
   }
 
   @Test

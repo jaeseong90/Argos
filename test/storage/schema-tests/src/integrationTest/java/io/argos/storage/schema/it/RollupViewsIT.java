@@ -134,12 +134,15 @@ class RollupViewsIT {
   }
 
   @Test
-  @DisplayName("T-ST-030 1h rollups equal their 1m source per hour (cascade views)")
+  @DisplayName(
+      "T-ST-030 1h rollups equal their 1m source per hour (cascade views, instance_stat_1h of"
+          + " C-212 included)")
   void hourlyCascadeMatches() {
     Map<String, String> pairs =
         Map.of(
             "app_stat", "app_id, env, kind",
-            "service_stat", "app_id, env, kind, service_id, app_version_id");
+            "service_stat", "app_id, env, kind, service_id, app_version_id",
+            "instance_stat", "app_id, env, instance_id, kind");
     pairs.forEach(
         (base, key) -> {
           String m =
@@ -169,6 +172,19 @@ class RollupViewsIT {
         });
     assertThat(migrator.scalarLong("SELECT uniqExact(hour) FROM " + p.table("app_stat_1h")))
         .isEqualTo(2);
+    assertThat(migrator.scalarLong("SELECT uniqExact(hour) FROM " + p.table("instance_stat_1h")))
+        .isEqualTo(2);
+    // Q12 at the hour level per instance (C-212 (1)): count(xlog) = instance_stat_1h per hour.
+    assertThat(
+            differences(
+                "SELECT app_id, instance_id, toStartOfHour(ts) AS hour, count() AS c FROM "
+                    + p.table("xlog")
+                    + " GROUP BY app_id, instance_id, hour",
+                "SELECT app_id, instance_id, hour, sum(count) AS c FROM "
+                    + p.table("instance_stat_1h")
+                    + " GROUP BY app_id, instance_id, hour"))
+        .as("instance_stat_1h vs xlog per instance and hour")
+        .isZero();
     List<String> quantiles =
         migrator
             .rows(
@@ -192,23 +208,38 @@ class RollupViewsIT {
         .isLessThanOrEqualTo(Double.parseDouble(quantiles.get(1)));
     // C-53: merging DD states only adds bucket counts, so the 1h state (1m states cascaded) is the
     // DD state of the raw values of the hour, byte for byte, for every app and kind.
-    for (String level : List.of("hour", "minute")) {
-      String table = level.equals("hour") ? "app_stat_1h" : "app_stat_1m";
-      String bucket = level.equals("hour") ? "toStartOfHour(ts)" : "toStartOfMinute(ts)";
+    // The same for instance_stat_1h per instance (C-212 (1)).
+    for (String[] level :
+        new String[][] {
+          {"hour", "app_stat_1h", "app_id, kind"},
+          {"minute", "app_stat_1m", "app_id, kind"},
+          {"hour", "instance_stat_1h", "app_id, instance_id, kind"}
+        }) {
+      String bucket = level[0].equals("hour") ? "toStartOfHour(ts)" : "toStartOfMinute(ts)";
       String raw =
-          "SELECT app_id, kind, "
+          "SELECT "
+              + level[2]
+              + ", "
               + bucket
               + " AS t, hex(quantilesDDState(0.01, 0.5, 0.95, 0.99)(elapsed_ms)) AS s FROM "
               + p.table("xlog")
-              + " GROUP BY app_id, kind, t";
+              + " GROUP BY "
+              + level[2]
+              + ", t";
       String rolled =
-          "SELECT app_id, kind, "
-              + level
+          "SELECT "
+              + level[2]
+              + ", "
+              + level[0]
               + " AS t, hex(quantilesDDMergeState(0.01, 0.5, 0.95, 0.99)(q_elapsed)) AS s FROM "
-              + p.table(table)
-              + " GROUP BY app_id, kind, t";
-      assertThat(migrator.scalarLong("SELECT count() FROM (" + raw + ")")).as(level).isPositive();
-      assertThat(differences(raw, rolled)).as(level + " DD state = raw DD state").isZero();
+              + p.table(level[1])
+              + " GROUP BY "
+              + level[2]
+              + ", t";
+      assertThat(migrator.scalarLong("SELECT count() FROM (" + raw + ")"))
+          .as(level[1])
+          .isPositive();
+      assertThat(differences(raw, rolled)).as(level[1] + " DD state = raw DD state").isZero();
     }
   }
 
@@ -362,7 +393,7 @@ class RollupViewsIT {
       "T-ST-030 D-14 rebuild: every rollup file SELECT into a staging table equals its view per key")
   void rebuildEqualsView() {
     SchemaRenderer renderer = SchemaRenderer.fromRepository();
-    assertThat(renderer.rollupTables()).hasSize(12);
+    assertThat(renderer.rollupTables()).hasSize(13).contains("instance_stat_1h");
     for (String table : renderer.rollupTables()) {
       // 1m: one day from the raw source; 1h: one month from the 1m source (1h partitions are
       // monthly). Every key (app_id, env, kind, dimensions, minute/hour) is compared; the

@@ -36,6 +36,10 @@ public final class ProfileSteps {
   private final int[] batch;
   private final int[] status;
   private final boolean[] error;
+
+  /** {@code FailureKind} of HTTP steps (11 {@code ProfileStep.failure}, WO-14), else 0. */
+  private final int[] failure;
+
   private final String[] detail;
   private final long[][] stack;
   private final String[] thread;
@@ -78,6 +82,7 @@ public final class ProfileSteps {
     batch = new int[n];
     status = new int[n];
     error = new boolean[n];
+    failure = new int[n];
     detail = new String[n];
     stack = new long[n][];
     thread = new String[n];
@@ -114,6 +119,7 @@ public final class ProfileSteps {
       batch[index] = buffer.batchSize(s);
       status[index] = buffer.status(s);
       error[index] = buffer.error(s);
+      failure[index] = buffer.failure(s);
       detail[index] = buffer.detail(s);
       stack[index] = buffer.stack(s);
       thread[index] = buffer.threadName(s);
@@ -170,6 +176,7 @@ public final class ProfileSteps {
         && buffer.parent(previous) == buffer.parent(s)
         && buffer.status(previous) == buffer.status(s)
         && buffer.error(previous) == buffer.error(s)
+        && buffer.failure(previous) == buffer.failure(s)
         && buffer.stack(previous) == null
         && buffer.stack(s) == null
         && same(buffer.detail(previous), buffer.detail(s))
@@ -249,6 +256,12 @@ public final class ProfileSteps {
   public boolean error(int index) {
     check(index);
     return error[index];
+  }
+
+  /** The {@code FailureKind} of an HTTP step (11 {@code ProfileStep.failure}), else 0. */
+  public int failure(int index) {
+    check(index);
+    return failure[index];
   }
 
   public String detail(int index) {

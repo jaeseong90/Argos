@@ -29,7 +29,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class ExternalStatsService {
 
-  /** API sort fields to template columns. */
+  /**
+   * API sort fields to template columns ({@code p95_ms}, the bucket estimate, added for the
+   * statistics tables of 05 §2.5, WO-36).
+   */
   public static final Map<String, String> SORT =
       Map.of(
           "count", "cnt",
@@ -37,7 +40,8 @@ public class ExternalStatsService {
           "timeouts", "timeouts",
           "sum_ms", "sum_ms",
           "avg_ms", "avg_ms",
-          "max_ms", "max_ms");
+          "max_ms", "max_ms",
+          "p95_ms", "p95_ms");
 
   /** The {@code related_tx.note} of a host. */
   static final String RELATED_NOTE =
@@ -165,6 +169,8 @@ public class ExternalStatsService {
     TimeQueries.kinds(params, kind);
     Map<Integer, Long> counts = new HashMap<>();
     Map<Integer, Long> errs = new HashMap<>();
+    Map<Integer, Long> timeouts = new HashMap<>();
+    Map<Integer, Long> connectFailures = new HashMap<>();
     List<Double> avg = SeriesGrid.nulls(grid.size());
     List<Double> p95 = SeriesGrid.nulls(grid.size());
     List<Double> rate = SeriesGrid.nulls(grid.size());
@@ -175,6 +181,8 @@ public class ExternalStatsService {
         long c = row.getLong("cnt");
         counts.put(i, c);
         errs.put(i, row.getLong("err"));
+        timeouts.put(i, row.getLong("timeouts"));
+        connectFailures.put(i, row.getLong("connect_failures"));
         avg.set(i, Values.ratio(row.getLong("sum_ms"), c, 3));
         p95.set(i, LatencyEstimate.quantile(SqlStatsService.longs(row, "buckets"), 0.95, -1));
         rate.set(i, Values.ratio(row.getLong("err"), c, 6));
@@ -188,7 +196,9 @@ public class ExternalStatsService {
             rate,
             avg,
             p95,
-            null);
+            null,
+            StatsSupport.counts(grid, timeouts),
+            StatsSupport.counts(grid, connectFailures));
     StatsViews.RawWindow window = support.rawWindow(from, to, support.profileRetention());
     List<StatsViews.Breakdown> services = new ArrayList<>();
     List<StatsViews.RelatedTx> related = new ArrayList<>();
@@ -272,6 +282,7 @@ public class ExternalStatsService {
             .uint32("app", appId)
             .int64("all_hosts", hosts.isEmpty() ? 1 : 0)
             .uint64Array("hosts", hosts)
+            .uint64Array("bounds", StatsSupport.latencyBounds())
             .identifier("sort", sort.column())
             .int64("dir", sort.dir())
             .int64("limit", limit);

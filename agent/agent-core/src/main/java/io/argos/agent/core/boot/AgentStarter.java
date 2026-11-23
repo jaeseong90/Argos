@@ -43,7 +43,8 @@ import java.util.jar.Manifest;
  *       tracer installed, capture modes, module states from {@code instrumentation.disabled};
  *   <li>P6: the agent builder and {@code installOn} (transformation recorder, error listener with
  *       {@link SelfProtection}, {@code instrumentation.exclude-classes});
- *   <li>P7: agent threads ({@code argos-sender}, {@code argos-watch}); premain does not wait;
+ *   <li>P7: agent threads ({@code argos-sender}, {@code argos-watch}, {@code argos-metrics});
+ *       premain does not wait;
  *   <li>P8: one INFO banner: version, commit, protocol, app and env, configuration hash, masked
  *       token, exporter, modules.
  * </ol>
@@ -92,6 +93,7 @@ public final class AgentStarter {
   /** The parts of a started agent the shutdown hook stops; filled step by step. */
   static final class Running {
     volatile WatchThread watch;
+    volatile MetricsThread metrics;
     volatile Recording recording;
     volatile SelfDiagnosticsFile selfDiagnostics;
     volatile boolean failed;
@@ -241,6 +243,12 @@ public final class AgentStarter {
     recording.startSender(AgentLogger.logDirectory(), loaded, moduleIds, diagnostics);
     watch.start();
     running.watch = watch;
+    // WO-16: argos-metrics (metrics, statistics windows, active snapshot); collectors are built
+    // on that thread, the active snapshotter included (C-225 (1)).
+    MetricsThread metrics =
+        MetricsThread.withActiveSnapshots(config, recording.runtime(), diagnostics);
+    metrics.start();
+    running.metrics = metrics;
 
     // P8: banner.
     timer.begin(StartTimer.P8);
@@ -422,6 +430,15 @@ public final class AgentStarter {
     if (watch != null) {
       try {
         watch.stop();
+      } catch (Throwable ignored) {
+        // best effort at shutdown or after a failed start
+      }
+    }
+    // WO-16: before the sender's final flush, so that the open statistics window goes with it.
+    MetricsThread metrics = running.metrics;
+    if (metrics != null) {
+      try {
+        metrics.stop();
       } catch (Throwable ignored) {
         // best effort at shutdown or after a failed start
       }

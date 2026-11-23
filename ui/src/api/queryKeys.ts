@@ -66,8 +66,45 @@ export const queryKeys = {
       ] as const,
     detail: (appId: number) => ['apps', 'detail', appId] as const,
   },
+  /**
+   * Alert screens (WO-38). Every key starts with 'alerts': an acknowledgement, a mute or a realtime
+   * alert push invalidates the ['alerts'] prefix, which refreshes the top bar badge too.
+   */
   alerts: {
+    all: () => ['alerts'] as const,
     firingCount: (env: string | null) => ['alerts', 'firing-count', env] as const,
+    /** Event history of a question (filters and absolute range; pages by cursor). */
+    events: (params: {
+      readonly from: number;
+      readonly to: number;
+      readonly appId: number | null;
+      readonly env: string | null;
+      readonly severity: string;
+      readonly state: string;
+      readonly ruleId: string | null;
+      readonly failedOnly: boolean;
+    }) =>
+      [
+        'alerts',
+        'events',
+        new Date(params.from).toISOString(),
+        new Date(params.to).toISOString(),
+        {
+          appId: params.appId,
+          env: params.env,
+          severity: params.severity,
+          state: params.state,
+          ruleId: params.ruleId,
+          failedOnly: params.failedOnly,
+        },
+      ] as const,
+    /** Active (FIRING and ACKED) alerts of every application, `GET /overview/alerts`. */
+    pinned: (env: string | null) => ['alerts', 'pinned', env] as const,
+    stats: (days: number, appId: number | null) => ['alerts', 'stats', { days, appId }] as const,
+    channels: () => ['alerts', 'channels'] as const,
+    mutes: () => ['alerts', 'mutes'] as const,
+    /** Rule names of the history's rule filter. */
+    ruleOptions: (appId: number | null) => ['alerts', 'rule-options', appId] as const,
   },
   transactions: {
     /** Where a transaction lives (the /tx/:txId alias); txId stays a decimal string (C-175). */

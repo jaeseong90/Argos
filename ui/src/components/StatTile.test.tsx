@@ -41,6 +41,27 @@ describe('StatTile (docs/15 §6.2)', () => {
     );
   });
 
+  it('keeps "No comparison data" and its basis in one inline footer block (C-220 (11))', () => {
+    render(
+      <StatTile
+        label="Requests"
+        value={10}
+        unit="count"
+        delta={{ value: null, basis: 'prev', noBasisText: true }}
+      />,
+      { wrapper },
+    );
+    const footer = screen.getByTestId('stat-tile').querySelector('.stat-tile__footer');
+    expect(footer).not.toBeNull();
+    expect(footer).toHaveTextContent('No comparison data');
+    expect(footer?.querySelector('.stat-tile__basis')).toHaveTextContent('vs previous period');
+    // The footer is one text block (badges.css): the delta and its basis are its only children.
+    expect(Array.from(footer?.children ?? []).map((c) => c.className)).toEqual([
+      expect.stringContaining('delta'),
+      'stat-tile__basis',
+    ]);
+  });
+
   it('T-UI-007 shows the dash with the No data tooltip for a missing value, never 0', async () => {
     const user = userEvent.setup();
     render(<StatTile label="Error rate" value={null} unit="ratio" />, { wrapper });

@@ -140,7 +140,53 @@ final class InMemorySessionStore implements SessionStore {
       return UpdateResult.UNCHANGED;
     }
     updateWrites++;
+    if (changes.instanceName() != null) {
+      int index = -1;
+      for (int i = 0; i < instances.size(); i++) {
+        Instance current = instances.get(i);
+        if (current.id() == instanceId) {
+          index = i;
+        }
+      }
+      if (index >= 0) {
+        Instance current = instances.get(index);
+        boolean taken =
+            instances.stream()
+                .anyMatch(
+                    i ->
+                        i.id() != instanceId
+                            && i.appId() == current.appId()
+                            && i.name().equals(changes.instanceName()));
+        if (taken) {
+          return UpdateResult.NAME_CONFLICT;
+        }
+        instances.set(
+            index,
+            new Instance(
+                current.id(),
+                current.appId(),
+                changes.instanceName(),
+                current.metadata(),
+                current.firstSeen()));
+      }
+    }
     return UpdateResult.CHANGED;
+  }
+
+  /** A queued refused registration (12 §4.4). */
+  record Pending(String name, String env, String host, int homeAppId, Instant at) {}
+
+  final List<Pending> pending = new ArrayList<>();
+  boolean pendingFailing;
+
+  @Override
+  public synchronized void recordPendingRegistration(
+      String name, String env, String host, int homeAppId, Instant at) {
+    check();
+    if (pendingFailing) {
+      throw new IllegalStateException("database down");
+    }
+    pending.add(new Pending(name, env, host, homeAppId, at));
   }
 
   @Override

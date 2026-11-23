@@ -15,6 +15,9 @@ import {
 describe('perfSettings', () => {
   it('has the documented defaults', () => {
     expect(perfSettings({})).toEqual({
+      target: 'poc',
+      routeWindow: 'generator-range',
+      routeUnsampled: false,
       points: [10_000, 50_000, 100_000],
       renders: ['default'],
       scenarios: ['static', 'static-worst', 'realtime', 'interaction', 'selection'],
@@ -71,6 +74,18 @@ describe('perfSettings', () => {
     expect(s.headed).toBe(true);
     expect(s.outDir).toBe('out/perf');
     expect(s.expectGpu).toBe('Radeon');
+  });
+
+  it('reads the target and the route window (XLOG_PERF_TARGET, XLOG_PERF_ROUTE_WINDOW)', () => {
+    expect(perfSettings({ XLOG_PERF_TARGET: 'route' }).target).toBe('route');
+    expect(perfSettings({ XLOG_PERF_TARGET: 'stack' }).target).toBe('poc');
+    expect(perfSettings({ XLOG_PERF_ROUTE_WINDOW: 'generator-last-15m' }).routeWindow).toBe(
+      'generator-last-15m',
+    );
+    expect(perfSettings({ XLOG_PERF_ROUTE_WINDOW: '../x' }).routeWindow).toBe('generator-range');
+    // The unsampled start of the window (review fe-perf-5).
+    expect(perfSettings({ XLOG_PERF_ROUTE_UNSAMPLED: '1' }).routeUnsampled).toBe(true);
+    expect(perfSettings({ XLOG_PERF_ROUTE_UNSAMPLED: 'yes' }).routeUnsampled).toBe(false);
   });
 
   it('falls back to the defaults on invalid values and never runs fewer than 3 times', () => {

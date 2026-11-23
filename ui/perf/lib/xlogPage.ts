@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Driving the /xlog-poc page from the performance spec through its test hooks: data-ready on the
-// page element and window.__xlogPerf (src/xlog/perf.ts, version 1).
+// Driving the /xlog-poc page (and, for the route target, the XLog screen: perf/lib/routePage.ts)
+// from the performance spec through their test hooks: data-ready on the page element and
+// window.__xlogPerf (src/xlog/perf.ts, version 1).
 import { arch, cpus, release, totalmem, type as osType } from 'node:os';
 
 import { expect, type Browser, type Locator, type Page } from '@playwright/test';
 
-import type { BenchmarkResult, FrameSample, SelectionTiming } from '../../src/xlog/perf';
+import type {
+  BenchmarkResult,
+  FrameSample,
+  LoadTiming,
+  SelectionTiming,
+} from '../../src/xlog/perf';
 
 import type { CanvasSizes, EnvironmentInfo } from './results';
 
@@ -56,6 +62,11 @@ export async function samples(page: Page): Promise<FrameSample[]> {
 /** Timing of the page's last drag selection (window.__xlogPerf.lastSelection()), or null. */
 export async function lastSelection(page: Page): Promise<SelectionTiming | null> {
   return page.evaluate(() => window.__xlogPerf?.lastSelection() ?? null);
+}
+
+/** Cost of the page's last data load (the XLog screen's window.__xlogPerf.lastLoad()), or null. */
+export async function lastLoad(page: Page): Promise<LoadTiming | null> {
+  return page.evaluate(() => window.__xlogPerf?.lastLoad?.() ?? null);
 }
 
 /** Drawing mode the page used for its last frames. */

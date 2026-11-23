@@ -16,6 +16,7 @@ import io.argos.agent.testing.launcher.Jdk;
 import io.argos.agent.testing.launcher.RunningApp;
 import io.argos.agent.testing.launcher.SampleApp;
 import io.argos.agent.testing.log.AgentLogAssert;
+import io.argos.agent.testing.metric.HostCgroup;
 import io.argos.proto.ProtocolVersion;
 import io.argos.proto.v1.AgentHello;
 import io.argos.proto.v1.IpMode;
@@ -92,7 +93,9 @@ class SessionTransportTest {
       assertThat(hello.getJvmVersion()).isNotEmpty();
       assertThat(hello.getOs()).isNotEmpty();
       assertThat(hello.getArch()).isNotEmpty();
-      assertThat(hello.getCgroup()).isEqualTo("none");
+      assertThat(hello.getCgroup())
+          .as("the host's cgroup mode (WO-16)")
+          .isEqualTo(HostCgroup.mode());
       assertThat(hello.getConfigHash()).hasSize(16);
       assertThat(hello.getAgentEpoch()).isNotZero();
       assertThat(hello.getProcessStartMs()).isPositive();

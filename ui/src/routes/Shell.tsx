@@ -23,6 +23,7 @@ import { useUiStore } from '../state/uiStore';
 import { useClock } from '../state/useTimeRange';
 import { useUrlState } from '../state/useUrlState';
 
+import { FilterLabelProvider } from './filterLabels';
 import { shellLiveSubscription, useShellLiveSubscription } from './liveStatus';
 import { useAppId, useCarriedNavigation, useCurrentScreen } from './navigation';
 import { UrlFilterChips, UrlNotices } from './Notices';
@@ -30,6 +31,16 @@ import { kioskApplies, screenById } from './screens';
 import { SideMenu } from './SideMenu';
 import { TopBar, useApps } from './TopBar';
 import './shell.css';
+
+/**
+ * The top bar's application and environment selects, re-exported for the screens that use them
+ * too (alert history, rules and the rule editor). Importing them through this module keeps them,
+ * and the Ant Design Select they bring, in the shell chunk: imported straight from components/
+ * by a lazy screen they would be split into a chunk of their own on the initial path
+ * (ADR-0010 C-228 (1), docs/15 §14).
+ */
+export { AppSelect } from '../components/AppSelect';
+export { EnvSelect } from '../components/EnvSelect';
 
 /**
  * Kiosk badge: environment and application, "live, updated N s ago" and the session expiry
@@ -131,8 +142,11 @@ export function Shell() {
       <SideMenu />
       <main id="argos-main" className="argos-shell__content" tabIndex={-1}>
         <UrlNotices />
-        <UrlFilterChips />
-        <Outlet />
+        {/* The screen may name the keys of its filter values for the chips (filterLabels.tsx). */}
+        <FilterLabelProvider>
+          <UrlFilterChips />
+          <Outlet />
+        </FilterLabelProvider>
       </main>
       <GlobalShortcuts />
     </div>

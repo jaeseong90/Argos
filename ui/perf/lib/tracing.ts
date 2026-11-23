@@ -26,9 +26,14 @@ export interface TraceCapture<T> {
   readonly dataLoss: boolean;
 }
 
+/**
+ * Records a trace of TRACE_CATEGORIES (plus `extraCategories`, e.g. the screen reflect's `viz`
+ * events, perf/lib/reflect.ts) while `action` runs.
+ */
 export async function traceDuring<T>(
   page: Page,
   action: () => Promise<T>,
+  extraCategories: readonly string[] = [],
 ): Promise<TraceCapture<T>> {
   const cdp = await page.context().newCDPSession(page);
   const events: TraceEvent[] = [];
@@ -50,7 +55,7 @@ export async function traceDuring<T>(
     transferMode: 'ReportEvents',
     traceConfig: {
       recordMode: 'recordAsMuchAsPossible',
-      includedCategories: [...TRACE_CATEGORIES],
+      includedCategories: [...new Set([...TRACE_CATEGORIES, ...extraCategories])],
     },
   });
   try {

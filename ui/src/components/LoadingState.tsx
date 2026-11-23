@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Loading state (docs/15 §6.7): a skeleton in the shape of the content (table, chart, tiles) and,
-// after 2 seconds, the hint that narrowing the range makes the query faster (05 §2.0-8).
+// after 2 seconds, the hint that narrowing the range makes the query faster (05 §2.0-8). Screens
+// without a time range (the overview) pass slowHint="wait" for a plain "still loading" hint
+// (ADR-0010 C-218 (4)).
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -16,6 +18,11 @@ export interface LoadingStateProps {
   readonly rows?: number;
   /** Delay before the slow hint. Default 2,000 ms. */
   readonly slowAfterMs?: number;
+  /**
+   * The slow hint: 'range' (default) suggests narrowing the time range, 'wait' only says the data
+   * is still loading (screens without a time range).
+   */
+  readonly slowHint?: 'range' | 'wait';
   readonly 'data-testid'?: string;
 }
 
@@ -24,6 +31,7 @@ export function LoadingState({
   variant = 'block',
   rows = 6,
   slowAfterMs = SLOW_LOADING_MS,
+  slowHint = 'range',
   'data-testid': testId,
 }: LoadingStateProps) {
   const { t } = useTranslation();
@@ -75,7 +83,7 @@ export function LoadingState({
       {skeleton}
       {slow ? (
         <p className="state__hint" data-testid="loading-state-slow">
-          {t('component.loading.slow')}
+          {slowHint === 'wait' ? t('component.loading.slowWait') : t('component.loading.slow')}
         </p>
       ) : null}
     </div>

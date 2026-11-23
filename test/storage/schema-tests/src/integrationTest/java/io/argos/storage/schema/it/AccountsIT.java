@@ -135,6 +135,7 @@ class AccountsIT {
             "app_stat_1h",
             "service_stat_1m",
             "instance_stat_1m",
+            "instance_stat_1h",
             "error_stat_1m",
             "sql_stat_1m",
             "ext_stat_1h",

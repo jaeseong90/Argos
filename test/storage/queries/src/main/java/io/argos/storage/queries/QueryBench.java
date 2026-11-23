@@ -42,6 +42,7 @@ import java.util.Set;
  *   --procedures all|none|Q14,...    Q05/bloom Q11/cost Q14 Q15 Q16 Q17 Q18 Q19 Q20 (default all)
  *   --warm 3  --cold none|restart|restart+dropcache|command:SHELL
  *   --q14-source synthetic|dataset --q14-apps 2 --q14-per-minute 3000 --q14-days 3
+ *   --q14-profile ci                 loaded data is the 1/100 profile: stored p99 by rank (C-221)
  *   --q15-tx 20000 --q15-repeats 100 --q16-rows 20000 --bloom-days 3
  *   --q17-users 10 --q17-interval-s 5 --q17-duration-s 1800 --q17-ingestion TEXT_WITHOUT_SPACES
  *   --q17-window live|fixed          (default: live when --q17-ingestion is given, else fixed)
@@ -128,7 +129,8 @@ public final class QueryBench {
             Integer.parseInt(o.getOrDefault("q14-days", "3")),
             Integer.parseInt(o.getOrDefault("q14-days", "3")),
             Integer.parseInt(o.getOrDefault("q14-days", "3")),
-            Long.parseLong(o.getOrDefault("q14-min-count", "1000")));
+            Long.parseLong(o.getOrDefault("q14-min-count", "1000")),
+            o.getOrDefault("q14-profile", ""));
     String ingestion = o.getOrDefault("q17-ingestion", "none").replace('_', ' ');
     ConcurrentLoad.Options q17 =
         new ConcurrentLoad.Options(

@@ -5,6 +5,7 @@ import io.argos.proto.v1.ActiveState;
 import io.argos.proto.v1.ActiveTransaction;
 import io.argos.proto.v1.ActiveTransactionSnapshot;
 import io.argos.proto.v1.TransactionKind;
+import io.argos.server.api.apps.InstanceStates;
 import io.argos.server.api.error.ApiException;
 import io.argos.server.api.error.ErrorCode;
 import io.argos.server.api.openapi.ArgosLimits;
@@ -44,8 +45,9 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * The running transactions of an application (14 §4.9, F-U04): the latest active-transaction
  * snapshot of every live session in the collector's in-memory {@link SessionRegistry} (WO-21,
- * 5-second snapshots), filtered, with names. Instance state per ADR-0010 C-160: an instance with a
- * live session is {@code UP}; STALE and WARN come with WO-22.
+ * 5-second snapshots), filtered, with names. Only instances with a live session are listed, each
+ * with its state from the instance state machine ({@link InstanceStates}, 12 §4.2; ADR-0010 C-218
+ * (4)), the same value as in {@code GET /apps/{appId}/instances}.
  */
 @RestController
 @RequiresRole(Role.VIEWER)
@@ -60,16 +62,19 @@ public class ActiveController {
   private final DictionaryNames names;
   private final AppDirectory directory;
   private final AppAccessPolicy access;
+  private final InstanceStates states;
 
   public ActiveController(
       SessionRegistry sessions,
       DictionaryNames names,
       AppDirectory directory,
-      AppAccessPolicy access) {
+      AppAccessPolicy access,
+      InstanceStates states) {
     this.sessions = sessions;
     this.names = names;
     this.directory = directory;
     this.access = access;
+    this.states = states;
   }
 
   /** The running transactions (14 §4.9). */
@@ -79,8 +84,9 @@ public class ActiveController {
       summary = "Running transactions of an application",
       description =
           "The latest 5-second snapshot of every live agent session (memory). At most 2,000"
-              + " items, longest first (meta.truncated). Instances are UP while their session"
-              + " lives (STALE and WARN arrive with the instance state machine, WO-22).")
+              + " items, longest first (meta.truncated). per_instance lists only the instances"
+              + " with a live session, each with its instance state (UP, WARN, STALE, DOWN) as in"
+              + " GET /apps/{appId}/instances.")
   @ArgosLimits(rowsMax = MAX_ITEMS)
   @ArgosSource({"memory:active_snapshots", "postgres:dictionary"})
   public ResponseEnvelope<ActiveTransactions> active(
@@ -153,7 +159,7 @@ public class ActiveController {
           new ActiveTransactions.PerInstance(
               s.instanceId(),
               clean(s.instanceName()),
-              "UP",
+              states.state(s.instanceId()),
               at,
               snap == null ? 0 : snap.getTotalActive(),
               max < 0 ? null : max,

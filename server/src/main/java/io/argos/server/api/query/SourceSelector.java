@@ -114,7 +114,8 @@ public final class SourceSelector {
 
   /**
    * A family of tables read together: its retentions and whether it has an hour rollup ({@code
-   * instance_stat_1m} and {@code error_stat_1m} have none, 13 §4).
+   * error_stat_1m} has none, 13 §4; {@code instance_stat_1m} has {@code instance_stat_1h} since
+   * ADR-0010 C-212 (1)).
    *
    * @param name for messages
    * @param retention the retentions

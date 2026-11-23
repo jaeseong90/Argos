@@ -84,6 +84,11 @@ rule, which the runner checks when it reads the files (the start is refused, nam
 - Example: a `V002` that alters `instance_stat_1m_v2` of `M001` runs after `M001` on an upgrade but before it, on a
   table that does not exist yet, on a new installation. A procedure's object is changed by a `ddl` step of a later
   procedure instead (`ADD COLUMN IF NOT EXISTS`); a dropped object is not referenced again.
+- Since `V003` (ADR-0010 C-212 (1)) the view `instance_stat_1h_mv` reads `instance_stat_1m`, so the format example
+  above (dropping `instance_stat_1m`) is refused by this rule: `V003` references `instance_stat_1m` and is not the
+  script that created it. Replacing `instance_stat_1m` (or any 1m table whose 1h view a later `V` script creates)
+  needs an extension of this rule first. The test fixture `upgrade-v004` therefore replaces `error_stat_1m`, which has
+  no 1h cascade.
 
 The backfill runs while nothing is ingested (the WAL is replayed after the migration). A WAL block that was already
 inserted before the stop but not committed in the WAL is replayed through the new materialized view and can be counted

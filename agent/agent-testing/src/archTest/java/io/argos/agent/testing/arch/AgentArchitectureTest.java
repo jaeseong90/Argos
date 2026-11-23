@@ -82,8 +82,13 @@ class AgentArchitectureTest {
     assertThat(layout.relocatedPackages()).contains("net.bytebuddy", "io.netty", "io.grpc");
     assertThat(layout.entryPoints()).containsExactly("io.argos.agent.AgentPremain");
     assertThat(layout.guardHolder()).isEqualTo("io.argos.agent.bootstrap.Argos");
-    // Approved 1.0 entries are added with their modules (10 §5.3 A-5); WO-00 has none.
-    assertThat(layout.allowlist().entries()).isEmpty();
+    // Approved 1.0 entries (10 §5.3 A-5): httpclient-jdk11 (WO-14). A new entry needs approval.
+    assertThat(layout.allowlist().entries())
+        .extracting(
+            e -> e.module() + "|" + e.adviceClass() + "|" + e.method() + "|" + e.annotation())
+        .containsExactly(
+            "httpclient-jdk11|io.argos.agent.instrumentation.httpclient.jdk11.HttpClientSendAdvice"
+                + "|enter|Argument");
   }
 
   @Test

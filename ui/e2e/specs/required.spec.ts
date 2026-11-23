@@ -6,3 +6,11 @@
 import { defineRequiredTests } from '../required/engine';
 
 defineRequiredTests('common');
+defineRequiredTests('xlog');
+defineRequiredTests('transaction');
+defineRequiredTests('trace');
+defineRequiredTests('dashboard');
+defineRequiredTests('overview');
+defineRequiredTests('stats');
+defineRequiredTests('active');
+defineRequiredTests('alerts');

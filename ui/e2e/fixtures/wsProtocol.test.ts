@@ -59,7 +59,8 @@ describe('E2E WebSocket stub protocol (docs/14 §5)', () => {
           op: 'subscribe',
           id: `s${String(i)}`,
           topic: 'counter',
-          params: { app: i },
+          // App ids are positive (app 0 is invalid_params on the server, TopicRequest).
+          params: { app: i + 1 },
         }),
       );
     }
@@ -73,6 +74,40 @@ describe('E2E WebSocket stub protocol (docs/14 §5)', () => {
       code: 'limit_exceeded',
     });
     expect(state.of('counter')).toHaveLength(MAX_SUBSCRIPTIONS);
+  });
+
+  it('answers parameters the WO-22 server rejects with error invalid_params', () => {
+    const answer = (topic: string, params: Record<string, unknown>): unknown => {
+      const state = new WsConnectionState();
+      const [frame] = state.receive(JSON.stringify({ op: 'subscribe', id: 'p', topic, params }));
+      return JSON.parse(frame ?? 'null');
+    };
+    // The parameters the UI sends (xlogTopicParams, the dashboard's counter) are accepted.
+    expect(
+      answer('xlog', { app: 3, env: 'prod', kind: 'HTTP', service: ['17'], instance: [4] }),
+    ).toMatchObject({ op: 'ack', id: 'p' });
+    expect(answer('counter', { app: 3 })).toMatchObject({ op: 'ack' });
+    expect(answer('overview', { env: 'prod' })).toMatchObject({ op: 'ack' });
+    expect(answer('alert', {})).toMatchObject({ op: 'ack' });
+    // The kind is read case-insensitively, as the server does.
+    expect(answer('xlog', { app: 3, kind: 'batch' })).toMatchObject({ op: 'ack' });
+    for (const [topic, params, message] of [
+      ['xlog', {}, 'app: required'],
+      ['counter', { app: '3' }, 'app: invalid_value'],
+      ['active', { app: 0 }, 'app: invalid_value'],
+      ['xlog', { app: 3, kind: 'SQL' }, 'kind: invalid_value'],
+      ['xlog', { app: 3, env: ' ' }, 'env: invalid_value'],
+      ['xlog', { app: 3, service: '17' }, 'service: invalid_value'],
+      ['counter', { app: 3, instance: [1] }, 'unknown parameter instance'],
+      ['overview', { app: 3 }, 'unknown parameter app'],
+    ] as const) {
+      expect(answer(topic, params), `${topic} ${JSON.stringify(params)}`).toEqual({
+        op: 'error',
+        id: 'p',
+        code: 'invalid_params',
+        message,
+      });
+    }
   });
 
   it('records frames that break docs/14 §5.2 and answers nothing to them', () => {
@@ -108,21 +143,29 @@ describe('E2E WebSocket stub protocol (docs/14 §5)', () => {
         [
           {
             tx_id: '18446744073709551615',
-            ts: '2030-01-01T00:00:00Z',
+            ts: Date.parse('2030-01-01T00:00:00Z'),
             elapsed_ms: 12,
-            status: 'ok',
+            status: 0,
             instance_id: 7,
             service_id: '17',
-            kind: 'HTTP',
+            kind: 1,
           },
         ],
         { '17': 'GET /api/orders/{id}' },
         NOW,
       ),
-    ) as { data: { tx_id: string[] }; dict: unknown; op: string };
+    ) as {
+      data: { tx_id: string[]; ts: unknown[]; status: unknown[]; kind: unknown[] };
+      dict: unknown;
+      op: string;
+    };
     expect(frame.op).toBe('push');
-    // 64-bit ids stay decimal strings (ADR-0010 C-175).
+    // 64-bit ids stay decimal strings (ADR-0010 C-175); ts, status and kind are the docs/14 §4.5
+    // numeric columns, as the client parser reads them.
     expect(frame.data.tx_id).toEqual(['18446744073709551615']);
+    expect(frame.data.ts).toEqual([Date.parse('2030-01-01T00:00:00Z')]);
+    expect(frame.data.status).toEqual([0]);
+    expect(frame.data.kind).toEqual([1]);
     expect(frame.dict).toEqual({ service: { '17': 'GET /api/orders/{id}' } });
     expect(JSON.parse(notice('xlog', 1250))).toEqual({
       op: 'notice',

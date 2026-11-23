@@ -5,12 +5,15 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AlertRuleQ,
+  AlertRulesQ,
   AlertsQ,
   buildUrl,
   carriedQuery,
   CommonQ,
   DashboardQ,
   defaultState,
+  ErrorsQ,
   FILTER_MAX,
   FILTER_VALUE_MAX,
   fitsFilterValue,
@@ -20,6 +23,8 @@ import {
   parseUrl,
   safeNextPath,
   SearchQ,
+  ServiceDetailQ,
+  StatsListQ,
   TxDetailQ,
   URL_PARSE_LIMIT,
   URL_WRITE_LIMIT,
@@ -444,5 +449,138 @@ describe('T-UI-003 URL state: writer limits and helpers', () => {
     ['', null],
   ])('T-UI-003 accepts only same-origin paths as next (docs/15 §4.3): %s', (next, expected) => {
     expect(safeNextPath(next)).toBe(expected);
+  });
+});
+
+describe('T-UI-003 URL state: statistics screens (docs/15 §9.7, 05 §2.5)', () => {
+  it('T-UI-003 writes nothing for the statistics defaults (Top 100, no split, not new only)', () => {
+    expect(writeQuery(StatsListQ, defaultState(StatsListQ))).toBe('');
+    expect(writeQuery(ErrorsQ, defaultState(ErrorsQ))).toBe('');
+    expect(writeQuery(ServiceDetailQ, defaultState(ServiceDetailQ))).toBe('');
+  });
+
+  it('T-UI-003 round-trips limit, split, new and the detail tab', () => {
+    expect(roundTrip(StatsListQ, 'limit=500&split=1')).toBe('limit=500&split=1');
+    expect(roundTrip(ErrorsQ, 'new=1&limit=10')).toBe('limit=10&new=1');
+    expect(roundTrip(ServiceDetailQ, 'tab=errors')).toBe('tab=errors');
+    const parsed = parseUrl(ErrorsQ, 'limit=50&split=1&new=1');
+    expect(parsed.state.limit).toBe('50');
+    expect(parsed.state.split).toBe(true);
+    expect(parsed.state.new).toBe(true);
+    expect(parsed.issues).toEqual([]);
+  });
+
+  it('T-UI-003 reads the docs/15 sort -p95_ms as the API sort p95_ms:desc', () => {
+    const parsed = parseUrl(StatsListQ, 'sort=-p95_ms');
+    expect(parsed.state.sort).toBe('p95_ms:desc');
+    expect(parsed.canonical).toBe('sort=p95_ms:desc');
+    expect(parseUrl(StatsListQ, 'sort=count').state.sort).toBe('count:asc');
+    expect(parseUrl(StatsListQ, 'sort=sum_ms:desc').state.sort).toBe('sum_ms:desc');
+  });
+
+  it.each([
+    ['limit=7', 'limit'],
+    ['limit=1000', 'limit'],
+    ['limit=100&limit=500', 'limit'],
+    ['split=true', 'split'],
+    ['new=yes', 'new'],
+  ])('T-UI-003 refuses an invalid statistics key and restores its default: %s', (query, key) => {
+    const parsed = parseUrl(ErrorsQ, query);
+    expect(parsed.issues).toEqual([{ key, reason: 'invalid' }]);
+    expect(parsed.state.limit).toBe('100');
+    expect(parsed.state.split).toBe(false);
+    expect(parsed.state.new).toBe(false);
+  });
+
+  it('T-UI-003 refuses an unknown cross-view tab and keeps the rest of the detail URL', () => {
+    const parsed = parseUrl(ServiceDetailQ, 'tab=timeline&kind=BATCH');
+    expect(parsed.issues).toEqual([{ key: 'tab', reason: 'invalid' }]);
+    expect(parsed.state.tab).toBe('sql');
+    expect(parsed.state.kind).toBe('BATCH');
+  });
+
+  it('T-UI-003 keeps statistics filters (db, service, sql text) as untrusted URL values', () => {
+    const parsed = parseUrl(
+      StatsListQ,
+      'f.db=18446744073709551615&f.service=!12&f.sql_normalized.contains=select',
+    );
+    expect(parsed.issues).toEqual([]);
+    expect(parsed.state.filters).toEqual([
+      { field: 'db', op: 'eq', value: '18446744073709551615' },
+      { field: 'service', op: 'ne', value: '12' },
+      { field: 'sql_normalized', op: 'contains', value: 'select' },
+    ]);
+  });
+});
+
+describe('T-UI-003 URL state: alert screens (docs/15 §9.9, WO-38)', () => {
+  const RULE = '0b6f2f8e-3f0e-4c1a-9a43-2d7b51c0e9aa';
+
+  it('T-UI-003 round-trips the alert history keys and writes nothing for the defaults', () => {
+    expect(writeQuery(AlertsQ, defaultState(AlertsQ))).toBe('');
+    const search = `state=acked&severity=critical&failedOnly=1&app=3&rule=${RULE}&tab=stats&days=30`;
+    const parsed = parseUrl(AlertsQ, search);
+    expect(parsed.issues).toEqual([]);
+    expect(parsed.state).toMatchObject({
+      state: 'acked',
+      severity: 'critical',
+      failedOnly: true,
+      app: 3,
+      rule: RULE,
+      tab: 'stats',
+      days: '30',
+    });
+    expect(roundTrip(AlertsQ, parsed.canonical)).toBe(parsed.canonical);
+  });
+
+  it('T-UI-003 accepts every server state filter (pending and ok included)', () => {
+    for (const state of ['firing', 'acked', 'resolved', 'nodata', 'pending', 'ok']) {
+      expect(parseUrl(AlertsQ, `state=${state}`).state.state).toBe(state);
+    }
+  });
+
+  it.each([
+    ['tab=rules', 'tab'],
+    ['days=14', 'days'],
+    ['rule=not-a-uuid', 'rule'],
+    [`rule=${RULE}&rule=${RULE}`, 'rule'],
+    ['state=FIRING', 'state'],
+  ])('T-UI-003 refuses an invalid alert history key and restores its default: %s', (query, key) => {
+    const parsed = parseUrl(AlertsQ, query);
+    expect(parsed.issues).toEqual([{ key, reason: 'invalid' }]);
+    expect(parsed.state.tab).toBe('history');
+    expect(parsed.state.days).toBe('7');
+    expect(parsed.state.state).toBe('all');
+  });
+
+  it('T-UI-003 an alert deep link to the history turns live off and keeps the event id', () => {
+    const parsed = parseUrl(AlertsQ, 'alert=a1b2c3&live=1&state=firing');
+    expect(parsed.state.alert).toBe('a1b2c3');
+    expect(parsed.state.live).toBe(false);
+    expect(parsed.state.state).toBe('firing');
+  });
+
+  it('T-UI-003 reads the rule list filters (application, enabled)', () => {
+    expect(writeQuery(AlertRulesQ, defaultState(AlertRulesQ))).toBe('');
+    const parsed = parseUrl(AlertRulesQ, 'app=12&enabled=disabled');
+    expect(parsed.issues).toEqual([]);
+    expect(parsed.state.app).toBe(12);
+    expect(parsed.state.enabled).toBe('disabled');
+    expect(parseUrl(AlertRulesQ, 'enabled=no').issues).toEqual([
+      { key: 'enabled', reason: 'invalid' },
+    ]);
+  });
+
+  it('T-UI-003 reads the rule editor keys (default application, template key)', () => {
+    const parsed = parseUrl(AlertRuleQ, 'app=4&template=error_rate');
+    expect(parsed.issues).toEqual([]);
+    expect(parsed.state.app).toBe(4);
+    expect(parsed.state.template).toBe('error_rate');
+    expect(parsed.canonical).toBe('app=4&template=error_rate');
+    for (const bad of ['Error_Rate', '1rate', '<script>', 'a'.repeat(65)]) {
+      expect(parseUrl(AlertRuleQ, `template=${encodeURIComponent(bad)}`).issues).toEqual([
+        { key: 'template', reason: 'invalid' },
+      ]);
+    }
   });
 });

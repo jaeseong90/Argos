@@ -24,6 +24,7 @@ import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.Helper
 import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.IgnoredSkipAdvice;
 import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.InstanceMethodAdvice;
 import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.LambdaAdvice;
+import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.LibrarySignatureAdvice;
 import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.MethodHandleInvokeAdvice;
 import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.MethodInvokeAdvice;
 import io.argos.agent.testing.arch.fixture.violating.instrumentation.demo.MethodReferenceAdvice;
@@ -664,6 +665,31 @@ class AdviceRulesTest {
     @DisplayName("ADV-04 [B-2] accepts advice that uses bootstrap classes and its own helpers")
     void acceptsBootstrapAndOwnHelpers() {
       assertPassesOnCompliant(AdviceRules.referenceOnlyBootstrapAndOwnHelpers(COMPLIANT));
+    }
+
+    @Test
+    @DisplayName(
+        "ADV-04b [C-223 (8)] rejects a library type as an advice parameter, array element or"
+            + " return type")
+    void rejectsLibrarySignatureTypes() {
+      assertViolation(
+          AdviceRules.signatureOnlyJdkOrBootstrapTypes(VIOLATING),
+          classes(LibrarySignatureAdvice.class),
+          "LibrarySignatureAdvice.enter("
+              + Fixtures.BASE
+              + ".app.Order) uses the library type "
+              + Fixtures.BASE
+              + ".app.Order in its signature",
+          "uses the library type " + Fixtures.BASE + ".thirdparty.ThirdPartyQueue in its signature",
+          "uses the library type [L" + Fixtures.BASE + ".app.Order; in its signature");
+    }
+
+    @Test
+    @DisplayName(
+        "ADV-04b [C-223 (8)] accepts advice whose signatures use primitives, java.* and bootstrap"
+            + " types")
+    void acceptsJdkAndBootstrapSignatures() {
+      assertPassesOnCompliant(AdviceRules.signatureOnlyJdkOrBootstrapTypes(COMPLIANT));
     }
   }
 }

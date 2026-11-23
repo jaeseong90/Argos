@@ -106,9 +106,68 @@ export interface UrlStateApi<S extends UrlSchema> {
    * Returns false when nothing was written.
    */
   readonly set: (partial: Partial<UrlStateOf<S>>, options?: SetOptions) => boolean;
+  /**
+   * The state of the newest URL: the rendered one, or the last one written through `set` while
+   * the render has not caught up with it yet (see `freshUrl`). Event handlers that derive the next
+   * state from the current one (the time range reducer) read it, so that two quick writes never
+   * build on a stale render.
+   */
+  readonly fresh: () => UrlStateOf<S>;
 }
 
 const TIME_KEYS = new Set(['time', 'live']);
+
+/**
+ * URLs written through `set` that the rendered location may not show yet: React Router changes
+ * the history entry first and renders the new location in a transition, which a busy page (the
+ * dashboard's charts) can delay. A key pressed in between (05 §2.0-3: "[" then "+") would
+ * otherwise act on the range of the previous render. `urls` is the rendered location the chain
+ * started from and then every URL written, newest last.
+ */
+let written: { readonly urls: readonly string[]; readonly at: number } | null = null;
+
+/** After this long without catching up the chain is dropped (the rendered location wins). */
+export const WRITE_CATCH_UP_MS = 5_000;
+
+/** Longest chain of written URLs kept. */
+const WRITE_CHAIN_MAX = 16;
+
+/**
+ * The newest URL given the `rendered` one (pathname + search): the last written URL while the
+ * render still shows an earlier URL of the chain; otherwise the rendered one (caught up, another
+ * navigation, or too old), which ends the chain.
+ */
+export function freshUrl(rendered: string, now: number = Date.now()): string {
+  const w = written;
+  if (w === null) {
+    return rendered;
+  }
+  const last = w.urls[w.urls.length - 1] ?? rendered;
+  if (rendered === last || !w.urls.includes(rendered) || now - w.at > WRITE_CATCH_UP_MS) {
+    written = null;
+    return rendered;
+  }
+  return last;
+}
+
+/** Records a write of `url` made on top of `base` (exported for tests). */
+export function recordWrite(base: string, url: string, now: number): void {
+  const w = written;
+  const urls = w !== null && w.urls[w.urls.length - 1] === base ? [...w.urls, url] : [base, url];
+  written = { urls: urls.slice(-WRITE_CHAIN_MAX), at: now };
+}
+
+/** Test hook: forgets the written URLs (each test starts from the rendered location). */
+export function resetWrittenUrls(): void {
+  written = null;
+}
+
+function splitUrl(url: string): { readonly pathname: string; readonly search: string } {
+  const q = url.indexOf('?');
+  return q < 0
+    ? { pathname: url, search: '' }
+    : { pathname: url.slice(0, q), search: url.slice(q) };
+}
 
 /** Reads and writes the URL state of `schema` (default: the current route's schema). */
 export function useUrlState<S extends UrlSchema = typeof CommonQ>(schema?: S): UrlStateApi<S> {
@@ -117,10 +176,29 @@ export function useUrlState<S extends UrlSchema = typeof CommonQ>(schema?: S): U
   const location = useLocation();
   const navigate = useNavigate();
   const parsed = useMemo(() => parseUrl(effective, location.search), [effective, location.search]);
+  const rendered = `${location.pathname}${location.search}`;
+
+  /** The newest location and its state (the rendered one unless a write is not rendered yet). */
+  const latest = useCallback((): {
+    readonly url: string;
+    readonly pathname: string;
+    readonly search: string;
+    readonly state: UrlStateOf<S>;
+  } => {
+    const url = freshUrl(rendered);
+    if (url === rendered) {
+      return { url, pathname: location.pathname, search: location.search, state: parsed.state };
+    }
+    const { pathname, search } = splitUrl(url);
+    return { url, pathname, search, state: parseUrl(effective, search).state };
+  }, [effective, location.pathname, location.search, parsed.state, rendered]);
+
+  const fresh = useCallback((): UrlStateOf<S> => latest().state, [latest]);
 
   const set = useCallback(
     (partial: Partial<UrlStateOf<S>>, options: SetOptions = {}): boolean => {
-      const next = { ...parsed.state, ...partial };
+      const base = latest();
+      const next = { ...base.state, ...partial };
       if (!isValidState(effective, next)) {
         return false;
       }
@@ -129,25 +207,26 @@ export function useUrlState<S extends UrlSchema = typeof CommonQ>(schema?: S): U
       // with CommonQ) stay as they are.
       const foreign: string[] = [];
       if (options.pathname === undefined) {
-        for (const [key, value] of new URLSearchParams(location.search)) {
+        for (const [key, value] of new URLSearchParams(base.search)) {
           if (!ownsKey(effective, key)) {
             foreign.push(`${encodeQueryComponent(key)}=${encodeQueryComponent(value)}`);
           }
         }
       }
       const query = [own, ...foreign].filter((part) => part !== '').join('&');
-      const pathname = options.pathname ?? location.pathname;
+      const pathname = options.pathname ?? base.pathname;
       const url = query === '' ? pathname : `${pathname}?${query}`;
       if (!fitsWriteLimit(url)) {
         useUiStore.getState().setUrlTooLong(true);
         return false;
       }
       const replace = options.replace ?? Object.keys(partial).every((key) => TIME_KEYS.has(key));
+      recordWrite(base.url, url, Date.now());
       void navigate(url, { replace });
       return true;
     },
-    [effective, location.pathname, location.search, navigate, parsed.state],
+    [effective, latest, navigate],
   );
 
-  return { state: parsed.state, issues: parsed.issues, set };
+  return { state: parsed.state, issues: parsed.issues, set, fresh };
 }

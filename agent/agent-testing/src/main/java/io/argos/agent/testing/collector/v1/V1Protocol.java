@@ -17,6 +17,7 @@ import io.argos.proto.ProtocolVersion;
 import io.argos.proto.TransactionFlags;
 import io.argos.proto.v1.Ack;
 import io.argos.proto.v1.AckStatus;
+import io.argos.proto.v1.ActiveTransaction;
 import io.argos.proto.v1.ActiveTransactionSnapshot;
 import io.argos.proto.v1.AgentBye;
 import io.argos.proto.v1.AgentHello;
@@ -34,6 +35,7 @@ import io.argos.proto.v1.DictionaryEntry;
 import io.argos.proto.v1.DictionaryKind;
 import io.argos.proto.v1.DictionaryRef;
 import io.argos.proto.v1.DictionaryRequest;
+import io.argos.proto.v1.ExtStat;
 import io.argos.proto.v1.Heartbeat;
 import io.argos.proto.v1.HeartbeatAck;
 import io.argos.proto.v1.InstanceState;
@@ -112,6 +114,19 @@ public final class V1Protocol implements CollectorProtocol {
   static final int STAT_WINDOW_S = 10;
 
   private static final String UNRESOLVED_PREFIX = "#";
+
+  /**
+   * The {@code ServerHello.app_id} the collector answers for {@code appName}: a stable number from
+   * 1 to 30,000 derived from the name (the real server assigns app ids from its registry), so that
+   * two apps on two collectors get different ids and a callee's {@code caller_app_id} names the
+   * caller (distributed traces, WO-14 T-ACC-05). Null or empty names get 1.
+   */
+  public static int appIdOf(String appName) {
+    if (appName == null || appName.isEmpty()) {
+      return 1;
+    }
+    return 1 + Math.floorMod(appName.hashCode(), 30_000);
+  }
 
   private static final Context.Key<CallMetadata> METADATA = Context.key("argos-call-metadata");
   private static final Context.Key<Runnable> ANSWERED = Context.key("argos-unary-answered");
@@ -358,6 +373,7 @@ public final class V1Protocol implements CollectorProtocol {
           switch (message.getBodyCase()) {
             case HELLO -> {
               AgentHello hello = message.getHello();
+              channel.appId(appIdOf(hello.getAppName()));
               collector.onHello(
                   channel,
                   hello,
@@ -523,6 +539,7 @@ public final class V1Protocol implements CollectorProtocol {
     private final FakeCollector collector;
     private boolean closed;
     private boolean heldBack;
+    private int appId = 1;
 
     Channel(
         ServerCallStreamObserver<ServerMessage> out,
@@ -531,6 +548,11 @@ public final class V1Protocol implements CollectorProtocol {
       this.out = out;
       this.metadata = metadata != null ? metadata : new CallMetadata(null, null, null, true);
       this.collector = collector;
+    }
+
+    /** The {@code app_id} of the next {@code ServerHello} ({@link #appIdOf}). */
+    synchronized void appId(int value) {
+      this.appId = value;
     }
 
     /** One message was handled: asks for the next one unless reads are paused. */
@@ -575,7 +597,7 @@ public final class V1Protocol implements CollectorProtocol {
     }
 
     @Override
-    public void hello(HelloAnswer answer) {
+    public synchronized void hello(HelloAnswer answer) {
       ServerHello.Builder hello =
           ServerHello.newBuilder()
               .setAccepted(answer.accepted())
@@ -586,7 +608,7 @@ public final class V1Protocol implements CollectorProtocol {
               .setRetryAfterS(answer.retryAfterS());
       if (answer.accepted()) {
         hello
-            .setAppId(1)
+            .setAppId(appId)
             .setInstanceId((int) answer.instanceId())
             .setSessionId(answer.sessionId())
             .setActiveSnapshotIntervalS(ACTIVE_SNAPSHOT_INTERVAL_S)
@@ -988,7 +1010,8 @@ public final class V1Protocol implements CollectorProtocol {
                 labels(name),
                 s == null ? null : s.getKind().name(),
                 sample.getValue(),
-                sample.getTsMs()));
+                sample.getTsMs(),
+                sample.getDelta()));
       }
     }
     return points;
@@ -1008,6 +1031,143 @@ public final class V1Protocol implements CollectorProtocol {
       }
     }
     return counters;
+  }
+
+  /** External-call statistics of the written stat batches, summed per host text and kind. */
+  @Override
+  public List<Collected.ExtStat> extStats(
+      List<ReceivedBatch> batches, Map<Long, String> dictionary) {
+    Map<String, long[]> counts = new LinkedHashMap<>();
+    Map<String, Double> sums = new LinkedHashMap<>();
+    Map<String, String[]> keys = new LinkedHashMap<>();
+    for (ReceivedBatch batch : batches) {
+      if (batch.kind() == BatchKind.STATS
+          && batch.acked()
+          && batch.body() instanceof StatBatch stats) {
+        for (ExtStat stat : stats.getExtList()) {
+          String host = text(dictionary, stat.getHostId());
+          String hostText = host != null ? host : "#" + Long.toUnsignedString(stat.getHostId());
+          String kind = stat.getKind().name();
+          String key = hostText + "|" + kind;
+          keys.putIfAbsent(key, new String[] {hostText, kind});
+          long[] count = counts.computeIfAbsent(key, k -> new long[4]);
+          count[0] += Integer.toUnsignedLong(stat.getCount());
+          count[1] += Integer.toUnsignedLong(stat.getErrorCount());
+          count[2] += Integer.toUnsignedLong(stat.getTimeoutCount());
+          count[3] += Integer.toUnsignedLong(stat.getConnectFailCount());
+          sums.merge(key, stat.getSumUs() / 1000.0, Double::sum);
+        }
+      }
+    }
+    List<Collected.ExtStat> stats = new ArrayList<>();
+    counts.forEach(
+        (key, c) ->
+            stats.add(
+                new Collected.ExtStat(
+                    keys.get(key)[0], keys.get(key)[1], c[0], c[1], c[2], c[3], sums.get(key))));
+    return stats;
+  }
+
+  /** Every written stat batch as one window, rows with their texts. */
+  @Override
+  public List<Collected.StatWindow> statWindows(
+      List<ReceivedBatch> batches, Map<Long, String> dictionary) {
+    List<Collected.StatWindow> windows = new ArrayList<>();
+    for (ReceivedBatch batch : batches) {
+      if (batch.kind() != BatchKind.STATS
+          || !batch.acked()
+          || !(batch.body() instanceof StatBatch stats)) {
+        continue;
+      }
+      List<Collected.SqlRow> sql = new ArrayList<>();
+      for (SqlStat s : stats.getSqlList()) {
+        sql.add(
+            new Collected.SqlRow(
+                s.getSqlId(),
+                text(dictionary, s.getSqlId()),
+                s.getDbId(),
+                s.getKind().name(),
+                Integer.toUnsignedLong(s.getCount()),
+                Integer.toUnsignedLong(s.getErrorCount()),
+                s.getSumUs(),
+                Integer.toUnsignedLong(s.getMaxUs()),
+                s.getFetchRows(),
+                s.hasSumExecUs() ? s.getSumExecUs() : null,
+                s.hasSumFetchUs() ? s.getSumFetchUs() : null,
+                unsigned(s.getBucketsList())));
+      }
+      List<Collected.ExtRow> ext = new ArrayList<>();
+      for (ExtStat e : stats.getExtList()) {
+        ext.add(
+            new Collected.ExtRow(
+                e.getHostId(),
+                text(dictionary, e.getHostId()),
+                e.getKind().name(),
+                Integer.toUnsignedLong(e.getCount()),
+                Integer.toUnsignedLong(e.getErrorCount()),
+                Integer.toUnsignedLong(e.getTimeoutCount()),
+                Integer.toUnsignedLong(e.getConnectFailCount()),
+                e.getSumUs(),
+                Integer.toUnsignedLong(e.getMaxUs()),
+                unsigned(e.getBucketsList())));
+      }
+      List<String> counterNames = new ArrayList<>();
+      for (CounterDelta delta : stats.getCountersList()) {
+        counterNames.add(delta.getName());
+      }
+      windows.add(
+          new Collected.StatWindow(
+              stats.getWindowStartMs(), stats.getWindowLenS(), sql, ext, counterNames));
+    }
+    return windows;
+  }
+
+  /** Every acknowledged active snapshot, texts resolved. */
+  @Override
+  public List<Collected.ActiveSnapshot> activeSnapshots(
+      List<ReceivedBatch> batches, Map<Long, String> dictionary) {
+    List<Collected.ActiveSnapshot> snapshots = new ArrayList<>();
+    for (ReceivedBatch batch : batches) {
+      if (batch.kind() != BatchKind.ACTIVE_SNAPSHOT
+          || !batch.acked()
+          || !(batch.body() instanceof ActiveTransactionSnapshot snapshot)) {
+        continue;
+      }
+      List<Collected.ActiveItem> items = new ArrayList<>();
+      for (ActiveTransaction item : snapshot.getItemsList()) {
+        items.add(
+            new Collected.ActiveItem(
+                item.getTxId(),
+                text(dictionary, item.getServiceId()),
+                item.getKind().name(),
+                item.getStartTsMs(),
+                Integer.toUnsignedLong(item.getElapsedMs()),
+                item.getState().name(),
+                item.getStateNameId(),
+                text(dictionary, item.getStateNameId()),
+                text(dictionary, item.getThreadNameId()),
+                item.getThreadId(),
+                item.getVirtualThread(),
+                emptyToNull(item.getUserId()),
+                ip(item.getRemoteIp())));
+      }
+      snapshots.add(
+          new Collected.ActiveSnapshot(
+              snapshot.getSnapshotTsMs(),
+              Integer.toUnsignedLong(snapshot.getTotalActive()),
+              snapshot.getTruncated(),
+              items,
+              batch.receivedAt().toEpochMilli()));
+    }
+    return snapshots;
+  }
+
+  private static List<Long> unsigned(List<Integer> values) {
+    List<Long> out = new ArrayList<>(values.size());
+    for (int v : values) {
+      out.add(Integer.toUnsignedLong(v));
+    }
+    return out;
   }
 
   /** {@code name{k="v",...}} → {@code name}. */

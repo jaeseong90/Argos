@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.server;
 
+import io.argos.server.cli.AdminCli;
 import io.argos.server.config.ArgosProperties;
+import java.util.Map;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -24,8 +26,16 @@ public class ServerApplication {
   static final String FLYWAY_AUTO_CONFIGURATION =
       "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration";
 
-  /** Starts the server. A failed start phase exits with a non-zero code. */
+  /**
+   * Starts the server. A failed start phase exits with a non-zero code. With {@code admin} as the
+   * first argument it runs an {@code argos-admin} command instead ({@link AdminCli}: configuration
+   * and the databases only, no listener) and exits with its code.
+   */
   public static void main(String[] args) {
+    if (AdminCli.selected(args)) {
+      System.exit(AdminCli.run(AdminCli.commandArguments(args), Map.of(), System.out, System.err));
+      return;
+    }
     SpringApplication.run(ServerApplication.class, args);
   }
 }

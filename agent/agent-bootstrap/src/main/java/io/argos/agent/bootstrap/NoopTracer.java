@@ -98,6 +98,12 @@ public final class NoopTracer implements Tracer {
   public void recordExtStat(long hostId, long elapsedNanos, int failureKind) {}
 
   @Override
+  public void recordSqlFetch(TraceContext ctx, long sqlId, long dbId, long fetchNanos, long rows) {}
+
+  @Override
+  public void connectionWait(TraceContext ctx, boolean waiting) {}
+
+  @Override
   public long dict(int kind, String text) {
     return 0;
   }
@@ -114,6 +120,45 @@ public final class NoopTracer implements Tracer {
 
   @Override
   public void sqlParam(SqlState state, int index, Object value, String setter) {}
+
+  @Override
+  public TraceContext begin(
+      int kind, String entryName, long startNanos, String traceparent, String tracestate) {
+    return null;
+  }
+
+  @Override
+  public String[] outgoingHeaders(
+      TraceContext ctx, String host, String existingTraceparent, String existingTracestate) {
+    return null;
+  }
+
+  @Override
+  public long hostId(String scheme, String host, int port) {
+    return 0;
+  }
+
+  @Override
+  public int httpStart(
+      TraceContext ctx,
+      long hostId,
+      String method,
+      String hostPort,
+      String rawPath,
+      String preservedTraceparent,
+      long startNanos) {
+    return -1;
+  }
+
+  @Override
+  public void httpEnd(
+      TraceContext ctx,
+      int seq,
+      long hostId,
+      int status,
+      Throwable error,
+      long startNanos,
+      long endNanos) {}
 
   @Override
   public String traceparent(TraceContext ctx, long childSpanId) {

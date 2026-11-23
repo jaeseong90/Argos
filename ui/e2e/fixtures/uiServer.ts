@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Where the Playwright suites (E2E and performance) reach the UI. By default Playwright serves the
-// production build in dist/ with `vite preview` on 127.0.0.1 (the `e2e` and `perf` scripts build
-// it first). ARGOS_UI_BASE_URL points the suites at a server that is already running instead (a
+// Where the Playwright suites (E2E and performance) reach the UI. By default Playwright serves a
+// build with `vite preview` on 127.0.0.1 (dist/; the E2E preview project and the perf suite add
+// `--outDir build/perf-dist`, the perf build that the `e2e` and `perf` scripts make first). ARGOS_UI_BASE_URL points the suites at a server that is already running instead (a
 // dev server, another build); ARGOS_UI_PORT changes the preview port.
 import type { PlaywrightTestConfig } from '@playwright/test';
 

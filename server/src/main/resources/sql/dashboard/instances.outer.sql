@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: Apache-2.0
 --
--- Per-instance transaction totals: merge of dashboard/instances.{raw,1m}.
+-- Per-instance transaction totals: merge of dashboard/instances.{raw,1m,1h}.
 SELECT i,
        sum(c) AS cnt,
        sum(e) AS err,

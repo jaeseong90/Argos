@@ -8,6 +8,7 @@ import io.argos.agent.bootstrap.StepType;
 import io.argos.agent.bootstrap.TraceContext;
 import io.argos.agent.core.config.AgentConfig;
 import io.argos.agent.core.guard.AgentCounters;
+import io.argos.agent.core.stats.StatsAggregator;
 import io.argos.agent.core.transport.AgentQueue;
 import io.argos.agent.core.transport.QueueItem;
 import io.argos.agent.core.transport.Queues;
@@ -28,7 +29,9 @@ import javax.management.ObjectName;
 public final class HeapBudgetProbe {
   private HeapBudgetProbe() {}
 
-  /** A synthetic item of the statistics, metric and active queues (their producers are WO-16). */
+  /**
+   * A synthetic item of the statistics, metric and active queues (fixed sizes at the queue caps).
+   */
   static final class Synthetic implements QueueItem {
     final byte[] payload;
 
@@ -119,6 +122,27 @@ public final class HeapBudgetProbe {
       serviceNames.admit(text('s', i, TracerImpl.MAX_SERVICE_NAME_CHARS));
     }
 
+    // 7. Full statistics (WO-16, 10 §9.3, §14): the runtime's aggregator with every SQL and EXT key
+    // of one window plus overflow, and a second aggregator with two full windows alive (the
+    // current one and the one that waits for its flush), the worst case between two flushes.
+    StatsAggregator stats = tracer.stats();
+    fillStats(stats, 0);
+    final long[] clock = {1_700_000_000_000L};
+    StatsAggregator twoWindows =
+        new StatsAggregator(
+            StatsAggregator.DEFAULT_WINDOW_SECONDS,
+            StatsAggregator.DEFAULT_MAX_SQL_KEYS,
+            StatsAggregator.MAX_EXT_KEYS,
+            new StatsAggregator.Clock() {
+              @Override
+              public long currentTimeMillis() {
+                return clock[0];
+              }
+            });
+    fillStats(twoWindows, 1);
+    clock[0] += StatsAggregator.DEFAULT_WINDOW_SECONDS * 1000L;
+    fillStats(twoWindows, 2);
+
     long used = usedAfterGc();
     out("heap_growth_bytes", used - baseline);
     out("histogram_agent_bytes", agentHistogramBytes());
@@ -135,15 +159,45 @@ public final class HeapBudgetProbe {
     out("dictionary_overflow_frame", counters.dictionaryOverflow(DictKind.FRAME));
     out("service_names_bytes", serviceNames.estimatedBytes());
     out("service_names_overflow", serviceNames.overflowCount());
+    out("stats_bytes", stats.estimatedBytes());
+    out("stats_two_windows_bytes", twoWindows.estimatedBytes());
+    out("stats_overflow_sql", twoWindows.sqlOverflow());
+    out("stats_overflow_ext", twoWindows.extOverflow());
     out(
         "estimated_total_bytes",
         queues.estimatedBytes()
             + runtime.dictionary().estimatedBytes()
-            + serviceNames.estimatedBytes());
+            + serviceNames.estimatedBytes()
+            + stats.estimatedBytes()
+            + twoWindows.estimatedBytes());
     // Keep everything reachable until after the measurement.
     out(
         "still_reachable",
-        tracer.counters() == counters && queues.transaction().size() > 0 ? 1 : 0);
+        tracer.counters() == counters
+                && queues.transaction().size() > 0
+                && tracer.stats() == stats
+                && twoWindows.windowSeconds() > 0
+            ? 1
+            : 0);
+  }
+
+  /**
+   * Every SQL key of three transaction kinds up to {@code stats.max-keys} and every EXT key up to
+   * its cap, plus 10% beyond the caps (overflow), with errors, fetches and failures.
+   */
+  private static void fillStats(StatsAggregator stats, int salt) {
+    int[] kinds = {Kind.HTTP, Kind.BATCH, Kind.MESSAGE};
+    int sqlKeys = StatsAggregator.DEFAULT_MAX_SQL_KEYS + StatsAggregator.DEFAULT_MAX_SQL_KEYS / 10;
+    for (int i = 0; i < sqlKeys; i++) {
+      int kind = kinds[i % kinds.length];
+      long sqlId = salt * 1_000_000L + i + 1;
+      stats.recordSql(kind, sqlId, 7, 1_000_000L + i, i % 13 == 0);
+      stats.recordSqlFetch(kind, sqlId, 7, 50_000L, 10);
+    }
+    int extKeys = StatsAggregator.MAX_EXT_KEYS + StatsAggregator.MAX_EXT_KEYS / 10;
+    for (int i = 0; i < extKeys; i++) {
+      stats.recordExt(kinds[i % kinds.length], salt * 1_000_000L + i + 1, 2_000_000L + i, i % 5);
+    }
   }
 
   /** A distinct text of {@code length} characters ({@code prefix}, the number, padding). */

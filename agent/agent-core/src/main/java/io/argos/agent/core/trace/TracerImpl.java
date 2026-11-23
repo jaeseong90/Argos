@@ -4,13 +4,17 @@ package io.argos.agent.core.trace;
 import io.argos.agent.bootstrap.AgentControl;
 import io.argos.agent.bootstrap.CaptureConfig;
 import io.argos.agent.bootstrap.DictKind;
+import io.argos.agent.bootstrap.FailureKind;
 import io.argos.agent.bootstrap.ModuleHealth;
 import io.argos.agent.bootstrap.Scope;
 import io.argos.agent.bootstrap.SqlState;
 import io.argos.agent.bootstrap.StepType;
 import io.argos.agent.bootstrap.TraceContext;
 import io.argos.agent.bootstrap.Tracer;
+import io.argos.agent.core.context.Propagation;
+import io.argos.agent.core.context.PropagationSettings;
 import io.argos.agent.core.context.ThreadNames;
+import io.argos.agent.core.context.TraceStateCodec;
 import io.argos.agent.core.context.VirtualThreads;
 import io.argos.agent.core.guard.AgentCounters;
 import io.argos.agent.core.log.AgentLogger;
@@ -21,6 +25,8 @@ import io.argos.agent.core.sql.BindParameterCapturer;
 import io.argos.agent.core.sql.DbIdentity;
 import io.argos.agent.core.sql.SqlIds;
 import io.argos.agent.core.sql.SqlNormalizer;
+import io.argos.agent.core.stats.PoolWaitCounters;
+import io.argos.agent.core.stats.StatsAggregator;
 import io.argos.agent.core.transport.Queues;
 import java.util.SplittableRandom;
 import java.util.concurrent.atomic.AtomicReference;
@@ -103,6 +109,17 @@ public final class TracerImpl implements Tracer {
   private volatile IgnoreRules ignoreRules = IgnoreRules.defaults();
   private volatile ServiceNames serviceNames = new ServiceNames(ServiceNames.DEFAULT_MAX);
 
+  /** {@code propagation.*} (10 §8, SEC-38; WO-14). */
+  private volatile PropagationSettings propagation = PropagationSettings.DEFAULTS;
+
+  /**
+   * {@code ServerHello.app_id} and {@code instance_id} of the current session, for the {@code
+   * argos} {@code tracestate} entry (10 §8; WO-14); 0 before the first session.
+   */
+  private volatile long sessionAppId;
+
+  private volatile long sessionInstanceId;
+
   /** {@code capture.trusted-proxies} of the last capture snapshot, compiled (WO-12, SEC-37). */
   private volatile RemoteIps.Trusted trustedProxies = RemoteIps.Trusted.NONE;
 
@@ -120,6 +137,20 @@ public final class TracerImpl implements Tracer {
 
   /** {@code app.instance} is not configured: the first connector names the instance. */
   private final boolean instanceNameFromConnector;
+
+  /**
+   * The full SQL and external-call statistics (10 §9.3, WO-16) and the connection waits per pool
+   * (13 §3.5, C-68), created by their first use like the registries above (never on premain, C-79).
+   */
+  private final AtomicReference<StatsAggregator> stats = new AtomicReference<StatsAggregator>();
+
+  private final AtomicReference<PoolWaitCounters> poolWaits =
+      new AtomicReference<PoolWaitCounters>();
+
+  /** {@code stats.window-seconds} and {@code stats.max-keys} of the aggregator created later. */
+  private final int statsWindowSeconds;
+
+  private final int statsMaxKeys;
 
   /**
    * A tracer for module tests: every ended transaction, with its steps, goes to {@code sink}; no
@@ -176,6 +207,14 @@ public final class TracerImpl implements Tracer {
     this.threadMeter = b.threadMeter != null ? b.threadMeter : ThreadMeter.NONE;
     this.userIds = new UserIds(counters, b.userIdSalts);
     this.instanceNameFromConnector = b.instanceNameFromConnector;
+    this.statsWindowSeconds = b.statsWindowSeconds;
+    this.statsMaxKeys = b.statsMaxKeys;
+    if (b.stats != null) {
+      this.stats.set(b.stats);
+    }
+    if (b.poolWaits != null) {
+      this.poolWaits.set(b.poolWaits);
+    }
     if (b.pools != null) {
       this.pools.set(b.pools);
     }
@@ -199,6 +238,18 @@ public final class TracerImpl implements Tracer {
 
   @Override
   public TraceContext begin(int kind, String entryName, long startNanos) {
+    return begin(kind, entryName, startNanos, null, null);
+  }
+
+  /**
+   * {@inheritDoc}
+   *
+   * <p>W3C checks: {@link Propagation#parseTraceparent} and {@link TraceStateCodec#sanitize}; the
+   * header values are never logged (SEC-26).
+   */
+  @Override
+  public TraceContext begin(
+      int kind, String entryName, long startNanos, String traceparent, String tracestate) {
     try {
       ThreadSlots.Slot slot = ThreadSlots.currentOrCreate();
       endLeftOver(slot);
@@ -215,20 +266,40 @@ public final class TracerImpl implements Tracer {
       long txId = txIds.next();
       long epochMs = TxIdGenerator.epochMillisOf(txId);
       SplittableRandom random = TraceIds.random();
+      long[] parent = Propagation.parseTraceparent(traceparent);
+      long traceHigh;
+      long traceLow;
+      long parentSpan;
+      String state = null;
+      int callerApp = 0;
+      if (parent != null) {
+        // 10 §8: adopt the trace id; the incoming span is the parent, the transaction a new span.
+        traceHigh = parent[0];
+        traceLow = parent[1];
+        parentSpan = parent[2];
+        state = TraceStateCodec.sanitize(tracestate);
+        callerApp = TraceStateCodec.callerAppId(state);
+      } else {
+        traceHigh = TraceIds.traceIdHigh(epochMs, random);
+        traceLow = TraceIds.nonZero(random);
+        parentSpan = 0L;
+      }
       TraceContext ctx =
           new TraceContext(
               txId,
-              TraceIds.traceIdHigh(epochMs, random),
+              traceHigh,
+              traceLow,
               TraceIds.nonZero(random),
-              TraceIds.nonZero(random),
-              0L,
+              parentSpan,
               kind,
               startNanos,
               epochMs,
               thread,
               virtual,
               cpuStart,
-              allocStart);
+              allocStart,
+              state,
+              callerApp);
       ctx.serviceName = entryName;
       threadName(slot, thread);
       ctx.coreRef = new Transaction(ctx, maxSteps, slot.rawName, slot.normalizedName, slot.nameId);
@@ -562,6 +633,12 @@ public final class TracerImpl implements Tracer {
       if (scope != null && seq >= 0 && seq < StepBuffer.SUMMARY_SEQ_BASE) {
         scope.push(seq);
       }
+      if (type == StepType.SQL) {
+        tx.active(Transaction.ACTIVE_IN_SQL, nameId);
+      } else if (type == StepType.DBC) {
+        tx.active(Transaction.ACTIVE_IN_DBC_WAIT, targetId);
+        tx.dbcOpened(seq, nameId, startNanos);
+      }
       return seq;
     } catch (Throwable t) {
       AgentLogger.warnOnce("tracer.step", "step start failed: {}", t.toString());
@@ -579,10 +656,24 @@ public final class TracerImpl implements Tracer {
       if (tx == null) {
         return;
       }
-      tx.steps().end(seq, status, error, rows, nanos);
+      StepBuffer steps = tx.steps();
+      steps.end(seq, status, error, rows, nanos);
       ThreadSlots.Binding scope = binding(ctx);
       if (scope != null) {
         scope.remove(seq);
+      }
+      if (tx.dbcClosed(seq)) {
+        poolWaits().record(tx.dbcNameId(), nanos - tx.dbcStartNanos());
+        tx.leave(Transaction.ACTIVE_IN_DBC_WAIT);
+      } else {
+        // A summary handle has no type: it may be an SQL or DBC step.
+        int type = seq < StepBuffer.SUMMARY_SEQ_BASE ? steps.type(seq) : 0;
+        if (type == StepType.SQL || type == 0) {
+          tx.leave(Transaction.ACTIVE_IN_SQL);
+        }
+        if (type == StepType.DBC || type == 0) {
+          tx.leave(Transaction.ACTIVE_IN_DBC_WAIT);
+        }
       }
     } catch (Throwable t) {
       AgentLogger.warnOnce("tracer.step", "step end failed: {}", t.toString());
@@ -814,13 +905,70 @@ public final class TracerImpl implements Tracer {
     }
   }
 
-  /** Full SQL statistics arrive with the statistics aggregator (WO-16); nothing to record yet. */
+  /**
+   * {@inheritDoc}
+   *
+   * <p>Into the {@link StatsAggregator} under the kind of the transaction bound to this thread;
+   * nothing outside a transaction (D-12). {@code rows} above 0 also count as fetched rows.
+   */
   @Override
-  public void recordSqlStat(long sqlId, long dbId, long elapsedNanos, boolean error, long rows) {}
+  public void recordSqlStat(long sqlId, long dbId, long elapsedNanos, boolean error, long rows) {
+    TraceContext ctx = current();
+    if (ctx == null || ctx.isEnded()) {
+      return;
+    }
+    stats().recordSql(ctx.kind, sqlId, dbId, elapsedNanos, error);
+    if (rows > 0) {
+      stats().recordSqlFetch(ctx.kind, sqlId, dbId, 0L, rows);
+    }
+  }
 
-  /** Full external-call statistics arrive with the statistics aggregator (WO-16). */
+  /**
+   * {@inheritDoc}
+   *
+   * <p>Into the {@link StatsAggregator} under the kind of {@code ctx} (C-185 (2)); nothing without
+   * a context.
+   */
   @Override
-  public void recordExtStat(long hostId, long elapsedNanos, int failureKind) {}
+  public void recordSqlFetch(TraceContext ctx, long sqlId, long dbId, long fetchNanos, long rows) {
+    if (ctx == null) {
+      return;
+    }
+    stats().recordSqlFetch(ctx.kind, sqlId, dbId, fetchNanos, rows);
+  }
+
+  /**
+   * {@inheritDoc}
+   *
+   * <p>Into the {@link StatsAggregator} under the kind of the transaction bound to this thread;
+   * nothing outside a transaction. {@link #httpEnd} records with the kind of its own context.
+   */
+  @Override
+  public void recordExtStat(long hostId, long elapsedNanos, int failureKind) {
+    TraceContext ctx = current();
+    if (ctx == null) {
+      return;
+    }
+    stats().recordExt(ctx.kind, hostId, elapsedNanos, failureKind);
+  }
+
+  /** {@inheritDoc} ({@link Transaction#activeState()}) */
+  @Override
+  public void connectionWait(TraceContext ctx, boolean waiting) {
+    try {
+      Transaction tx = open(ctx);
+      if (tx == null) {
+        return;
+      }
+      if (waiting) {
+        tx.active(Transaction.ACTIVE_IN_DBC_WAIT, 0L);
+      } else {
+        tx.leave(Transaction.ACTIVE_IN_DBC_WAIT);
+      }
+    } catch (Throwable t) {
+      // The active state is informative only; the application call is unaffected.
+    }
+  }
 
   /**
    * {@inheritDoc}
@@ -878,6 +1026,144 @@ public final class TracerImpl implements Tracer {
     }
   }
 
+  // --- outgoing calls (10 §6.5, §8; WO-14) ---------------------------------------------------
+
+  /**
+   * {@inheritDoc}
+   *
+   * <p>The {@code traceparent} parent id is the transaction's own span id, so that a callee's
+   * {@code parent_span_id} names the calling transaction ({@code span_id}): a transaction is one
+   * span, and its HTTP steps have no span of their own in the protocol (11 {@code ProfileStep}).
+   * Header values are never logged (SEC-26).
+   */
+  @Override
+  public String[] outgoingHeaders(
+      TraceContext ctx, String host, String existingTraceparent, String existingTracestate) {
+    if (ctx == null || ctx.isEnded()) {
+      return null;
+    }
+    try {
+      String normalized = Propagation.normalizeHost(host);
+      PropagationSettings settings = propagation;
+      if (normalized == null || settings.excludeHosts().matches(normalized)) {
+        return null;
+      }
+      String traceparent =
+          existingTraceparent != null && settings.preserveIncoming()
+              ? null
+              : Propagation.formatTraceparent(ctx.traceIdHi, ctx.traceIdLo, ctx.spanId);
+      long appId = sessionAppId;
+      String entry =
+          appId != 0 && settings.argosStateHosts().matches(normalized)
+              ? TraceStateCodec.argosEntry(appId, sessionInstanceId, serviceIdNow(ctx))
+              : null;
+      String tracestate;
+      if (existingTracestate != null) {
+        // The application's own value: changed only to put the argos entry in front.
+        tracestate =
+            entry == null
+                ? null
+                : TraceStateCodec.outgoing(TraceStateCodec.sanitize(existingTracestate), entry);
+      } else {
+        // The incoming value, without an argos entry for a host outside argos-state.hosts.
+        tracestate = TraceStateCodec.outgoing(ctx.incomingTracestate, entry);
+      }
+      return new String[] {traceparent, tracestate};
+    } catch (Throwable t) {
+      AgentLogger.warnOnce("tracer.propagation", "propagation headers failed: {}", t.getClass());
+      return null;
+    }
+  }
+
+  /** The service id the transaction has now (its name may still change until it ends). */
+  private static long serviceIdNow(TraceContext ctx) {
+    String name = ServiceNameResolver.resolve(ctx.kind, ctx.serviceName, ctx.serviceFixed);
+    return name == null ? 0L : Dictionary.hash64(name);
+  }
+
+  /** {@inheritDoc} ({@link Propagation#hostText}, ADR-0010 C-142) */
+  @Override
+  public long hostId(String scheme, String host, int port) {
+    try {
+      String text = Propagation.hostText(scheme, host, port);
+      return text == null ? 0L : dictionary.id(DictKind.HOST, text);
+    } catch (Throwable t) {
+      return 0L;
+    }
+  }
+
+  /**
+   * {@inheritDoc}
+   *
+   * <p>The step is a leaf: it is not pushed on the open-step stack, so that a call that completes
+   * on another thread (OkHttp {@code enqueue}, {@code HttpClient.sendAsync}, WebClient) never
+   * becomes the parent of the steps the request thread records meanwhile.
+   */
+  @Override
+  public int httpStart(
+      TraceContext ctx,
+      long hostId,
+      String method,
+      String hostPort,
+      String rawPath,
+      String preservedTraceparent,
+      long startNanos) {
+    try {
+      Transaction tx = open(ctx);
+      if (tx == null) {
+        return -1;
+      }
+      StepBuffer steps = tx.steps();
+      if (steps == null) {
+        return -1;
+      }
+      ThreadSlots.Binding scope = binding(ctx);
+      int parent = scope == null ? StepBuffer.NO_PARENT : scope.parent(steps);
+      int seq =
+          steps.start(StepType.HTTP, hostId, hostId, startNanos, parent, Thread.currentThread());
+      if (seq >= 0 && seq < StepBuffer.SUMMARY_SEQ_BASE) {
+        steps.detail(seq, Propagation.detail(method, hostPort, rawPath, preservedTraceparent));
+      }
+      tx.active(Transaction.ACTIVE_IN_HTTP, hostId);
+      return seq;
+    } catch (Throwable t) {
+      AgentLogger.warnOnce("tracer.http-step", "HTTP step start failed: {}", t.getClass());
+      return -1;
+    }
+  }
+
+  /** {@inheritDoc} ({@link HttpFailures#classify}) */
+  @Override
+  public void httpEnd(
+      TraceContext ctx,
+      int seq,
+      long hostId,
+      int status,
+      Throwable error,
+      long startNanos,
+      long endNanos) {
+    int failure = FailureKind.OTHER;
+    long elapsed = Math.max(0L, endNanos - startNanos);
+    try {
+      failure = HttpFailures.classify(status, error);
+      Transaction tx = open(ctx);
+      if (tx != null) {
+        ctx.addExternalCall(elapsed);
+        StepBuffer steps = tx.steps();
+        if (steps != null && seq >= 0) {
+          steps.end(seq, Math.max(0, status), failure != FailureKind.NONE, 0L, endNanos, failure);
+        }
+        tx.leave(Transaction.ACTIVE_IN_HTTP);
+      }
+    } catch (Throwable t) {
+      AgentLogger.warnOnce("tracer.http-step", "HTTP step end failed: {}", t.getClass());
+    }
+    if (hostId != 0 && ctx != null) {
+      // D-12: every call of a transaction, also one that completes after the transaction ended.
+      stats().recordExt(ctx.kind, hostId, elapsed, failure);
+    }
+  }
+
   @Override
   public String traceparent(TraceContext ctx, long childSpanId) {
     if (ctx == null) {
@@ -886,14 +1172,46 @@ public final class TracerImpl implements Tracer {
     return TraceIds.traceparent(ctx.traceIdHi, ctx.traceIdLo, childSpanId);
   }
 
+  /** {@inheritDoc} ({@link TraceStateCodec#outgoing} without an argos entry) */
   @Override
   public String tracestate(TraceContext ctx, String incoming) {
-    return incoming;
+    try {
+      String base;
+      if (incoming != null) {
+        base = TraceStateCodec.sanitize(incoming);
+      } else {
+        base = ctx == null ? null : ctx.incomingTracestate;
+      }
+      return TraceStateCodec.outgoing(base, null);
+    } catch (Throwable t) {
+      return null;
+    }
   }
 
   @Override
   public boolean shouldPropagate(String host) {
-    return host != null;
+    String normalized = Propagation.normalizeHost(host);
+    return normalized != null && !propagation.excludeHosts().matches(normalized);
+  }
+
+  /** Installs the {@code propagation.*} settings (10 §8, §15); null keeps the current ones. */
+  public void setPropagation(PropagationSettings value) {
+    if (value != null) {
+      propagation = value;
+    }
+  }
+
+  public PropagationSettings propagation() {
+    return propagation;
+  }
+
+  /**
+   * The ids of an accepted {@code ServerHello} (u32 each): the {@code argos} {@code tracestate}
+   * entry of outgoing calls names this app and instance (10 §8). Called on {@code argos-io}.
+   */
+  public void setSessionIds(long appId, long instanceId) {
+    sessionAppId = appId & 0xFFFF_FFFFL;
+    sessionInstanceId = instanceId & 0xFFFF_FFFFL;
   }
 
   @Override
@@ -1132,6 +1450,31 @@ public final class TracerImpl implements Tracer {
     return counters;
   }
 
+  /**
+   * The full statistics aggregator (10 §9.3; flushed by {@code argos-metrics}), created on first
+   * use.
+   */
+  public StatsAggregator stats() {
+    StatsAggregator current = stats.get();
+    if (current != null) {
+      return current;
+    }
+    StatsAggregator created =
+        new StatsAggregator(
+            statsWindowSeconds, statsMaxKeys, StatsAggregator.MAX_EXT_KEYS, StatsAggregator.SYSTEM);
+    return stats.compareAndSet(null, created) ? created : stats.get();
+  }
+
+  /** Connection waits per pool ({@code jdbc_pool_wait_*}, 13 §3.5), created on first use. */
+  public PoolWaitCounters poolWaits() {
+    PoolWaitCounters current = poolWaits.get();
+    if (current != null) {
+      return current;
+    }
+    PoolWaitCounters created = new PoolWaitCounters(dictionary);
+    return poolWaits.compareAndSet(null, created) ? created : poolWaits.get();
+  }
+
   /** Requests excluded for {@code reason} ({@code argos_agent_ignored_total{reason}}). */
   public long ignoredRequests(String reason) {
     return counters.ignored(reason);
@@ -1203,8 +1546,34 @@ public final class TracerImpl implements Tracer {
     private TomcatRegistry connectors;
     private boolean instanceNameFromConnector = true;
     private SqlNormalizer sqlNormalizer;
+    private StatsAggregator stats;
+    private PoolWaitCounters poolWaits;
+    private int statsWindowSeconds = StatsAggregator.DEFAULT_WINDOW_SECONDS;
+    private int statsMaxKeys = StatsAggregator.DEFAULT_MAX_SQL_KEYS;
 
     Builder() {}
+
+    /**
+     * The statistics aggregator to use (tests); default: one created on first use with {@link
+     * #statsSettings}.
+     */
+    public Builder stats(StatsAggregator value) {
+      this.stats = value;
+      return this;
+    }
+
+    /** {@code stats.window-seconds} and {@code stats.max-keys} (default 10 and 5,000). */
+    public Builder statsSettings(int windowSeconds, int maxSqlKeys) {
+      this.statsWindowSeconds = windowSeconds;
+      this.statsMaxKeys = maxSqlKeys;
+      return this;
+    }
+
+    /** The pool wait counters; default: counters over this tracer's dictionary. */
+    public Builder poolWaits(PoolWaitCounters value) {
+      this.poolWaits = value;
+      return this;
+    }
 
     /**
      * The SQL normalizer of {@code sql.max-length}, {@code sql.backslash-escape} and {@code

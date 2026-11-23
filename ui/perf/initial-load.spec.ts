@@ -6,6 +6,8 @@
 //              Navigation Timing values of the document and the time until the shell with its
 //              screen (the overview placeholder until WO-31) is in the DOM
 //   sign-in    the sign-in form is submitted: time from the click until the same shell is ready
+//   dashboard  a signed-in viewer opens the dashboard of the seeded range in a fresh context: time
+//              until the ready dashboard has its nine charts drawn (docs/15 §14: 1.5 s, WO-32)
 // with the machine CPU load of each run (perf/lib/cpuLoad.ts). The values are reference values: the
 // verdict against 2 s is reported, never asserted, because only the target hardware is a valid
 // measurement (a shared laptop is INVALID). Results: test-results/initial-load/initial-load.{json,md}
@@ -29,6 +31,8 @@ declare global {
   interface Window {
     /** performance.now() when the shell with its screen was first in the DOM. */
     __argosShellReadyAt?: number;
+    /** performance.now() when the ready dashboard first had its nine charts drawn. */
+    __argosChartsReadyAt?: number;
   }
 }
 
@@ -40,6 +44,14 @@ export const INITIAL_LOAD_BUDGET_MS = 2000;
 
 /** The selector of "shell ready": the shell with the screen of the route inside it. */
 export const SHELL_READY_SELECTOR = '[data-testid="app-shell"] [data-testid="route-pending"]';
+
+/** docs/15 §14: the dashboard's initial load at most 1.5 s with its nine charts (target hardware). */
+export const DASHBOARD_BUDGET_MS = 1500;
+
+/** The nine charts of the dashboard drawn (a uPlot canvas each) on the ready page (WO-32). */
+export const DASHBOARD_CHARTS = 9;
+export const DASHBOARD_CHART_SELECTOR =
+  '[data-testid="dashboard-page"][data-state="ready"] [data-testid^="dashboard-chart-"] canvas';
 
 export interface ColdRun {
   readonly run: number;
@@ -267,6 +279,181 @@ if (process.env.ARGOS_E2E_CONFIG === '1') {
           Number.isFinite(r.submitToShell) && r.submitToShell > 0,
           `sign-in run ${String(r.run)}`,
         ).toBe(true);
+      }
+    },
+  );
+}
+
+export interface DashboardColdRun {
+  readonly run: number;
+  readonly responseStart: number;
+  readonly domContentLoaded: number;
+  readonly load: number;
+  /** The ready dashboard with its nine charts drawn, ms from the navigation start. */
+  readonly chartsReady: number;
+  readonly scriptAndStyleBytes: number;
+  readonly cpuLoadPercent: number | null;
+}
+
+/** Markdown summary of the dashboard cold loads (reference values). */
+export function renderDashboardReport(input: {
+  readonly measuredAt: string;
+  readonly machine: string;
+  readonly path: string;
+  readonly runs: readonly DashboardColdRun[];
+  readonly chartsReady: Distribution;
+}): string {
+  const ms = (v: number): string => `${v.toFixed(0)} ms`;
+  const load = (v: number | null): string => (v === null ? 'n/a' : `${v.toFixed(0)} %`);
+  const verdict = `${input.chartsReady.p50 <= DASHBOARD_BUDGET_MS ? '<=' : '>'} ${String(DASHBOARD_BUDGET_MS)} ms`;
+  return [
+    '# T-NFR-14 initial load of the dashboard (reference)',
+    '',
+    `- measured: ${input.measuredAt}, INVALID (reference only: not the target hardware)`,
+    `- machine: ${input.machine}`,
+    `- route: ${input.path} (cold: a fresh browser context per run, signed-in viewer)`,
+    `- budget: ${ms(DASHBOARD_BUDGET_MS)} with nine charts (docs/15 §14); p50 ${ms(input.chartsReady.p50)} ${verdict} (reference, not asserted)`,
+    '',
+    '| run | responseStart | DOMContentLoaded | load | nine charts drawn | JS+CSS bytes | CPU load |',
+    '|---|---|---|---|---|---|---|',
+    ...input.runs.map(
+      (r) =>
+        `| ${String(r.run)} | ${ms(r.responseStart)} | ${ms(r.domContentLoaded)} | ${ms(r.load)} | ${ms(r.chartsReady)} | ${String(r.scriptAndStyleBytes)} | ${load(r.cpuLoadPercent)} |`,
+    ),
+    '',
+  ].join('\n');
+}
+
+/** Records the time the ready dashboard first has its nine charts drawn (before every document). */
+async function markChartsReady(context: BrowserContext): Promise<void> {
+  await context.addInitScript(
+    ({ selector, count }: { selector: string; count: number }) => {
+      const check = (): boolean => {
+        if (
+          window.__argosChartsReadyAt === undefined &&
+          document.querySelectorAll(selector).length >= count
+        ) {
+          window.__argosChartsReadyAt = performance.now();
+        }
+        return window.__argosChartsReadyAt !== undefined;
+      };
+      const observer = new MutationObserver(() => {
+        if (check()) {
+          observer.disconnect();
+        }
+      });
+      // data-state turns ready by an attribute change: observe attributes as well.
+      observer.observe(document, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['data-state'],
+      });
+    },
+    { selector: DASHBOARD_CHART_SELECTOR, count: DASHBOARD_CHARTS },
+  );
+}
+
+if (process.env.ARGOS_E2E_CONFIG === '1') {
+  test(
+    'T-NFR-14 initial load of the dashboard: cold load until the nine charts are drawn, 5 runs (reference)',
+    {
+      annotation: [
+        { type: 'req', description: 'N-14' },
+        { type: 'req', description: 'F-U01' },
+        { type: 'validity', description: 'INVALID: reference values only' },
+      ],
+    },
+    async ({ browser, session, seed }, testInfo) => {
+      test.setTimeout(10 * 60_000);
+      const range = seed.generator.range;
+      const path = `/apps/${String(seed.primary_app_id)}/dashboard?${new URLSearchParams({ from: range.start, to: range.end }).toString()}`;
+      const runs: DashboardColdRun[] = [];
+      for (let run = 1; run <= RUNS; run += 1) {
+        const api = await apiAs(session, seed, 'viewer');
+        const context = await browser.newContext({
+          storageState: storageStateOf(api),
+          baseURL: session.stack_url,
+        });
+        await markChartsReady(context);
+        const page = await context.newPage();
+        const before = cpuSnapshot();
+        await page.goto(path, { waitUntil: 'load' });
+        await page.waitForFunction(() => window.__argosChartsReadyAt !== undefined, null, {
+          timeout: 60_000,
+        });
+        const timing = await page.evaluate(() => {
+          const entry = performance.getEntriesByType('navigation')[0] as
+            PerformanceNavigationTiming | undefined;
+          const bytes = performance
+            .getEntriesByType('resource')
+            .filter((r) =>
+              ['script', 'link', 'css'].includes((r as PerformanceResourceTiming).initiatorType),
+            )
+            .reduce((sum, r) => sum + (r as PerformanceResourceTiming).transferSize, 0);
+          return {
+            responseStart: entry?.responseStart ?? Number.NaN,
+            domContentLoaded: entry?.domContentLoadedEventEnd ?? Number.NaN,
+            load: entry?.loadEventEnd ?? Number.NaN,
+            chartsReady: window.__argosChartsReadyAt ?? Number.NaN,
+            bytes,
+          };
+        });
+        const cpuLoadPercent = loadBetween(before, cpuSnapshot());
+        await context.close();
+        await api.logout();
+        runs.push({
+          run,
+          responseStart: timing.responseStart,
+          domContentLoaded: timing.domContentLoaded,
+          load: timing.load,
+          chartsReady: timing.chartsReady,
+          scriptAndStyleBytes: timing.bytes,
+          cpuLoadPercent,
+        });
+      }
+      const chartsReady = distribution(runs.map((r) => r.chartsReady));
+      const machine = `${cpus()[0]?.model.trim() ?? 'unknown'} (${String(cpus().length)} logical cores, ${process.platform})`;
+      const measuredAt = new Date().toISOString();
+      const markdown = renderDashboardReport({ measuredAt, machine, path, runs, chartsReady });
+      const dir = join(testInfo.project.outputDir, '..', 'initial-load');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, 'initial-load-dashboard.json'),
+        `${JSON.stringify(
+          {
+            measured_at: measuredAt,
+            validity: 'INVALID (reference only: not the target hardware)',
+            machine,
+            stack_url: session.stack_url,
+            path,
+            budget_ms: DASHBOARD_BUDGET_MS,
+            runs,
+            chartsReady,
+          },
+          null,
+          2,
+        )}\n`,
+        'utf8',
+      );
+      writeFileSync(join(dir, 'initial-load-dashboard.md'), markdown, 'utf8');
+      await testInfo.attach('initial-load-dashboard.md', {
+        body: markdown,
+        contentType: 'text/markdown',
+      });
+      testInfo.annotations.push({
+        type: 'initial-load-dashboard',
+        description: `nine charts drawn p50 ${chartsReady.p50.toFixed(0)} ms (budget ${String(DASHBOARD_BUDGET_MS)} ms, reference)`,
+      });
+      process.stdout.write(`${markdown}\n`);
+      // Every run measured every value (the measurement works); the budget is reported only.
+      for (const r of runs) {
+        for (const value of [r.responseStart, r.domContentLoaded, r.load, r.chartsReady]) {
+          expect(
+            Number.isFinite(value) && value > 0,
+            `dashboard run ${String(r.run)}: ${JSON.stringify(r)}`,
+          ).toBe(true);
+        }
       }
     },
   );

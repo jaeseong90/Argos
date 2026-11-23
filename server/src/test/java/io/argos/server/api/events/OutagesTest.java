@@ -84,4 +84,20 @@ class OutagesTest {
             NOW);
     assertThat(out).containsExactly(new Outages.Outage(at(40), at(45), Outages.SERVER_DOWN, null));
   }
+
+  @Test
+  @DisplayName(
+      "T-ACC-18a a DOWN after the AgentBye grace (agent_bye) is a planned stop, not an outage;"
+          + " a lost session still is (ADR-0010 C-214)")
+  void agentByeIsNoOutage() {
+    List<StateEventRecord> events =
+        List.of(
+            state(7, at(10), "DOWN", "agent_bye"),
+            state(7, at(20), "UP", "recovered"),
+            state(8, at(30), "STALE", "session_lost"),
+            state(8, at(31), "DOWN", "session_lost"),
+            state(9, FROM.minusSeconds(600), "DOWN", "agent_bye"));
+    assertThat(Outages.derive(events, FROM, TO, Set.of(), NOW))
+        .containsExactly(new Outages.Outage(at(30), TO, Outages.SESSION_LOST, 8));
+  }
 }

@@ -54,7 +54,10 @@ public record ReaderQuery(
     boolean segmentsPlaceholder,
     List<String> tables) {
 
-  /** The rollup tables of V001 (13 §4); their names go through {@link RollupAliases}. */
+  /**
+   * The rollup tables of V001 (13 §4) and {@code instance_stat_1h} of V003 (ADR-0010 C-212 (1));
+   * their names go through {@link RollupAliases}.
+   */
   public static final Set<String> ROLLUP_TABLES =
       Set.of(
           "app_stat_1m",
@@ -62,6 +65,7 @@ public record ReaderQuery(
           "service_stat_1m",
           "service_stat_1h",
           "instance_stat_1m",
+          "instance_stat_1h",
           "error_stat_1m",
           "sql_stat_1m",
           "sql_stat_1h",

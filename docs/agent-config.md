@@ -487,6 +487,45 @@ start.
 
 ### Context propagation
 
+The agent follows W3C Trace Context. On an incoming HTTP request (the REQUEST dispatch) a valid
+`traceparent` header is adopted: the transaction keeps its trace id and records the caller's span
+as its parent; a malformed one is ignored and a new trace starts. An incoming `tracestate` of at
+most 512 characters and 32 entries is kept and passed on; a longer or malformed one is dropped.
+
+Inside a transaction, every outgoing call of a recorded HTTP client (`HttpURLConnection`,
+`java.net.http.HttpClient`, Apache HttpClient 4.5 and 5 classic, OkHttp 3 and 4, Reactor Netty
+`HttpClient` as used by `WebClient`) becomes one HTTP step named `scheme://host:port`, with the
+detail `METHOD host[:port]/path` (no query string), the status and a failure class: `TIMEOUT`,
+`CONNECT_FAIL`, `HTTP_5XX` or `OTHER` (a 4xx status is a response, not a failure; a redirect the
+client follows is one step with the final status). The module READMEs under
+`agent/agent-instrumentation/httpclient-*` list which exception of each client gives which class.
+
+What the outgoing request carries:
+
+- **`traceparent` goes to every host, including third-party APIs**, unless the host matches
+  `propagation.exclude-hosts`. It holds only the trace id and the calling transaction's span id,
+  no application data. List external hosts there if they must not receive it. A `traceparent` the
+  application set itself is kept (`propagation.preserve-incoming`, default `true`) and written into
+  the step detail.
+- **`tracestate`** is the application's own value, or else the transaction's incoming value. The
+  Argos entry `argos=<app id>:<instance id>:<service id>` (hexadecimal numbers the collector
+  assigned, no names) is added in front **only for hosts that match
+  `propagation.argos-state.hosts`**; for any other host an incoming Argos entry is removed, so no
+  Argos ids leave towards hosts that are not listed. The list is empty by default: no host gets
+  the entry.
+- Hosts that match `propagation.exclude-hosts` get neither header; the HTTP step is still
+  recorded. Header values are never logged.
+
+**Trace trees link across applications only for hosts in `propagation.argos-state.hosts`.** The
+called application's transaction keeps the trace id either way, but the collector finds the
+calling transaction through the Argos entry. With the default empty list, a called service shows
+up in the trace as not linked. Add the hosts of your own instrumented services, for example
+`[ "*.svc.cluster.local", "10.0.*", "orders.internal" ]`.
+
+Globs of both lists match the host only (no scheme, no port), ignoring case: `*` matches any
+characters including dots, `?` one character. An IPv6 address is written without brackets. At most
+256 globs of at most 256 characters are kept. Both lists are read at start-up.
+
 | Key | Type | Default | Remote | Description |
 |---|---|---|---|---|
 | `propagation.exclude-hosts` | list (<= 256 items) | `[]` | N | Host globs that get no `traceparent`/`tracestate` header. |

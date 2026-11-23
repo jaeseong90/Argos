@@ -51,8 +51,15 @@ function fileTime(root: string, path: string): FileTime | null {
   }
 }
 
-/** Newest regular file among `inputs` (files or directories, walked recursively) below `root`. */
-export function newestFile(root: string, inputs: readonly string[]): FileTime | null {
+/**
+ * Newest regular file among `inputs` (files or directories, walked recursively) below `root`.
+ * Files for which `ignore` (given the relative path) returns true do not count.
+ */
+export function newestFile(
+  root: string,
+  inputs: readonly string[],
+  ignore: (path: string) => boolean = () => false,
+): FileTime | null {
   let newest: FileTime | null = null;
   const pending = [...inputs];
   for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
@@ -62,7 +69,11 @@ export function newestFile(root: string, inputs: readonly string[]): FileTime | 
       const stat = statSync(full);
       if (stat.isDirectory()) {
         pending.push(...readdirSync(full).map((entry) => `${path}/${entry}`));
-      } else if (stat.isFile() && (newest === null || stat.mtimeMs > newest.mtimeMs)) {
+      } else if (
+        stat.isFile() &&
+        !ignore(path) &&
+        (newest === null || stat.mtimeMs > newest.mtimeMs)
+      ) {
         newest = { path, mtimeMs: stat.mtimeMs };
       }
     } catch {

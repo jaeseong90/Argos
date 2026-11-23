@@ -108,6 +108,337 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/alerts/channels': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['channels_list'];
+    put?: never;
+    post: operations['channels_create'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/alerts/channels/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: operations['channels_update'];
+    post?: never;
+    delete: operations['channels_delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/alerts/channels/{id}/signing-key/rotate': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['channels_rotate'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/alerts/channels/{id}/test': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['channels_test'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/alerts/events': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Alert events
+     * @description The state transitions of [from, to) (at most 366 days, the 365-day retention), newest first, with the delivery of each event per channel (F-S27; last_error_code is an error code, never a response body). delivery=failed keeps the events with a failed delivery. Pages of limit (default 100, at most 500) continue with cursor = meta.next_cursor. Every application's active alerts are GET /overview/alerts.
+     */
+    get: operations['alerts_events_list'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/alerts/events/{eventId}/ack': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Acknowledge a firing alert
+     * @description eventId is the FIRING event of the current firing (event_id of the active alert). The alert becomes ACKED: renotifications stop, the RESOLVED notification is still sent (F-S26). 409 invalid_state when the alert is not FIRING (already acknowledged or resolved), 404 for an unknown event. note at most 1 KB.
+     */
+    post: operations['alerts_events_ack'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/alerts/mutes': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Alert mutes
+     * @description The one-off mutes that have not ended, by start, at most 1,000.
+     */
+    get: operations['alerts_mutes_list'];
+    put?: never;
+    /**
+     * Create an alert mute
+     * @description No rule matching the target (every target field optional: absent matches any) is evaluated between from and to. At most 30 days, ending in the future (400 invalid_request otherwise); reason at most 1 KB.
+     */
+    post: operations['alerts_mutes_create'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/alerts/mutes/{muteId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Delete an alert mute */
+    delete: operations['alerts_mutes_delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/alerts/rules': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Alert rules
+     * @description The rules that are not deleted, newest first, at most 1,000 (meta.truncated at the limit). Without app every rule, server self rules included; env matches the rules of that environment and those of every environment.
+     */
+    get: operations['alerts_rules_list'];
+    put?: never;
+    /**
+     * Create an alert rule
+     * @description 400 invalid_request with one detail per invalid field (unknown fields included), 422 template_variable_forbidden for a message template variable outside the allowed set (SEC-39). The application and the channels must exist.
+     */
+    post: operations['alerts_rules_create'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/alerts/rules/preview': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Preview an alert rule
+     * @description The rule's metric over the last days (default and at most 7) from the minute rollups, in consecutive buckets of step_s (the rule window rounded up to whole minutes, at least days × 1440 / 336 minutes, so short windows are smoothed), and the firings its warn (or critical) threshold would have caused: a run of breaching buckets (with at least min_samples requests for request metrics) lasting at least for. Metrics outside the rollups (active transactions, server self metrics, instance state, batch elapsed time) answer 400 with metric/preview_unsupported; a service, instance or host rule needs one target id. Heavy rate-limit bucket (14 §2.7).
+     */
+    post: operations['alerts_rules_preview'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/alerts/rules/{ruleId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * One alert rule
+     * @description The rule, its 20 newest versions (alert_rule_history) and, when its template has a newer version than the rule was made from, the differing fields (F-S24).
+     */
+    get: operations['alerts_rules_get'];
+    /**
+     * Replace an alert rule
+     * @description The whole rule (read-only fields such as rule_id and version are ignored). Channels are chosen by id; a channel's URL never changes here.
+     */
+    put: operations['alerts_rules_update'];
+    post?: never;
+    /**
+     * Delete an alert rule
+     * @description Soft delete: the rule leaves the lists and the engine (its active alerts resolve), its events stay readable for their retention.
+     */
+    delete: operations['alerts_rules_delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/alerts/rules/{ruleId}/clone': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Clone an alert rule
+     * @description A copy of the rule for another application and environment (not server rules).
+     */
+    post: operations['alerts_rules_clone'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/alerts/rules/{ruleId}/disable': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Disable an alert rule */
+    post: operations['alerts_rules_disable'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/alerts/rules/{ruleId}/enable': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Enable an alert rule */
+    post: operations['alerts_rules_enable'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/alerts/stats': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Alert statistics per rule
+     * @description Per rule over the last days (7 or 30): firings (FIRING transitions from a state that was not firing), the average firing duration of the resolved alerts, the average time from the firing to the acknowledgement and to the resolution, most firings first, at most 1,000 rules (finding noisy rules).
+     */
+    get: operations['alerts_stats_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/alerts/templates': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Default alert templates
+     * @description The 14 templates of 01 Appendix A with their version and the rules they create (scope app: per application; server: once for the server).
+     */
+    get: operations['alerts_templates_list'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/alerts/templates/apply': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Apply default templates
+     * @description Creates the application rules of the templates (default: every application template) for the application; a template whose rule exists (deleted ones included), a server template, an unknown key and, without keys, the batch template of an application without BATCH transactions are skipped with the reason.
+     */
+    post: operations['alerts_templates_apply'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/apps': {
     parameters: {
       query?: never;
@@ -117,7 +448,7 @@ export interface paths {
     };
     /**
      * Applications
-     * @description At most 500 applications by name (meta.truncated when there are more). q is a case-insensitive substring of the name (at most 1 KB). Instance state: UP while the server has a live agent session for the instance, DOWN otherwise; STALE and WARN (12 §4.2) are not reported before the instance state machine exists (WO-22, ADR-0010 C-160).
+     * @description At most 500 applications by name (meta.truncated when there are more). q is a case-insensitive substring of the name (at most 1 KB). Instance state (12 §4.2): UP while heartbeats arrive, STALE after 60 s without a heartbeat, DOWN after 180 s without one, 5 minutes after the agent's shutdown message without a reconnect, or when never connected since the server started; WARN while up with a clock offset of 1 s or more, drops in the last 5 minutes, the lowest accepted agent version, a disabled module, the kill switch on, a configuration hash that differs from the application's majority or a leaked-context count in the last 5 minutes. instances_up counts the instances in UP or WARN.
      */
     get: operations['apps_list'];
     put?: never;
@@ -137,7 +468,7 @@ export interface paths {
     };
     /**
      * An application with its settings summary
-     * @description 404 not_found for an unknown application. Instance state: UP while the server has a live agent session for the instance, DOWN otherwise; STALE and WARN (12 §4.2) are not reported before the instance state machine exists (WO-22, ADR-0010 C-160).
+     * @description 404 not_found for an unknown application. kinds lists the transaction kinds recorded in the last 7 days (service_stat_1h; null when ClickHouse cannot answer). Instance state (12 §4.2): UP while heartbeats arrive, STALE after 60 s without a heartbeat, DOWN after 180 s without one, 5 minutes after the agent's shutdown message without a reconnect, or when never connected since the server started; WARN while up with a clock offset of 1 s or more, drops in the last 5 minutes, the lowest accepted agent version, a disabled module, the kill switch on, a configuration hash that differs from the application's majority or a leaked-context count in the last 5 minutes. instances_up counts the instances in UP or WARN.
      */
     get: operations['apps_get'];
     put?: never;
@@ -157,7 +488,7 @@ export interface paths {
     };
     /**
      * Running transactions of an application
-     * @description The latest 5-second snapshot of every live agent session (memory). At most 2,000 items, longest first (meta.truncated). Instances are UP while their session lives (STALE and WARN arrive with the instance state machine, WO-22).
+     * @description The latest 5-second snapshot of every live agent session (memory). At most 2,000 items, longest first (meta.truncated). per_instance lists only the instances with a live session, each with its instance state (UP, WARN, STALE, DOWN) as in GET /apps/{appId}/instances.
      */
     get: operations['active_get'];
     put?: never;
@@ -197,7 +528,7 @@ export interface paths {
     };
     /**
      * Dashboard of an application
-     * @description Tiles, series and baseline of [from, to) by the source rule of 14 §3 (meta.source; at most 1 year and 720 buckets; step optional). Series values are null where there is no data; series.count is 0 for a covered bucket without transactions, so Σ count equals the transactions of the range (D-03). Percentiles merge the DD states of the rollups (C-53). With instance[] the transactions come from instance_stat_1m (minute level for every range). delta: basis prev (previous range of the same length) or 7d (with baseline=7d); tps and p95_ms relative, error_rate absolute. Live values (tiles.active, collection.clock_skew_instances, collection.batch_running) only for a range ending in the last 2 minutes, else null. series.active is null until the server records active-transaction gauges (WO-22, ADR-0010 C-178). firing is null until the alert engine exists (WO-25); collection.server_drops and the historic ingest lag are null until the server records its own series (WO-28). Instance states: UP with a live agent session, DOWN otherwise (STALE and WARN come with WO-22, ADR-0010 C-160).
+     * @description Tiles, series and baseline of [from, to) by the source rule of 14 §3 (meta.source; at most 1 year and 720 buckets; step optional). Series values are null where there is no data; series.count is 0 for a covered bucket without transactions, so Σ count equals the transactions of the range (D-03). Percentiles merge the DD states of the rollups (C-53). With instance[] or exclude_instance[] the transactions come from instance_stat_1m/1h (ADR-0010 C-212 (1)); exclude_instance leaves its instances out of the transactions, the JVM series, the live values, the instance tiles, collection.late and the outages. delta: basis prev (previous range of the same length) or 7d (with baseline=7d); tps, avg_ms, p95_ms and p99_ms relative to the same tile over the basis range, error_rate absolute, active relative to the mean of series.active over the basis range (null when tiles.active is null or that mean is missing or 0). series.cpu and series.system_cpu are per bucket the mean over the instances of their average process_cpu_usage_ratio and system_cpu_usage_ratio. Live values (tiles.active, collection.clock_skew_instances, collection.batch_running) only for a range ending in the last 2 minutes, else null. series.active is per bucket the sum over the instances of their average argos_active_transactions gauge, which the server records from every active snapshot (ADR-0010 C-178 (1)); null for a bucket without a snapshot. firing lists the application's active alerts now (FIRING and ACKED, newest first, whatever the range; ADR-0010 C-212 (2)); collection.server_drops and the historic ingest lag are null until the server records its own series (WO-28). Instance states (12 §4.2): UP, STALE (60 s without a heartbeat), DOWN (180 s without one, or 5 minutes after the agent's shutdown message) or WARN (up with a WARN condition).
      */
     get: operations['dashboard_get'];
     put?: never;
@@ -217,7 +548,7 @@ export interface paths {
     };
     /**
      * Error groups
-     * @description Per error group of [from, to) from error_stat_1m (raw rows for the tail and edges): count, first and last occurrence in the range, top 5 services and versions, with the class, masked message pattern (at most 1 KB) and top frame of error_groups. is_new: first seen ever inside the range; new_only=true lists only those. sort: count (default), first_seen or last_seen. limit at most 500 (default 100). Also as CSV (format=csv, tz). meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.
+     * @description Per error group of [from, to) from error_stat_1m (raw rows for the tail and edges): count, first and last occurrence in the range, top 5 services and versions, with the class, masked message pattern (at most 1 KB) and top frame of error_groups. is_new: first seen ever inside the range; new_only=true lists only those. sort: count (default), first_seen or last_seen. limit at most 500 (default 100). compare_prev=true adds delta against the previous range of the same length: count relative (null when the group had no occurrence there), p95_ms and error_rate always null. Also as CSV (format=csv, tz). meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.
      */
     get: operations['error_groups_list'];
     put?: never;
@@ -277,7 +608,7 @@ export interface paths {
     };
     /**
      * Outgoing call statistics
-     * @description Per host of [from, to) from ext_stat_raw/1m/1h; percentiles estimated from the 15 latency buckets (estimated: true, C-14). path_pattern is not stored yet; decided with HTTP client instrumentation (WO-14, ADR-0010 C-178), always null. sort: count, errors, timeouts, sum_ms (default), avg_ms or max_ms. limit at most 500 (default 100). compare_prev=true adds delta. Also as CSV (format=csv, tz). meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.
+     * @description Per host of [from, to) from ext_stat_raw/1m/1h; percentiles estimated from the 15 latency buckets (estimated: true, C-14). path_pattern is not stored: the statistics key is the host (ADR-0010 C-178 (3), C-223 (5)), always null. sort: count, errors, timeouts, sum_ms (default), avg_ms, max_ms or p95_ms (the estimated p95, ordered like the returned p95_ms values). limit at most 500 (default 100). compare_prev=true adds delta. Also as CSV (format=csv, tz). meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.
      */
     get: operations['external_stats_list'];
     put?: never;
@@ -297,7 +628,7 @@ export interface paths {
     };
     /**
      * One outgoing call host
-     * @description The host's series of [from, to) (percentiles estimated, C-14), and the services and related transactions of its profiled callers (HTTP steps of profile_step, a sample) in raw_window. 404 for an unknown key. meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.
+     * @description The host's series of [from, to) (percentiles estimated, C-14; timeouts and connect_failures per bucket, ADR-0010 C-222 (7)), and the services and related transactions of its profiled callers (HTTP steps of profile_step, a sample) in raw_window. 404 for an unknown key. meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.
      */
     get: operations['external_get'];
     put?: never;
@@ -317,7 +648,7 @@ export interface paths {
     };
     /**
      * The instances of an application
-     * @description At most 1,000 instances by name; archived ones only with archived=true. state filters by UP, DOWN, STALE or WARN. drops_24h is the agent's argos_agent_dropped_total increase of the last 24 h (null when the agent reported no such series or ClickHouse cannot answer); modules_disabled is null until WO-22 records it. Instance state: UP while the server has a live agent session for the instance, DOWN otherwise; STALE and WARN (12 §4.2) are not reported before the instance state machine exists (WO-22, ADR-0010 C-160).
+     * @description At most 1,000 instances by name; archived ones only with archived=true. state filters by UP, DOWN, STALE or WARN. drops_24h is the agent's argos_agent_dropped_total increase of the last 24 h (null when the agent reported no such series or ClickHouse cannot answer); modules_disabled lists the modules the agent reported disabled since it started (null for an instance the server has not seen since it started). Instance state (12 §4.2): UP while heartbeats arrive, STALE after 60 s without a heartbeat, DOWN after 180 s without one, 5 minutes after the agent's shutdown message without a reconnect, or when never connected since the server started; WARN while up with a clock offset of 1 s or more, drops in the last 5 minutes, the lowest accepted agent version, a disabled module, the kill switch on, a configuration hash that differs from the application's majority or a leaked-context count in the last 5 minutes. instances_up counts the instances in UP or WARN.
      */
     get: operations['instances_list'];
     put?: never;
@@ -337,7 +668,7 @@ export interface paths {
     };
     /**
      * Comparison of the instances of an application
-     * @description Per instance over [from, to) (at most 1 year): transactions from instance_stat_1m (raw rows for the live tail and unaligned edges), heap ratio, CPU and pool usage averages from metric*, and outlier flags (p95, error rate, CPU) by leave-one-out (ADR-0010 C-177): for each instance, mean and sample standard deviation of the other instances' values; the instance is an outlier when at least 3 instances have the value and |value - mean| > 2 x max(standard deviation, 0.05 x |mean|) (strict). With 2 or fewer instances with the value the flag is false; null without a value. Also as CSV (format=csv, tz). Instance states: UP with a live agent session, DOWN otherwise (STALE and WARN come with WO-22, ADR-0010 C-160).
+     * @description Per instance over [from, to) (at most 1 year): transactions from instance_stat_1m/1h (raw rows for the live tail and unaligned edges; ADR-0010 C-212 (1)), heap ratio, CPU and pool usage averages from metric*, and outlier flags (p95, error rate, CPU) by leave-one-out (ADR-0010 C-177): for each instance, mean and sample standard deviation of the other instances' values; the instance is an outlier when at least 3 instances have the value and |value - mean| > 2 x max(standard deviation, 0.05 x |mean|) (strict). With 2 or fewer instances with the value the flag is false; null without a value. exclude_instance leaves instances out (no row, not part of the outlier statistics). Also as CSV (format=csv, tz). Instance states (12 §4.2): UP, STALE (60 s without a heartbeat), DOWN (180 s without one, or 5 minutes after the agent's shutdown message) or WARN (up with a WARN condition).
      */
     get: operations['instances_compare'];
     put?: never;
@@ -397,7 +728,7 @@ export interface paths {
     };
     /**
      * SQL statistics
-     * @description Per SQL statement and JDBC target of [from, to) (complete counts, D-12) from sql_stat_raw/1m/1h. Percentiles are estimated from the 15 latency buckets (estimated: true, C-14). sort: sum_ms (default), count, avg_ms, max_ms or errors. db_id filters one target. limit at most 500 (default 100). compare_prev=true adds delta. Also as CSV (format=csv, tz). meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.
+     * @description Per SQL statement and JDBC target of [from, to) (complete counts, D-12) from sql_stat_raw/1m/1h. Percentiles are estimated from the 15 latency buckets (estimated: true, C-14). sort: sum_ms (default), count, avg_ms, max_ms, errors or p95_ms (the estimated p95, ordered like the returned p95_ms values). db_id filters one target. limit at most 500 (default 100). compare_prev=true adds delta. Also as CSV (format=csv, tz). meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.
      */
     get: operations['sql_stats_list'];
     put?: never;
@@ -457,7 +788,7 @@ export interface paths {
     };
     /**
      * XLog points of a range in columns
-     * @description Range at most 24 h. With more points than limit (at most 100,000) the server samples deterministically (A-5): every error, every slow point (elapsed_ms >= meta.slow_threshold_ms) and cityHash64(tx_id) % N = 0, N = ceil(total / limit); meta.shown, meta.total and meta.sampling.rule say so, and the same request returns the same points. Inside the limit errors and slow points come first (sampled points beyond it are dropped evenly over the range); only when errors and slow points alone exceed limit are some of them left out. meta.truncated is true when more points satisfy the sampling rule than limit, so that some of them (sampled points first) were left out: narrow the range or raise limit. 64-bit ids are decimal strings. The body is gzip-compressed for clients that accept it (above 2 KB). meta.outages lists the collection outages of the range (the dashboard's spans; instance state events are recorded from WO-22 on, so before it only server outages appear).
+     * @description Range at most 24 h. With more points than limit (at most 100,000) the server samples deterministically (A-5): every error, every slow point (elapsed_ms >= meta.slow_threshold_ms) and cityHash64(tx_id) % N = 0, N = ceil(total / limit); meta.shown, meta.total and meta.sampling.rule say so, and the same request returns the same points. Inside the limit errors and slow points come first (sampled points beyond it are dropped evenly over the range); only when errors and slow points alone exceed limit are some of them left out. meta.truncated is true when more points satisfy the sampling rule than limit, so that some of them (sampled points first) were left out: narrow the range or raise limit. 64-bit ids are decimal strings. The body is gzip-compressed for clients that accept it (above 2 KB). meta.outages lists the collection outages of the range (the dashboard's spans, from the instance state events and the server's stop and start events).
      */
     get: operations['xlog_get'];
     put?: never;
@@ -609,7 +940,7 @@ export interface paths {
     };
     /**
      * An instance with all its metadata
-     * @description 404 not_found for an unknown instance. Instance state: UP while the server has a live agent session for the instance, DOWN otherwise; STALE and WARN (12 §4.2) are not reported before the instance state machine exists (WO-22, ADR-0010 C-160).
+     * @description 404 not_found for an unknown instance. Instance state (12 §4.2): UP while heartbeats arrive, STALE after 60 s without a heartbeat, DOWN after 180 s without one, 5 minutes after the agent's shutdown message without a reconnect, or when never connected since the server started; WARN while up with a clock offset of 1 s or more, drops in the last 5 minutes, the lowest accepted agent version, a disabled module, the kill switch on, a configuration hash that differs from the application's majority or a leaked-context count in the last 5 minutes. instances_up counts the instances in UP or WARN.
      */
     get: operations['instances_get'];
     put?: never;
@@ -669,7 +1000,7 @@ export interface paths {
     };
     /**
      * Overview of every application
-     * @description At most 500 applications (meta.truncated when there are more) with instance counts, status, the TPS, p95 and error rate of the last 5 minutes, the last hour per minute (app_stat_1m with the raw live tail), live active and batch counts, the last deploy marker and the server summary. Cached for 5 s per filter. Status: UP when every instance has a live agent session, DOWN otherwise (STALE and WARN come with WO-22, ADR-0010 C-160). firing and alerts_firing_total are null until the alert engine exists (WO-25); server.disk_usage_ratio and server.cert_expiry_days until WO-28, server.channel_failures_24h until WO-25.
+     * @description At most 500 applications (meta.truncated when there are more) with instance counts, status, the TPS, p95 and error rate of the last 5 minutes, the last hour per minute (app_stat_1m with the raw live tail), live active and batch counts, the last deploy marker and the server summary. Cached for 5 s per filter. status is the worst state of the application's instances that are not archived (DOWN, then STALE, then WARN, then UP; DOWN without instances), each state as in GET /apps/{appId}/instances (12 §4.2); instances.up counts the instances in UP or WARN, instances.total those that are not archived. firing counts the application's active alerts (FIRING and ACKED) by severity and alerts_firing_total the rows of GET /overview/alerts with the same env (server self alerts included), both from the alert engine now (ADR-0010 C-212 (2)); server.channel_failures_24h counts the deliveries that failed in the last 24 h; server.disk_usage_ratio and server.cert_expiry_days are null until WO-28.
      */
     get: operations['overview_get'];
     put?: never;
@@ -689,7 +1020,7 @@ export interface paths {
     };
     /**
      * Firing and acknowledged alerts of every application
-     * @description The FIRING and ACKED alert events of every application (14 §4.13 event schema), at most 1,000. Always an empty list until the alert engine exists (WO-25); the filters are checked already.
+     * @description The active (FIRING and ACKED) alerts of every application and of the server itself, newest first, at most 1,000 (meta.truncated beyond): the 14 §4.13 event schema subset of the alert engine's current state (ADR-0010 C-212 (2)). event_id is the FIRING event of the current firing (the acknowledgement target and the deep link's alert); duration_s counts from the firing to now. env keeps that environment's application alerts and the server self alerts.
      */
     get: operations['overview_alerts_list'];
     put?: never;
@@ -729,7 +1060,7 @@ export interface paths {
     };
     /**
      * Server summary
-     * @description The data.server block of the overview: current ingest lag (p99, null before the first insert) and live agent sessions. disk_usage_ratio and cert_expiry_days are null until WO-28 records them, channel_failures_24h until the alert engine exists (WO-25).
+     * @description The data.server block of the overview: current ingest lag (p99, null before the first insert), the notification deliveries that failed in the last 24 h (null only while PostgreSQL cannot be read) and live agent sessions. disk_usage_ratio and cert_expiry_days are null until WO-28 records them.
      */
     get: operations['server_health_get'];
     put?: never;
@@ -911,6 +1242,473 @@ export interface components {
       updated_at: string;
       username: Untrusted;
     };
+    AlertAck: {
+      /** Format: date-time */
+      acked_at: string;
+      acked_by: Untrusted;
+      event_id: string;
+      note: Untrusted | null;
+      /** @enum {string} */
+      state: 'ACKED';
+    };
+    AlertAckRequest: {
+      /** @description A note, at most 1 KB (UTF-8) and 512 characters */
+      note?: string;
+    };
+    AlertApp: {
+      /** Format: int32 */
+      id: number;
+      name: Untrusted | null;
+    };
+    AlertDelivery: {
+      /** Format: int32 */
+      attempts: number;
+      channel_id: string;
+      last_error_code: string | null;
+      /** @enum {string} */
+      status: 'pending' | 'sent' | 'failed' | 'dropped';
+    };
+    AlertEvent: {
+      /** Format: date-time */
+      acked_at: string | null;
+      acked_by: Untrusted | null;
+      app: components['schemas']['AlertApp'] | null;
+      deeplink: string;
+      deliveries: components['schemas']['AlertDelivery'][];
+      /** Format: int32 */
+      duration_s: number | null;
+      env: Untrusted | null;
+      event_id: string;
+      /** @enum {string|null} */
+      from_state: 'OK' | 'PENDING' | 'FIRING' | 'ACKED' | 'RESOLVED' | 'NO_DATA' | null;
+      note: Untrusted | null;
+      /**
+       * @description Why the transition happened; null for events stored before the reason was recorded
+       * @enum {string|null}
+       */
+      reason:
+        | 'condition'
+        | 'cleared'
+        | 'escalated'
+        | 'acked'
+        | 'resolved'
+        | 'target_gone'
+        | 'rule_disabled'
+        | 'rule_deleted'
+        | 'no_data'
+        | 'data_returned'
+        | null;
+      rule: components['schemas']['AlertRuleRef'];
+      /** @enum {string|null} */
+      severity: 'warn' | 'critical' | null;
+      /** @enum {string} */
+      state: 'OK' | 'PENDING' | 'FIRING' | 'ACKED' | 'RESOLVED' | 'NO_DATA';
+      target: components['schemas']['AlertTarget'];
+      /** Format: double */
+      threshold: number | null;
+      /** Format: date-time */
+      ts: string;
+      /** Format: double */
+      value: number | null;
+    };
+    AlertEventItem: {
+      /** Format: date-time */
+      acked_at: string | null;
+      acked_by: Untrusted | null;
+      app: components['schemas']['AlertApp'] | null;
+      deeplink: string;
+      /** Format: int64 */
+      duration_s: number;
+      env: Untrusted | null;
+      event_id: string;
+      note: Untrusted | null;
+      rule: components['schemas']['AlertRuleRef'];
+      /** @enum {string} */
+      severity: 'warn' | 'critical';
+      /** @enum {string} */
+      state: 'FIRING' | 'ACKED';
+      target: components['schemas']['AlertTarget'];
+      /** Format: double */
+      threshold: number | null;
+      /** Format: date-time */
+      ts: string;
+      /** Format: double */
+      value: number | null;
+    };
+    AlertMute: {
+      /** Format: date-time */
+      created_at: string | null;
+      created_by: string | null;
+      /** Format: date-time */
+      from: string;
+      mute_id: string;
+      reason: Untrusted | null;
+      target: components['schemas']['AlertMuteTarget'];
+      /** Format: date-time */
+      to: string;
+    };
+    AlertMuteRequest: {
+      /** @description ISO-8601 UTC */
+      from: string;
+      /** @description At most 1 KB (UTF-8) and 512 characters */
+      reason?: string;
+      target?: components['schemas']['AlertMuteTargetRequest'];
+      /** @description ISO-8601 UTC */
+      to: string;
+    };
+    AlertMuteTarget: {
+      /** Format: int32 */
+      app: number | null;
+      env: Untrusted | null;
+      /** Format: int32 */
+      instance: number | null;
+      rule: string | null;
+    };
+    AlertMuteTargetRequest: {
+      /** Format: int32 */
+      app?: number;
+      env?: string;
+      /** Format: int32 */
+      instance?: number;
+      /** Format: uuid */
+      rule?: string;
+    };
+    AlertPreviewFiring: {
+      /** Format: double */
+      peak_value: number;
+      /** Format: date-time */
+      ts_end: string;
+      /** Format: date-time */
+      ts_start: string;
+    };
+    AlertPreviewSeries: {
+      ts: string[];
+      value: (number | null)[];
+    };
+    AlertRule: {
+      active_time: components['schemas']['AlertRuleActiveTime'][];
+      channels: components['schemas']['AlertRuleChannels'];
+      condition: components['schemas']['AlertRuleCondition'];
+      /** Format: date-time */
+      created_at: string;
+      created_by: string | null;
+      enabled: boolean;
+      /** @enum {string} */
+      evaluation_unit: 'app' | 'instance';
+      for: string;
+      /** @enum {string} */
+      kind: 'HTTP' | 'BATCH';
+      message_template: Untrusted | null;
+      /** @description An F-S31 metric: one of the AlertRuleRef.metric values (the closed list there; here a plain string so that the 14 §4.13 contract stays compatible) */
+      metric: string;
+      /** Format: int32 */
+      min_samples: number;
+      mute_schedules: components['schemas']['AlertRuleMuteSchedule'][];
+      name: Untrusted;
+      /** @enum {string} */
+      no_data: 'ignore' | 'warn' | 'critical';
+      recover: components['schemas']['AlertRuleRecover'] | null;
+      renotify_interval: string;
+      rule_id: string;
+      runbook_url: Untrusted | null;
+      target: components['schemas']['AlertRuleTarget'];
+      template_key: string | null;
+      /** Format: int32 */
+      template_version: number | null;
+      /** Format: date-time */
+      updated_at: string;
+      /** Format: int32 */
+      version: number;
+      warmup_grace: string;
+      window: string;
+    };
+    AlertRuleActiveTime: {
+      days: string[];
+      from: string;
+      to: string;
+    };
+    AlertRuleActiveTimeRequest: {
+      /** @description Mon, Tue, ... Sun */
+      days: string[];
+      /** @description HH:mm */
+      from: string;
+      /** @description HH:mm or 24:00 */
+      to: string;
+    };
+    AlertRuleChannels: {
+      critical: string[];
+      warn: string[];
+    };
+    AlertRuleChannelsRequest: {
+      critical?: string[];
+      warn?: string[];
+    };
+    AlertRuleCloneRequest: {
+      /** Format: int32 */
+      app: number;
+      /** @description The environment, or null: every environment */
+      env?: string;
+    };
+    AlertRuleCondition: {
+      /** Format: double */
+      critical: number | null;
+      /** @enum {string} */
+      operator: '>' | '>=' | '<' | '<=' | '==' | '!=';
+      /** Format: double */
+      warn: number | null;
+    };
+    AlertRuleConditionRequest: {
+      /** Format: double */
+      critical?: number;
+      /** @enum {string} */
+      operator: '>' | '>=' | '<' | '<=' | '==' | '!=';
+      /** Format: double */
+      warn?: number;
+    };
+    AlertRuleDefaults: {
+      active_time: components['schemas']['AlertRuleActiveTime'][];
+      channels: components['schemas']['AlertRuleChannels'];
+      condition: components['schemas']['AlertRuleCondition'];
+      enabled: boolean;
+      /** @enum {string} */
+      evaluation_unit: 'app' | 'instance';
+      for: string;
+      /** @enum {string} */
+      kind: 'HTTP' | 'BATCH';
+      message_template: string | null;
+      metric: string;
+      /** Format: int32 */
+      min_samples: number;
+      mute_schedules: components['schemas']['AlertRuleMuteSchedule'][];
+      name: Untrusted;
+      /** @enum {string} */
+      no_data: 'ignore' | 'warn' | 'critical';
+      recover: components['schemas']['AlertRuleRecover'] | null;
+      renotify_interval: string;
+      runbook_url: string | null;
+      target: components['schemas']['AlertRuleTarget'];
+      template_key: string | null;
+      /** Format: int32 */
+      template_version: number | null;
+      warmup_grace: string;
+      window: string;
+    };
+    AlertRuleDetail: {
+      history: components['schemas']['AlertRuleHistoryEntry'][];
+      rule: components['schemas']['AlertRule'];
+      template_diff: components['schemas']['AlertTemplateDiff'] | null;
+    };
+    AlertRuleHistoryEntry: {
+      /** Format: date-time */
+      changed_at: string | null;
+      changed_by: string | null;
+      /** @description The user's name; null for the server or a deleted user */
+      changed_by_name: Untrusted | null;
+      /** Format: int32 */
+      version: number;
+    };
+    AlertRuleMuteSchedule: {
+      cron: string;
+      duration: string;
+      reason: Untrusted | null;
+    };
+    AlertRuleMuteScheduleRequest: {
+      /** @description 5-field cron */
+      cron: string;
+      /** @description Duration such as 2h */
+      duration: string;
+      reason?: string;
+    };
+    AlertRulePreview: {
+      /** Format: int32 */
+      count: number;
+      firings: components['schemas']['AlertPreviewFiring'][];
+      /** Format: int64 */
+      max_duration_s: number;
+      series: components['schemas']['AlertPreviewSeries'];
+      /** Format: int64 */
+      step_s: number;
+    };
+    AlertRulePreviewRequest: {
+      /**
+       * Format: int32
+       * @description Days back from now (default 7)
+       */
+      days?: number;
+      /** @description The rule (need not be saved) */
+      rule: components['schemas']['AlertRuleRequest'];
+    };
+    AlertRuleRecover: {
+      for: string | null;
+      /** Format: double */
+      threshold: number | null;
+    };
+    AlertRuleRecoverRequest: {
+      /** @description Duration such as 2m; null: the condition false for for/2 */
+      for?: string;
+      /** Format: double */
+      threshold?: number;
+    };
+    AlertRuleRef: {
+      id: string;
+      /**
+       * @description The rule's metric (F-S31 wire name, as AlertRule.metric)
+       * @enum {string}
+       */
+      metric:
+        | 'response_time_p50'
+        | 'response_time_p95'
+        | 'response_time_p99'
+        | 'tps'
+        | 'error_rate'
+        | 'apdex'
+        | 'active_transactions'
+        | 'active_ratio_to_max_threads'
+        | 'jvm_heap_used_ratio'
+        | 'jvm_old_gen_after_gc_ratio'
+        | 'jvm_gc_pause_ratio'
+        | 'jvm_threads_live'
+        | 'tomcat_threads_usage_ratio'
+        | 'jdbc_pool_waiting'
+        | 'jdbc_pool_usage_ratio'
+        | 'ext_call_p95'
+        | 'ext_call_error_ratio'
+        | 'ext_call_timeout_ratio'
+        | 'batch_elapsed_seconds'
+        | 'system_cpu_ratio'
+        | 'system_memory_ratio'
+        | 'system_disk_usage_ratio'
+        | 'argos_agent_dropped_total'
+        | 'argos_server_dropped_total'
+        | 'argos_server_ingest_lag_seconds'
+        | 'argos_server_disk_usage_ratio'
+        | 'argos_notification_failures_total'
+        | 'argos_server_tls_cert_expiry_days'
+        | 'agent_token_expiry_days'
+        | 'instance_state'
+        | 'error_group_new';
+      name: Untrusted;
+      /**
+       * @description Unit of value and threshold: ratio is 0..1 (shown as a percentage), score is Apdex 0..1, state 1 = DOWN
+       * @enum {string|null}
+       */
+      unit: 'ms' | 'seconds' | 'days' | 'ratio' | 'score' | 'count' | 'per_second' | 'state' | null;
+    };
+    AlertRuleRequest: {
+      active_time?: components['schemas']['AlertRuleActiveTimeRequest'][];
+      channels?: components['schemas']['AlertRuleChannelsRequest'];
+      condition: components['schemas']['AlertRuleConditionRequest'];
+      enabled?: boolean;
+      /** @enum {string} */
+      evaluation_unit?: 'app' | 'instance';
+      for?: string;
+      /** @enum {string} */
+      kind?: 'HTTP' | 'BATCH';
+      message_template?: string;
+      /** @description An F-S31 metric */
+      metric: string;
+      /** Format: int32 */
+      min_samples?: number;
+      mute_schedules?: components['schemas']['AlertRuleMuteScheduleRequest'][];
+      name: string;
+      /** @enum {string} */
+      no_data?: 'ignore' | 'warn' | 'critical';
+      recover?: components['schemas']['AlertRuleRecoverRequest'];
+      renotify_interval?: string;
+      runbook_url?: string;
+      target: components['schemas']['AlertRuleTargetRequest'];
+      template_key?: string;
+      /** Format: int32 */
+      template_version?: number;
+      warmup_grace?: string;
+      window?: string;
+    };
+    AlertRuleStats: {
+      /** Format: double */
+      avg_duration_s: number | null;
+      /** Format: double */
+      avg_time_to_ack_s: number | null;
+      /** Format: double */
+      avg_time_to_resolve_s: number | null;
+      /** Format: int64 */
+      firings: number;
+      name: Untrusted;
+      rule_id: string;
+    };
+    AlertRuleTarget: {
+      /** Format: int32 */
+      app_id: number | null;
+      env: Untrusted | null;
+      ids: string[];
+      /** @enum {string} */
+      type: 'app' | 'instance' | 'service' | 'ext_host' | 'server';
+    };
+    AlertRuleTargetRequest: {
+      /**
+       * Format: int32
+       * @description The application; null only for server rules
+       */
+      app_id?: number;
+      /** @description The environment, or null for every environment of the application */
+      env?: string;
+      /** @description Instance ids, service or host keys (decimal); empty: all, at most 100 */
+      ids?: string[];
+      /** @enum {string} */
+      type: 'app' | 'instance' | 'service' | 'ext_host' | 'server';
+    };
+    AlertTarget: {
+      id: string | null;
+      name: Untrusted | null;
+      /** @enum {string} */
+      type: 'app' | 'instance' | 'service' | 'ext_host' | 'server';
+    };
+    AlertTemplate: {
+      /** @enum {string} */
+      applies_when: 'always' | 'batch' | 'server';
+      /** @description The rules the template creates (two for a template of two metrics) */
+      defaults: components['schemas']['AlertTemplatePart'][];
+      key: string;
+      name: string;
+      /** Format: int32 */
+      version: number;
+    };
+    AlertTemplateDiff: {
+      changes: components['schemas']['AlertTemplateDiffChange'][];
+      /** Format: int32 */
+      rule_version: number;
+      template_key: string;
+      /** Format: int32 */
+      template_version: number;
+    };
+    AlertTemplateDiffChange: {
+      field: string;
+      /** @description The rule's value (JSON) */
+      rule: unknown;
+      /** @description The template's value (JSON) */
+      template: unknown;
+    };
+    AlertTemplatePart: {
+      rule: components['schemas']['AlertRuleDefaults'];
+      /** @enum {string} */
+      scope: 'app' | 'server';
+    };
+    AlertTemplateSkipped: {
+      key: string;
+      /** @enum {string} */
+      reason: 'exists' | 'server_scope' | 'no_batch_transactions' | 'unknown_template';
+    };
+    AlertTemplatesApplied: {
+      created: string[];
+      skipped: components['schemas']['AlertTemplateSkipped'][];
+    };
+    AlertTemplatesApplyRequest: {
+      /** Format: int32 */
+      app: number;
+      /** @description The environment; default: the application's */
+      env?: string;
+      /** @description Template keys; default: every application template */
+      keys?: string[];
+    };
     App: {
       /** Format: int32 */
       apdex_t_ms: number;
@@ -924,6 +1722,8 @@ export interface components {
       instances_total: number;
       /** Format: int32 */
       instances_up: number;
+      /** @description Transaction kinds (HTTP, BATCH, MESSAGE) recorded in the last 7 days, sorted. Only GET /apps/{appId} fills it; null in the list and when ClickHouse cannot answer (unknown, not none). The UI disables the batch kind filter for an application whose kinds lack BATCH (ADR-0010 C-191 (2)). */
+      kinds: string[] | null;
       /** Format: date-time */
       last_seen_at: string | null;
       name: Untrusted;
@@ -939,6 +1739,29 @@ export interface components {
       app_id: number;
       env: Untrusted;
       name: Untrusted;
+    };
+    ChannelView: {
+      allow_http: boolean;
+      channel_id: string;
+      /** Format: int32 */
+      consecutive_failures: number;
+      /** Format: date-time */
+      created_at: string;
+      enabled: boolean;
+      /** Format: date-time */
+      last_failure_at: string | null;
+      /** Format: date-time */
+      last_success_at: string | null;
+      name: Untrusted;
+      signing_enabled: boolean;
+      /** @enum {string} */
+      status: 'ok' | 'failing';
+      /** @description The URL (scheme, host and port, rest ****) or masked recipients */
+      target_masked: string;
+      /** @enum {string} */
+      type: 'email' | 'slack' | 'webhook';
+      /** Format: date-time */
+      updated_at: string;
     };
     ClockSkew: {
       /** Format: int32 */
@@ -958,6 +1781,17 @@ export interface components {
       server_drops: components['schemas']['HealthSeries'];
       server_drops_quota: components['schemas']['HealthSeries'];
     };
+    CreateChannelRequest: {
+      /** @description Allow a plain http URL; needs argos.alert.webhook.allow-http=true on the server */
+      allow_http?: boolean;
+      name: string;
+      /** @description Webhook only: a signing secret of 32 to 256 printable characters; generated (and returned once) when absent */
+      secret?: string;
+      /** @description The webhook or Slack URL (https; validated, SEC-51), or the e-mail recipients separated by commas */
+      target: string;
+      /** @enum {string} */
+      type: 'email' | 'slack' | 'webhook';
+    };
     CreateUserRequest: {
       must_change_password?: boolean;
       password?: string;
@@ -968,6 +1802,11 @@ export interface components {
       initial_password?: string;
       user: components['schemas']['AdminUserView'];
     };
+    CreatedChannelView: {
+      channel: components['schemas']['ChannelView'];
+      /** @description Webhook: the generated signing secret, shown once (null when the request gave one, and for other types) */
+      signing_key: string | null;
+    };
     CsrfResponse: {
       csrf_token: string;
     };
@@ -975,7 +1814,7 @@ export interface components {
       baseline?: components['schemas']['DashboardBaseline'];
       collection: components['schemas']['DashboardCollection'];
       events: components['schemas']['Event'][];
-      firing: unknown[] | null;
+      firing: components['schemas']['AlertEventItem'][];
       instances: components['schemas']['DashboardInstance'][];
       outages: components['schemas']['Outage'][];
       series: components['schemas']['DashboardSeries'];
@@ -1010,11 +1849,17 @@ export interface components {
       server_drops_quota: number | null;
     };
     DashboardDelta: {
+      /** Format: double */
+      active: number | null;
+      /** Format: double */
+      avg_ms: number | null;
       basis: string;
       /** Format: double */
       error_rate: number | null;
       /** Format: double */
       p95_ms: number | null;
+      /** Format: double */
+      p99_ms: number | null;
       /** Format: double */
       tps: number | null;
     };
@@ -1035,6 +1880,7 @@ export interface components {
       state: string;
       /** Format: double */
       tps: number | null;
+      warn_reasons: string[];
     };
     DashboardSeries: {
       active: (number | null)[];
@@ -1052,6 +1898,7 @@ export interface components {
       pool_usage_ratio: {
         [key: string]: (number | null)[];
       };
+      system_cpu: (number | null)[];
       tomcat_busy_ratio: (number | null)[];
       tps: (number | null)[];
       ts: string[];
@@ -1084,8 +1931,40 @@ export interface components {
       data: components['schemas']['AdminUserView'];
       meta: components['schemas']['QueryMeta'];
     };
+    EnvelopeAlertAck: {
+      data: components['schemas']['AlertAck'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeAlertMute: {
+      data: components['schemas']['AlertMute'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeAlertRule: {
+      data: components['schemas']['AlertRule'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeAlertRuleDetail: {
+      data: components['schemas']['AlertRuleDetail'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeAlertRulePreview: {
+      data: components['schemas']['AlertRulePreview'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeAlertTemplatesApplied: {
+      data: components['schemas']['AlertTemplatesApplied'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeChannelView: {
+      data: components['schemas']['ChannelView'];
+      meta: components['schemas']['QueryMeta'];
+    };
     EnvelopeCreateUserResponse: {
       data: components['schemas']['CreateUserResponse'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeCreatedChannelView: {
+      data: components['schemas']['CreatedChannelView'];
       meta: components['schemas']['QueryMeta'];
     };
     EnvelopeCsrfResponse: {
@@ -1094,6 +1973,26 @@ export interface components {
     };
     EnvelopeListAdminUserView: {
       data: components['schemas']['AdminUserView'][];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeListAlertMute: {
+      data: components['schemas']['AlertMute'][];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeListAlertRule: {
+      data: components['schemas']['AlertRule'][];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeListAlertRuleStats: {
+      data: components['schemas']['AlertRuleStats'][];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeListAlertTemplate: {
+      data: components['schemas']['AlertTemplate'][];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeListChannelView: {
+      data: components['schemas']['ChannelView'][];
       meta: components['schemas']['QueryMeta'];
     };
     EnvelopeLoginResponse: {
@@ -1108,6 +2007,10 @@ export interface components {
       data: components['schemas']['RefreshResponse'];
       meta: components['schemas']['QueryMeta'];
     };
+    EnvelopeRotatedKeyView: {
+      data: components['schemas']['RotatedKeyView'];
+      meta: components['schemas']['QueryMeta'];
+    };
     EnvelopeSetupAdminResponse: {
       data: components['schemas']['SetupAdminResponse'];
       meta: components['schemas']['QueryMeta'];
@@ -1116,9 +2019,14 @@ export interface components {
       data: components['schemas']['SetupStatusResponse'];
       meta: components['schemas']['QueryMeta'];
     };
+    EnvelopeTestResultView: {
+      data: components['schemas']['TestResultView'];
+      meta: components['schemas']['QueryMeta'];
+    };
     ErrorGroup: {
       /** Format: int64 */
       count: number;
+      delta?: components['schemas']['StatsDelta'];
       error_class: Untrusted | null;
       /** Format: date-time */
       first_seen: string;
@@ -1198,6 +2106,12 @@ export interface components {
       sum_ms: number;
       /** Format: int64 */
       timeouts: number;
+    };
+    FiringCounts: {
+      /** Format: int32 */
+      critical: number;
+      /** Format: int32 */
+      warn: number;
     };
     HealthSeries: {
       ts: string[];
@@ -1361,7 +2275,7 @@ export interface components {
     };
     Overview: {
       /** Format: int64 */
-      alerts_firing_total: number | null;
+      alerts_firing_total: number;
       apps: components['schemas']['OverviewApp'][];
       server: components['schemas']['ServerHealth'];
     };
@@ -1375,7 +2289,7 @@ export interface components {
       env: Untrusted;
       /** Format: double */
       error_rate: number | null;
-      firing: unknown;
+      firing: components['schemas']['FiringCounts'];
       group: Untrusted | null;
       instances: components['schemas']['OverviewInstances'];
       last_deploy: components['schemas']['OverviewDeploy'] | null;
@@ -1508,6 +2422,14 @@ export interface components {
       data: components['schemas']['InstanceMetrics'];
       meta: components['schemas']['QueryMeta'];
     };
+    ResponseEnvelopeListAlertEvent: {
+      data: components['schemas']['AlertEvent'][];
+      meta: components['schemas']['QueryMeta'];
+    };
+    ResponseEnvelopeListAlertEventItem: {
+      data: components['schemas']['AlertEventItem'][];
+      meta: components['schemas']['QueryMeta'];
+    };
     ResponseEnvelopeListApp: {
       data: components['schemas']['App'][];
       meta: components['schemas']['QueryMeta'];
@@ -1534,10 +2456,6 @@ export interface components {
     };
     ResponseEnvelopeListMetricName: {
       data: components['schemas']['MetricName'][];
-      meta: components['schemas']['QueryMeta'];
-    };
-    ResponseEnvelopeListObject: {
-      data: unknown[];
       meta: components['schemas']['QueryMeta'];
     };
     ResponseEnvelopeListServiceStats: {
@@ -1587,6 +2505,14 @@ export interface components {
     ResponseEnvelopeXlogSummary: {
       data: components['schemas']['XlogSummary'];
       meta: components['schemas']['QueryMeta'];
+    };
+    RotatedKeyView: {
+      /**
+       * Format: date-time
+       * @description The previous key signs too (a second v1= value) until this time
+       */
+      previous_valid_until: string;
+      signing_key: string;
     };
     SearchMatch: {
       label: Untrusted;
@@ -1751,11 +2677,13 @@ export interface components {
     };
     StatsSeries: {
       avg_ms: (number | null)[] | null;
+      connect_failures?: (number | null)[];
       count: (number | null)[];
       error_rate: (number | null)[] | null;
       errors: (number | null)[] | null;
       p95_ms: (number | null)[] | null;
       p99_ms?: (number | null)[];
+      timeouts?: (number | null)[];
       ts: string[];
     };
     StorageDisk: {
@@ -1816,6 +2744,18 @@ export interface components {
       bytes: number | null;
       /** Format: int64 */
       segments: number | null;
+    };
+    TestResultView: {
+      delivered: boolean;
+      /** Format: int64 */
+      duration_ms: number;
+      /** @description Error code of a failed send (e.g. timeout, tls_failed, redirect) */
+      error: string | null;
+      /**
+       * Format: int32
+       * @description HTTP status, or the SMTP reply code; null without an answer
+       */
+      status_code: number | null;
     };
     Trace: {
       critical_path: string[];
@@ -2137,6 +3077,13 @@ export interface components {
       /** Format: int64 */
       total_ms: number;
     };
+    UpdateChannelRequest: {
+      allow_http?: boolean;
+      enabled?: boolean;
+      name?: string;
+      /** @description A new URL or recipient list (re-entered in full) */
+      target?: string;
+    };
     UserView: {
       id: string;
       permissions: 'pii.view'[];
@@ -2391,6 +3338,545 @@ export interface operations {
       };
     };
   };
+  channels_list: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeListChannelView'];
+        };
+      };
+    };
+  };
+  channels_create: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['CreateChannelRequest'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeCreatedChannelView'];
+        };
+      };
+    };
+  };
+  channels_update: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['UpdateChannelRequest'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeChannelView'];
+        };
+      };
+    };
+  };
+  channels_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  channels_rotate: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeRotatedKeyView'];
+        };
+      };
+    };
+  };
+  channels_test: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeTestResultView'];
+        };
+      };
+    };
+  };
+  alerts_events_list: {
+    parameters: {
+      query: {
+        from: string;
+        to: string;
+        /** @description Application id */
+        app?: number;
+        env?: string;
+        /** @description warn or critical */
+        severity?: string;
+        /** @description OK, PENDING, FIRING, ACKED, RESOLVED or NO_DATA */
+        state?: string;
+        /** @description Rule id */
+        rule?: string;
+        /** @description failed: only events with a failed delivery */
+        delivery?: string;
+        cursor?: string;
+        /** @description Rows of a page, at most 500 (default 100) */
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseEnvelopeListAlertEvent'];
+        };
+      };
+    };
+  };
+  alerts_events_ack: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        eventId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['AlertAckRequest'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeAlertAck'];
+        };
+      };
+    };
+  };
+  alerts_mutes_list: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeListAlertMute'];
+        };
+      };
+    };
+  };
+  alerts_mutes_create: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['AlertMuteRequest'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeAlertMute'];
+        };
+      };
+    };
+  };
+  alerts_mutes_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        muteId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  alerts_rules_list: {
+    parameters: {
+      query?: {
+        /** @description Application id */
+        app?: number;
+        /** @description Environment */
+        env?: string;
+        /** @description Only enabled (true) or only disabled (false) rules */
+        enabled?: boolean;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeListAlertRule'];
+        };
+      };
+    };
+  };
+  alerts_rules_create: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AlertRuleRequest'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeAlertRule'];
+        };
+      };
+    };
+  };
+  alerts_rules_preview: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AlertRulePreviewRequest'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeAlertRulePreview'];
+        };
+      };
+    };
+  };
+  alerts_rules_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        ruleId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeAlertRuleDetail'];
+        };
+      };
+    };
+  };
+  alerts_rules_update: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        ruleId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AlertRuleRequest'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeAlertRule'];
+        };
+      };
+    };
+  };
+  alerts_rules_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        ruleId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  alerts_rules_clone: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        ruleId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['AlertRuleCloneRequest'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeAlertRule'];
+        };
+      };
+    };
+  };
+  alerts_rules_disable: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        ruleId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  alerts_rules_enable: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        ruleId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  alerts_stats_get: {
+    parameters: {
+      query?: {
+        /** @description 7 (default) or 30 */
+        days?: number;
+        /** @description Application id */
+        app?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeListAlertRuleStats'];
+        };
+      };
+    };
+  };
+  alerts_templates_list: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeListAlertTemplate'];
+        };
+      };
+    };
+  };
+  alerts_templates_apply: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['AlertTemplatesApplyRequest'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeAlertTemplatesApplied'];
+        };
+      };
+    };
+  };
   apps_list: {
     parameters: {
       query?: {
@@ -2506,6 +3992,8 @@ export interface operations {
         baseline?: string;
         /** @description Instance ids, at most 100 */
         instance?: number[];
+        /** @description Instance ids to leave out (ADR-0010 C-212 (1)), at most 100. Not together with the same id in instance. */
+        exclude_instance?: number[];
       };
       header?: never;
       path: {
@@ -2536,6 +4024,7 @@ export interface operations {
         /** @description field:asc|desc */
         sort?: string;
         limit?: number;
+        compare_prev?: boolean;
         format?: 'json' | 'csv';
         tz?: string;
       };
@@ -2713,6 +4202,8 @@ export interface operations {
         format?: 'json' | 'csv';
         /** @description IANA time zone of the CSV times */
         tz?: string;
+        /** @description Instance ids to leave out (ADR-0010 C-212 (1)), at most 100. */
+        exclude_instance?: number[];
       };
       header?: never;
       path: {
@@ -3222,7 +4713,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ResponseEnvelopeListObject'];
+          'application/json': components['schemas']['ResponseEnvelopeListAlertEventItem'];
         };
       };
     };

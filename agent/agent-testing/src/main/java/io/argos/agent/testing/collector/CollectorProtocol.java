@@ -45,6 +45,16 @@ public interface CollectorProtocol {
   /** Counter deltas of the stat batches, summed per name. */
   Map<String, Long> counters(List<ReceivedBatch> batches);
 
+  /** External-call statistics of the stat batches, summed per host and kind (WO-16). */
+  List<Collected.ExtStat> extStats(List<ReceivedBatch> batches, Map<Long, String> dictionary);
+
+  /** Every written stat batch as one window, in arrival order (WO-16). */
+  List<Collected.StatWindow> statWindows(List<ReceivedBatch> batches, Map<Long, String> dictionary);
+
+  /** Every received active snapshot, in arrival order (WO-16). */
+  List<Collected.ActiveSnapshot> activeSnapshots(
+      List<ReceivedBatch> batches, Map<Long, String> dictionary);
+
   /**
    * False while a transaction record is still waiting for data that travels on its own: the steps
    * of a sampled transaction (a separate profile batch, 11 §3) or a dictionary text (11 §7: up to

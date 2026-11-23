@@ -518,8 +518,7 @@ class RuntimeManagementIT {
     byte[] bytes = Files.readAllBytes(IntegrationLogs.logFile());
     String log = new String(bytes, StandardCharsets.UTF_8);
     // This class's part of the shared log: the bytes written since the class started.
-    int start = (int) Math.min(logStart, bytes.length);
-    String run = new String(bytes, start, bytes.length - start, StandardCharsets.UTF_8);
+    String run = IntegrationLogs.since(logStart);
     assertThat(run)
         .contains("Startup phase CONFIG step config-warnings completed")
         .contains("Startup phase CONFIG step credential-policy completed")

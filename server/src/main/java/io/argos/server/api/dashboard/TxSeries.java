@@ -7,6 +7,7 @@ import io.argos.server.storage.query.QueryParams;
 import io.argos.server.storage.query.QueryRow;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Component;
 
@@ -68,12 +69,27 @@ public class TxSeries {
   /** Reads the series of {@code plan}; {@code instances} empty for the whole application. */
   public Result read(
       int appId, QueryLimits.TxKind kind, Collection<Integer> instances, SourcePlan plan) {
+    return read(appId, kind, instances, List.of(), plan);
+  }
+
+  /**
+   * Reads the series of {@code plan}: the whole application ({@code app_stat_*}) when both {@code
+   * instances} and {@code excluded} are empty, else the instance rollups ({@code instance_stat_*},
+   * a plan of {@code QuerySources#instanceTransactions()}) with the {@code instances} (all when
+   * empty) minus the {@code excluded} ones.
+   */
+  public Result read(
+      int appId,
+      QueryLimits.TxKind kind,
+      Collection<Integer> instances,
+      Collection<Integer> excluded,
+      SourcePlan plan) {
     QueryParams params = QueryParams.create().uint32("app", appId);
     TimeQueries.kinds(params, kind);
     String fragments = "dashboard/tx_series";
-    if (!instances.isEmpty()) {
+    if (!instances.isEmpty() || !excluded.isEmpty()) {
       fragments = "dashboard/tx_series_inst";
-      params.int64Array("instances", instances.stream().mapToLong(Integer::longValue).toArray());
+      TimeQueries.instanceFilter(params, instances, excluded);
     }
     Map<Integer, Aggregate> buckets = new HashMap<>();
     Aggregate total = Aggregate.EMPTY;

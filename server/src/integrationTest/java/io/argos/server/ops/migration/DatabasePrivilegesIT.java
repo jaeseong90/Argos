@@ -256,6 +256,7 @@ class DatabasePrivilegesIT {
     assertThat(
             MigrationApps.chCount(
                 env, "SELECT count() FROM system.tables WHERE database = 'argos'"))
-        .isEqualTo(29);
+        .as("V001: 5 raw tables, 12 rollups, 12 views; V003: instance_stat_1h and its view")
+        .isEqualTo(31);
   }
 }

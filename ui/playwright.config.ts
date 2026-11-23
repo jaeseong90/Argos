@@ -3,8 +3,10 @@
 // Playwright E2E suite of the UI (docs/18 §13, docs/15 §15): `corepack pnpm e2e`. Chromium only
 // (browser install: `corepack pnpm playwright:install`). Projects:
 //   preview         the WO-04 XLog PoC and the global-hook positive controls against `vite preview`
-//                   serving dist/ with the preview CSP of vite.config.ts (unchanged since WO-04),
-//                   plus the positive controls of the stack-mode hooks (stack-hooks.spec.ts)
+//                   serving the perf build in build/perf-dist/ (the PoC route exists only there,
+//                   ADR-0010 C-203; a production build into dist/ cannot replace it mid-run) with
+//                   the preview CSP of vite.config.ts (unchanged since WO-04), plus the positive
+//                   controls of the stack-mode hooks (stack-hooks.spec.ts)
 //   stack-setup     starts and seeds the E2E stack once (e2e/stack/: PostgreSQL, ClickHouse and the
 //                   server boot jar of this tree in Docker; generator data, users, agent traffic,
 //                   seed manifest), or reuses ARGOS_E2E_STACK_URL; its teardown is stack-teardown
@@ -22,12 +24,18 @@ import { defineConfig, type ReporterDescription } from '@playwright/test';
 
 import { projectSelection } from './e2e/fixtures/projects';
 import { uiTarget } from './e2e/fixtures/uiServer';
+import { PERF_DIST } from './perf/lib/pocBuild';
 
 // Read by perf/initial-load.spec.ts: it declares its test only under this configuration (the
 // frame-time configuration also collects perf/*.spec.ts).
 process.env.ARGOS_E2E_CONFIG = '1';
 
 const target = uiTarget(process.env);
+// The preview project serves the perf build (`vite build --mode perf --outDir build/perf-dist`).
+const webServer =
+  target.webServer === undefined || Array.isArray(target.webServer)
+    ? target.webServer
+    : { ...target.webServer, command: `${target.webServer.command} --outDir ${PERF_DIST}` };
 const selection = projectSelection(process.argv, process.env);
 const preview = selection === null || selection.includes('preview');
 const initialLoad = selection?.includes('initial-load') === true;
@@ -54,8 +62,8 @@ export default defineConfig({
   // docs/18 §13, §15: no retries; traces only for failures.
   retries: 0,
   forbidOnly: ci,
-  // Refuses a missing or stale dist/ when the preview project serves it (`playwright test` run
-  // directly does not build). The stack refuses a stale boot jar itself (e2e/stack/jars.ts).
+  // Refuses a missing, stale or production build in build/perf-dist/ when the preview project
+  // serves it (`playwright test` run directly does not build). The stack refuses a stale boot jar itself (e2e/stack/jars.ts).
   ...(preview ? { globalSetup: './e2e/fixtures/globalSetup.ts' } : {}),
   timeout: 90_000,
   expect: {
@@ -117,5 +125,5 @@ export default defineConfig({
         ]
       : []),
   ],
-  ...(preview ? { webServer: target.webServer } : {}),
+  ...(preview ? { webServer } : {}),
 });

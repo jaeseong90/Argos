@@ -4,7 +4,8 @@
 // `<ns>:<path>`) in src/locales/<lng>/<ns>.json instead of repeating English or Korean strings, so a
 // wording change in the locale files does not break the suite and a missing key fails loudly.
 // The files are read with fs (no bundler JSON import), interpolation `{{name}}` is filled from
-// `values`.
+// `values`; `{{name, number}}` and `{{name, number(maximumFractionDigits: N)}}` (i18next's Intl
+// number formatter) format the value with Intl.NumberFormat of the language, as the UI does.
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,7 +47,19 @@ export function t(
   if (typeof node !== 'string') {
     throw new Error(`i18n: ${language} has no string for ${key}`);
   }
-  return node.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, name: string) => values[name] ?? `{{${name}}}`);
+  return node
+    .replace(/\{\{\s*(\w+)\s*\}\}/g, (_, name: string) => values[name] ?? `{{${name}}}`)
+    .replace(
+      /\{\{\s*(\w+)\s*,\s*number(?:\(\s*maximumFractionDigits:\s*(\d+)\s*\))?\s*\}\}/g,
+      (match: string, name: string, digits: string | undefined) => {
+        const value = values[name];
+        if (value === undefined) {
+          return match;
+        }
+        const options = digits === undefined ? {} : { maximumFractionDigits: Number(digits) };
+        return new Intl.NumberFormat(language, options).format(Number(value));
+      },
+    );
 }
 
 /** Whether `key` exists in `language`. */

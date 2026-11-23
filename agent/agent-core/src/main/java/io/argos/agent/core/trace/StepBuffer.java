@@ -92,6 +92,12 @@ public final class StepBuffer {
   private static final int CLOSING = 2;
   private static final int CLOSED = 3;
 
+  /** The error flag in a slot's error byte; the bits above it hold the failure kind (WO-14). */
+  private static final int ERROR_BIT = 1;
+
+  private static final int FAILURE_SHIFT = 1;
+  private static final int FAILURE_MASK = 0x7;
+
   private static final int SEALED = 1 << 30;
   private static final byte NO_THREAD = -1;
   private static final byte OTHER_THREAD = -2;
@@ -175,6 +181,16 @@ public final class StepBuffer {
 
   /** Closes a step opened by {@link #start}. Unknown or already closed handles are ignored. */
   public void end(int seq, int stepStatus, boolean failed, long rowCount, long endNanos) {
+    end(seq, stepStatus, failed, rowCount, endNanos, 0);
+  }
+
+  /**
+   * {@link #end(int, int, boolean, long, long)} of an HTTP step with its {@code FailureKind} (0 to
+   * 7, WO-14), kept in the bits above the error flag of the same byte: no extra memory per slot. A
+   * summary handle keeps only the error flag.
+   */
+  public void end(
+      int seq, int stepStatus, boolean failed, long rowCount, long endNanos, int failureKind) {
     if (seq < 0) {
       return;
     }
@@ -192,7 +208,8 @@ public final class StepBuffer {
     }
     chunk.elapsed[i] = Math.max(0L, endNanos - baseNanos - chunk.startOffset[i]);
     chunk.status[i] = stepStatus;
-    chunk.error[i] = failed ? (byte) 1 : (byte) 0;
+    chunk.error[i] =
+        (byte) ((failed ? ERROR_BIT : 0) | ((failureKind & FAILURE_MASK) << FAILURE_SHIFT));
     if (rowCount != 0) {
       chunk.rows().addAndGet(i, rowCount);
     }
@@ -631,7 +648,16 @@ public final class StepBuffer {
 
   public boolean error(int seq) {
     Chunk chunk = readChunk(seq);
-    return chunk != null && chunk.error[seq - chunk.start] != 0;
+    return chunk != null && (chunk.error[seq - chunk.start] & ERROR_BIT) != 0;
+  }
+
+  /**
+   * The {@code FailureKind} of an HTTP step ({@link #end(int, int, boolean, long, long, int)}, 11
+   * {@code ProfileStep.failure}); 0 for other steps and steps without failure.
+   */
+  public int failure(int seq) {
+    Chunk chunk = readChunk(seq);
+    return chunk == null ? 0 : (chunk.error[seq - chunk.start] >> FAILURE_SHIFT) & FAILURE_MASK;
   }
 
   public long rows(int seq) {

@@ -1,0 +1,547 @@
+{
+  "common": {
+    "cancel": "Cancel",
+    "none": "None",
+    "serverTarget": "Argos server",
+    "reason": {
+      "condition": "condition met",
+      "cleared": "condition cleared",
+      "escalated": "escalated",
+      "acked": "acknowledged",
+      "resolved": "recovered",
+      "targetGone": "target gone",
+      "ruleDisabled": "rule disabled",
+      "ruleDeleted": "rule deleted",
+      "noData": "no data",
+      "dataReturned": "data returned"
+    },
+    "targetType": {
+      "app": "Application",
+      "instance": "Instance",
+      "service": "Service",
+      "extHost": "External host",
+      "server": "Server"
+    },
+    "delivery": {
+      "pending": "pending",
+      "sent": "sent",
+      "failed": "failed",
+      "dropped": "dropped"
+    },
+    "channelType": {
+      "webhook": "Webhook",
+      "slack": "Slack",
+      "email": "E-mail"
+    },
+    "deliveryError": {
+      "connectTimeout": "connection timed out",
+      "connectFailed": "connection failed",
+      "tlsFailed": "TLS handshake failed",
+      "timeout": "timed out",
+      "ioError": "I/O error",
+      "protocolError": "protocol error",
+      "redirect": "redirect refused",
+      "httpStatus": "error status",
+      "starttlsUnavailable": "STARTTLS unavailable",
+      "authFailed": "authentication failed",
+      "smtpRejected": "rejected by the mail server",
+      "recipientNotAllowed": "recipient not allowed",
+      "smtpNotConfigured": "SMTP not configured",
+      "destinationBlocked": "destination blocked",
+      "secretUnavailable": "secret unavailable (no master key)",
+      "noSigningKey": "no signing key",
+      "other": "failed ({{code}})"
+    }
+  },
+  "history": {
+    "title": "Alert history",
+    "tabs": "Alert history views",
+    "tab": {
+      "history": "Events",
+      "stats": "Statistics"
+    },
+    "column": {
+      "ts": "Time",
+      "app": "Application (env)",
+      "target": "Target",
+      "rule": "Rule",
+      "severity": "Severity",
+      "transition": "Transition",
+      "value": "Value / threshold",
+      "duration": "Duration",
+      "deliveries": "Deliveries",
+      "ackedBy": "Acknowledged by",
+      "actions": "Actions"
+    },
+    "transitionTo": "to",
+    "reasonTitle": "Reason of the transition",
+    "noDeliveries": "No notification",
+    "attempts_one": "{{count}} attempt",
+    "attempts_other": "{{count}} attempts",
+    "action": {
+      "deeplink": "Open",
+      "editRule": "Edit rule",
+      "ack": "Acknowledge",
+      "mute": "Mute target"
+    },
+    "ack": {
+      "title": "Acknowledge alert",
+      "submit": "Acknowledge",
+      "note": "Note (optional)",
+      "count": "{{n}} / {{max}} characters",
+      "tooLong": "The note is too long: at most 512 characters and 1 KB.",
+      "conflict": "This alert is no longer firing: someone acknowledged it or it recovered. The list has been refreshed."
+    },
+    "pinned": {
+      "titleAll": "Active alerts in all applications",
+      "titleApp": "Active alerts in this application",
+      "critical_one": "{{count}} critical",
+      "critical_other": "{{count}} critical",
+      "warn_one": "{{count}} warning",
+      "warn_other": "{{count}} warnings",
+      "loading": "Loading active alerts…",
+      "none": "No alert is firing or acknowledged now.",
+      "since": "since {{time}}",
+      "ackedBy": "acknowledged by",
+      "truncated": "Only the newest 1,000 active alerts are listed."
+    },
+    "channelStatus": {
+      "title": "Channel status",
+      "loading": "Loading channels…",
+      "none": "No notification channel. Add one under Alert channels.",
+      "lastSuccess": "last success {{time}}",
+      "lastFailure": "last failure {{time}}",
+      "failures_one": "{{count}} consecutive failure",
+      "failures_other": "{{count}} consecutive failures"
+    },
+    "filter": {
+      "label": "Alert filters",
+      "allApps": "All applications",
+      "showAllApps": "Show all applications",
+      "severity": "Severity",
+      "severityAll": "All severities",
+      "state": "State",
+      "stateAll": "All states",
+      "rule": "Rule",
+      "ruleAll": "All rules",
+      "ruleUnknown": "Selected rule (not in this list)",
+      "failedOnly": "Failed deliveries only"
+    },
+    "events": {
+      "title": "State transitions",
+      "refresh": "Refresh",
+      "highlightMissing": "The linked alert event is not in this range or filter. Widen the range or clear the filters to find it.",
+      "caption": "Alert state transitions, newest first",
+      "loadMore": "Load more",
+      "loadingMore": "Loading…"
+    },
+    "empty": {
+      "title": "No alert transitions in the selected range.",
+      "filteredTitle": "No alert transitions match the filters in the selected range.",
+      "description": "Widen the range, choose another application or clear the filters."
+    }
+  },
+  "stats": {
+    "titleAll": "Alert statistics of all applications",
+    "titleApp": "Alert statistics of this application",
+    "period": "Statistics period",
+    "days_one": "{{count}} day",
+    "days_other": "Last {{count}} days",
+    "caption": "Firings per rule in the last {{n}} days",
+    "emptyTitle": "No alert fired in the last {{n}} days.",
+    "emptyDescription": "Choose the 30-day period or another application, or check the rules.",
+    "column": {
+      "rule": "Rule",
+      "firings": "Firings",
+      "avgDuration": "Avg. duration",
+      "timeToAck": "Avg. time to acknowledge",
+      "timeToResolve": "Avg. time to recover"
+    }
+  },
+  "mutes": {
+    "title": "Active mutes",
+    "loading": "Loading mutes…",
+    "empty": "No mute is active.",
+    "dialogTitle": "Mute alerts of this target",
+    "dialogHelp": "Rules matching this target are not evaluated until the mute ends (maintenance).",
+    "submit": "Mute",
+    "delete": "End now",
+    "duration": "Duration",
+    "maxDuration": "A mute lasts at most 30 days.",
+    "reason": "Reason (optional)",
+    "reasonTooLong": "The reason is too long: at most 512 characters and 1 KB.",
+    "hours_one": "{{count}} hour",
+    "hours_other": "{{count}} hours",
+    "days_one": "{{count}} day",
+    "days_other": "{{count}} days",
+    "until": "until {{time}}",
+    "instanceId": "instance {{id}}",
+    "target": {
+      "app": "Application",
+      "env": "Environment",
+      "instance": "Instance",
+      "rule": "Rule",
+      "anyApp": "any application",
+      "anyInstance": "every instance",
+      "anyRule": "every rule"
+    }
+  },
+  "channels": {
+    "title": "Alert channels",
+    "readOnly": "Only administrators can change channels.",
+    "caption": "Notification channels",
+    "column": {
+      "type": "Type",
+      "name": "Name",
+      "target": "Destination",
+      "lastSuccess": "Last success",
+      "lastFailure": "Last failure",
+      "failures": "Consecutive failures",
+      "actions": "Actions"
+    },
+    "action": {
+      "new": "New channel",
+      "test": "Send test",
+      "edit": "Edit",
+      "rotate": "Rotate signing key",
+      "delete": "Delete"
+    },
+    "empty": {
+      "title": "No notification channel yet.",
+      "descriptionAdmin": "Add a webhook, Slack or e-mail channel, then choose it in the alert rules.",
+      "descriptionReadOnly": "Ask an administrator to add a notification channel."
+    },
+    "test": {
+      "label": "Test send:",
+      "sending": "Sending…",
+      "delivered": "Delivered",
+      "notDelivered": "Not delivered",
+      "noStatus": "No answer",
+      "status": "Status {{code}}"
+    },
+    "confirm": {
+      "rotateTitle": "Rotate the signing key?",
+      "deleteTitle": "Delete this channel?",
+      "rotate": "Rotate",
+      "delete": "Delete",
+      "rotateHelp": "A new secret is created and shown once. The previous key keeps signing for 7 days so receivers can switch.",
+      "deleteHelp": "Alerts are no longer sent to this channel. Its past deliveries stay in the history.",
+      "inUse": "A rule still uses this channel. Remove it from the rules first."
+    },
+    "editor": {
+      "newTitle": "New notification channel",
+      "editTitle": "Edit notification channel",
+      "save": "Save",
+      "currentTarget": "Current destination:",
+      "reenterHelp": "The saved destination is never shown again. Enter the full URL or recipient list to change it, or leave it empty to keep it.",
+      "recipientsHelp": "E-mail addresses separated by commas.",
+      "urlHelp": "An https URL. Private, loopback and link-local addresses are refused.",
+      "secretHelp": "Leave empty to generate one; a generated secret is shown once after saving.",
+      "secretUnavailable": "The server has no master key, so it cannot store channel secrets. Ask the operator to configure it."
+    },
+    "field": {
+      "type": "Type",
+      "name": "Name",
+      "recipients": "Recipients",
+      "url": "URL",
+      "secret": "Signing secret (optional)",
+      "allowHttp": "Allow a plain http URL (needs the server setting)"
+    },
+    "invalid": {
+      "targetRequired": "Enter the destination.",
+      "invalidAddress": "An e-mail address is not valid.",
+      "tooManyRecipients": "Too many recipients.",
+      "domainNotAllowed": "A recipient domain is not allowed on this server.",
+      "target": "The destination is not valid.",
+      "name": "Enter a valid name.",
+      "secret": "The secret must have 32 to 256 printable characters.",
+      "allowHttp": "Plain http is not allowed for this channel type."
+    },
+    "blocked": {
+      "scheme": "Refused: use an https URL (http only when the server allows it).",
+      "userinfo": "Refused: the URL must not contain a user name or password.",
+      "invalidUrl": "Refused: the URL is not valid.",
+      "dns": "Refused: the host name could not be resolved.",
+      "ownAddress": "Refused: the URL points to this server.",
+      "loopback": "Refused: loopback addresses are blocked.",
+      "private": "Refused: private network addresses are blocked.",
+      "linkLocal": "Refused: link-local addresses (such as cloud metadata) are blocked.",
+      "uniqueLocal": "Refused: unique local IPv6 addresses are blocked.",
+      "sharedAddress": "Refused: shared address space (100.64.0.0/10) is blocked.",
+      "specialPurpose": "Refused: special-purpose addresses are blocked.",
+      "other": "Refused: the destination is not allowed."
+    },
+    "secret": {
+      "title": "Signing secret",
+      "help": "Copy the secret now and store it in the receiver. It is shown only once.",
+      "label": "Signing secret",
+      "copy": "Copy",
+      "copied": "Copied.",
+      "copyFailed": "Copying failed: select the text and copy it.",
+      "close": "Done",
+      "previousValid": "The previous key keeps signing until {{time}}."
+    }
+  },
+  "rules": {
+    "list": {
+      "title": "Alert rules",
+      "caption": "Alert rules",
+      "filters": "Rule filters",
+      "app": "Application",
+      "allApps": "All applications",
+      "enabled": "State",
+      "enabledAll": "All rules",
+      "enabledOnly": "Enabled only",
+      "disabledOnly": "Disabled only",
+      "emptyTitle": "No alert rules",
+      "emptyDescription": "Create a rule from a default template, or start a new rule."
+    },
+    "columns": {
+      "name": "Name",
+      "app": "Application (environment)",
+      "appId": "Application {{id}}",
+      "allEnvs": "All environments",
+      "metric": "Metric",
+      "thresholds": "Warning / critical",
+      "evaluationUnit": "Evaluated per",
+      "channels": "Channels",
+      "noChannels": "No channels",
+      "enabled": "State",
+      "updatedAt": "Last changed",
+      "actions": "Actions"
+    },
+    "enabled": {
+      "on": "Enabled",
+      "off": "Disabled"
+    },
+    "actions": {
+      "new": "New rule",
+      "fromTemplate": "Create from template",
+      "clone": "Clone",
+      "enable": "Enable",
+      "disable": "Disable",
+      "delete": "Delete",
+      "cancel": "Cancel",
+      "save": "Save rule",
+      "saving": "Saving…",
+      "remove": "Remove",
+      "addActiveTime": "Add active time",
+      "addMuteSchedule": "Add mute schedule",
+      "openRunbook": "Open runbook"
+    },
+    "editor": {
+      "back": "Back to alert rules",
+      "newTitle": "New alert rule",
+      "title": "Alert rule",
+      "saved": "The rule was saved.",
+      "invalid_one": "{{count}} field needs a fix before the rule can be saved.",
+      "invalid_other": "{{count}} fields need a fix before the rule can be saved.",
+      "fromTemplate": "Created from the template \"{{name}}\".",
+      "changedCount_one": "{{count}} field differs from the template.",
+      "changedCount_other": "{{count}} fields differ from the template."
+    },
+    "sections": {
+      "target": "Target, kind and metric",
+      "condition": "Condition",
+      "schedule": "Schedule",
+      "notify": "Notification",
+      "preview": "Preview (last 7 days)"
+    },
+    "fields": {
+      "name": "Rule name",
+      "enabled": "State",
+      "metric": "Metric",
+      "kind": "Kind",
+      "target_type": "Target type",
+      "target_app": "Application",
+      "target_env": "Environment",
+      "target_instance": "Instances",
+      "target_service": "Services",
+      "target_host": "External hosts",
+      "window": "Evaluation window",
+      "for": "Duration (for)",
+      "evaluation_unit": "Evaluated per",
+      "operator": "Operator",
+      "warn": "Warning threshold",
+      "critical": "Critical threshold",
+      "min_samples": "Minimum samples",
+      "no_data": "When there is no data",
+      "recover_threshold": "Recovery threshold",
+      "recover_for": "Recovery duration",
+      "warmup_grace": "Start-up grace",
+      "active_time": "Active time",
+      "days": "Days",
+      "from": "From (HH:mm)",
+      "to": "To (HH:mm)",
+      "mute_schedules": "Recurring mute schedules",
+      "cron": "Cron (minute hour day month weekday)",
+      "duration": "Mute for",
+      "reason": "Reason",
+      "channels_warn": "Channels for warnings",
+      "channels_critical": "Channels for critical alerts",
+      "renotify_interval": "Renotify every",
+      "runbook_url": "Runbook URL",
+      "message_template": "Message template"
+    },
+    "hints": {
+      "env": "Leave empty to watch every environment of the application.",
+      "ids": "Comma separated ids; empty watches all.",
+      "idsOtherType": "Used when the target type is {{type}}.",
+      "window": "Data the rule evaluates, e.g. 30s, 5m, 1h (5 s to 24 h).",
+      "for": "How long the condition must hold before the alert fires, e.g. 0s, 5m.",
+      "minSamples": "Requests needed in the window before the rule evaluates (low traffic does not fire).",
+      "minSamplesNotRequest": "Only request metrics use a minimum number of samples.",
+      "recoverThreshold": "Empty: the alert resolves when the condition is no longer met.",
+      "recoverFor": "Empty: half of the duration.",
+      "warmupGrace": "No alerts this long after an instance starts, e.g. 3m.",
+      "activeTime": "Empty: the rule is active all the time (server time zone).",
+      "muteSchedules": "Planned quiet periods such as nightly batch windows (at most 7 days each).",
+      "renotify": "0 sends no reminders; otherwise at least 5m.",
+      "runbook": "An http or https link sent with the notification.",
+      "metricUnavailable": "This version does not compute this metric: the rule never fires.",
+      "notComputed": "not computed"
+    },
+    "unit": {
+      "seconds": "s",
+      "days": "days"
+    },
+    "metrics": {
+      "response_time_p50": "Response time p50",
+      "response_time_p95": "Response time p95",
+      "response_time_p99": "Response time p99",
+      "tps": "Throughput (TPS)",
+      "error_rate": "Error rate",
+      "apdex": "Apdex",
+      "active_transactions": "Active transactions",
+      "active_ratio_to_max_threads": "Active transactions / max threads",
+      "jvm_heap_used_ratio": "Heap used",
+      "jvm_old_gen_after_gc_ratio": "Old generation after GC",
+      "jvm_gc_pause_ratio": "GC pause time",
+      "jvm_threads_live": "Live threads",
+      "tomcat_threads_usage_ratio": "Tomcat thread usage",
+      "jdbc_pool_waiting": "Connection pool waiting threads",
+      "jdbc_pool_usage_ratio": "Connection pool usage",
+      "ext_call_p95": "External call p95",
+      "ext_call_error_ratio": "External call error rate",
+      "ext_call_timeout_ratio": "External call timeout rate",
+      "batch_elapsed_seconds": "Batch elapsed time",
+      "system_cpu_ratio": "System CPU",
+      "system_memory_ratio": "System memory",
+      "system_disk_usage_ratio": "Disk usage",
+      "argos_agent_dropped_total": "Agent dropped items",
+      "argos_server_dropped_total": "Server dropped items",
+      "argos_server_ingest_lag_seconds": "Server ingest lag",
+      "argos_server_disk_usage_ratio": "Server disk usage",
+      "argos_notification_failures_total": "Notification failures",
+      "argos_server_tls_cert_expiry_days": "Collector certificate expiry",
+      "agent_token_expiry_days": "Agent token expiry",
+      "instance_state": "Instance down",
+      "error_group_new": "New error group"
+    },
+    "targetType": {
+      "app": "Application",
+      "instance": "Instance",
+      "service": "Service",
+      "extHost": "External host",
+      "server": "Argos server"
+    },
+    "kind": {
+      "http": "Requests (HTTP)",
+      "batch": "Batch jobs"
+    },
+    "evaluationUnit": {
+      "app": "Whole application",
+      "instance": "Each instance"
+    },
+    "noData": {
+      "ignore": "Ignore",
+      "warn": "Warning alert",
+      "critical": "Critical alert"
+    },
+    "days": {
+      "mon": "Mon",
+      "tue": "Tue",
+      "wed": "Wed",
+      "thu": "Thu",
+      "fri": "Fri",
+      "sat": "Sat",
+      "sun": "Sun"
+    },
+    "channels": {
+      "loading": "Loading channels…",
+      "none": "No channels yet. An administrator adds them under Alert channels.",
+      "missing": "Deleted channel"
+    },
+    "template": {
+      "suggestions": "Allowed variables",
+      "variables": "Insert a variable:"
+    },
+    "templates": {
+      "title": "Create from template",
+      "description": "Default templates. Choosing one fills the form; adjust the values and save.",
+      "version": "Version {{version}}",
+      "use": "Use this template",
+      "usePart": "Use rule {{part}}",
+      "partSummary": "{{metric}} {{operator}} {{threshold}} for {{for}}",
+      "changed": "Differs from the template"
+    },
+    "preview": {
+      "description": "What the warning (or critical) threshold would have fired over the last 7 days. Nothing is sent.",
+      "placeholderName": "Preview",
+      "count": "Firings",
+      "maxDuration": "Longest firing",
+      "chartTitle": "Metric over the last 7 days with the firing intervals",
+      "firingSeries": "Firing",
+      "thresholdSeries": "Threshold",
+      "updating": "Updating…",
+      "none": "The rule would not have fired in the last 7 days.",
+      "noSeries": "No data for this rule in the last 7 days.",
+      "peak": "peak {{value}}",
+      "moreFirings_one": "{{count}} more firing",
+      "moreFirings_other": "{{count}} more firings",
+      "unsupported": "The preview is not available for this metric.",
+      "invalid": "Complete the target, metric and condition to see the preview.",
+      "rateLimited": "Too many previews right now. Try again in a moment.",
+      "rateLimitedAfter": "Too many previews right now. Try again in {{seconds}} s.",
+      "error": "The preview could not be calculated.",
+      "requestId": "Request id: {{id}}",
+      "retry": "Retry"
+    },
+    "history": {
+      "title": "Revision history",
+      "none": "No revisions recorded.",
+      "version": "Version",
+      "versionValue": "v{{version}}",
+      "changedBy": "Changed by",
+      "changedAt": "Changed at"
+    },
+    "clone": {
+      "title": "Clone rule",
+      "description": "Copy this rule to another application and environment:",
+      "app": "Application",
+      "env": "Environment",
+      "submit": "Clone"
+    },
+    "delete": {
+      "title": "Delete this rule?",
+      "description": "The rule stops evaluating and its active alerts resolve. Its alert history stays readable. To pause a rule and keep it, disable it instead."
+    },
+    "errors": {
+      "required": "Required.",
+      "length": "Too long.",
+      "duration": "Use a duration such as 30s, 5m, 1h or 1h30m.",
+      "outOfRange": "Out of the allowed range.",
+      "number": "Enter a number.",
+      "thresholdRequired": "Enter a warning or a critical threshold.",
+      "notBeyondWarn": "The critical threshold must be beyond the warning threshold.",
+      "ids": "Comma separated numeric ids, at most 100.",
+      "notForTarget": "Not possible for this target type.",
+      "notForMetric": "This metric does not support this target type.",
+      "url": "Enter an http or https URL.",
+      "slot": "Check the entries: days, HH:mm times (to after from), 5-field cron and a duration up to 7 days.",
+      "templateForbidden": "Only the listed variables can be used in the message template.",
+      "templateForbiddenRefs": "Not allowed:",
+      "invalid": "Invalid value."
+    }
+  }
+}

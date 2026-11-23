@@ -16,10 +16,17 @@ import { manifestVariables } from './variables';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
 const COMMON = join(DIR, 'common.yaml');
-// The engine's CHECKS table imports Playwright; the names are read from its source instead.
+// The engine's CHECKS table imports Playwright; the names are read from its source instead (the
+// XLog checks of WO-33 live in xlogChecks.ts, the dashboard checks of WO-32 in dashboardChecks.ts,
+// both spread into CHECKS).
 const CHECK_NAMES = [
   ...readFileSync(join(DIR, 'checks.ts'), 'utf8').matchAll(/^const (\w+): Check = /gm),
+  ...readFileSync(join(DIR, 'xlogChecks.ts'), 'utf8').matchAll(/^const (\w+): XLogCheck = /gm),
+  ...readFileSync(join(DIR, 'dashboardChecks.ts'), 'utf8').matchAll(
+    /^const (\w+): DashboardCheck = /gm,
+  ),
 ].map((m) => m[1]);
+const XLOG = join(DIR, 'xlog.yaml');
 
 const MANIFEST: SeedManifest = {
   manifest_version: 1,
@@ -99,12 +106,50 @@ const MANIFEST: SeedManifest = {
     },
     xss: null,
   },
+  events: [],
+  outage: null,
   missing_optional: [],
   users: { admin: 'admin', operator: 'e2e-operator', viewer: 'e2e-viewer' },
 };
 
 describe('required-elements files', () => {
   const common = parseRequiredFile(readFileSync(COMMON, 'utf8'), COMMON);
+  const xlog = parseRequiredFile(readFileSync(XLOG, 'utf8'), XLOG);
+
+  it('required/xlog.yaml covers every item of docs/05 §2.1 with known checks and variables', () => {
+    expect([...new Set(xlog.items.map((i) => i.id))]).toEqual([
+      '2.1-1',
+      '2.1-2',
+      '2.1-3',
+      '2.1-4',
+      '2.1-5',
+      '2.1-6',
+      '2.1-7',
+      '2.1-8',
+      '2.1-9',
+      '2.1-10',
+    ]);
+    expect(testTitle(xlog, 0)).toMatch(/^T-E2E-xlog-1 2\.1-1 /);
+    // Every item runs: the outage shading too, on the collection outage the stack setup makes
+    // since WO-22 (ADR-0010 C-205 (2), check xlogOutageShading).
+    expect(xlog.items.filter((i) => i.owner !== 'WO-33').map((i) => `${i.id} ${i.owner}`)).toEqual(
+      [],
+    );
+    expect(
+      xlog.items.flatMap((i) => i.assert.flatMap((a) => ('check' in a ? [a.check] : []))),
+    ).toContain('xlogOutageShading');
+    const vars = manifestVariables(MANIFEST);
+    for (const item of xlog.items) {
+      for (const a of item.assert) {
+        if ('check' in a) {
+          expect(CHECK_NAMES, `${item.id} check ${a.check}`).toContain(a.check);
+        }
+      }
+      if (item.route !== undefined) {
+        expect(fillTemplate(item.route, vars)).not.toContain('{');
+      }
+    }
+  });
 
   it('required/common.yaml covers every item of docs/05 §2.0', () => {
     const ids = new Set(common.items.map((i) => i.id));
@@ -131,8 +176,9 @@ describe('required-elements files', () => {
       'WO-30',
       'WO-30',
       'WO-30',
-      // Deep links 4 and 5: the first data screen completes them (C-168 (1)).
-      'WO-33',
+      // Deep link 4: the first data screen (C-168 (1)), then the alert screens add the alert
+      // transition markers to it (ADR-0010 C-226 (8), WO-38). Deep link 5: WO-33 (C-168 (1)).
+      'WO-38',
       'WO-33',
     ]);
     // Every item of the checklist has at least one entry WO-30 runs, except 2.0-4 and 2.0-5.
@@ -169,9 +215,14 @@ describe('required-elements files', () => {
     expect(() => parseRequiredFile(bad('  - id: 2.0-1\n    title: abc'), 'common.yaml')).toThrow(
       /needs a route/,
     );
+    // An owner whose items do not run yet (not in RUNNING_OWNERS) must name the coverage.
+    expect(() =>
+      parseRequiredFile(bad('  - id: 2.0-1\n    title: abc\n    owner: WO-39'), 'common.yaml'),
+    ).toThrow(/coverage/);
+    // An owner whose items run (WO-33 since its XLog screen) needs a route and an assertion.
     expect(() =>
       parseRequiredFile(bad('  - id: 2.0-1\n    title: abc\n    owner: WO-33'), 'common.yaml'),
-    ).toThrow(/coverage/);
+    ).toThrow(/an item owned by WO-33 needs a route/);
     expect(() =>
       parseRequiredFile(
         bad(

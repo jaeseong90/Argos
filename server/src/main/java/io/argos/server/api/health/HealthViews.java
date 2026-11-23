@@ -22,8 +22,8 @@ public final class HealthViews {
    *
    * @param ingestLagS current p99 ingest lag in seconds (null before the first insert)
    * @param diskUsageRatio server disk usage: null until the storage health job exists (WO-28)
-   * @param channelFailures24h notification channel failures of the last 24 h: null until the alert
-   *     engine exists (WO-25)
+   * @param channelFailures24h notification deliveries that failed in the last 24 h (all channels),
+   *     null only while PostgreSQL cannot be read
    * @param sessions live agent sessions
    * @param certExpiryDays days until the TLS certificate expires: null until WO-28 reads it
    */

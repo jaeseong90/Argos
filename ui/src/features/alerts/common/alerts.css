@@ -1,0 +1,439 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* Alert history and channel screens (docs/15 §9.9, §13): title with tabs, filter bar, pinned
+   panel, the shared table, dialogs. One vertical scroll; the page never scrolls sideways at
+   1366 px (wide tables scroll inside their own box, rows wrap in the panels). */
+.alerts-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  min-width: 0;
+}
+
+.alerts-page__header,
+.alerts-toolbar,
+.alerts-pinned__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2, 8px) var(--space-4, 16px);
+  min-width: 0;
+}
+
+.alerts-pinned__head {
+  justify-content: flex-start;
+}
+
+.alerts-page__title {
+  margin: 0;
+  font-size: var(--fs-lg, 15px);
+  font-weight: 600;
+}
+
+.alerts-page__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  min-width: 0;
+}
+
+.alerts-tabs,
+.alerts-segment {
+  display: inline-flex;
+  gap: var(--space-1, 4px);
+}
+
+.alerts-tab {
+  padding: var(--space-1, 4px) var(--space-3, 12px);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius, 6px);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.alerts-tab--on,
+.alerts-segment--on {
+  border-color: var(--color-primary);
+  background: var(--color-selected);
+  color: var(--color-primary-text);
+  font-weight: 600;
+}
+
+.alerts-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 8px) var(--space-3, 12px);
+  min-width: 0;
+}
+
+.alerts-filters__app {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  min-width: 0;
+}
+
+.alerts-control {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+  min-width: 0;
+}
+
+.alerts-control__label,
+.alerts-field__label {
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm, 12px);
+}
+
+.alerts-select,
+.alerts-input,
+.alerts-textarea {
+  min-height: 28px;
+  max-width: 100%;
+  padding: 2px var(--space-2, 8px);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius, 6px);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.alerts-select--rule {
+  max-width: 260px;
+}
+
+.alerts-textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.alerts-input {
+  width: 100%;
+}
+
+.alerts-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  min-width: 0;
+  padding: var(--space-3, 12px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius, 6px);
+  background: var(--color-bg);
+}
+
+.alerts-panel__title {
+  margin: 0;
+  font-size: var(--fs-md, 13px);
+  font-weight: 600;
+}
+
+.alerts-panel__subtitle {
+  margin: 0;
+  font-size: var(--fs-sm, 12px);
+  font-weight: 600;
+}
+
+.alerts-muted {
+  color: var(--color-text-muted);
+}
+
+.alerts-mono {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.alerts-env {
+  color: var(--color-text-muted);
+}
+
+.alerts-env::before {
+  content: '(';
+}
+
+.alerts-env::after {
+  content: ')';
+}
+
+.alerts-count {
+  padding: 0 var(--space-2, 8px);
+  border-radius: 10px;
+  font-size: var(--fs-sm, 12px);
+  font-weight: 600;
+}
+
+.alerts-count--critical {
+  background: var(--color-error-bg);
+  color: var(--sev-critical-text);
+}
+
+.alerts-count--warn {
+  background: var(--color-warning-bg);
+  color: var(--sev-warn-text);
+}
+
+/* Pinned panel: active alerts beside the channel status, stacked below 1100 px. */
+.alerts-pinned__body {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--space-3, 12px);
+  min-width: 0;
+}
+
+@media (width < 1100px) {
+  .alerts-pinned__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.alerts-pinned__list,
+.alerts-channel-status__list,
+.alerts-mutes__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 4px);
+  max-height: 240px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.alerts-pinned__row,
+.alerts-channel-status__row,
+.alerts-mutes__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1, 4px) var(--space-2, 8px);
+  min-width: 0;
+  padding: var(--space-1, 4px) var(--space-2, 8px);
+  border-radius: var(--radius, 6px);
+  background: var(--color-surface);
+  font-size: var(--fs-sm, 12px);
+}
+
+.alerts-pinned__rule {
+  min-width: 0;
+  max-width: 100%;
+  font-weight: 600;
+}
+
+.alerts-pinned__app,
+.alerts-pinned__target,
+.alerts-channel-status__name {
+  min-width: 0;
+  max-width: 220px;
+}
+
+.alerts-pinned__row[data-highlighted='true'],
+.data-table[data-table-id='alerts-events'] .data-table__row[data-highlighted='true'] {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+  background: var(--color-selected);
+}
+
+.alerts-channel-status__row--failing {
+  border-left: 3px solid var(--status-down);
+}
+
+.alerts-mutes__target {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1, 4px);
+  min-width: 0;
+}
+
+/* Event table: one line per cell at the fixed row height, clipped at the cell edge. */
+.data-table[data-table-id='alerts-events'] .data-table__value,
+.data-table[data-table-id='alert-channels'] .data-table__value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.alerts-cell-pair,
+.alerts-transition,
+.alerts-deliveries,
+.alerts-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.alerts-transition__arrow::before {
+  content: '\2192';
+  color: var(--color-text-muted);
+}
+
+.alerts-reason {
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs, 11px);
+}
+
+.alerts-severity--critical {
+  color: var(--sev-critical-text);
+  font-weight: 600;
+}
+
+.alerts-severity--warn {
+  color: var(--sev-warn-text);
+  font-weight: 600;
+}
+
+.alerts-delivery {
+  display: inline-flex;
+  gap: 2px;
+  padding: 0 var(--space-1, 4px);
+  border-radius: var(--radius, 6px);
+  background: var(--color-surface);
+  font-size: var(--fs-xs, 11px);
+}
+
+.alerts-delivery--failed,
+.alerts-delivery--dropped {
+  background: var(--color-error-bg);
+}
+
+.alerts-delivery__error {
+  color: var(--color-error-text);
+}
+
+.alerts-note {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.alerts-actions .control-button {
+  min-height: 24px;
+  padding: 0 6px;
+  font-size: var(--fs-sm, 12px);
+  text-decoration: none;
+}
+
+.alerts-load-more {
+  align-self: center;
+  margin-top: var(--space-2, 8px);
+}
+
+.alerts-test-result {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 8px) var(--space-3, 12px);
+}
+
+.alerts-test-result--ok {
+  color: var(--status-up-text);
+  font-weight: 600;
+}
+
+/* Dialogs (AlertDialog): a fixed backdrop and a centred panel within the viewport. Below the
+   dropdowns of the shared AntD selects (1050, rendered on <body>) so the application and
+   environment choices of a dialog open above it, above everything of the shell. */
+.alerts-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1040;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4, 16px);
+  background: rgb(0 0 0 / 35%);
+}
+
+.alerts-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  max-height: calc(100vh - 32px);
+  padding: var(--space-4, 16px);
+  border-radius: var(--radius, 6px);
+  background: var(--color-bg);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 20%);
+  color: var(--color-text);
+  overflow-y: auto;
+}
+
+.alerts-dialog--wide {
+  width: min(560px, 100%);
+}
+
+.alerts-dialog--narrow {
+  width: min(420px, 100%);
+}
+
+.alerts-dialog__title {
+  margin: 0;
+  font-size: var(--fs-lg, 15px);
+  font-weight: 600;
+}
+
+.alerts-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  min-width: 0;
+}
+
+.alerts-dialog__subject {
+  margin: 0;
+  font-weight: 600;
+}
+
+.alerts-dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2, 8px);
+}
+
+.alerts-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.alerts-field__help {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm, 12px);
+}
+
+.alerts-field__error {
+  margin: 0;
+  color: var(--color-error-text);
+  font-size: var(--fs-sm, 12px);
+}
+
+.alerts-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+}
+
+.alerts-mute-target {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px var(--space-3, 12px);
+  margin: 0;
+}
+
+.alerts-mute-target dt {
+  color: var(--color-text-muted);
+}
+
+.alerts-mute-target dd {
+  min-width: 0;
+  margin: 0;
+}

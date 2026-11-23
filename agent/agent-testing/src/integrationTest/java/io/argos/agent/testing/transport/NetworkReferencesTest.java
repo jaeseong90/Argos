@@ -57,6 +57,23 @@ class NetworkReferencesTest {
           "inst/io/argos/agent/instrumentation/httpclient/jdk/HttpClientJdkModule.classdata",
           // Only the class name, to let the instrumentation through the ignore list.
           "inst/io/argos/agent/core/boot/IgnoreMatchers.classdata",
+          // WO-14 (F-A05, 10 §6.5), each reading a call the application made and opening nothing:
+          // the failure classifier matches exception class names (java.net.SocketTimeoutException);
+          "inst/io/argos/agent/core/trace/HttpFailures.classdata",
+          // WO-16 (C-224 (1)): the OkHttp helper hands the classifier a new
+          // java.net.SocketTimeoutException as the marker of a call that hit its callTimeout (the
+          // exception object only, read by the substring match as java/net/Socket);
+          "inst/io/argos/agent/instrumentation/httpclient/okhttp/OkHttpInterceptorHelper.classdata",
+          // the JDK 11 client module names java.net.http.HttpClient in its witness, and its request
+          // wrapper delegates to the application's request (HttpClient.Version in a signature);
+          "inst/io/argos/agent/instrumentation/httpclient/jdk11/HttpClientJdk11Module.classdata",
+          "inst/io/argos/agent/instrumentation/httpclient/jdk11/Jdk11RequestHelper.classdata",
+          // the Reactor Netty advice takes HttpClientHandler as the JDK type it extends,
+          // java.net.SocketAddress (read by the substring match as java/net/Socket).
+          "inst/io/argos/agent/instrumentation/httpclient/reactornetty/ReactorNettyHandlerAdvice.classdata",
+          "inst/io/argos/agent/instrumentation/httpclient/reactornetty/ReactorNettyHelper.classdata",
+          "inst/io/argos/agent/instrumentation/httpclient/reactornetty/ReactorNettyRequestAdvice.classdata",
+          "inst/io/argos/agent/instrumentation/httpclient/reactornetty/ReactorNettyRetryAdvice.classdata",
           // The channel's never-proxy detector (DSN-02-22): java.net.SocketAddress in the signature
           // of ProxyDetector.proxyFor, which the substring match reads as java/net/Socket; it
           // returns null and opens nothing.

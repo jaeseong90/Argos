@@ -7,6 +7,8 @@ import io.argos.proto.v1.AckStatus;
 import io.argos.proto.v1.ActiveTransactionSnapshot;
 import io.argos.proto.v1.BatchHeader;
 import io.argos.proto.v1.MetricBatch;
+import io.argos.proto.v1.MetricSample;
+import io.argos.proto.v1.MetricSeries;
 import io.argos.proto.v1.ProfileBatch;
 import io.argos.proto.v1.StatBatch;
 import io.argos.proto.v1.TransactionBatch;
@@ -23,6 +25,7 @@ import io.argos.server.collector.limits.Violation;
 import io.argos.server.ingest.api.ApdexProvider;
 import io.argos.server.ingest.api.IngestPipeline;
 import io.argos.server.session.AgentSession;
+import io.argos.server.session.InstanceStateTracker;
 import io.argos.server.session.api.ClockOffsetProvider;
 import io.argos.server.session.api.SessionContext;
 import io.argos.server.wal.api.WalAppendPendingException;
@@ -70,20 +73,20 @@ import org.slf4j.LoggerFactory;
  *       argos_collector_redacted_total{reason="full_detail_unencrypted"}} with one WARN per
  *       session; the ack does not change;
  *   <li>{@link WalWriter#append} of the remaining batch with the receipt context ({@code
- *       received_ms}, the C-129 correction decided now, the app's Apdex T now); it returns after
- *       the group fsync. A full WAL answers {@code ACK_OK} with {@code dropped_items} = every item
- *       and writes nothing (DSN-11-09, the only ack without an fsync); an undurable write answers
- *       {@code UNAVAILABLE} and never acks. An fsync slower than the append wait (1 s, 11 §10,
- *       {@link WalAppendPendingException}) answers {@code UNAVAILABLE} with {@code
- *       argos-retry-after-ms} ({@code argos_collector_rejected_total{reason="wal_slow"}}) and keeps
- *       the key claimed until the queued record's outcome is known: durable → {@link
- *       DedupWindow#mark} and the pipeline (a later resend is {@code ACK_DUPLICATE}), not written →
- *       {@link DedupWindow#release} (a later resend is new), so the seq is never stored twice
- *       (D-13). A WAL that is not keeping up refuses the record without queuing it ({@link
- *       WalBusyException}: a group fsync already running longer than the append wait, or the
- *       waiting batches at their byte limit): the same {@code UNAVAILABLE} with {@code
- *       argos-retry-after-ms} and {@code wal_slow} count, at once, and the key is released (a later
- *       resend is new);
+ *       received_ms}, the C-129 correction decided now, the app's Apdex T and service overrides
+ *       now); it returns after the group fsync. A full WAL answers {@code ACK_OK} with {@code
+ *       dropped_items} = every item and writes nothing (DSN-11-09, the only ack without an fsync);
+ *       an undurable write answers {@code UNAVAILABLE} and never acks. An fsync slower than the
+ *       append wait (1 s, 11 §10, {@link WalAppendPendingException}) answers {@code UNAVAILABLE}
+ *       with {@code argos-retry-after-ms} ({@code
+ *       argos_collector_rejected_total{reason="wal_slow"}}) and keeps the key claimed until the
+ *       queued record's outcome is known: durable → {@link DedupWindow#mark} and the pipeline (a
+ *       later resend is {@code ACK_DUPLICATE}), not written → {@link DedupWindow#release} (a later
+ *       resend is new), so the seq is never stored twice (D-13). A WAL that is not keeping up
+ *       refuses the record without queuing it ({@link WalBusyException}: a group fsync already
+ *       running longer than the append wait, or the waiting batches at their byte limit): the same
+ *       {@code UNAVAILABLE} with {@code argos-retry-after-ms} and {@code wal_slow} count, at once,
+ *       and the key is released (a later resend is new);
  *   <li>{@link DedupWindow#mark}, then {@link IngestPipeline} (non-blocking; the ack does not wait
  *       for decoding or ClickHouse, DSN-12-01);
  *   <li>{@code ACK_OK}, or {@code ACK_PARTIAL_DROP} with the removed count, {@code last_seq} = the
@@ -111,7 +114,16 @@ public final class AgentServiceImpl {
 
   private static final Logger LOG = LoggerFactory.getLogger(AgentServiceImpl.class);
 
+  /**
+   * The agent's leaked-context counter (10 §6 {@code transactions_leaked_total}): its growth in a
+   * metric batch is the {@code context_leak} WARN condition (WO-22, PM question 4 assumption).
+   */
+  static final String LEAK_COUNTER = "argos_agent_transactions_leaked_total";
+
   private final AtomicLong lastWalSlowWarnNanos = new AtomicLong(NEVER);
+
+  /** The instance states (WO-22): server drops and context leaks; null in protocol-only tests. */
+  private volatile InstanceStateTracker states;
 
   private final LimitsChecker limits;
   private final DedupWindow dedup;
@@ -320,6 +332,7 @@ public final class AgentServiceImpl {
         dedup.release(key);
         claimed = false;
         metrics.dropped("wal_full", items);
+        serverDrop(session, items);
         complete(
             out,
             Ack.newBuilder()
@@ -387,6 +400,7 @@ public final class AgentServiceImpl {
       charged = null;
       durable(kind, key, context, position, kept, trimmed.droppedItems(), session);
       int dropped = filtered.droppedItems() + trimmed.droppedItems();
+      serverDrop(session, dropped);
       Ack.Builder ack =
           Ack.newBuilder()
               .setStatus(dropped > 0 ? AckStatus.ACK_PARTIAL_DROP : AckStatus.ACK_OK)
@@ -421,10 +435,62 @@ public final class AgentServiceImpl {
       AgentSession session) {
     dedup.mark(key);
     metrics.dropped("quota", quotaDropped);
+    if (kept instanceof MetricBatch metricsBatch) {
+      contextLeaks(session, metricsBatch);
+    }
     try {
       kind.pipeline().accept(context, position, kept);
     } catch (RuntimeException e) {
       LOG.error("The ingest pipeline failed on a durable batch of {}", session, e);
+    }
+  }
+
+  /** Sets the instance states that server drops and context leaks are reported to (WO-22). */
+  public void instanceStates(InstanceStateTracker tracker) {
+    this.states = tracker;
+  }
+
+  /** Reports {@code items} dropped by the server for {@code session} (12 §4.2 WARN drops). */
+  private void serverDrop(AgentSession session, int items) {
+    InstanceStateTracker t = states;
+    if (t != null && items > 0) {
+      try {
+        t.onServerDrop(session.instanceId());
+      } catch (RuntimeException e) {
+        LOG.error("Reporting a server drop of {} failed", session, e);
+      }
+    }
+  }
+
+  /**
+   * Reports a growth of the agent's leaked-context counter in {@code batch} (a sample of the {@link
+   * #LEAK_COUNTER} series with a positive delta, C-15). At most 500 series and the batch's samples
+   * are scanned, both bounded by the 11 §4.4 caps.
+   */
+  private void contextLeaks(AgentSession session, MetricBatch batch) {
+    InstanceStateTracker t = states;
+    if (t == null) {
+      return;
+    }
+    int leakIndex = -1;
+    for (MetricSeries s : batch.getSeriesList()) {
+      if (s.getName().equals(LEAK_COUNTER) || s.getName().startsWith(LEAK_COUNTER + "{")) {
+        leakIndex = s.getIndex();
+        break;
+      }
+    }
+    if (leakIndex < 0) {
+      return;
+    }
+    for (MetricSample sample : batch.getSamplesList()) {
+      if (sample.getSeriesIndex() == leakIndex && sample.getDelta() > 0) {
+        try {
+          t.onContextLeak(session.instanceId());
+        } catch (RuntimeException e) {
+          LOG.error("Reporting a context leak of {} failed", session, e);
+        }
+        return;
+      }
     }
   }
 
@@ -514,7 +580,8 @@ public final class AgentServiceImpl {
         .atReceipt(
             receivedAt,
             offsets.tsCorrectionMs(session.instanceId()),
-            apdex.apdexTMs(session.appId()));
+            apdex.apdexTMs(session.appId()),
+            apdex.overrides(session.appId()));
   }
 
   private void reject(StreamObserver<Ack> out, Violation v) {

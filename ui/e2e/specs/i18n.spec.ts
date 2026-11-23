@@ -33,7 +33,8 @@ test(
   'T-E2E-053 switching to ko shows the appendix B labels at once; the choice survives a reload; en again',
   { annotation: I18N },
   async ({ page, seed }) => {
-    await page.goto(`/apps/${String(seed.primary_app_id)}/dashboard`);
+    // A placeholder screen (the instance list of WO-37; the statistics are screens since WO-36).
+    await page.goto(`/apps/${String(seed.primary_app_id)}/instances`);
     await expectShell(page);
     // English by default for an en-US browser (O-A05).
     await expect(page.getByTestId('kind-filter-http')).toHaveText(t('common:term.kind.http'));
@@ -51,7 +52,7 @@ test(
     await expect(page.getByTestId('side-menu-map')).toContainText(APPENDIX_B.map);
     // The placeholder of a later screen is translated too (no English left on the page body).
     await expect(page.getByTestId('route-pending')).toContainText(
-      t('shell:screen.dashboard', 'ko'),
+      t('shell:screen.instances', 'ko'),
     );
 
     await page.reload();

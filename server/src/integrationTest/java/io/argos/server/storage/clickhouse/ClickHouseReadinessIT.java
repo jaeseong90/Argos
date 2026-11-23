@@ -18,9 +18,6 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -104,8 +101,7 @@ class ClickHouseReadinessIT {
       "T-SV-001b readiness is UP while ClickHouse answers, DOWN (503, no details) while it is paused, UP"
           + " again after unpause; liveness stays UP")
   void readinessFollowsClickHouse() throws Exception {
-    Path log = IntegrationLogs.logFile();
-    long logStart = Files.exists(log) ? Files.size(log) : 0;
+    long logStart = IntegrationLogs.offset();
     try (ServerTestEnvironment env = ServerTestEnvironment.start()) {
       int http = freePort();
       int management = freePort();
@@ -144,9 +140,7 @@ class ClickHouseReadinessIT {
         assertThat(again.body()).isEqualTo("{\"status\":\"UP\"}");
       }
 
-      byte[] bytes = Files.readAllBytes(log);
-      int start = (int) Math.min(logStart, bytes.length);
-      String run = new String(bytes, start, bytes.length - start, StandardCharsets.UTF_8);
+      String run = IntegrationLogs.since(logStart);
       assertThat(run)
           .contains("ClickHouse readiness check failed, readiness is DOWN: ")
           .contains("ClickHouse answers again, readiness check is UP");

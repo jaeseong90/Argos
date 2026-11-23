@@ -2,8 +2,9 @@
 //
 // Bundle size report against the budget of docs/15 §14 (N-14; docs/19 §4 bundle check). The
 // numbers are a reference: going over budget prints a warning and still exits 0. The report fails
-// (exit 1) only when it cannot measure: the chunk graph is missing or unreadable, it does not match
-// dist/ (a stale graph from another build), or a module of the initial path is not in any chunk.
+// (exit 1) when it cannot measure: the chunk graph is missing or unreadable, it does not match
+// dist/ (a stale graph from another build), or a module of the initial path is not in any chunk;
+// and when the build holds the XLog PoC (below).
 //
 // Input: dist/ and the chunk graph that the bundleGraph() plugin of vite.config.ts writes on every
 // `vite build` to build/bundle-graph.json (outside dist/, so it never ships in the server jar).
@@ -13,10 +14,15 @@
 //   initial path  the first screen after login (docs/15 §14 "shell + overview chunk"): the entry
 //                 chunk of index.html, the chunks holding INITIAL_LAZY_MODULES (the lazy routes
 //                 a signed-in user passes on the way to /overview: Ant Design root, session gate,
-//                 shell, screen route with its route-pending placeholder), the transitive closure
-//                 of their static imports, and the CSS files Vite loads with any of these chunks.
+//                 shell, screen route, the overview screen (WO-31); and the XLog screen,
+//                 which deep links open as the first screen, WO-33), the transitive closure of
+//                 their static imports, and the CSS files Vite loads with any of these chunks.
 //                 The login page itself is not part of it.
 //   total         every JavaScript and CSS file in dist/.
+//
+// The production build has no XLog PoC (ADR-0010 C-203: /xlog-poc and its synthetic data
+// generator exist only in the perf build): a chunk holding a module of POC_MODULE_PREFIXES fails
+// the report (exit 1), and the report says how many it found ("PoC modules in production chunks").
 //
 // Sizes are gzip sizes of each file on its own (Node zlib, default level, as Vite's own report).
 // Budgets: initial path 350 KiB, total 2.5 MiB (2,560 KiB), both gzip (docs/15 §14).
@@ -43,16 +49,25 @@ const KIB = 1024;
 export const BUDGET = Object.freeze({ initialBytes: 350 * KIB, totalBytes: 2560 * KIB });
 
 /**
- * Lazy modules on the way from login to the first screen (/overview). WO-31 adds the overview
- * screen module here when it replaces the route-pending placeholder (docs/15 §14 counts the
- * overview chunk in the 350 KiB).
+ * Lazy modules on the way from login to the first screen (/overview), the overview screen module
+ * included (WO-31; docs/15 §14 counts the overview chunk in the 350 KiB). The XLog route module is
+ * counted too (WO-33, PM hand-over: deep links from alerts and other screens open the XLog screen
+ * first).
  */
 export const INITIAL_LAZY_MODULES = Object.freeze([
   'src/app/AntdRoot.tsx',
   'src/routes/AuthGate.tsx',
   'src/routes/Shell.tsx',
   'src/routes/ScreenRoute.tsx',
+  'src/features/overview/index.ts',
+  'src/features/xlog/index.ts',
 ]);
+
+/**
+ * Modules of the WO-04 XLog PoC (the /xlog-poc page, its synthetic data generator dummyData.ts and
+ * realtime simulator realtimeSim.ts): never in a production chunk (ADR-0010 C-203).
+ */
+export const POC_MODULE_PREFIXES = Object.freeze(['src/features/xlog-poc/']);
 
 const MEASURED_EXTENSIONS = new Set(['.js', '.mjs', '.css']);
 
@@ -96,6 +111,7 @@ export const SERVER_GZIP_MIN_BYTES = 2 * KIB;
  * @property {{ files: MeasuredFile[], bytes: number, gzipBytes: number, remainingBytes: number }} initial
  * @property {{ files: number, bytes: number, gzipBytes: number, remainingBytes: number }} total
  * @property {SentSizes} sent sizes on the wire with the server's response compression (C-190)
+ * @property {number} pocModules XLog PoC modules in the chunks (always 0 in a report, C-203)
  * @property {string[]} warnings
  */
 
@@ -214,6 +230,21 @@ export function initialPath(graph, lazyModules) {
 }
 
 /**
+ * The XLog PoC modules of the graph's chunks (ADR-0010 C-203), as "chunk: module" lines.
+ *
+ * @param {BundleGraph} graph
+ * @param {readonly string[]} [prefixes]
+ * @returns {string[]}
+ */
+export function pocModulesInChunks(graph, prefixes = POC_MODULE_PREFIXES) {
+  return graph.chunks.flatMap((chunk) =>
+    chunk.modules
+      .filter((module) => prefixes.some((prefix) => module.startsWith(prefix)))
+      .map((module) => `${chunk.fileName}: ${module}`),
+  );
+}
+
+/**
  * @param {string} dir
  * @returns {string[]} paths relative to dir, with '/'
  */
@@ -315,6 +346,12 @@ export function measureBundle({
       `bundle graph does not match dist/ (stale graph? run vite build again):\n  ${mismatches.join('\n  ')}`,
     );
   }
+  const poc = pocModulesInChunks(graph);
+  if (poc.length > 0) {
+    throw new Error(
+      `PoC modules in production chunks: ${String(poc.length)} (ADR-0010 C-203: /xlog-poc and its synthetic data generator belong to the perf build only):\n  ${poc.join('\n  ')}`,
+    );
+  }
   const path = initialPath(graph, lazyModules);
   if (path.missingModules.length > 0) {
     throw new Error(
@@ -381,6 +418,7 @@ export function measureBundle({
       totalBytes: totalSent,
       totalRemainingBytes: budget.totalBytes - totalSent,
     },
+    pocModules: poc.length,
     warnings,
   };
 }
@@ -425,6 +463,7 @@ export function formatReport(report) {
       `${kib(report.total.gzipBytes)} KiB gzip, ${kib(report.sent.totalBytes)} KiB sent`,
     `  budget ${kib(report.budget.totalBytes)} KiB gzip, remaining ${kib(report.total.remainingBytes)} KiB`,
     `  sent ${kib(report.sent.totalBytes)} KiB (${sentRule}), remaining ${kib(report.sent.totalRemainingBytes)} KiB of the budget`,
+    `PoC modules in production chunks: ${String(report.pocModules)} (ADR-0010 C-203)`,
     ...report.warnings.map((warning) => `WARN  ${warning}`),
   ];
 }

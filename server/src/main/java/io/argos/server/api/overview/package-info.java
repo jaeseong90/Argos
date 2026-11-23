@@ -2,7 +2,7 @@
 
 /**
  * The overview of the query API (WO-23; 14 §4.2, F-U17): every application at a glance, cached for
- * 5 s, and the cross-application alert list (empty until WO-25).
+ * 5 s, and the active alerts of every application from the alert engine (WO-25).
  *
  * <p>Owner: WO-23.
  */

@@ -24,6 +24,14 @@ public final class FetchState {
   /** {@code tx_id} of the transaction of the step {@link #seq}; 0 when unknown. */
   public long txId;
 
+  /**
+   * {@code sql_id} and {@code db_id} of the execution that produced the result set: the key of its
+   * full statistics ({@code Tracer.recordSqlFetch}, ADR-0010 C-185 (2); WO-16 addition).
+   */
+  public long sqlId;
+
+  public long dbId;
+
   /** Rows read so far. */
   public long rows;
 

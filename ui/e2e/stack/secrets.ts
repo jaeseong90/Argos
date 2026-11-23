@@ -5,7 +5,7 @@
 // where the file system supports it, deleted at teardown) and handed to containers as a file, as a
 // SHA-256 hash or on stdin. Nothing here logs a value.
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** 32 random bytes as unpadded base64url (43 characters, like ServerTestEnvironment's passwords). */
@@ -51,6 +51,8 @@ export interface StackSecrets {
   readonly chMigrator: string;
   readonly adminInitial: string;
   readonly metricsToken: string;
+  /** argos.master-key of the server: encrypts the alert channel secrets (16 §8.2, WO-38). */
+  readonly masterKey: string;
 }
 
 /** File names inside the secrets directory (also the names the server's *_FILE keys point at). */
@@ -65,6 +67,7 @@ export const SECRET_FILES: Readonly<Record<keyof StackSecrets, string>> = {
   chMigrator: 'ch-argos_migrator.password',
   adminInitial: 'admin-initial.password',
   metricsToken: 'metrics.token',
+  masterKey: 'master.key',
 };
 
 /** Generates and writes every secret of a run. */
@@ -80,6 +83,7 @@ export function createStackSecrets(dir: string): StackSecrets {
     chMigrator: newSecret(),
     adminInitial: newSecret(),
     metricsToken: newSecret(),
+    masterKey: newSecret(),
   };
   for (const key of Object.keys(SECRET_FILES) as (keyof StackSecrets)[]) {
     writeSecret(dir, SECRET_FILES[key], secrets[key]);
@@ -101,10 +105,14 @@ export function loadStackSecrets(dir: string): StackSecrets {
     chMigrator: read('chMigrator'),
     adminInitial: read('adminInitial'),
     metricsToken: read('metricsToken'),
+    // A stack started before WO-38 has no master key file (its server runs without one).
+    masterKey: existsSync(join(dir, SECRET_FILES.masterKey)) ? read('masterKey') : '',
   };
 }
 
 /** Every value of `secrets` (for redaction of error messages). */
 export function secretValues(secrets: StackSecrets): string[] {
-  return (Object.keys(SECRET_FILES) as (keyof StackSecrets)[]).map((key) => secrets[key]);
+  return (Object.keys(SECRET_FILES) as (keyof StackSecrets)[])
+    .map((key) => secrets[key])
+    .filter((value) => value !== '');
 }

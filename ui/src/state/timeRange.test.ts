@@ -334,6 +334,29 @@ describe('T-UI-002 time range reducer (docs/15 §5 table)', () => {
     });
   });
 
+  it('T-UI-002 XLog drag while live freezes the window the chart showed (frozen), not the URL range', () => {
+    const sel = { msMin: 100, msMax: 900, tsFrom: NOW - 4 * MINUTE, tsTo: NOW - 2 * MINUTE };
+    const frozen = { from: NOW - 5 * MINUTE + 300, to: NOW + 300 };
+    const next = apply(state({ live: true }), { type: 'xlogDrag', sel, frozen });
+    expect(next).toEqual({
+      range: { kind: 'absolute', from: frozen.from, to: frozen.to },
+      live: false,
+      sel,
+      resumeAvailable: true,
+    });
+    // Without live the frozen window is ignored: only the selection changes.
+    expect(apply(state(), { type: 'xlogDrag', sel, frozen })).toEqual({
+      range: { kind: 'relative', range: '15m' },
+      live: false,
+      sel,
+      resumeAvailable: false,
+    });
+    // An empty frozen window falls back to the URL range resolved now.
+    expect(
+      apply(state({ live: true }), { type: 'xlogDrag', sel, frozen: { from: NOW, to: NOW } }).range,
+    ).toEqual({ kind: 'absolute', from: NOW - 15 * MINUTE, to: NOW });
+  });
+
   it('T-UI-002 resume: relative 15m, live on, selection and offer cleared', () => {
     const paused = state({
       range: { kind: 'absolute', from: 1, to: 2 },

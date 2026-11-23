@@ -116,7 +116,7 @@ export function useClock(stepMs: number = QUERY_CLOCK_STEP_MS): number {
 
 /** The global time range of the current route (docs/15 §5). */
 export function useTimeRange(schema?: UrlSchema): TimeRangeApi {
-  const { state, set } = useUrlState(schema);
+  const { state, set, fresh } = useUrlState(schema);
   const fields = state as unknown as UrlStateOf<UrlSchema> & TimeFields;
   const resumeAvailable = useUiStore((s) => s.resumeAvailable);
   const setResumeAvailable = useUiStore((s) => s.setResumeAvailable);
@@ -137,14 +137,23 @@ export function useTimeRange(schema?: UrlSchema): TimeRangeApi {
         livePreference: readLivePreference(),
         liveAvailable,
       };
-      const current: TimeState = { range, live, sel, resumeAvailable };
+      // The newest URL, not this render's: a key pressed right after a write whose render is still
+      // pending (React Router renders navigations in a transition) acts on the written range
+      // (05 §2.0-3: "[" then "+" zooms the range "[" wrote).
+      const latest = fresh() as unknown as TimeFields;
+      const current: TimeState = {
+        range: latest.time,
+        live: latest.live,
+        sel: latest.sel,
+        resumeAvailable,
+      };
       const next = reduceTimeRange(current, action, ctx);
       // Remember the user's choice; a refused "live on" (no live mode here) changes nothing.
       if ((action.type === 'setLive' || action.type === 'toggleLive') && next !== current) {
         writeLivePreference(next.live);
       }
       const partial: Partial<TimeFields> = { time: next.range, live: next.live };
-      if ('sel' in state) {
+      if ('sel' in latest) {
         partial.sel = next.sel;
       }
       const written = set(partial, {
@@ -153,12 +162,12 @@ export function useTimeRange(schema?: UrlSchema): TimeRangeApi {
       if (written) {
         setResumeAvailable(next.resumeAvailable);
         if (action.type === 'resume') {
-          const before = resolveRange(range, ctx.now, timeZone);
+          const before = resolveRange(current.range, ctx.now, timeZone);
           emitResume({ from: Math.min(before.to, ctx.now), to: ctx.now });
         }
       }
     },
-    [live, liveAvailable, range, resumeAvailable, sel, set, setResumeAvailable, state, timeZone],
+    [fresh, liveAvailable, resumeAvailable, set, setResumeAvailable, timeZone],
   );
 
   return {

@@ -270,7 +270,11 @@ final class GrpcExporter
     TracerImpl tracer = runtime.tracerImpl();
     if (tracer != null) {
       tracer.txIds().setNodeId(hello.getInstanceId() & 0xFFFF_FFFFL);
+      // WO-14: the argos tracestate entry of outgoing calls (10 §8).
+      tracer.setSessionIds(hello.getAppId(), hello.getInstanceId());
     }
+    // WO-16: the active snapshot period the server asks for (11 §3), read by argos-metrics.
+    runtime.serverActiveSnapshotIntervalSeconds(hello.getActiveSnapshotIntervalS());
     agentSession.userIdSalt(hello.getUserIdSalt().toByteArray());
     sender.wake();
   }

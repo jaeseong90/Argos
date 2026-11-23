@@ -13,9 +13,56 @@ import './badges.css';
 export const INSTANCE_STATUSES = ['UP', 'STALE', 'DOWN', 'WARN'] as const;
 export type InstanceStatus = (typeof INSTANCE_STATUSES)[number];
 
-/** Reasons the server gives for WARN (docs/15 §6.4: clock skew, drops, outdated agent, module off). */
-export const WARN_REASONS = ['clock_skew', 'drops', 'outdated_agent', 'module_disabled'] as const;
+/**
+ * Reasons the server gives for WARN (docs/15 §6.4, docs/12 §4.2, ADR-0010 C-216 (2)): clock skew,
+ * drops, outdated agent (`old_version`; `outdated_agent` is the older spelling), module disabled,
+ * kill switch, configuration drift, context leak.
+ */
+export const WARN_REASONS = [
+  'clock_skew',
+  'drops',
+  'old_version',
+  'outdated_agent',
+  'module_disabled',
+  'kill_switch',
+  'config_drift',
+  'context_leak',
+] as const;
 export type WarnReason = (typeof WARN_REASONS)[number];
+
+/** The i18n keys (namespace common) of the WARN reason labels. */
+export type WarnReasonKey =
+  | 'component.status.warnReason.clockSkew'
+  | 'component.status.warnReason.drops'
+  | 'component.status.warnReason.outdatedAgent'
+  | 'component.status.warnReason.moduleDisabled'
+  | 'component.status.warnReason.killSwitch'
+  | 'component.status.warnReason.configDrift'
+  | 'component.status.warnReason.contextLeak'
+  | 'component.status.warnReason.other';
+
+/** The i18n key (namespace common) of a WARN reason code; unknown codes are "Other". */
+export function warnReasonKey(reason: string): WarnReasonKey {
+  switch (reason.trim().toLowerCase()) {
+    case 'clock_skew':
+      return 'component.status.warnReason.clockSkew';
+    case 'drops':
+      return 'component.status.warnReason.drops';
+    case 'old_version':
+    case 'outdated_agent':
+      return 'component.status.warnReason.outdatedAgent';
+    case 'module_disabled':
+      return 'component.status.warnReason.moduleDisabled';
+    case 'kill_switch':
+      return 'component.status.warnReason.killSwitch';
+    case 'config_drift':
+      return 'component.status.warnReason.configDrift';
+    case 'context_leak':
+      return 'component.status.warnReason.contextLeak';
+    default:
+      return 'component.status.warnReason.other';
+  }
+}
 
 const STATUS_CLASS: Record<InstanceStatus | 'UNKNOWN', string> = {
   UP: 'status-badge--up',
@@ -52,20 +99,7 @@ export function StatusBadge({ status, warnReasons = [], 'data-testid': testId }:
     WARN: t('component.status.warn'),
     UNKNOWN: t('component.status.unknown'),
   }[normalized];
-  const reasonLabel = (reason: string): string => {
-    switch (reason.toLowerCase()) {
-      case 'clock_skew':
-        return t('component.status.warnReason.clockSkew');
-      case 'drops':
-        return t('component.status.warnReason.drops');
-      case 'outdated_agent':
-        return t('component.status.warnReason.outdatedAgent');
-      case 'module_disabled':
-        return t('component.status.warnReason.moduleDisabled');
-      default:
-        return t('component.status.warnReason.other');
-    }
-  };
+  const reasonLabel = (reason: string): string => t(warnReasonKey(reason));
   const description =
     normalized === 'STALE'
       ? t('component.status.tooltip.stale')

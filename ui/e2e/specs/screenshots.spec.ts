@@ -12,6 +12,7 @@
 // (no bundled font, ADR-0010 C-169 (1)).
 import type { Page } from '@playwright/test';
 
+import { shellMasks } from '../fixtures/screenshots';
 import { expect, test } from '../fixtures/stack';
 import { expectShell } from '../fixtures/ui';
 import { OVERFLOW_TX_ID } from '../required/checks';
@@ -39,7 +40,11 @@ test.beforeEach(({}, testInfo) => {
 
 /** Elements whose content changes per run. */
 function masks(page: Page) {
-  return [page.getByTestId('time-range-preset'), page.getByTestId('error-state-request-id')];
+  return [
+    ...shellMasks(page),
+    page.getByTestId('time-range-preset'),
+    page.getByTestId('error-state-request-id'),
+  ];
 }
 
 test.describe('signed out', () => {
@@ -57,8 +62,9 @@ test(
   { annotation: VISUAL },
   async ({ page, seed }) => {
     // A relative range: its label ("Last 1 hour") has the same width every day, unlike an
-    // absolute one, whose width would move the controls next to the mask.
-    await page.goto(`/apps/${String(seed.primary_app_id)}/dashboard?from=now-1h`);
+    // absolute one, whose width would move the controls next to the mask. The dashboard (WO-32) and
+    // active transactions (WO-35) are screens now: the instance list (WO-37) is the placeholder shown.
+    await page.goto(`/apps/${String(seed.primary_app_id)}/instances?from=now-1h`);
     await expectShell(page);
     await expect(page.getByTestId('route-pending')).toBeVisible();
     await expect(page.getByTestId('time-range-preset')).toHaveAttribute('data-range', '1h');

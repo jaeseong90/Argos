@@ -3,6 +3,9 @@ package io.argos.server.api.overview;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import io.argos.server.alert.AlertStatusService;
+import io.argos.server.alert.engine.ActiveAlert;
+import io.argos.server.api.alerts.AlertViews;
 import io.argos.server.api.apps.InstanceStates;
 import io.argos.server.api.dashboard.TimeQueries;
 import io.argos.server.api.dashboard.Values;
@@ -32,11 +35,20 @@ import org.springframework.stereotype.Service;
  * with the raw live tail of 14 §3), live values from the session registry, the last deploy marker
  * and the server summary.
  *
+ * <p>The state of an application is the worst state of its instances that are not archived and its
+ * up count those in {@code UP} or {@code WARN} ({@link InstanceStates#summarize}: the instance
+ * state machine of 12 §4.2, ADR-0010 C-216 (3)); the instance ids of every listed application are
+ * read in one query.
+ *
  * <p>The result is kept for {@value #CACHE_SECONDS} s per filter (14 §4.2 "5초 캐시"): the overview
  * reads every application at once and a wall of screens refreshes it every few seconds. The
  * response itself stays {@code Cache-Control: no-store} (SEC-45). Every signed-in user sees every
  * application in 1.0 ({@code AppAccessPolicy}); per-application permissions (1.x) would need a
  * filter per user here.
+ *
+ * <p>Firing alerts come from the alert engine's active alerts (FIRING and ACKED; WO-25, ADR-0010
+ * C-212 (2)): {@code firing} per application by severity, {@code alerts_firing_total} the rows of
+ * {@link #alerts} with the same {@code env} (server self alerts included).
  */
 @Service
 public class OverviewService {
@@ -59,6 +71,7 @@ public class OverviewService {
   private final CatalogRepository catalog;
   private final InstanceStates states;
   private final HealthService health;
+  private final AlertStatusService alerts;
   private final Cache<Key, Result> cache =
       Caffeine.newBuilder()
           .expireAfterWrite(Duration.ofSeconds(CACHE_SECONDS))
@@ -66,11 +79,57 @@ public class OverviewService {
           .build();
 
   public OverviewService(
-      TimeQueries queries, CatalogRepository catalog, InstanceStates states, HealthService health) {
+      TimeQueries queries,
+      CatalogRepository catalog,
+      InstanceStates states,
+      HealthService health,
+      AlertStatusService alerts) {
     this.queries = queries;
     this.catalog = catalog;
     this.states = states;
     this.health = health;
+    this.alerts = alerts;
+  }
+
+  /** Most rows of {@link #alerts} (14 §4.2). */
+  public static final int MAX_ALERTS = 1_000;
+
+  /**
+   * The active alerts of every application.
+   *
+   * @param rows the alerts, newest first, at most {@value #MAX_ALERTS}
+   * @param truncated whether there were more
+   */
+  public record Alerts(List<AlertViews.AlertEventItem> rows, boolean truncated) {}
+
+  /**
+   * The active (FIRING and ACKED) alerts of every application and of the server, newest first.
+   *
+   * @param env only this environment's application alerts (server self alerts always), or null
+   * @param severity {@code warn} or {@code critical}, or null
+   * @param state {@code FIRING} or {@code ACKED}, or null
+   */
+  public Alerts alerts(String env, String severity, String state) {
+    Instant now = alerts.now();
+    List<AlertViews.AlertEventItem> out = new ArrayList<>();
+    boolean truncated = false;
+    for (ActiveAlert a : alerts.active()) {
+      if (!inEnv(a, env)
+          || (severity != null && !severity.equals(a.severity()))
+          || (state != null && !state.equals(a.state()))) {
+        continue;
+      }
+      if (out.size() == MAX_ALERTS) {
+        truncated = true;
+        break;
+      }
+      out.add(AlertViews.AlertEventItem.of(a, now == null ? queries.now() : now));
+    }
+    return new Alerts(Collections.unmodifiableList(out), truncated);
+  }
+
+  private static boolean inEnv(ActiveAlert a, String env) {
+    return env == null || a.appId() == null || env.equals(a.env());
   }
 
   private record Key(String env, String group, QueryLimits.TxKind kind) {}
@@ -123,12 +182,16 @@ public class OverviewService {
       }
     }
     Map<Integer, DeployRecord> deploys = catalog.lastDeploys(ids);
+    Map<Integer, List<Integer>> instanceIds =
+        catalog.instanceIdsByApp(ids, InstanceStates.SUMMARY_INSTANCES_MAX);
     double tileSeconds = Math.max(1, Duration.between(tileFrom, now).toMillis() / 1000.0);
+    List<ActiveAlert> active = alerts.active();
+    Map<Integer, AlertStatusService.FiringCounts> firing = AlertStatusService.countByApp(active);
+    long firingTotal = active.stream().filter(a -> inEnv(a, env)).count();
     List<OverviewViews.App> out = new ArrayList<>(apps.size());
     for (AppRecord a : apps) {
-      int up = states.sessions(a.id()).size();
-      int total = a.instancesTotal();
-      String status = total > 0 && up >= total ? InstanceStates.UP : InstanceStates.DOWN;
+      InstanceStates.Summary summary =
+          states.summarize(instanceIds.getOrDefault(a.id(), List.of()));
       InstanceStates.Live live = states.live(a.id(), Set.of(), now);
       QueryRow t = tiles.get(a.id());
       long count = t == null ? 0 : t.getLong("cnt");
@@ -140,20 +203,26 @@ public class OverviewService {
               a.name(),
               a.env(),
               a.group(),
-              status,
-              new OverviewViews.Instances(up, total),
+              summary.status(),
+              new OverviewViews.Instances(summary.up(), a.instancesTotal()),
               Values.tps(count, tileSeconds),
               t == null || count == 0 ? null : Values.quantile(t, "q", 1),
               Values.ratio(errors, count, 6),
               live.active(),
               live.batchRunning(),
-              null,
+              firingCounts(firing.get(a.id())),
               d == null ? null : new OverviewViews.Deploy(d.ts(), d.version()),
               sparkline(first, now, minutes.getOrDefault(a.id(), Map.of()))));
     }
     return new Result(
-        new OverviewViews.Overview(Collections.unmodifiableList(out), null, health.server()),
+        new OverviewViews.Overview(Collections.unmodifiableList(out), firingTotal, health.server()),
         truncated);
+  }
+
+  private static AlertViews.FiringCounts firingCounts(AlertStatusService.FiringCounts c) {
+    return c == null
+        ? new AlertViews.FiringCounts(0, 0)
+        : new AlertViews.FiringCounts(c.critical(), c.warn());
   }
 
   /** Minute rollups up to the live tail, raw rows after it (14 §3). */

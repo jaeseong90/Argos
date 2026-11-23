@@ -30,7 +30,7 @@ class MigrationSourceTest {
 
     assertThat(bundled.files()).isEqualTo(repository.files());
     assertThat(bundled.names("schema")).contains("V001__init.sql");
-    assertThat(bundled.names("rollups")).hasSize(12);
+    assertThat(bundled.names("rollups")).hasSize(13);
     assertThat(bundled.files().keySet()).noneMatch(p -> p.endsWith("README.md"));
     MigrationCatalog catalog = MigrationCatalog.load(bundled, new SchemaTemplates(bundled));
     assertThat(catalog.scripts().get(0).version()).isEqualTo("V001");

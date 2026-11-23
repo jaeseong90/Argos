@@ -21,7 +21,8 @@ public final class AppViews {
    * @param env environment
    * @param group group, or null
    * @param instancesTotal instances that are not archived
-   * @param instancesUp instances with a live session (C-160)
+   * @param instancesUp instances in {@code UP} or {@code WARN} of the instance state machine (12
+   *     §4.2; the same count as {@code instances.up} of the overview)
    * @param registrationPolicy {@code auto} or {@code approval}
    * @param recommendedRulesApplied whether the recommended alert rules were applied
    * @param lastSeenAt the latest connection of its instances, or null
@@ -29,6 +30,9 @@ public final class AppViews {
    * @param slowThresholdMs XLog slow threshold
    * @param createdAt creation time
    * @param registeredFromAppId the home application of an environment variant (C-155), or null
+   * @param kinds transaction kinds ({@code HTTP}, {@code BATCH}, {@code MESSAGE}) recorded in the
+   *     last 7 days, sorted ({@code GET /apps/{appId}} only, ADR-0010 C-205 (4), C-191 (2)); null
+   *     in the list and when ClickHouse cannot answer (unknown, never "none")
    */
   @Schema(name = "App")
   public record App(
@@ -44,7 +48,14 @@ public final class AppViews {
       @JsonProperty("apdex_t_ms") int apdexTMs,
       @JsonProperty("slow_threshold_ms") int slowThresholdMs,
       @JsonProperty("created_at") Instant createdAt,
-      @JsonProperty("registered_from_app_id") @Nullable Integer registeredFromAppId) {}
+      @JsonProperty("registered_from_app_id") @Nullable Integer registeredFromAppId,
+      @Schema(
+              description =
+                  "Transaction kinds (HTTP, BATCH, MESSAGE) recorded in the last 7 days, sorted."
+                      + " Only GET /apps/{appId} fills it; null in the list and when ClickHouse"
+                      + " cannot answer (unknown, not none). The UI disables the batch kind filter"
+                      + " for an application whose kinds lack BATCH (ADR-0010 C-191 (2)).")
+          @Nullable List<String> kinds) {}
 
   /**
    * The application of an instance.
@@ -65,8 +76,8 @@ public final class AppViews {
    * @param name stored name (names over 128 characters are stored shortened, C-157 (4))
    * @param host host name
    * @param pid process id
-   * @param state {@code UP} with a live session, {@code DOWN} without (C-160; {@code STALE} and
-   *     {@code WARN} come with WO-22)
+   * @param state {@code UP}, {@code STALE}, {@code DOWN} or {@code WARN} from the server's instance
+   *     state machine (12 §4.2)
    * @param agentVersion agent version
    * @param compat {@code ok}, {@code old} or {@code unsupported} against the server's accepted
    *     agent versions
@@ -77,7 +88,8 @@ public final class AppViews {
    * @param clockSkewMs clock offset of the live session, else the stored one, or null
    * @param drops24h agent drops in the last 24 h ({@code argos_agent_dropped_total}), null when the
    *     agent reported no such series
-   * @param modulesDisabled disabled instrumentation modules: null until WO-22 records them
+   * @param modulesDisabled the instrumentation modules the agent reported disabled, sorted; null
+   *     for an instance the state machine does not track (DOWN: unknown)
    * @param ipMode remote IP mode
    * @param userIdMode user id mode
    * @param queryStringMode query string mode

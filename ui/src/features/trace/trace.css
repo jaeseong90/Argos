@@ -1,0 +1,534 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* Distributed trace view (docs/15 §9.5, §13): header actions, searched range, summary, notices,
+   legend, the tree + timeline list (components/waterfall) and the node panel. Colours come from
+   the tokens of styles/tokens.css; positions inside rows are React style properties (CSSOM). */
+
+.trace-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.trace-page__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 600;
+}
+
+.trace-page__title .safe-text--mono {
+  font-size: var(--fs-md);
+  font-weight: 400;
+}
+
+.trace-page__refreshing {
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+}
+
+/* Actions */
+.trace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.trace-actions__status {
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}
+
+/* Searched range */
+.trace-window {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--fs-sm);
+}
+
+.trace-window__label {
+  color: var(--color-text-muted);
+}
+
+.trace-window__basis {
+  font-weight: 600;
+}
+
+.trace-window__range,
+.trace-window__hint {
+  font-variant-numeric: tabular-nums;
+}
+
+.trace-window__hint {
+  color: var(--color-text-muted);
+}
+
+.trace-window__search {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.trace-window__confirm-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.trace-not-found__actions {
+  display: flex;
+  justify-content: center;
+}
+
+/* Summary */
+.trace-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  font-size: var(--fs-sm);
+}
+
+.trace-summary__item {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.trace-summary__item--wide {
+  flex: 1 1 280px;
+  max-width: 100%;
+}
+
+.trace-summary__item dt {
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+}
+
+.trace-summary__item dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.trace-notices {
+  margin-bottom: 0;
+}
+
+.trace-notices .partial-banner__list {
+  flex-direction: column;
+}
+
+/* Legend */
+.trace-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+}
+
+.trace-legend__title {
+  font-weight: 600;
+}
+
+.trace-legend__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trace-legend__list li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.trace-legend__note {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.trace-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.trace-swatch--tx {
+  background: var(--color-primary);
+}
+
+.trace-swatch--call {
+  background: var(--step-http);
+}
+
+.trace-swatch--wait {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--color-border-strong) 0 3px,
+    var(--color-border) 3px 6px
+  );
+}
+
+.trace-swatch--external {
+  border: 1px dashed var(--color-text);
+  background: var(--step-http);
+}
+
+.trace-swatch--critical {
+  outline: 2px solid var(--color-text);
+  background: var(--color-primary);
+}
+
+.trace-swatch--failed {
+  box-shadow: 0 0 0 2px var(--step-error);
+  background: var(--color-primary);
+}
+
+/* List */
+.trace-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.trace-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.trace-caret--leaf {
+  cursor: default;
+}
+
+.trace-node {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* The app and environment keep their text up to a cap; the service takes the rest and is the
+   first to end in an ellipsis (its full text is in the tooltip and the node panel). */
+.trace-node > .safe-text {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.trace-node__app {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 160px;
+  color: var(--color-primary-text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.trace-node__app:hover {
+  text-decoration: underline;
+}
+
+.trace-node__env {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 96px;
+  color: var(--color-text-muted);
+}
+
+.trace-node > .trace-node__service {
+  flex: 1 1 0;
+  min-width: 24px;
+}
+
+.trace-node__label {
+  flex: none;
+  color: var(--color-text-muted);
+}
+
+.trace-node--missing {
+  color: var(--color-warning-text);
+}
+
+.trace-node--missing .trace-node__label {
+  color: inherit;
+}
+
+.trace-icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.trace-icon--critical {
+  color: var(--color-text);
+}
+
+.trace-badge {
+  flex: none;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: var(--fs-xs);
+  line-height: 16px;
+}
+
+.trace-badge--muted {
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+}
+
+.trace-badge--warn {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+}
+
+.trace-badge--error {
+  background: var(--color-error-bg);
+  color: var(--color-error-text);
+}
+
+.trace-badge--external {
+  border: 1px dashed var(--color-text-muted);
+  color: var(--color-text);
+}
+
+.trace-call__wait {
+  flex: none;
+  color: var(--color-text-muted);
+}
+
+.trace-cols {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.trace-col {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.trace-col--instance {
+  width: 104px;
+}
+
+.trace-col--version {
+  width: 64px;
+}
+
+.trace-col--status {
+  width: 72px;
+}
+
+.trace-col--elapsed {
+  justify-content: flex-end;
+  width: 60px;
+}
+
+.trace-cols--header {
+  display: flex;
+  height: 100%;
+  padding: 0 var(--space-2) 0 calc(4px + 20px);
+}
+
+.trace-cols--header .trace-col--name {
+  flex: 1 1 auto;
+}
+
+.trace-inline-button {
+  flex: none;
+  padding: 0 var(--space-1);
+  border: 1px solid currentcolor;
+  border-radius: 3px;
+  background: var(--color-bg);
+  color: var(--color-primary-text);
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.trace-inline-button:disabled {
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.trace-missing__track {
+  display: flex;
+  align-items: center;
+}
+
+.trace-missing__note {
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+}
+
+/* Tooltip */
+.trace-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.trace-tip__title {
+  font-weight: 600;
+}
+
+.trace-tip__line {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Node panel */
+.trace-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.trace-panel__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.trace-panel__field {
+  min-width: 0;
+}
+
+.trace-panel__field dt {
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+}
+
+.trace-panel__field dd {
+  min-width: 0;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.trace-panel__note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+}
+
+.trace-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.trace-panel a.control-button,
+.trace-actions a.control-button {
+  text-decoration: none;
+}
+
+/* Glyphs drawn by CSS (decorative, aria-hidden; the text next to them carries the meaning). */
+.trace-env {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.trace-env::before {
+  content: '(';
+}
+
+.trace-env::after {
+  content: ')';
+}
+
+.trace-sep {
+  flex: none;
+  color: var(--color-text-muted);
+}
+
+.trace-sep::before {
+  content: '\00B7';
+  padding: 0 4px;
+}
+
+.trace-caret::before {
+  content: '\25B8';
+}
+
+.trace-caret[aria-expanded='true']::before {
+  content: '\25BE';
+}
+
+.trace-caret--leaf::before {
+  content: '';
+}
+
+.trace-icon--critical::before {
+  content: '\25C6';
+  font-size: var(--fs-xs);
+}
+
+.trace-glyph {
+  display: inline-flex;
+  flex: none;
+  justify-content: center;
+  width: 16px;
+  color: var(--color-text-muted);
+}
+
+.trace-glyph--call::before {
+  content: '\21B3';
+}
+
+.trace-glyph--external::before {
+  content: '\2197';
+}
+
+.trace-glyph--warn::before {
+  content: '\26A0';
+}
+
+.trace-glyph--pending::before {
+  content: '\25F7';
+}
+
+.trace-glyph--unknown::before {
+  content: '?';
+}

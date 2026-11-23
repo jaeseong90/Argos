@@ -66,10 +66,11 @@ public class HealthController {
       summary = "Server summary",
       description =
           "The data.server block of the overview: current ingest lag (p99, null before the first"
-              + " insert) and live agent sessions. disk_usage_ratio and cert_expiry_days are null"
-              + " until WO-28 records them, channel_failures_24h until the alert engine exists"
-              + " (WO-25).")
-  @ArgosSource({"memory:meters", "memory:sessions"})
+              + " insert), the notification deliveries that failed in the last 24 h (null only"
+              + " while PostgreSQL cannot be read) and live agent sessions. disk_usage_ratio and"
+              + " cert_expiry_days are null until WO-28 records them.")
+  @ArgosLimits(timeoutS = 10)
+  @ArgosSource({"memory:meters", "memory:sessions", "postgres:notification_deliveries"})
   public ResponseEnvelope<HealthViews.Server> serverHealth() {
     return ResponseEnvelope.of(health.server());
   }

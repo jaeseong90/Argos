@@ -854,7 +854,11 @@ export function TimeSeriesChart({
           </li>
         ) : null}
       </ul>
-      {a11yTable}
+      {/* A table keeps the height of its rows whatever `height: 1px` says, so the hidden table
+          alone would stretch the page below the chart; the 1 px block around it clips it. */}
+      <div className="visually-hidden" data-testid="chart-a11y-table-box">
+        {a11yTable}
+      </div>
     </figure>
   );
 }

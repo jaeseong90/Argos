@@ -47,10 +47,11 @@ public final class ConfigKeyCatalog {
 
   /**
    * Last segments of secret value keys; their values are never shown. {@code jwt-key} and {@code
-   * jwt-previous-key} are the access-token signing keys (WO-24, 16 §7.1).
+   * jwt-previous-key} are the access-token signing keys (WO-24, 16 §7.1); {@code previous} is the
+   * previous master key of {@code security.master-key.previous} (WO-25, 16 §8.2).
    */
   static final Set<String> SECRET_NAMES =
-      Set.of("password", "token", "master-key", "jwt-key", "jwt-previous-key");
+      Set.of("password", "token", "master-key", "jwt-key", "jwt-previous-key", "previous");
 
   // Initialization order matters: build() uses SIMPLE_TYPES.
   private static final Map<Class<?>, String> SIMPLE_TYPES = simpleTypes();

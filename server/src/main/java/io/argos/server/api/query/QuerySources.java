@@ -22,9 +22,10 @@ import org.springframework.stereotype.Component;
  * every other request).
  *
  * <p>The table families: {@link #transactions()} ({@code xlog}, {@code app_stat_*}, {@code
- * service_stat_*}), {@link #transactionsMinuteOnly()} ({@code instance_stat_1m}, {@code
- * error_stat_1m}: no hour rollup), {@link #metrics()} ({@code metric}, {@code metric_*}), {@link
- * #statistics()} ({@code sql_stat_*}, {@code ext_stat_*}).
+ * service_stat_*}), {@link #instanceTransactions()} ({@code xlog}, {@code instance_stat_1m/1h},
+ * ADR-0010 C-212 (1)), {@link #transactionsMinuteOnly()} ({@code error_stat_1m}: no hour rollup),
+ * {@link #metrics()} ({@code metric}, {@code metric_*}), {@link #statistics()} ({@code sql_stat_*},
+ * {@code ext_stat_*}).
  */
 @Component
 public class QuerySources {
@@ -45,7 +46,15 @@ public class QuerySources {
     return family("transactions", retention.xlog(), true);
   }
 
-  /** {@code xlog} with {@code instance_stat_1m} or {@code error_stat_1m} (no hour rollup). */
+  /**
+   * {@code xlog} with {@code instance_stat_1m/1h}: per-instance transactions (the dashboard with an
+   * instance filter or exclusion, its instance tiles, the instance comparison; ADR-0010 C-212 (1)).
+   */
+  public SourceSelector.Family instanceTransactions() {
+    return family("transactions-instance", retention.xlog(), true);
+  }
+
+  /** {@code xlog} with {@code error_stat_1m} (no hour rollup). */
   public SourceSelector.Family transactionsMinuteOnly() {
     return family("transactions-minute", retention.xlog(), false);
   }

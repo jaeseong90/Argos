@@ -107,6 +107,12 @@ public final class CachingSessionStore implements SessionStore {
   }
 
   @Override
+  public void recordPendingRegistration(
+      String name, String env, String host, int homeAppId, Instant at) {
+    delegate.recordPendingRegistration(name, env, host, homeAppId, at);
+  }
+
+  @Override
   public OptionalInt findInstance(int appId, String name) {
     InstanceKey key = new InstanceKey(appId, name);
     OptionalInt found;

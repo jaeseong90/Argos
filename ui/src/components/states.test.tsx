@@ -158,6 +158,18 @@ describe('LoadingState (docs/15 §6.7)', () => {
       'Narrow the time range to make it faster.',
     );
   });
+
+  it('shows only "still loading" after 2 seconds with slowHint="wait" (C-218 (4))', () => {
+    vi.useFakeTimers();
+    render(<LoadingState variant="table" rows={3} slowHint="wait" />, { wrapper });
+    expect(screen.queryByTestId('loading-state-slow')).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(SLOW_LOADING_MS);
+    });
+    const hint = screen.getByTestId('loading-state-slow');
+    expect(hint).toHaveTextContent(/^Still loading…$/);
+    expect(hint.textContent).not.toMatch(/time range/i);
+  });
 });
 
 describe('PartialBanner (docs/15 §6.7, D-06, D-07)', () => {

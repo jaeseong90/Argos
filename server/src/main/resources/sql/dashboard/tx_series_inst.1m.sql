@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: Apache-2.0
 --
 -- Dashboard transaction series of selected instances (14 §4.4 instance[]): minute fragment from
--- the instance rollup (13 §4.7; it has no hour table, so the plan stays on minutes).
+-- the instance rollup (13 §4.7). Filter as in dashboard/tx_series_inst.raw.
 -- @tables instance_stat_1m
 SELECT toStartOfInterval(minute, toIntervalSecond({step_seconds:UInt32})) AS b,
        sum(count) AS c,
@@ -11,6 +11,7 @@ SELECT toStartOfInterval(minute, toIntervalSecond({step_seconds:UInt32})) AS b,
        quantilesDDMergeState(0.01, 0.5, 0.95, 0.99)(q_elapsed) AS q
 FROM {db}.{p}{rollup:instance_stat_1m}
 WHERE app_id = {app:UInt32} AND kind IN {kinds:Array(String)}
-  AND instance_id IN {instances:Array(UInt32)}
+  AND ({all:UInt8} = 1 OR instance_id IN {instances:Array(UInt32)})
+  AND instance_id NOT IN {excluded:Array(UInt32)}
   AND minute >= {from:DateTime('UTC')} AND minute < {to:DateTime('UTC')}
 GROUP BY b

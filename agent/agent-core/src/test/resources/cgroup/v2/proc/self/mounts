@@ -1,0 +1,8 @@
+overlay / overlay rw,relatime,lowerdir=/var/lib/docker/overlay2/l/A,upperdir=/u,workdir=/w 0 0
+proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0
+tmpfs /dev tmpfs rw,nosuid,size=65536k,mode=755 0 0
+cgroup /sys/fs/cgroup cgroup2 ro,nosuid,nodev,noexec,relatime 0 0
+/dev/sda1 /data ext4 rw,relatime 0 0
+/dev/sda1 /etc/hosts ext4 rw,relatime 0 0
+server:/export /mnt/nfs nfs4 rw,relatime 0 0
+/dev/sda1 /data ext4 rw,relatime 0 0

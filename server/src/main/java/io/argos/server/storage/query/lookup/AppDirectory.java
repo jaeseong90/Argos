@@ -8,6 +8,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -42,6 +43,14 @@ public class AppDirectory {
   private static final String INSTANCES =
       "SELECT id, app_id, name, ip_mode, user_id_mode, sql_param_mode FROM argos.instances"
           + " WHERE id = ANY(?)";
+
+  /** Instances of the ids that exist and are archived or stored DOWN (C-226 (12)). */
+  private static final String DOWN_OR_ARCHIVED =
+      "SELECT id FROM argos.instances WHERE id = ANY(?)"
+          + " AND (archived_at IS NOT NULL OR status = 'DOWN')";
+
+  /** The ids that exist. */
+  private static final String EXISTING = "SELECT id FROM argos.instances WHERE id = ANY(?)";
 
   private static final String INSTANCES_OF_APP =
       "SELECT id, app_id, name, ip_mode, user_id_mode, sql_param_mode FROM argos.instances"
@@ -116,6 +125,26 @@ public class AppDirectory {
     Map<Integer, InstanceInfo> out = new LinkedHashMap<>();
     for (List<Integer> batch : batches(ids)) {
       query(INSTANCES, batch, rs -> out.put(rs.getInt(1), instance(rs)));
+    }
+    return out;
+  }
+
+  /**
+   * The instances of {@code ids} that are gone (ADR-0010 C-226 (12)): archived, stored {@code DOWN}
+   * (12 §4.2: no heartbeat for 3 minutes or 5 minutes after an {@code AgentBye}, a merged temporary
+   * instance) or deleted (12 §4.3 purge).
+   */
+  public Set<Integer> goneInstances(Collection<Integer> ids) {
+    Set<Integer> out = new LinkedHashSet<>();
+    for (List<Integer> batch : batches(ids)) {
+      Set<Integer> existing = new HashSet<>();
+      query(EXISTING, batch, rs -> existing.add(rs.getInt(1)));
+      query(DOWN_OR_ARCHIVED, batch, rs -> out.add(rs.getInt(1)));
+      for (Integer id : batch) {
+        if (!existing.contains(id)) {
+          out.add(id);
+        }
+      }
     }
     return out;
   }

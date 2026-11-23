@@ -2,133 +2,143 @@
 package io.argos.agent.instrumentation.httpclient.jdk;
 
 import io.argos.agent.bootstrap.Argos;
+import io.argos.agent.bootstrap.CallDepth;
 import io.argos.agent.bootstrap.ContextStore;
-import io.argos.agent.bootstrap.DictKind;
-import io.argos.agent.bootstrap.FailureKind;
-import io.argos.agent.bootstrap.StepType;
 import io.argos.agent.bootstrap.TraceContext;
 import io.argos.agent.bootstrap.Tracer;
-import java.net.ConnectException;
 import java.net.HttpURLConnection;
-import java.net.NoRouteToHostException;
-import java.net.SocketTimeoutException;
 import java.net.URL;
-import java.net.UnknownHostException;
 import net.bytebuddy.asm.Advice;
 
 /**
- * Inlined into {@code sun.net.www.protocol.http.HttpURLConnection.getInputStream()} (java.base, 10
- * §6.5). Bootstrap API and JDK types only (no helper can reach the bootstrap class loader).
+ * Inlined into {@code connect()}, {@code getOutputStream()}, {@code getInputStream()} and {@code
+ * getErrorStream()} of {@code sun.net.www.protocol.http.HttpURLConnection} (java.base, 10 §6.5).
+ * Bootstrap API and JDK types only: no helper can reach the bootstrap class loader.
  *
- * <p>Enter, inside a transaction, for the first call on this connection only (a {@link
- * ContextStore} entry marks it: the JDK calls {@code getInputStream()} again from inside the
- * exchange through {@code getResponseCode()}, and applications call it after {@code
- * getResponseCode()}): {@code traceparent} when the request is not connected and carries none, then
- * an HTTP step named after the host with the detail {@code METHOD host[:port]/path} (no query
- * string, no user info, no path parameters such as {@code ;jsessionid}). Exit: the response code
- * ({@code responseCode} field, set by the JDK while it reads the status line, also when it throws
- * for 4xx/5xx), the failure class of 10 §6.5 and {@code recordExtStat}. The application's result
- * and exception are never touched.
+ * <p>The state machine of 10 §6.5, per connection, for the outermost call of a thread only ({@code
+ * CallDepth.HTTP_CLIENT}: the JDK calls {@code connect()} from {@code getOutputStream()} and {@code
+ * getInputStream()}, and {@code getInputStream()} again through {@code getResponseCode()}):
+ *
+ * <ol>
+ *   <li>not started: the first {@code connect()}, {@code getOutputStream()} or {@code
+ *       getInputStream()} inside a transaction sets the propagation headers ({@code
+ *       Tracer.outgoingHeaders}, only while {@code connected} is false, with {@code
+ *       setRequestProperty}) and opens the HTTP step ({@code httpStart}; HOST text of ADR-0010
+ *       C-142). Two {@link ContextStore} entries keep the state: {@code long[] {seq, hostId,
+ *       start}} (it stays, so the connection never starts again) and the {@link TraceContext}
+ *       (removed when the step ends, so the step ends once).
+ *   <li>started: a {@code connect()} or {@code getOutputStream()} that throws ends the step with
+ *       the error (connection refused, connect timeout); one that returns keeps it open while the
+ *       application writes the body.
+ *   <li>response: the exit of {@code getInputStream()} (directly or through {@code
+ *       getResponseCode()}), or of {@code getErrorStream()} once a status is known, ends the step
+ *       with the {@code responseCode} field (the JDK sets it also when it throws for 4xx/5xx; then
+ *       the exception is not an error of the call) or, without a status, with the exception ({@code
+ *       httpEnd} classifies, 10 §6.5).
+ * </ol>
+ *
+ * <p>The application's arguments, results and exceptions are never touched; header values are never
+ * logged (SEC-26).
  */
 public final class HttpUrlConnectionAdvice {
   private HttpUrlConnectionAdvice() {}
 
-  // The advice locals are written here and read by exit(); Error Prone cannot see that link.
-  @SuppressWarnings("UnusedVariable")
   @Advice.OnMethodEnter(suppress = Throwable.class)
-  public static TraceContext enter(
+  public static Object enter(
       @Advice.This HttpURLConnection connection,
-      @Advice.FieldValue("connected") boolean connected,
-      @Advice.Local("argosSeq") int seq,
-      @Advice.Local("argosHost") long hostId,
-      @Advice.Local("argosStart") long start) {
+      @Advice.Origin("#m") String method,
+      @Advice.FieldValue("connected") boolean connected) {
     if (Argos.skip(HttpClientJdkModule.MODULE_ID)) {
       return null;
     }
-    Tracer tracer = Argos.tracer();
-    TraceContext context = tracer.current();
-    if (context == null) {
-      return null;
-    }
-    ContextStore<HttpURLConnection, TraceContext> calls =
-        ContextStore.of(HttpURLConnection.class, TraceContext.class);
-    if (calls.get(connection) != null) {
-      return null;
-    }
-    calls.put(connection, context);
-    URL url = connection.getURL();
-    String host = url.getHost();
-    if (!connected
-        && tracer.shouldPropagate(host)
-        && connection.getRequestProperty("traceparent") == null) {
-      connection.setRequestProperty("traceparent", tracer.traceparent(context, tracer.newSpanId()));
-    }
-    hostId = tracer.dict(DictKind.HOST, host);
-    start = System.nanoTime();
-    seq = tracer.stepStart(context, StepType.HTTP, hostId, 0L, start);
-    int port = url.getPort();
-    String path = url.getPath();
-    if (path.indexOf(';') >= 0) {
-      // Path parameters (;jsessionid=..., matrix variables) are dropped with the rule of the
-      // inbound
-      // HttpPaths.clean; agent-core is not reachable from java.base, so the loop is inlined.
-      StringBuilder clean = new StringBuilder(path.length());
-      int i = 0;
-      while (i < path.length()) {
-        char c = path.charAt(i);
-        if (c == ';') {
-          int next = path.indexOf('/', i);
-          if (next < 0) {
-            break;
+    // Start before CallDepth.enter: if anything here throws, enter returns null and exit leaves
+    // the depth alone, so the counter can never stay raised on this thread.
+    if (CallDepth.depth(CallDepth.HTTP_CLIENT) == 0 && !"getErrorStream".equals(method)) {
+      ContextStore<HttpURLConnection, long[]> states =
+          ContextStore.of(HttpURLConnection.class, long[].class);
+      if (states.get(connection) == null) {
+        Tracer tracer = Argos.tracer();
+        TraceContext context = tracer.current();
+        if (context != null) {
+          URL url = connection.getURL();
+          String host = url.getHost();
+          int port = url.getPort();
+          String preserved = connection.getRequestProperty("traceparent");
+          if (!connected) {
+            String[] headers =
+                tracer.outgoingHeaders(
+                    context, host, preserved, connection.getRequestProperty("tracestate"));
+            if (headers != null) {
+              if (headers[0] != null) {
+                connection.setRequestProperty("traceparent", headers[0]);
+                preserved = null;
+              }
+              if (headers[1] != null) {
+                connection.setRequestProperty("tracestate", headers[1]);
+              }
+            }
           }
-          i = next;
-        } else {
-          clean.append(c);
-          i++;
+          String httpMethod = connection.getRequestMethod();
+          if ("GET".equals(httpMethod) && connection.getDoOutput()) {
+            // The JDK sends a GET with a request body as POST (getOutputStream).
+            httpMethod = "POST";
+          }
+          long hostId = tracer.hostId(url.getProtocol(), host, port);
+          long start = System.nanoTime();
+          int seq =
+              tracer.httpStart(
+                  context,
+                  hostId,
+                  httpMethod,
+                  port < 0 ? host : host + ":" + port,
+                  url.getPath(),
+                  preserved,
+                  start);
+          states.put(connection, new long[] {seq, hostId, start});
+          ContextStore.of(HttpURLConnection.class, TraceContext.class).put(connection, context);
         }
       }
-      path = clean.toString();
     }
-    tracer.stepDetail(
-        context,
-        seq,
-        connection.getRequestMethod()
-            + " "
-            + host
-            + (port < 0 ? "" : ":" + port)
-            + (path.isEmpty() ? "/" : path));
-    return context;
+    CallDepth.enter(CallDepth.HTTP_CLIENT);
+    return true;
   }
 
   @Advice.OnMethodExit(suppress = Throwable.class, onThrowable = Throwable.class)
   public static void exit(
-      @Advice.Enter TraceContext context,
+      @Advice.Enter Object entered,
+      @Advice.This HttpURLConnection connection,
+      @Advice.Origin("#m") String method,
       @Advice.FieldValue("responseCode") int responseCode,
-      @Advice.Thrown Throwable error,
-      @Advice.Local("argosSeq") int seq,
-      @Advice.Local("argosHost") long hostId,
-      @Advice.Local("argosStart") long start) {
+      @Advice.Thrown Throwable error) {
+    if (entered == null) {
+      return;
+    }
+    if (CallDepth.exit(CallDepth.HTTP_CLIENT) != 0) {
+      return;
+    }
+    boolean response =
+        "getInputStream".equals(method) || (responseCode > 0 && "getErrorStream".equals(method));
+    if (!response && error == null) {
+      return;
+    }
+    TraceContext context =
+        ContextStore.of(HttpURLConnection.class, TraceContext.class).remove(connection);
     if (context == null) {
       return;
     }
-    long end = System.nanoTime();
-    int failure = FailureKind.NONE;
-    if (responseCode >= 500) {
-      failure = FailureKind.HTTP_5XX;
-    } else if (responseCode <= 0 && error != null) {
-      if (error instanceof SocketTimeoutException) {
-        failure = FailureKind.TIMEOUT;
-      } else if (error instanceof ConnectException
-          || error instanceof UnknownHostException
-          || error instanceof NoRouteToHostException) {
-        failure = FailureKind.CONNECT_FAIL;
-      } else {
-        failure = FailureKind.OTHER;
-      }
+    long[] state = ContextStore.of(HttpURLConnection.class, long[].class).get(connection);
+    if (state == null) {
+      return;
     }
-    Tracer tracer = Argos.tracer();
-    tracer.stepEnd(
-        context, seq, responseCode > 0 ? responseCode : 0, failure != FailureKind.NONE, 0L, end);
-    tracer.recordExtStat(hostId, end - start, failure);
+    int status = responseCode > 0 ? responseCode : 0;
+    Argos.tracer()
+        .httpEnd(
+            context,
+            (int) state[0],
+            state[1],
+            status,
+            status > 0 ? null : error,
+            state[2],
+            System.nanoTime());
   }
 }

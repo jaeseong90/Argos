@@ -12,6 +12,7 @@ import io.argos.server.ingest.api.DictionaryIntake;
 import io.argos.server.ingest.api.IngestPipeline;
 import io.argos.server.ops.migration.PostgresMigrationPhase;
 import io.argos.server.storage.postgres.app.AppRepository;
+import io.argos.server.storage.postgres.app.PendingRegistrationRepository;
 import io.argos.server.storage.postgres.instance.InstanceRepository;
 import io.argos.server.storage.postgres.instance.PostgresSessionStore;
 import io.argos.server.storage.postgres.token.AgentTokenRepository;
@@ -119,6 +120,7 @@ public final class CollectorHarness implements AutoCloseable {
     ctx.registerBean(AgentTokenRepository.class);
     ctx.registerBean(AppRepository.class);
     ctx.registerBean(InstanceRepository.class);
+    ctx.registerBean(PendingRegistrationRepository.class);
     ctx.registerBean(PostgresSessionStore.class);
     ctx.registerBean(ServerBuild.class, () -> new ServerBuild(serverVersion, "test", "1"));
     ctx.registerBean(WalWriter.class, () -> wal);

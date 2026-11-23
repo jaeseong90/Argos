@@ -21,10 +21,24 @@
 //   management port published on 127.0.0.1 for readiness and the CSP violation counter.
 // Readiness = /actuator/health/readiness UP (its group includes the migrations, the database pool,
 // ClickHouse and the ingest dispatcher).
+// Alert channels (WO-38, test stack only): the server may deliver to the fake receivers of
+// e2e/fixtures/fakeReceivers.ts and nowhere else: plain http allowed, webhook destinations limited
+// to 127.0.0.1/32 (the e2e:docker Playwright container shares the server's network namespace) and
+// the Docker host gateway address (the host's receivers, through the alias argos-e2e-receivers that
+// --add-host <alias>:host-gateway puts in the container's /etc/hosts; a short probe container
+// resolves it before the server starts), and SMTP to that alias on a port chosen here (STARTTLS
+// optional with insecure, the receiver offers none). The settings go to receivers.json of the run.
 // Memory limits: ClickHouse 2 GiB + PostgreSQL 0.5 GiB + server 1.25 GiB = 3.75 GiB, plus the Linux
 // Playwright container of e2e:docker (PLAYWRIGHT_MEMORY_BYTES, 1.25 GiB) = 5 GiB per run at most.
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+import {
+  RECEIVER_HOST_ALIAS,
+  RECEIVERS_FILE,
+  writeReceiverConfig,
+  type ReceiverStackConfig,
+} from '../fixtures/fakeReceivers.ts';
 
 import {
   containerLogs,
@@ -140,7 +154,11 @@ export function rolesScript(secrets: StackSecrets): string {
 }
 
 /** Environment of the server container (documented short names and *_FILE secrets). */
-export function serverEnvironment(runId: string, port: number): Record<string, string> {
+export function serverEnvironment(
+  runId: string,
+  port: number,
+  masterKey?: string,
+): Record<string, string> {
   const names = stackNames(runId);
   const secret = (key: keyof StackSecrets): string => `${SECRETS_MOUNT}/${SECRET_FILES[key]}`;
   return {
@@ -163,11 +181,131 @@ export function serverEnvironment(runId: string, port: number): Record<string, s
     ARGOS_IP_MODE: 'masked',
     ARGOS_JWT_KEY_FILE: '/data/jwt.key',
     ARGOS_WAL_DIR: '/data/wal',
+    // The master key of the alert channel secrets (WO-38: channels can be created and test-sent).
+    // In the env file (secrets directory, deleted at teardown) rather than a key file: the server
+    // ignores a key file that others can read, which a Windows bind mount always shows.
+    ...(masterKey === undefined ? {} : { ARGOS_MASTER_KEY: masterKey }),
   };
 }
 
+/** Sender address of the test stack's alert mails (argos.alert.smtp.from). */
+export const E2E_SMTP_FROM = 'argos-e2e@example.test';
+
+/** The single-address range of an IP literal (IPv4 /32, IPv6 /128), or null for anything else. */
+export function hostCidr(address: string): string | null {
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(address)) {
+    return address.split('.').every((part) => Number(part) <= 255) ? `${address}/32` : null;
+  }
+  if (/^[0-9a-fA-F:.]+$/.test(address) && address.includes(':')) {
+    return `${address.toLowerCase()}/128`;
+  }
+  return null;
+}
+
+/** The receiver settings of a run: allowed webhook ranges and the SMTP port (file comment). */
+export function receiverConfig(
+  gatewayAddress: string | readonly string[] | null,
+  smtpPort: number,
+): ReceiverStackConfig {
+  const given =
+    gatewayAddress === null
+      ? []
+      : typeof gatewayAddress === 'string'
+        ? [gatewayAddress]
+        : gatewayAddress;
+  const valid = given.filter((address) => hostCidr(address) !== null);
+  const cidrs = [...new Set(valid.map((address) => hostCidr(address) ?? ''))];
+  return {
+    host_alias: RECEIVER_HOST_ALIAS,
+    gateway_address: valid[0] ?? null,
+    allow_cidrs: ['127.0.0.1/32', ...cidrs],
+    smtp_port: smtpPort,
+    smtp_from: E2E_SMTP_FROM,
+  };
+}
+
+/** Server arguments of the alert channel settings (test stack only, file comment). */
+export function receiverArguments(config: ReceiverStackConfig): string[] {
+  return [
+    '--argos.alert.webhook.allow-http=true',
+    `--argos.alert.webhook.allow-cidrs=${config.allow_cidrs.join(',')}`,
+    `--argos.alert.smtp.host=${config.host_alias}`,
+    `--argos.alert.smtp.port=${String(config.smtp_port)}`,
+    '--argos.alert.smtp.starttls=optional',
+    '--argos.alert.smtp.insecure=true',
+    `--argos.alert.smtp.from=${config.smtp_from}`,
+  ];
+}
+
+/**
+ * The addresses `host-gateway` stands for in a container of this Docker (Docker Desktop: addresses
+ * that forward to the host's loopback), from a short probe container of the server's JRE image on
+ * the server's network. Docker Desktop writes an IPv4 and an IPv6 line for the alias into
+ * /etc/hosts and the server's destination check (16 §8.1) resolves and checks every address of the
+ * name, so every address of the alias in the probe's /etc/hosts is returned and allowed (getent
+ * shows only one of them). Empty when the probe fails (the webhook deliveries are then skipped,
+ * fakeReceivers.ts).
+ */
+export async function resolveHostGateway(
+  runId: string,
+  image: string,
+  network: string,
+  log: Log,
+): Promise<string[]> {
+  const result = await run(
+    'docker',
+    [
+      'run',
+      '--rm',
+      '--name',
+      `${NAME_PREFIX}${runId}-gateway-probe`,
+      ...labelArgs(runId),
+      '--network',
+      network,
+      '--add-host',
+      `${RECEIVER_HOST_ALIAS}:host-gateway`,
+      '--entrypoint',
+      'cat',
+      image,
+      '/etc/hosts',
+    ],
+    { allowFailure: true, timeoutMs: 60_000 },
+  );
+  const addresses = result.code === 0 ? gatewayAddresses(result.stdout, RECEIVER_HOST_ALIAS) : [];
+  if (addresses.length === 0) {
+    log(
+      `WARNING the Docker host gateway did not resolve (${String(result.code)}): webhook test sends to the host receivers will be skipped`,
+    );
+    return [];
+  }
+  log(
+    `Docker host gateway ${RECEIVER_HOST_ALIAS} = ${addresses.join(', ')} (fake alert receivers)`,
+  );
+  return addresses;
+}
+
+/** The distinct IP addresses of `alias` in an /etc/hosts text, in order (comments ignored). */
+export function gatewayAddresses(hosts: string, alias: string): string[] {
+  const out: string[] = [];
+  for (const line of hosts.split(/\r?\n/)) {
+    const [address, ...names] = (line.split('#')[0] ?? '').trim().split(/\s+/);
+    if (
+      address !== undefined &&
+      names.includes(alias) &&
+      hostCidr(address) !== null &&
+      !out.includes(address)
+    ) {
+      out.push(address);
+    }
+  }
+  return out;
+}
+
 /** Command line of the server process (canonical keys that have no short name). */
-export function serverArguments(publicUrl: string): string[] {
+export function serverArguments(
+  publicUrl: string,
+  receivers: ReceiverStackConfig | null = null,
+): string[] {
   return [
     'java',
     '-Xmx768m',
@@ -182,6 +320,11 @@ export function serverArguments(publicUrl: string): string[] {
     `--argos.metrics.token-file=${SECRETS_MOUNT}/${SECRET_FILES.metricsToken}`,
     '--argos.metrics.allow-cidrs=0.0.0.0/0,::/0',
     `--argos.ratelimit.login-per-ip-per-minute=${String(E2E_LOGIN_RATE_PER_MINUTE)}`,
+    // Test stack only (ADR-0010 C-216 (1)): a short heartbeat and stale-after so that the
+    // collection outage seed (seed/outage.ts) reaches STALE within about 20 s of the cut.
+    '--argos.collector.heartbeat-interval=5s',
+    '--argos.collector.stale-after=20s',
+    ...(receivers === null ? [] : receiverArguments(receivers)),
   ];
 }
 
@@ -402,7 +545,17 @@ export async function startStack(runId: string, log: Log): Promise<StartedStack>
   const serverStart = Date.now();
   const port = await freePort();
   const publicUrl = `http://127.0.0.1:${String(port)}`;
-  const serverEnv = envFile(join(secretDir, 'server.env'), serverEnvironment(runId, port));
+  const serverEnv = envFile(
+    join(secretDir, 'server.env'),
+    serverEnvironment(runId, port, secrets.masterKey),
+  );
+  // Fake alert receivers (WO-38): the SMTP port is fixed now (a server setting); a free host port,
+  // which the alert spec's SMTP receiver binds on 127.0.0.1.
+  const receivers = receiverConfig(
+    await resolveHostGateway(runId, images.serverJre, names.network, log),
+    await freePort(),
+  );
+  writeReceiverConfig(runId, receivers);
   await docker([
     'run',
     '-d',
@@ -422,6 +575,8 @@ export async function startStack(runId: string, log: Log): Promise<StartedStack>
     '/data',
     '--env-file',
     serverEnv,
+    '--add-host',
+    `${RECEIVER_HOST_ALIAS}:host-gateway`,
     ...bind(jars.server, '/opt/argos/argos-server.jar'),
     ...bind(secretDir, SECRETS_MOUNT),
     '-p',
@@ -431,7 +586,7 @@ export async function startStack(runId: string, log: Log): Promise<StartedStack>
     '-p',
     '127.0.0.1::9100',
     images.serverJre,
-    ...serverArguments(publicUrl),
+    ...serverArguments(publicUrl, receivers),
   ]);
   const { managementUrl, grpcPort } = await waitServerReady(names.server);
   timings.server_s = (Date.now() - serverStart) / 1000;
@@ -546,7 +701,8 @@ export async function stopStack(state: RunState, keep: boolean, log: Log): Promi
 
 /**
  * Deletes what a removed run leaves below ui/e2e/.stack except its logs: the secrets, the loader
- * and seed-traffic outputs, the CSP control record, the seed manifest and the session. Only `*.log`
+ * and seed-traffic outputs, the CSP control record, the fake receiver settings (receivers.json), the
+ * seed manifest and the session. Only `*.log`
  * files stay (diagnostics),
  * so the next `prettier --check .` of the UI does not trip over JSON and Markdown of a finished run.
  */
@@ -556,6 +712,7 @@ export function removeRunOutputs(runId: string): void {
     rmSync(join(runDir(runId), name), { recursive: true, force: true });
   }
   rmSync(cspControlFile(runId), { force: true });
+  rmSync(join(runDir(runId), RECEIVERS_FILE), { force: true });
   rmSync(MANIFEST_FILE, { force: true });
   rmSync(SESSION_FILE, { force: true });
 }

@@ -1,0 +1,123 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# docs/05 §2.4 "알림 규칙 편집" and §2.9 "알림 이력" as data-driven E2E tests (docs/18 §13, DSN-18-10;
+# docs/04 WO-38 "05 §2.4·§2.9 전부"): one entry per bullet, in checklist order. Each item opens an
+# alert screen and runs a named check of e2e/required/alertsChecks.ts that compares the screen with
+# the request it sent (captured) and the API asked the same question (docs/14 §4.13 /alerts/*,
+# /overview/alerts). History checks use an absolute range that ends before the check starts, so a
+# transition during the run cannot make the two answers differ. The seed alert (manifest `alert`,
+# e2e/stack/seed/alerts.ts) is never acknowledged, muted or deleted: side effects run on the
+# check's own rules and channels, deleted afterwards.
+#
+# The test ids start at 30 (first_number): T-E2E-alerts-1 .. 3 are the WO-25 firing panel tests of
+# specs/dashboard.spec.ts and specs/overview.spec.ts, and 4 .. 25 the scenarios of
+# specs/alerts.spec.ts.
+screen: alerts
+title: Alert rules, channels and history
+source: docs/05 §2.4, §2.9
+first_number: 30
+items:
+  - id: 2.4-1
+    title: the rule editor has every field - target (app, env, instance, service, host), kind, metric, window, for, evaluation unit, operator with warning and critical, minimum samples, no data, recovery threshold and time, warm-up grace, active time, mute schedules, channels per severity, renotify, runbook URL and a template of allowed variables only
+    req: [F-U09, F-S06, F-S17, F-S25, SEC-39]
+    owner: WO-38
+    role: operator
+    route: /alerts/rules/new?app={primary_app_id}
+    assert:
+      - visible: alert-rule-editor
+      - check: alertsRuleEditorFields
+
+  - id: 2.4-2
+    title: the 7-day preview shows the firing times, their count and the longest firing of the form (= POST /alerts/rules/preview of the same body), debounced by 500 ms
+    req: [F-U09]
+    owner: WO-38
+    role: operator
+    route: /alerts/rules/new?app={primary_app_id}
+    assert:
+      - visible: alert-rule-section-preview
+      - check: alertsRulePreview
+
+  - id: 2.4-3
+    title: create from a template fills the template part and marks exactly the changed fields
+    req: [F-U09, F-S24]
+    owner: WO-38
+    role: operator
+    route: /alerts/rules?app={primary_app_id}
+    assert:
+      - visible: alert-rules
+      - check: alertsTemplateDiff
+
+  - id: 2.4-4
+    title: clone to another application, disable apart from delete (delete asks first), revision history = the API history
+    req: [F-U09]
+    owner: WO-38
+    role: operator
+    route: /alerts/rules?app={primary_app_id}
+    assert:
+      - visible: alert-rules
+      - check: alertsRuleCloneDisableHistory
+
+  - id: 2.4-5
+    title: channel destination validation with the server's reason (422 for 10.0.0.1 and 169.254.169.254), the secret target only masked, test send with the same validation and its result
+    req: [F-U09, F-S06, SEC-51, SEC-52, SEC-53]
+    owner: WO-38
+    role: admin
+    route: /alerts/channels
+    assert:
+      - visible: alert-channels
+      - check: alertsChannelsValidation
+
+  - id: 2.9-1
+    title: FIRING and ACKED pinned at the top for all applications or the selected one, counts by severity and the channel status (= /overview/alerts, /alerts/channels)
+    req: [F-U09, F-S26, F-S27]
+    owner: WO-38
+    route: /alerts
+    assert:
+      - visible: alerts-pinned
+      - check: alertsPinnedPanel
+
+  - id: 2.9-2
+    title: the 10 columns (time, application and environment, target, rule, severity, state transition with its reason, value and threshold with the unit, duration, delivery result, ACK user) = /alerts/events
+    req: [F-U09, F-S26, F-S27]
+    owner: WO-38
+    route: /alerts
+    assert:
+      - visible: alerts-history
+      - check: alertsEventColumns
+
+  - id: 2.9-3
+    title: filters by period, application, environment, severity, state, rule and failed deliveries only are the server's parameters and the rows its answer
+    req: [F-U09, F-U16]
+    owner: WO-38
+    route: /alerts
+    assert:
+      - visible: alerts-history
+      - check: alertsFilters
+
+  - id: 2.9-4
+    title: row actions - the deep link of the server, edit rule, ACK with a note, mute this target (dialogs filled from the row)
+    req: [F-U09, F-S26]
+    owner: WO-38
+    role: operator
+    route: /alerts
+    assert:
+      - visible: alerts-history
+      - check: alertsRowActions
+
+  - id: 2.9-5
+    title: alert statistics of 7 and 30 days per rule (firings, average duration, time to ACK, time to resolve) = /alerts/stats
+    req: [F-U09]
+    owner: WO-38
+    route: /alerts
+    assert:
+      - visible: alerts-tab-stats
+      - check: alertsStats
+
+  - id: 2.9-6
+    title: the overview opens the history of every application
+    req: [F-U09, F-U17]
+    owner: WO-38
+    route: /overview
+    assert:
+      - visible: overview-firing-history
+      - check: alertsAllAppsFromOverview

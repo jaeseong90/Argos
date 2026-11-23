@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Snapshot of the agent's metric names (T-API-009 agent part, O-R03: a public contract, 10 §11,
+# 13 §3.3). One series family per line: <kind> <base name>{<label keys in order>}. Compared by
+# MetricNamesSnapshotTest with what MetricCollector emits; a change here is an API change (review
+# the server's dashboard keys, server/src/main/resources/sql/dashboard/metric_keys.raw.sql, and the
+# CHANGELOG).
+
+# --- JVM (JvmMetrics, GcNameMapper) ---
+gauge jvm_memory_used_bytes{area}
+gauge jvm_memory_max_bytes{area}
+gauge jvm_memory_pool_used_bytes{pool}
+gauge jvm_memory_pool_max_bytes{pool}
+gauge jvm_buffer_memory_used_bytes{buffer}
+counter jvm_gc_collection_count_total{gc,gc_type}
+counter jvm_gc_collection_seconds_total{gc,gc_type}
+counter jvm_gc_pause_seconds_total{gc}
+gauge jvm_threads_live{}
+gauge jvm_threads_daemon{}
+gauge jvm_threads_peak{}
+gauge jvm_classes_loaded{}
+counter jvm_classes_unloaded_total{}
+gauge jvm_uptime_seconds{}
+gauge process_cpu_usage_ratio{}
+gauge process_open_fds{}
+gauge process_max_fds{}
+
+# --- Connection pools and Tomcat (PoolRegistry, TomcatRegistry, PoolWaitSource) ---
+gauge jdbc_pool_active{pool}
+gauge jdbc_pool_idle{pool}
+gauge jdbc_pool_waiting{pool}
+gauge jdbc_pool_max{pool}
+counter jdbc_pool_wait_count_total{pool}
+counter jdbc_pool_wait_seconds_total{pool}
+gauge tomcat_threads_busy{connector}
+gauge tomcat_threads_current{connector}
+gauge tomcat_threads_max{connector}
+gauge tomcat_connections_current{connector}
+gauge tomcat_connections_max{connector}
+
+# --- System and container (SystemMetrics, CgroupReader) ---
+gauge system_cpu_usage_ratio{}
+gauge system_memory_used_bytes{}
+gauge system_memory_total_bytes{}
+gauge system_disk_used_bytes{mount}
+gauge system_disk_total_bytes{mount}
+counter system_network_receive_bytes_total{iface}
+counter system_network_transmit_bytes_total{iface}
+gauge container_cpu_limit_cores{}
+gauge container_memory_limit_bytes{}
+counter container_cpu_throttled_seconds_total{}
+
+# --- Agent self metrics (AgentCounters, logger, TransportCounters, TraceRuntime.selfValues) ---
+counter argos_agent_dropped_total{queue}
+counter argos_agent_ignored_total{reason}
+counter argos_agent_orphan_steps_total{type}
+counter argos_agent_module_errors_total{module}
+counter argos_agent_transform_errors_total{reason}
+counter argos_agent_sql_outside_tx_total{}
+counter argos_agent_transactions_leaked_total{}
+counter argos_agent_transactions_unanchored_total{}
+counter argos_agent_dictionary_overflow_total{kind}
+counter argos_agent_service_dictionary_overflow_total{}
+counter argos_agent_sql_unparsed_total{}
+counter argos_agent_profile_dropped_total{}
+counter argos_agent_scope_chain_cut_total{}
+counter argos_agent_user_id_skipped_total{reason}
+counter argos_agent_log_dropped_total{}
+counter argos_agent_library_log_suppressed_total{}
+counter argos_agent_batches_sent_total{kind}
+counter argos_agent_batch_retries_total{kind}
+counter argos_agent_batches_dropped_total{kind}
+counter argos_agent_server_dropped_items_total{kind}
+counter argos_agent_session_established_total{}
+counter argos_agent_session_rejected_total{}
+counter argos_agent_session_messages_dropped_total{}
+counter argos_agent_dictionary_entries_sent_total{}
+gauge argos_agent_transport_up{}
+gauge argos_agent_clock_offset_ms{}
+counter argos_agent_cpu_seconds_total{}
+gauge argos_agent_queue_size{queue}
+gauge argos_agent_queue_bytes_estimated{queue}
+gauge argos_agent_heap_bytes_estimated{}
+gauge argos_agent_dictionary_bytes_estimated{}
+counter argos_agent_registry_overflow_total{registry}
+counter argos_agent_registry_getter_errors_total{registry}
+counter argos_agent_metric_series_dropped_total{}
+counter argos_agent_stats_overflow_total{kind}
+counter argos_agent_stats_windows_dropped_total{}

@@ -35,6 +35,12 @@ package io.argos.agent.bootstrap;
  *       quotes, backslashes and {@code #} are read, so that no literal survives, SEC-35) and {@link
  *       #sqlParam} (bind values rendered by the core for {@code capture.sql-parameters}, which
  *       needs the SQL tokenizer and the {@code Masker}, 16 §6.7).
+ *   <li>WO-14 adds {@link #begin(int, String, long, String, String)} (incoming W3C trace context),
+ *       {@link #outgoingHeaders}, {@link #hostId}, {@link #httpStart} and {@link #httpEnd} (10
+ *       §6.5, §8): the W3C parser, the host globs of {@code propagation.*}, the HOST text of
+ *       ADR-0010 C-142 and the failure classifier live in the core, so that every HTTP client
+ *       module records and propagates the same way (B-2). {@link #traceparent}, {@link #tracestate}
+ *       and {@link #shouldPropagate} stay for compatibility.
  * </ul>
  *
  * <p>The class loader of the core lives in this package ({@code AgentClassLoader}, WO-02 report
@@ -184,8 +190,25 @@ public interface Tracer {
    */
   void recordSqlStat(long sqlId, long dbId, long elapsedNanos, boolean error, long rows);
 
+  /**
+   * The rows and fetch time of a result set of an SQL execution of {@code ctx} (ADR-0010 C-185 (2);
+   * WO-16 addition to 10 §3): added to the full statistics of the key ({@code sqlId}, {@code dbId},
+   * the transaction's kind) as {@code SqlStat.fetch_rows} and {@code sum_fetch_us}; the execution
+   * itself was counted by {@link #recordSqlStat}. Called once per result set, when its rows are
+   * reported to the step ({@link #stepFetch}).
+   */
+  void recordSqlFetch(TraceContext ctx, long sqlId, long dbId, long fetchNanos, long rows);
+
   /** Full statistics of one external call ({@link FailureKind}). */
   void recordExtStat(long hostId, long elapsedNanos, int failureKind);
+
+  /**
+   * The transaction waits for a JDBC connection ({@code waiting} true, at the enter of the
+   * outermost {@code getConnection}) or no longer does (false, at its exit): the active snapshot
+   * shows it as {@code IN_DBC_WAIT} meanwhile (11 {@code ActiveState}, ADR-0010 C-225 (1); WO-16
+   * addition to 10 §3). The DBC step itself is written at the exit, when the pool is known.
+   */
+  void connectionWait(TraceContext ctx, boolean waiting);
 
   /**
    * The 64-bit dictionary id of {@code text} for {@link DictKind} {@code kind}. For {@link
@@ -223,13 +246,107 @@ public interface Tracer {
    */
   void sqlParam(SqlState state, int index, Object value, String setter);
 
-  /** {@code traceparent} header value for an outgoing call with span {@code childSpanId}. */
+  /**
+   * Starts a transaction like {@link #begin(int, String, long)} and adopts the incoming W3C trace
+   * context (10 §8, F-A06; WO-14 addition to 10 §3). Called by the servlet helper on the REQUEST
+   * dispatch with the raw header values (null when absent).
+   *
+   * <ul>
+   *   <li>A valid {@code traceparent} (55 characters, version {@code 00}, lower-case hex, trace id
+   *       and parent id not all zero) gives the transaction its trace id and {@code parentSpanId} =
+   *       the incoming span; the transaction gets a new span id. Anything else is ignored and a new
+   *       trace begins.
+   *   <li>{@code tracestate} (at most 512 characters and 32 entries, W3C keys and values; anything
+   *       else is dropped as a whole) is kept on the context ({@link
+   *       TraceContext#incomingTracestate}) and forwarded on outgoing calls. A well-formed {@code
+   *       argos=<app>:<inst>:<svc>} entry gives {@link TraceContext#callerAppId}; a malformed one
+   *       gives 0. {@code tracestate} without a valid {@code traceparent} is ignored (W3C).
+   * </ul>
+   */
+  TraceContext begin(
+      int kind, String entryName, long startNanos, String traceparent, String tracestate);
+
+  /**
+   * The propagation headers of an outgoing call to {@code host} (10 §6.5, §8, F-A32, SEC-38; WO-14
+   * addition to 10 §3). {@code existingTraceparent} and {@code existingTracestate} are the values
+   * the application already set on the request (null when none).
+   *
+   * <p>Returns null when nothing may be set: no context, an ended transaction, or {@code host}
+   * matches {@code propagation.exclude-hosts}. Otherwise a two-element array: {@code [0]} the
+   * {@code traceparent} to set, null when the application's own value is kept ({@code
+   * propagation.preserve-incoming}, default true; pass it to {@link #httpStart} as {@code
+   * preservedTraceparent}); {@code [1]} the {@code tracestate} to set, null when there is none. The
+   * {@code tracestate} is the application's value, else the transaction's incoming value, with an
+   * {@code argos=} entry first only when {@code host} matches {@code propagation.argos-state.hosts}
+   * (default empty: never). An existing {@code argos} entry is replaced, never duplicated.
+   */
+  String[] outgoingHeaders(
+      TraceContext ctx, String host, String existingTraceparent, String existingTracestate);
+
+  /**
+   * The {@link DictKind#HOST} dictionary id of an outgoing call target (ADR-0010 C-142; WO-14
+   * addition to 10 §3): the text {@code scheme://host:port}, lower case, the default port written
+   * out ({@code http} 80, {@code https} 443) when {@code port} is below 1, IPv6 addresses in
+   * brackets, never user info, path or query. 0 when {@code host} is null or empty.
+   */
+  long hostId(String scheme, String host, int port);
+
+  /**
+   * Opens the {@link StepType#HTTP} step of an outgoing call (10 §6.5; WO-14 addition to 10 §3):
+   * name and target are {@code hostId}, the detail is {@code METHOD hostPort/path} without the
+   * query string and {@code ;} path parameters, cut at 4 KiB, followed by {@code
+   * preservedTraceparent} when the application's own {@code traceparent} was kept (10 §8). {@code
+   * rawPath} may still carry a query (it is removed here). Returns the step's sequence number for
+   * {@link #httpEnd}, or -1 when no step is recorded (no context, transaction ended).
+   */
+  int httpStart(
+      TraceContext ctx,
+      long hostId,
+      String method,
+      String hostPort,
+      String rawPath,
+      String preservedTraceparent,
+      long startNanos);
+
+  /**
+   * Closes the HTTP step {@code seq} of {@link #httpStart} (WO-14 addition to 10 §3) and classifies
+   * the outcome in one place (10 §6.5, F-A05): a {@code SocketTimeoutException} or {@code
+   * java.net.http.HttpTimeoutException} (subclasses included) anywhere in the first 8 links of the
+   * cause chain is {@link FailureKind#TIMEOUT}; a {@code ConnectException} (subclasses included),
+   * {@code UnknownHostException} or {@code NoRouteToHostException} is {@link
+   * FailureKind#CONNECT_FAIL}; any other error is {@link FailureKind#OTHER}; without an error a
+   * {@code status} of 500 or more is {@link FailureKind#HTTP_5XX}. Counts the call in the
+   * transaction's external-call totals (11 {@code ext_count}, {@code ext_time_ms}; safe from any
+   * thread) and passes it to {@link #recordExtStat}. A step of an ended transaction is ignored (seq
+   * -1 too), the statistics call is not. {@code status} is 0 when no response arrived.
+   */
+  void httpEnd(
+      TraceContext ctx,
+      int seq,
+      long hostId,
+      int status,
+      Throwable error,
+      long startNanos,
+      long endNanos);
+
+  /**
+   * {@code traceparent} header value for an outgoing call with span {@code childSpanId}. Kept from
+   * WO-02; new code uses {@link #outgoingHeaders}.
+   */
   String traceparent(TraceContext ctx, long childSpanId);
 
-  /** {@code tracestate} header value for an outgoing call, keeping {@code incoming}. */
+  /**
+   * {@code tracestate} header value for an outgoing call to an unknown host: {@code incoming}, else
+   * the transaction's incoming value, without an {@code argos} entry. Kept from WO-02; new code
+   * uses {@link #outgoingHeaders}.
+   */
   String tracestate(TraceContext ctx, String incoming);
 
-  /** False when propagation headers must not be sent to {@code host}. */
+  /**
+   * False when propagation headers must not be sent to {@code host} ({@code
+   * propagation.exclude-hosts}, null host). Kept from WO-02; new code uses {@link
+   * #outgoingHeaders}.
+   */
   boolean shouldPropagate(String host);
 
   /** A new non-zero 64-bit span id. */

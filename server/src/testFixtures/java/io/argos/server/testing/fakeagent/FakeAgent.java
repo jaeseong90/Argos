@@ -125,6 +125,7 @@ public final class FakeAgent implements AutoCloseable {
   private Session session;
   private long lastAckT1;
   private long lastAckT4;
+  private volatile long droppedTotal;
 
   private FakeAgent(Builder b) {
     this.channel = b.channel;
@@ -344,7 +345,7 @@ public final class FakeAgent implements AutoCloseable {
             .setPrevT1Ms(prevT1)
             .setPrevT4Ms(prevT4)
             .setActiveTransactions(0)
-            .setDroppedTotal(0)
+            .setDroppedTotal(droppedTotal)
             .setLastTxSeq(batches.peekSeq(BatchKind.TRANSACTIONS) - 1)
             .setLastProfileSeq(batches.peekSeq(BatchKind.PROFILES) - 1)
             .setLastMetricSeq(batches.peekSeq(BatchKind.METRICS) - 1)
@@ -352,6 +353,15 @@ public final class FakeAgent implements AutoCloseable {
             .build();
     send(AgentMessage.newBuilder().setHeartbeat(hb).build());
     return hb;
+  }
+
+  /**
+   * Sets the cumulative agent drop count ({@code Heartbeat.dropped_total}) of the next heartbeats
+   * (WO-22: a growth makes the instance WARN {@code drops}). Heartbeats are only sent when a test
+   * calls {@link #heartbeat()}: a test pauses them by not calling it.
+   */
+  public void setDroppedTotal(long total) {
+    this.droppedTotal = total;
   }
 
   /** Sends a heartbeat and waits for its {@link HeartbeatAck} (matched by {@code t1}). */

@@ -268,9 +268,10 @@ public class StatsController {
       description =
           "Per SQL statement and JDBC target of [from, to) (complete counts, D-12) from"
               + " sql_stat_raw/1m/1h. Percentiles are estimated from the 15 latency buckets"
-              + " (estimated: true, C-14). sort: sum_ms (default), count, avg_ms, max_ms or errors."
-              + " db_id filters one target. limit at most 500 (default 100). compare_prev=true adds"
-              + " delta. Also as CSV (format=csv, tz)."
+              + " (estimated: true, C-14). sort: sum_ms (default), count, avg_ms, max_ms, errors or"
+              + " p95_ms (the estimated p95, ordered like the returned p95_ms values). db_id filters"
+              + " one target. limit at most 500 (default 100). compare_prev=true adds delta. Also as"
+              + " CSV (format=csv, tz)."
               + RANGE
               + IDS)
   @ArgosCsv
@@ -440,10 +441,11 @@ public class StatsController {
       summary = "Outgoing call statistics",
       description =
           "Per host of [from, to) from ext_stat_raw/1m/1h; percentiles estimated from the 15"
-              + " latency buckets (estimated: true, C-14). path_pattern is not stored yet; decided"
-              + " with HTTP client instrumentation (WO-14, ADR-0010 C-178), always null. sort:"
-              + " count, errors, timeouts, sum_ms (default), avg_ms or max_ms. limit at most 500"
-              + " (default 100). compare_prev=true adds delta. Also as CSV (format=csv, tz)."
+              + " latency buckets (estimated: true, C-14). path_pattern is not stored: the statistics"
+              + " key is the host (ADR-0010 C-178 (3), C-223 (5)), always null. sort:"
+              + " count, errors, timeouts, sum_ms (default), avg_ms, max_ms or p95_ms (the estimated"
+              + " p95, ordered like the returned p95_ms values). limit at most 500 (default 100)."
+              + " compare_prev=true adds delta. Also as CSV (format=csv, tz)."
               + RANGE
               + IDS)
   @ArgosCsv
@@ -559,7 +561,8 @@ public class StatsController {
       operationId = "external_get",
       summary = "One outgoing call host",
       description =
-          "The host's series of [from, to) (percentiles estimated, C-14), and the services and"
+          "The host's series of [from, to) (percentiles estimated, C-14; timeouts and"
+              + " connect_failures per bucket, ADR-0010 C-222 (7)), and the services and"
               + " related transactions of its profiled callers (HTTP steps of profile_step, a"
               + " sample) in raw_window. 404 for an unknown key."
               + RANGE
@@ -596,7 +599,9 @@ public class StatsController {
               + " with the class, masked message pattern (at most 1 KB) and top frame of"
               + " error_groups. is_new: first seen ever inside the range; new_only=true lists only"
               + " those. sort: count (default), first_seen or last_seen. limit at most 500"
-              + " (default 100). Also as CSV (format=csv, tz)."
+              + " (default 100). compare_prev=true adds delta against the previous range of the same"
+              + " length: count relative (null when the group had no occurrence there), p95_ms and"
+              + " error_rate always null. Also as CSV (format=csv, tz)."
               + RANGE
               + IDS)
   @ArgosCsv
@@ -612,13 +617,16 @@ public class StatsController {
       @Parameter(description = "field:asc|desc") @RequestParam(value = "sort", required = false)
           String sort,
       @RequestParam(value = "limit", required = false) Integer limit,
+      @RequestParam(value = "compare_prev", required = false, defaultValue = "false")
+          boolean comparePrev,
       @RequestParam(value = "format", required = false) String format,
       @RequestParam(value = "tz", required = false) String tz,
       HttpServletRequest request) {
     CsvExport.requireJson(format);
     CsvExport.zone(tz);
     int rows = QueryLimits.limit("limit", limit, StatsSupport.DEFAULT_ROWS, StatsSupport.MAX_ROWS);
-    ErrorStatsService.ListAnswer a = errorList(appId, from, to, kind, newOnly, sort, rows, request);
+    ErrorStatsService.ListAnswer a =
+        errorList(appId, from, to, kind, newOnly, sort, rows, comparePrev, request);
     return ResponseEnvelope.builder(a.rows()).plan(a.plan()).truncated(a.truncated()).build();
   }
 
@@ -636,13 +644,16 @@ public class StatsController {
       @RequestParam(value = "new_only", required = false, defaultValue = "false") boolean newOnly,
       @RequestParam(value = "sort", required = false) String sort,
       @RequestParam(value = "limit", required = false) Integer limit,
+      @RequestParam(value = "compare_prev", required = false, defaultValue = "false")
+          boolean comparePrev,
       @RequestParam(value = "tz", required = false) String tz,
       HttpServletRequest request,
       HttpServletResponse response)
       throws IOException {
     ZoneId zone = CsvExport.zone(tz);
     int rows = CsvExport.limit(limit);
-    ErrorStatsService.ListAnswer a = errorList(appId, from, to, kind, newOnly, sort, rows, request);
+    ErrorStatsService.ListAnswer a =
+        errorList(appId, from, to, kind, newOnly, sort, rows, comparePrev, request);
     overflow(a.truncated(), limit);
     CsvTable table =
         new CsvTable(
@@ -656,7 +667,8 @@ public class StatsController {
             "first_seen_ever",
             "is_new",
             "services",
-            "versions");
+            "versions",
+            "delta_count");
     for (StatsViews.ErrorGroupRow r : a.rows()) {
       table.add(
           r.groupId(),
@@ -673,10 +685,12 @@ public class StatsController {
               .collect(Collectors.joining("; ")),
           r.versions().stream()
               .map(v -> v.version() == null ? v.versionId() : v.version())
-              .collect(Collectors.joining("; ")));
+              .collect(Collectors.joining("; ")),
+          r.delta() == null ? null : r.delta().count());
     }
     Map<String, Object> filters = filters(kind, sort);
     filters.put("new_only", newOnly);
+    filters.put("compare_prev", comparePrev);
     csv.write(
         request, response, table, "errors", a.plan().from(), a.plan().to(), zone, appId, filters);
   }
@@ -689,13 +703,14 @@ public class StatsController {
       boolean newOnly,
       String sort,
       int rows,
+      boolean comparePrev,
       HttpServletRequest request) {
     Instant f = QueryLimits.time("from", from);
     Instant t = QueryLimits.time("to", to);
     QueryLimits.TxKind k = QueryLimits.kind(kind);
     StatsSupport.Sort s = StatsSupport.sort(sort, ErrorStatsService.SORT, "count");
     int app = scope.app(appId).id();
-    return errors.list(app, f, t, k, newOnly, s, rows, request);
+    return errors.list(app, f, t, k, newOnly, s, rows, comparePrev, request);
   }
 
   /** One error group (14 §4.8). */

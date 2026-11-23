@@ -37,6 +37,11 @@ import org.slf4j.LoggerFactory;
  *       ones this slice only counts ({@code bye}, {@code event}, {@code config_apply_result},
  *       {@code command_result}), and {@code heartbeat_ack_skipped} for heartbeats left unanswered
  *       because the agent did not read its stream (no buffering, SEC-11);
+ *   <li>{@code argos.collector.sessions.closed{reason}} [{@code
+ *       argos_collector_sessions_closed_total}]: sessions the server closed on its own (WO-22):
+ *       {@code idle_timeout} (no agent message for 3 heartbeat intervals, ADR-0002 C-19) and {@code
+ *       instance_merged} (a temporary {@code host:pid} instance continues as the existing instance
+ *       of its new name, ADR-0010 C-158 (2));
  *   <li>{@code argos.collector.calls{method,code}} [{@code argos_collector_calls_seconds}]: call
  *       latency of the data RPCs;
  *   <li>{@code argos.sessions.active} [{@code argos_sessions_active}]: live sessions.
@@ -95,6 +100,11 @@ public final class CollectorMetrics implements UnknownEnumSink {
   /** One session stream message of {@code type}. */
   public void sessionMessage(String type) {
     counter("argos.collector.session.messages", "type", type).increment();
+  }
+
+  /** One session the server closed on its own for {@code reason}. */
+  public void sessionClosed(String reason) {
+    counter("argos.collector.sessions.closed", "reason", reason).increment();
   }
 
   /** The latency of one data call. */

@@ -385,7 +385,8 @@ class SampleAppAgentTest {
         .hasStatus(200)
         .hasStepCount("HTTP", 1);
     TransactionRecord.StepRecord call = payTx.steps("HTTP").get(0);
-    assertThat(call.name()).isEqualTo("127.0.0.1");
+    // ADR-0010 C-142 (WO-14): the HOST dictionary text is scheme://host:port.
+    assertThat(call.name()).isEqualTo("http://127.0.0.1:" + extStub.port());
     assertThat(call.status()).isEqualTo(200);
     assertThat(call.error()).isFalse();
     assertThat(call.detail()).isEqualTo("GET 127.0.0.1:" + extStub.port() + "/pay/1");

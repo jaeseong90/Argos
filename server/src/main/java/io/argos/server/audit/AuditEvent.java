@@ -64,6 +64,34 @@ public enum AuditEvent {
   /** A list was exported (14 §4.17, SEC-63): the view, the filter names and the row count. */
   EXPORT_CSV,
 
+  // Alert rules, acknowledgements and mutes (16 §11.1 group 알림; WO-25): target rule or mute
+  /** An alert rule was created (by hand, as a clone or from a template). */
+  RULE_CREATED,
+  /** An alert rule was changed or enabled (the version after the change). */
+  RULE_UPDATED,
+  /** An alert rule was deleted (kept for its history, soft delete). */
+  RULE_DELETED,
+  /** An alert rule was disabled. */
+  RULE_DISABLED,
+  /** A firing alert was acknowledged (F-S26); the note is not recorded, only its length. */
+  RULE_ACKED,
+  /** A one-off mute was created (target, range; the reason is not recorded, only its length). */
+  MUTE_CREATED,
+  /** A one-off mute was deleted. */
+  MUTE_DELETED,
+
+  // Alert channels (16 §11.1 group 알림; WO-25 lane B): target channel
+  /** A notification channel was created (type and masked target only, never the secret). */
+  CHANNEL_CREATED,
+  /** A notification channel was changed (the names of the changed fields only). */
+  CHANNEL_UPDATED,
+  /** A notification channel was deleted (its secrets are destroyed). */
+  CHANNEL_DELETED,
+  /** A test notification was sent to a channel; the reason is the outcome (status, error code). */
+  CHANNEL_TEST_SENT,
+  /** A webhook signing key was rotated; the previous key stays valid for 7 days (16 §8.4). */
+  CHANNEL_SIGNING_KEY_ROTATED,
+
   // System (16 §11.1 group 시스템)
   /** The first administrator was created through the setup token or unattended setup (SEC-47). */
   SETUP_COMPLETED

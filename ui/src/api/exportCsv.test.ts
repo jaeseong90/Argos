@@ -13,11 +13,14 @@ import { isApiError, isRetryable, type ApiError } from './errors';
 import {
   csvFileName,
   DEFAULT_CSV_FILE_NAME,
+  DEFAULT_JSON_FILE_NAME,
   exportCsv,
+  jsonFileName,
   MAX_CSV_FILE_NAME_LENGTH,
   requestCsv,
   REVOKE_DELAY_MS,
   sanitizeCsvFileName,
+  sanitizeJsonFileName,
   saveFile,
 } from './exportCsv';
 
@@ -296,5 +299,46 @@ describe('T-UI-004 download (saveFile, the one approved object URL)', () => {
     ).rejects.toMatchObject({ status: 429, retryAfterSeconds: 5 });
     expect(created).toHaveLength(1);
     expect(clicked).toHaveLength(1);
+  });
+});
+
+describe('T-UI-004 JSON downloads (WO-34: transaction export, trace JSON of C-207 (1))', () => {
+  it('names an application/json blob .json and keeps every other blob .csv', () => {
+    const clicked: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      clicked.push(this.download);
+    });
+    const env = { setTimeout: () => undefined };
+    saveFile(new Blob(['{}'], { type: 'application/json' }), '../argos-trace-ab.json', env);
+    saveFile(new Blob(['{}'], { type: 'application/json;charset=utf-8' }), 'trace', env);
+    saveFile(new Blob(['{}'], { type: 'application/json' }), '', env);
+    saveFile(new Blob(['a'], { type: 'text/csv' }), 'x.json', env);
+    saveFile(new Blob(['a']), 'x', env);
+    expect(clicked).toEqual([
+      'argos-trace-ab.json',
+      'trace.json',
+      DEFAULT_JSON_FILE_NAME,
+      'x.json.csv',
+      'x.csv',
+    ]);
+  });
+
+  it('reads the JSON name from Content-Disposition with the same sanitising as CSV names', () => {
+    expect(jsonFileName('attachment; filename="argos-transaction-42.json"')).toBe(
+      'argos-transaction-42.json',
+    );
+    expect(jsonFileName("attachment; filename*=UTF-8''..%2F%E2%80%AEnosj.exe")).toBe(
+      'nosj.exe.json',
+    );
+    expect(jsonFileName(null)).toBe(DEFAULT_JSON_FILE_NAME);
+    expect(sanitizeJsonFileName('a'.repeat(300))).toBe(
+      `${'a'.repeat(MAX_CSV_FILE_NAME_LENGTH - 5)}.json`,
+    );
+    // The CSV names are unchanged by the shared sanitiser.
+    expect(csvFileName('attachment; filename="argos-transaction-42.json"')).toBe(
+      'argos-transaction-42.json.csv',
+    );
   });
 });

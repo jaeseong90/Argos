@@ -41,6 +41,22 @@ describe('E2E URL state reader', () => {
     ]);
   });
 
+  it('reads the suffix form f.<field>.<op>= the app writes for range and contains filters (C-222 (5))', () => {
+    expect(
+      urlState('/x?f.count.gte=10&f.p95_ms.lte=2.5&f.host.contains=pay&f.sql=!a&f.x.unknown=1')
+        .filters,
+    ).toEqual([
+      { field: 'count', op: 'gte', value: '10' },
+      { field: 'p95_ms', op: 'lte', value: '2.5' },
+      { field: 'host', op: 'contains', value: 'pay' },
+      { field: 'sql', op: 'ne', value: 'a' },
+      { field: 'x.unknown', op: 'eq', value: '1' },
+    ]);
+    expect(urlState('/x?f.elapsed.gt=%3E5').filters).toEqual([
+      { field: 'elapsed', op: 'gt', value: '>5' },
+    ]);
+  });
+
   it('reads the docs/15 §4.2 grammar', () => {
     const s = urlState(
       `/x?range=15m&live=1&kind=http&f=${encodeURIComponent('service:eq:GET /a/{id}')}`,

@@ -47,8 +47,9 @@ import org.springframework.stereotype.Component;
  *
  * <p>{@code meta.outages} (D-18) are the collection outages of the range and of the filtered
  * instances, from {@link EventService#outages} like the dashboard's, so that an empty span is not
- * read as "no traffic". Their source (instance state events) is written by WO-22 (ADR-0010 C-160):
- * until then the list is empty unless server stop and start events exist.
+ * read as "no traffic". Their source is the instance state events of the server's instance state
+ * machine and the server's stop and start events; a range before those events were recorded has no
+ * outages.
  */
 @Component
 public class XlogService {

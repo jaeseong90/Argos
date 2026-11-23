@@ -1,9 +1,10 @@
 # E2E suite of the UI (Playwright)
 
 The E2E frame of docs/18 §13 (WO-30). Every WO-30 spec runs against the real server built from
-this tree, with real ClickHouse and PostgreSQL holding seeded data. The only stubbed interface
-is the WebSocket endpoint `/ws` (docs/14 §5). Its server is WO-22, which is not in the Phase 1
-slice (ADR-0010 C-167).
+this tree, with real ClickHouse and PostgreSQL holding seeded data. By default the WebSocket
+endpoint `/ws` (docs/14 §5) is answered by a stub that proves the client rules (ADR-0010 C-167
+(3)); specs with `test.use({ wsMode: 'server' })` talk to the server's real `/ws` (WO-22), see
+[WebSocket](#websocket-stub-and-real-server).
 
 ## Running
 
@@ -17,8 +18,8 @@ corepack pnpm playwright:install
 # the jars the stack runs (from the repository root)
 ./gradlew :server:bootJar :agent:agent-dist:agentJar :sample-apps:shop-boot3:sampleAppJar :sample-apps:ext-stub:sampleAppJar :sample-apps:smoke:sampleAppJar
 
-corepack pnpm e2e               # vite build, then the projects preview and stack
-corepack pnpm e2e:preview       # vite build, then the WO-04 specs against vite preview only
+corepack pnpm e2e               # perf build into build/perf-dist, then the projects preview and stack
+corepack pnpm e2e:preview       # perf build into build/perf-dist, then the WO-04 specs against vite preview only
 corepack pnpm e2e:stack         # stack project only (starts, seeds and removes the stack)
 corepack pnpm e2e:docker        # stack project inside the pinned Linux Playwright image (screenshots)
 corepack pnpm e2e:docker -- --update-snapshots=missing   # create missing screenshot baselines
@@ -49,13 +50,13 @@ fails before the stack starts.
 
 ## Projects (`playwright.config.ts`)
 
-| Project          | What                                                                                                                                                     |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `preview`        | `xlog-poc.spec.ts` and `global-hooks.spec.ts` against `vite preview` of `dist/` (WO-04, unchanged), and `stack-hooks.spec.ts` (stack-mode hook controls) |
-| `stack-setup`    | Starts and seeds the stack once (`e2e/setup/stack.setup.ts`). Its teardown is `stack-teardown`                                                           |
-| `stack`          | Every other `e2e/specs/*.spec.ts`, after `stack-setup`                                                                                                   |
-| `stack-teardown` | One-sided server CSP counter check (a growth beyond the positive controls' reports fails, see [CSP](#csp-t-sec-46)). Then removes the stack              |
-| `initial-load`   | `perf/initial-load.spec.ts`. Defined only when selected with `--project initial-load`                                                                    |
+| Project          | What                                                                                                                                                                                                                                                       |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `preview`        | `xlog-poc.spec.ts` and `global-hooks.spec.ts` against `vite preview` of the perf build in `build/perf-dist/` (WO-04, unchanged; the `/xlog-poc` route exists only in the perf build, ADR-0010 C-203), and `stack-hooks.spec.ts` (stack-mode hook controls) |
+| `stack-setup`    | Starts and seeds the stack once (`e2e/setup/stack.setup.ts`). Its teardown is `stack-teardown`                                                                                                                                                             |
+| `stack`          | Every other `e2e/specs/*.spec.ts`, after `stack-setup`                                                                                                                                                                                                     |
+| `stack-teardown` | One-sided server CSP counter check (a growth beyond the positive controls' reports fails, see [CSP](#csp-t-sec-46)). Then removes the stack                                                                                                                |
+| `initial-load`   | `perf/initial-load.spec.ts`. Defined only when selected with `--project initial-load`                                                                                                                                                                      |
 
 The suite runs with no retries, one worker, traces of failures only, a 1366x768 viewport, the UTC
 time zone and the `en-US` locale (docs/18 §13, §15). CI shards with `--shard=<i>/<n>`; with `CI`
@@ -86,6 +87,20 @@ objects with the run's label.
     `e2e:docker` (1.25 GiB) a run stays at 5 GiB.
   - Ready when `/actuator/health/readiness` on the management port is UP. That check includes the
     migrations.
+  - Refused before anything starts when the jar has no `BOOT-INF/classes/static/index.html` (built
+    with `-Pargos.ui.skip=true`; ADR-0010 C-227 (5), `jars.ts`), also with
+    `ARGOS_E2E_ALLOW_STALE_JARS`.
+  - Alert channels (WO-38): a per-run master key (`ARGOS_MASTER_KEY` in the server's env file under
+    `secrets/`) so channels can be saved, and fake receivers on the host: the server gets
+    `--add-host argos-e2e-receivers:host-gateway`, `argos.alert.webhook.allow-http`,
+    `allow-cidrs` = `127.0.0.1/32` plus every address of that alias in a probe container's
+    `/etc/hosts` (Docker Desktop writes an IPv4 and an IPv6 line; the destination check looks at
+    both), and SMTP to the alias on a random port (`starttls=optional`, `insecure`). The settings
+    are written to `ui/e2e/.stack/<run>/receivers.json`; `e2e/fixtures/fakeReceivers.ts` starts the
+    webhook/Slack (node:http) and SMTP (node:net) receivers on the host's 127.0.0.1 and decides per
+    environment (`receiverPlan`): Docker Desktop host runs both, `e2e:docker` sends webhooks to
+    127.0.0.1 in the shared network namespace and skips SMTP, a Linux Docker Engine host skips both
+    with the reason. No 10.0.0.0/8 or link-local range is allowed (the 422 tests stay real).
 - **Secrets**: generated per run into `ui/e2e/.stack/<run>/secrets/` (git-ignored) and deleted at
   teardown. Passwords reach containers as files, hashes or stdin, and Gradle through environment
   variables. They never appear on a command line or in a log.
@@ -101,16 +116,56 @@ The manifest is `ui/e2e/.stack/seed-manifest.json`, typed by `e2e/stack/manifest
    `PUT /auth/password` first), `e2e-operator` and `e2e-viewer` (`POST /admin/users`). Passwords
    are in per-run files.
 3. **Traffic**:
-   - `shop-boot3` runs with the agent jar, pointed at the stack's gRPC port. Its agent token is
-     provisioned in `argos.agent_tokens` as WO-21's tests do it (hash and prefix only).
+   - `shop-boot3` runs with the agent jar (instance `e2e-shop-1`), pointed at the stack's gRPC
+     port through a TCP proxy of the setup (`e2e/stack/seed/grpcProxy.ts`, Node `net`, bytes
+     only). Its agent token is provisioned in `argos.agent_tokens` as WO-21's tests do it (hash
+     and prefix only).
    - Then `test/seed/seed-traffic.sh --repeat 2` sends the PII/XSS seed requests.
+   - **Hop traces** (WO-14, `HOP_SCENARIOS` of `e2e/stack/seed/traffic.ts`): the agent runs with
+     `-Dargos.propagation.argos-state.hosts=127.0.0.1` (the argos `tracestate` entry with the
+     caller's app id, none by default per SEC-38) and a slow threshold of 0 for the service
+     `GET /api/hop/{id}` only (every hop profile kept, other services unchanged). The setup sends
+     `GET /api/hop/{id}` three times per scenario: `depth=2` (three transactions, the last one
+     calling ext-stub), `depth=2&fail=timeout`, `depth=1&fail=refuse` and `depth=1&fail=status500`.
+     Step 4 resolves one trace per scenario through `GET /traces/{traceId}` (one chain, nothing
+     missing, an external node under the last transaction) and the last transaction's detail
+     (the failure class of its outgoing call) into the manifest's `hop_traces`. A scenario it
+     cannot resolve within 150 s is left out and `missing_optional` (category `hop_traces`)
+     names why; `T-E2E-trace-12` and `T-ACC-05` then fail with that reason.
    - The setup then waits until the XSS seed service is queryable and the XLog total is stable.
+   - **Collection outage** (WO-22, docs/05 §2.1-10, `e2e/stack/seed/outage.ts`), side by side
+     with step 4: the proxy is frozen (nothing reaches the server, the agent keeps running) until
+     `GET /apps/{id}/instances` shows the instance STALE (the server's state machine: no heartbeat
+     for 60 s; 30 to 70 s after the cut with the default 30 s heartbeat), then thawed; the same
+     instance is UP again. The API's outage of that span (`meta.outages` of `GET /xlog` with
+     `instance=<id>`, since an outage carries no instance; reason `session_lost`) must match the
+     cut; it goes into the manifest's `outage` with the times of the cut. If it
+     cannot be made, `outage` is null, `missing_optional` names the reason and the 2.1-10 check
+     fails with it. `session.json` timings: `seed_outage_s` (the outage) and
+     `seed_outage_extra_s` (what it added beyond the resolution it overlapped).
+   - Then `shop-boot3` stops. On Windows the process ends without an `AgentBye`, so the instance
+     turns STALE again about a minute after the setup (a second outage, outside the 2.1-10 range).
 4. **Resolution through the API**: apps, environments, the absolute range, XLog totals of named
    windows, and one checked transaction per category.
    - Mandatory categories: captured profile with SQL and STACK steps, error, sampled out, BATCH,
      root of a trace over two apps.
    - Optional category: the XSS seed transaction (WO-46).
    - A missing mandatory category fails the setup.
+   - Events: two `deploy` events of the primary app go into PostgreSQL `argos.events` with psql
+     (deploy marker creation is WO-26, ADR-0010 C-153), at a quarter and at half of the generator
+     range. The second one's title is an XSS seed payload. The setup checks them through
+     `GET /apps/{appId}/events` and records them in the manifest's `events` (the XLog event
+     markers and deep link 4, WO-33).
+5. **Alert** (WO-25, `e2e/stack/seed/alerts.ts`): after the resolution the operator creates one
+   rule on the primary app through `POST /alerts/rules` (`error_rate`, window `1h` so the
+   ClickHouse provider reads the generator's 1-minute rollups, `for 0s`, `min_samples 1`,
+   `warmup_grace 0s`, warn `>= 0`, no channel). It polls `GET /alerts/events?state=FIRING&rule=<id>` for up to 90 s and
+   lists the template rules the engine applied to the app (`GET /alerts/rules?app=<id>`). The
+   manifest's `alert` holds the FIRING event and the template rules; when either is missing,
+   `missing_optional` (category `alert` or `alert_templates`) names why and the 05 §2.3-5 and
+   §2.10-4 checks and `T-E2E-alerts-*` fail with it. `session.json` timing: `seed_alert_s`. The
+   rule's window is one hour, so a reused stack (`ARGOS_E2E_STACK_URL`) more than an hour after its
+   generator load no longer has the alert.
 
 ## Fixtures (`e2e/fixtures/`)
 
@@ -123,8 +178,8 @@ The manifest is `ui/e2e/.stack/seed-manifest.json`, typed by `e2e/stack/manifest
     of expected 4xx API answers), both in the `preview` project. The CSP checks under the server's
     nonce policy have theirs in `specs/csp-report.spec.ts` (`stack` project, see
     [CSP](#csp-t-sec-46)).
-  - A WebSocket answered by `page.routeWebSocket` emits no `websocket` event, so the `ws` fixture
-    of `stack.ts` checks the origin of the stub's connections with the same rule.
+  - A WebSocket routed by `page.routeWebSocket` emits no `websocket` event, so the `ws` fixture
+    of `stack.ts` checks the origin of its connections with the same rule.
 - `stack.ts`: the `session`, `seed` (manifest), `role` (`admin` / `operator` / `viewer` default /
   `null` anonymous; `test.use({ role })`) and `apiAs(role)` fixtures, plus storage state from an
   API login.
@@ -135,11 +190,8 @@ The manifest is `ui/e2e/.stack/seed-manifest.json`, typed by `e2e/stack/manifest
   - `contextCsp` records the `securitypolicyviolation` events of every document of the test's
     browser context and fails the test after the page hooks if there is any (C-188 (1)).
     `ignoredConsoleErrors` (default none) is for the CSP positive controls only.
-- `ws.ts` and `wsProtocol.ts`: the docs/14 §5 server side on `page.routeWebSocket` (ack, push, pong,
-  error, notice, reauth).
-  - Controls: `pushXlog`, `push`, `pause(ms)`, `drop()` (1012), `close(code)` and `reauth()`.
-  - Every client frame is validated against §5.2.
-  - `installWsStub(page, 'server')` forwards to the real `/ws` (reserved for WO-22).
+- `ws.ts` and `wsProtocol.ts`: the `ws` fixture on `page.routeWebSocket`, see
+  [WebSocket](#websocket-stub-and-real-server).
 - `a11y.ts`: `expectNoCriticalA11y(page, testInfo, label)` (axe-core, dev-only, MPL-2.0): fails on
   any `critical` violation and on any `color-contrast` violation (docs/15 §13, axe rates it
   `serious`); other findings are attached. `expectPlaceholderContrast(field, label)` measures the
@@ -147,6 +199,43 @@ The manifest is `ui/e2e/.stack/seed-manifest.json`, typed by `e2e/stack/manifest
   Critical findings fail; the rest is attached.
 - `ui.ts`, `urlModel.ts`, `i18n.ts`, `xssPayloads.ts`: shell helpers, the URL state in both
   grammars (docs/14 §6 and docs/15 §4.2), texts by i18n key, and the C-45 XSS seed set.
+
+## WebSocket (stub and real server)
+
+The `ws` fixture of `stack.ts` routes every socket of a stack page (`page.routeWebSocket` on
+`/ws`). Every client frame is validated against docs/14 §5.2 in both modes; a violation fails the
+test at teardown.
+
+- `wsMode: 'stub'` (default): `ws.ts` and `wsProtocol.ts` answer as the docs/14 §5 server (ack,
+  push, pong, error, notice, reauth). Parameters are checked as the WO-22 server parses them
+  (`TOPIC_PARAMS`): an unknown parameter, a missing `app` or an unknown `kind` is an error frame
+  with code `invalid_params`. Controls: `pushXlog`, `push`, `pause(ms)`, `drop()` (1012),
+  `close(code)` and `reauth()`. `specs/realtime.spec.ts` and the XLog checks prove the client rules with it.
+- `wsMode: 'server'` (`test.use({ wsMode: 'server' })`): every socket is forwarded to the stack's
+  real `/ws` (`connectToServer`: the browser opens it with the page's cookies and Origin). Both
+  directions are forwarded frame by frame and recorded with their arrival time.
+  `ws.serverFrames()` lists what the server sent, each parsed with the UI's own
+  `src/realtime/frames.ts`; a frame the UI parser rejects is a violation. `ws.connections()` says
+  which side closed with which code (`waitForClose`), and a close is forwarded to the other side
+  with its code. `waitForSubscription` waits for the server's `ack`. The stub controls throw.
+- `specs/realtime-server.spec.ts` (`wsMode: 'server'`):
+  - `T-SV-020e` starts its own `shop-boot3` with the stack's agent jar (same app, token and
+    instance name as the seed, so no new instance row) and waits for the instance to be UP in
+    the REST API. It opens the XLog live screen filtered to the service of its warm-up request,
+    sends five requests and checks the following. The real `xlog` pushes carry exactly the new
+    transactions, the screen's point count grows by five, the stored rows are the pushed tx ids,
+    and a `counter` push reports the instance `UP`. It needs a host JVM, so it is skipped inside
+    the Playwright image of `e2e:docker`. Its latency annotation is a reference value only.
+  - `T-SEC-44c` revokes the page's session from outside the page (logout through the API). The
+    server must send `reauth` or close 4401 within 1 s, the page must go to `/login?next=<path>`,
+    and no new connection may open.
+- `fixtures/wsServerFrames.test.ts` (Vitest, T-API-007 UI side) parses every frame of the server's
+  fixed vectors (`server/src/test/resources/io/argos/server/realtime/ws-frame-vectors.json`,
+  kept equal to the serializer by the server's `WsFrameVectorsTest`) with `parseServerFrame` and
+  every xlog payload with `parseXLogPush`, and checks that the docs/14 §5.2 client examples pass
+  `ClientFrame` and the parameter rules.
+
+Partial run: `corepack pnpm e2e:stack --grep "T-SV-020e|T-SEC-44c|T-E2E-xlog-10 "`.
 
 ## Required elements (`e2e/required/`)
 
@@ -164,6 +253,16 @@ The schema is in `schema.ts`.
 
 `required/common.yaml` covers docs/05 §2.0. A screen work order adds its YAML file and one line to
 `specs/required.spec.ts`.
+
+The dashboard (WO-32) has `required/dashboard.yaml` (docs/05 §2.3 items 2.3-1 to 2.3-7,
+`T-E2E-dashboard-<n>`), its named checks in `required/dashboardChecks.ts` and the API oracle and
+testid readers in `fixtures/dashboardOracle.ts`: every shown value is compared with the API answer
+to the same question (admin `ApiSession`). `specs/dashboard.spec.ts` (T-E2E-080 to 089) holds the
+visual states, deep links 4 and 5, the 1366x768 layout, axe and the collected-text checks; T-E2E-084
+attaches a full-page `dashboard.png`. The common items 2.0-1 (chart drag) and 2.0-5 (point menu,
+markers) run on the dashboard (`T-E2E-common-2`, `T-E2E-common-7`); the outage shading part of 2.0-5,
+STALE/WARN tiles, the firing list and the real server WebSocket are `test.fixme` for WO-22 and WO-25.
+Partial run: `corepack pnpm e2e:stack --grep "T-E2E-08[0-9]|T-E2E-dashboard|T-E2E-common-(2|7) "`.
 
 ## CSP (T-SEC-46)
 
@@ -198,11 +297,19 @@ fails the run, because the server counted a violation. No growth makes no claim;
 
 ## Visual regression
 
-`specs/screenshots.spec.ts` covers the sign-in page, the shell with a placeholder, and the empty,
-error and loading states.
+`specs/screenshots.spec.ts` covers the sign-in page, the shell with a placeholder (the active
+transactions route `/apps/{id}/active` since the dashboard is a real screen), and the empty, error
+and loading states. `specs/dashboard.spec.ts` adds `dashboard-{loading,empty,error,normal}.png`
+(chart plots and uptimes masked).
 
 - Settings: 1366x768, `maxDiffPixelRatio` 0.001 with a per-pixel colour `threshold` of 0.1,
-  animations off. Per-run values are masked: the time range and request ids.
+  animations off. Per-run values are masked: the time range and request ids, and in every spec the
+  top bar's firing-alerts badge (`shellMasks(page)` of `fixtures/screenshots.ts`, first in each
+  spec's `masks()`; `fixtures/screenshots.test.ts` checks it, C-226 (9)).
+- A clipped screenshot (`trace-normal.png` is 1366x280) allows proportionally fewer different
+  pixels than a full page: a baseline made from an outdated server jar (the application selector
+  enabled on a global route) passed full-page comparisons but not the clipped one. Rebuild the
+  bootJar (`--rerun`) before remaking baselines.
 - Baselines (`specs/__screenshots__/`) are made and compared only in the Linux image pinned in
   `e2e/stack/images.ts`, through `e2e:docker`.
 - After an intended UI change, remake every baseline with `--update-snapshots=all` and look at the
@@ -241,4 +348,5 @@ They also read these attributes:
   remove them by hand, use `corepack pnpm e2e:stack:down`, or `docker rm -f` on the containers that
   `docker ps -a --filter label=io.argos.e2e` lists.
 - **Logs**: `ui/e2e/.stack/<run>/logs/` holds `*-server.log`, `*-ch.log`, `*-pg.log`,
-  `shop-boot3.log` and `ext-stub.log`. After a normal run only these logs remain.
+  `shop-boot3.log` and `ext-stub.log` (and `realtime-server-shop-boot3.log` of `T-SV-020e`).
+  After a normal run only these logs remain.

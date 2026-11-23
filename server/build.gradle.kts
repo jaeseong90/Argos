@@ -65,6 +65,14 @@ dependencies {
   implementation(libs.grpc.netty)
   implementation(libs.grpc.stub)
   implementation(libs.grpc.protobuf)
+  // WO-22: realtime bus and WebSocket (12 §3.7, 14 §5). Spring WebSocket on the embedded Tomcat
+  // (raw WebSocketHandler, no STOMP broker) and Reactor sinks per topic key; both from
+  // spring-boot-bom. reactive-streams (MIT-0, ADR-0004 C-42) comes with reactor-core.
+  implementation(libs.server.starter.websocket)
+  implementation(libs.server.reactor.core)
+  // WO-25: alert windows (12 §5.2, DSN-12-07): per-second HdrHistogram buckets merged for the
+  // percentiles of a rule window. Already on the runtime classpath through Micrometer (same version).
+  implementation(libs.server.hdrhistogram)
 
   testFixturesImplementation(platform(libs.spring.boot.bom))
   testFixturesApi(project(":test:storage:clickhouse-support"))
@@ -269,6 +277,39 @@ tasks.register<JavaExec>("loadQueryTestData") {
       providers.gradleProperty("querydata.$key").orNull?.let { "--$key=$it" }
     } + "--out=${providers.gradleProperty("querydata.out").getOrElse(defaultOut)}"
   )
+}
+
+// --- Active-transaction feed (WO-35, development only, never shipped) ------------------------------
+// build/active-feed/active-feed.jar runs io.argos.server.testing.fakeagent.ActiveFeed: FakeAgent
+// sessions that send the deterministic snapshots of ActiveFeedScenario to a running collector
+// (plaintext) for the E2E stack (ui/e2e/stack/seed/activeFeed.ts), until the real agent produces
+// active snapshots (WO-16). The class directories of the testFixtures runtime classpath go into the
+// jar; its manifest Class-Path names the jars of that classpath, copied to build/active-feed/lib.
+//   java -jar server/build/active-feed/active-feed.jar --target 127.0.0.1:<grpc port> --token-file F
+val activeFeedDir = layout.buildDirectory.dir("active-feed")
+val activeFeedClasspath: FileCollection = sourceSets["testFixtures"].runtimeClasspath
+val activeFeedLibraries: FileCollection =
+  activeFeedClasspath.filter { it.isFile && it.name.endsWith(".jar") }
+val activeFeedLibs =
+  tasks.register<Sync>("activeFeedLibs") {
+    group = "argos dev"
+    description = "Runtime libraries of the active-transaction feed (development only)."
+    from(activeFeedLibraries)
+    into(activeFeedDir.map { it.dir("lib") })
+  }
+tasks.register<Jar>("activeFeedJar") {
+  group = "argos dev"
+  description =
+    "Active-transaction feed for the E2E stack: build/active-feed/active-feed.jar (development only)."
+  dependsOn(activeFeedLibs)
+  archiveFileName = "active-feed.jar"
+  destinationDirectory = activeFeedDir
+  from(activeFeedClasspath.filter { it.isDirectory })
+  duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+  val libraries = activeFeedLibraries
+  inputs.files(libraries).withPropertyName("activeFeedLibraries").withNormalizer(ClasspathNormalizer::class.java)
+  manifest { attributes("Main-Class" to "io.argos.server.testing.fakeagent.ActiveFeed") }
+  doFirst { manifest.attributes("Class-Path" to libraries.files.joinToString(" ") { "lib/" + it.name }) }
 }
 
 // --- ClickHouse migration files (13 §13.2, ADR-0007 C-56) ------------------------------------------

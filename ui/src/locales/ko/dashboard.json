@@ -1,0 +1,122 @@
+{
+  "page": {
+    "title": "$t(shell:screen.dashboard)",
+    "refreshing": "대시보드를 갱신하는 중…",
+    "polling": "실시간 갱신이 없어 5초마다 다시 조회합니다.",
+    "unapplied": "대시보드에 적용되지 않음:",
+    "empty": {
+      "title": "선택한 범위에 트랜잭션이 없습니다.",
+      "description": "범위를 넓히거나 인스턴스 필터와 종류를 확인하세요.",
+      "excluded_other": "이 범위에서 제외된 요청 {{count, number}}건"
+    }
+  },
+  "tiles": {
+    "label": "$t(common:term.statTile)",
+    "tps": "TPS",
+    "avg": "평균 응답시간",
+    "p95": "p95 응답시간",
+    "p99": "p99 응답시간",
+    "errorRate": "에러율",
+    "active": "$t(common:term.activeTransactions)"
+  },
+  "tileRef": {
+    "label": "증감 기준",
+    "prev": "직전 구간",
+    "sevenDays": "7일 전"
+  },
+  "tileDelta": {
+    "detail": "이번 구간: {{current}} · {{basis}}: {{previous}}"
+  },
+  "baseline": {
+    "label": "비교 기준선",
+    "none": "끄기",
+    "oneDay": "1일 전",
+    "sevenDays": "7일 전"
+  },
+  "charts": {
+    "label": "시계열",
+    "tps": "TPS",
+    "response": "응답시간",
+    "errorRate": "에러율",
+    "active": "$t(common:term.activeTransactions)",
+    "heapGc": "힙 사용·GC 정지 시간",
+    "cpu": "CPU",
+    "tomcat": "Tomcat 스레드 사용률",
+    "pool": "커넥션 풀 사용률",
+    "ext": "외부 호출"
+  },
+  "series": {
+    "tps": "TPS",
+    "avg": "평균",
+    "p95": "p95",
+    "p99": "p99",
+    "errorRate": "에러율",
+    "active": "액티브",
+    "heapUsed": "힙 사용",
+    "heapMax": "힙 최대",
+    "gcPause": "GC 정지",
+    "cpu": "프로세스 CPU",
+    "systemCpu": "시스템 CPU",
+    "tomcatBusy": "사용 중 스레드",
+    "extTime": "호출 시간",
+    "extErrors": "호출 에러"
+  },
+  "notes": {
+    "activeNotMeasured": "이 범위에 액티브 트랜잭션 표본이 없습니다.",
+    "noPools": "이 범위에 커넥션 풀 지표가 없습니다.",
+    "extErrorsNotMeasured": "이 범위의 호출 에러는 측정되지 않습니다."
+  },
+  "sections": {
+    "instances": "인스턴스",
+    "firing": "발생 중 알림",
+    "collection": "$t(common:term.collectionQuality)"
+  },
+  "instanceTiles": {
+    "label": "인스턴스 타일",
+    "empty": "이 범위에 보고한 인스턴스가 없습니다.",
+    "active": "액티브",
+    "heap": "힙",
+    "cpu": "CPU",
+    "pending": "…"
+  },
+  "compare": {
+    "title": "인스턴스 비교",
+    "outlier": "이상치",
+    "outlierRule": "강조된 값은 서버가 판정한 이상치입니다: 나머지 인스턴스 평균에서 표준편차의 2배를 넘게 벗어난 값(값이 있는 인스턴스 3개 이상).",
+    "empty": "이 범위에 인스턴스가 없습니다.",
+    "columns": {
+      "instance": "인스턴스",
+      "state": "상태",
+      "tps": "TPS",
+      "p95": "p95",
+      "errorRate": "에러율",
+      "active": "액티브",
+      "heap": "힙",
+      "cpu": "CPU",
+      "pool": "풀 사용률",
+      "uptime": "업타임"
+    }
+  },
+  "firing": {
+    "titleCount_other": "$t(dashboard:sections.firing) ({{count, number}})",
+    "unavailable": "사용할 수 없음: 이 서버는 아직 알림을 평가하지 않습니다.",
+    "none": "이 애플리케이션에 발생 중인 알림이 없습니다.",
+    "more_other": "이력에 알림 {{count, number}}건 더 있음",
+    "history": "알림 이력"
+  },
+  "collection": {
+    "agentDrops": "에이전트 유실",
+    "serverDrops": "서버 유실",
+    "ingestLag": "적재 지연",
+    "clockSkew": "시간 오차 경고",
+    "excluded": "제외된 요청",
+    "late": "늦은 도착",
+    "batchRunning": "진행 중 배치",
+    "quota_other": "(쿼터 {{count, number}}건)",
+    "reasonsTitle": "사유별 제외",
+    "reasonsLoading": "사유를 불러오는 중…",
+    "reasonsUnavailable": "이 범위에는 사유별 집계가 없습니다.",
+    "reasonsLabel_other": "제외된 요청 {{count, number}}건: 사유 보기",
+    "warning": "확인 필요"
+  }
+}

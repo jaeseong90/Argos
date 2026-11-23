@@ -10,8 +10,11 @@ import io.argos.server.session.AgentSession;
 import io.argos.server.storage.postgres.catalog.CatalogRepository;
 import io.argos.server.storage.postgres.catalog.CatalogRepository.AppRecord;
 import io.argos.server.storage.postgres.catalog.CatalogRepository.InstanceRecord;
+import io.argos.server.storage.query.QueryParams;
+import io.argos.server.storage.query.QueryRow;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -28,7 +31,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * Builds the application and instance views of 14 §4.3 from PostgreSQL ({@link CatalogRepository}),
- * the session registry ({@link InstanceStates}, C-160) and the agent drop series of ClickHouse.
+ * the session registry and the instance state machine ({@link InstanceStates}, 12 §4.2) and the
+ * agent drop series of ClickHouse.
  */
 @Service
 public class AppsService {
@@ -38,6 +42,9 @@ public class AppsService {
 
   /** Most instances of a list (14 §4.3). */
   public static final int MAX_INSTANCES = 1_000;
+
+  /** How far back {@code kinds} looks (ADR-0010 C-205 (4): kinds of the last 7 days). */
+  public static final Duration KINDS_WINDOW = Duration.ofDays(7);
 
   private static final Logger LOG = LoggerFactory.getLogger(AppsService.class);
 
@@ -54,22 +61,70 @@ public class AppsService {
     this.queries = queries;
   }
 
-  /** The view of an application. */
-  public AppViews.App app(AppRecord a) {
+  /**
+   * The views of the applications of a list ({@code kinds} is not read there: null); the instance
+   * ids of all of them are read in one query for their up counts.
+   */
+  public List<AppViews.App> views(List<AppRecord> apps) {
+    Map<Integer, List<Integer>> ids =
+        catalog.instanceIdsByApp(
+            apps.stream().map(AppRecord::id).toList(), InstanceStates.SUMMARY_INSTANCES_MAX);
+    return apps.stream().map(a -> view(a, ids.getOrDefault(a.id(), List.of()), null)).toList();
+  }
+
+  /**
+   * The view of one application ({@code GET /apps/{appId}}) with the transaction kinds of the last
+   * 7 days ({@link #kinds}).
+   */
+  public AppViews.App appDetail(AppRecord a) {
+    List<Integer> ids =
+        catalog
+            .instanceIdsByApp(List.of(a.id()), InstanceStates.SUMMARY_INSTANCES_MAX)
+            .getOrDefault(a.id(), List.of());
+    return view(a, ids, kinds(a.id()));
+  }
+
+  /** {@code instancesUp}: the instances in {@code UP} or {@code WARN} ({@link InstanceStates}). */
+  private AppViews.App view(AppRecord a, List<Integer> instanceIds, List<String> kinds) {
     return new AppViews.App(
         a.id(),
         a.name(),
         a.env(),
         a.group(),
         a.instancesTotal(),
-        states.sessions(a.id()).size(),
+        states.summarize(instanceIds).up(),
         a.autoRegister() ? "auto" : "approval",
         a.recommendedRulesApplied(),
         a.lastSeenAt(),
         a.apdexTMs(),
         a.slowThresholdMs(),
         a.createdAt(),
-        a.registeredFromAppId());
+        a.registeredFromAppId(),
+        kinds);
+  }
+
+  /**
+   * The transaction kinds the application recorded in the last {@link #KINDS_WINDOW} (the hour
+   * rollup {@code service_stat_1h}, template {@code apps/kinds}), sorted; null when ClickHouse
+   * cannot answer (the application view stays available, the kinds are unknown).
+   */
+  List<String> kinds(int appId) {
+    Instant from = queries.now().minus(KINDS_WINDOW).truncatedTo(ChronoUnit.HOURS);
+    try {
+      List<String> out = new ArrayList<>();
+      for (QueryRow row :
+          queries.run(
+              "apps/kinds", QueryParams.create().uint32("app", appId).dateTime("from", from))) {
+        out.add(row.getString("kind"));
+      }
+      return List.copyOf(out);
+    } catch (ApiException e) {
+      if (!e.errorCode().serverError()) {
+        throw e;
+      }
+      LOG.debug("Transaction kinds unavailable for app {}: {}", appId, e.errorCode().code());
+      return null;
+    }
   }
 
   /**
@@ -121,7 +176,7 @@ public class AppsService {
         r.name(),
         r.host(),
         r.pid(),
-        session.isPresent() ? InstanceStates.UP : InstanceStates.DOWN,
+        states.state(r.id()),
         session.map(AgentSession::agentVersion).orElse(r.agentVersion()),
         states.compat(session.map(AgentSession::agentVersion).orElse(r.agentVersion())),
         hash,
@@ -129,7 +184,7 @@ public class AppsService {
         session.map(s -> Instant.ofEpochMilli(s.lastHeartbeatMs())).orElse(r.lastSeenAt()),
         session.isPresent() ? Long.valueOf(session.get().clock().estimateMs()) : storedSkew(r),
         drops.get(r.id()),
-        null,
+        states.modulesDisabled(r.id()),
         r.ipMode(),
         r.userIdMode(),
         r.queryStringMode(),

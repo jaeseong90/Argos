@@ -143,9 +143,582 @@ paths:
       - admin-users-controller
       x-argos-audit: ACCOUNT_UNLOCKED
       x-argos-role: admin
+  /api/v1/alerts/channels:
+    get:
+      operationId: channels_list
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeListChannelView'
+          description: OK
+      tags:
+      - channels-controller
+      x-argos-role: viewer
+    post:
+      operationId: channels_create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChannelRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeCreatedChannelView'
+          description: Created
+      tags:
+      - channels-controller
+      x-argos-audit: CHANNEL_CREATED
+      x-argos-role: admin
+  /api/v1/alerts/channels/{id}:
+    delete:
+      operationId: channels_delete
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: No Content
+      tags:
+      - channels-controller
+      x-argos-audit: CHANNEL_DELETED
+      x-argos-role: admin
+    put:
+      operationId: channels_update
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateChannelRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeChannelView'
+          description: OK
+      tags:
+      - channels-controller
+      x-argos-audit: CHANNEL_UPDATED
+      x-argos-role: admin
+  /api/v1/alerts/channels/{id}/signing-key/rotate:
+    post:
+      operationId: channels_rotate
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeRotatedKeyView'
+          description: OK
+      tags:
+      - channels-controller
+      x-argos-audit: CHANNEL_SIGNING_KEY_ROTATED
+      x-argos-role: admin
+  /api/v1/alerts/channels/{id}/test:
+    post:
+      operationId: channels_test
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeTestResultView'
+          description: OK
+      tags:
+      - channels-controller
+      x-argos-audit: CHANNEL_TEST_SENT
+      x-argos-role: admin
+  /api/v1/alerts/events:
+    get:
+      description: The state transitions of [from, to) (at most 366 days, the 365-day retention), newest first, with the delivery of each event per channel (F-S27; last_error_code is an error code, never a response body). delivery=failed keeps the events with a failed delivery. Pages of limit (default 100, at most 500) continue with cursor = meta.next_cursor. Every application's active alerts are GET /overview/alerts.
+      operationId: alerts_events_list
+      parameters:
+      - in: query
+        name: from
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: to
+        required: true
+        schema:
+          type: string
+      - description: Application id
+        in: query
+        name: app
+        required: false
+        schema:
+          format: int32
+          type: integer
+      - in: query
+        name: env
+        required: false
+        schema:
+          type: string
+      - description: warn or critical
+        in: query
+        name: severity
+        required: false
+        schema:
+          type: string
+      - description: OK, PENDING, FIRING, ACKED, RESOLVED or NO_DATA
+        in: query
+        name: state
+        required: false
+        schema:
+          type: string
+      - description: Rule id
+        in: query
+        name: rule
+        required: false
+        schema:
+          type: string
+      - description: 'failed: only events with a failed delivery'
+        in: query
+        name: delivery
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+      - description: Rows of a page, at most 500 (default 100)
+        in: query
+        name: limit
+        required: false
+        schema:
+          format: int32
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseEnvelopeListAlertEvent'
+          description: OK
+      summary: Alert events
+      tags:
+      - alert-events-controller
+      x-argos-limits:
+        range_max: 366d
+        rows_max: 500
+        timeout_s: 10
+      x-argos-role: viewer
+      x-argos-source:
+      - postgres:alert_events
+      - postgres:alert_rules
+      - postgres:notification_deliveries
+  /api/v1/alerts/events/{eventId}/ack:
+    post:
+      description: 'eventId is the FIRING event of the current firing (event_id of the active alert). The alert becomes ACKED: renotifications stop, the RESOLVED notification is still sent (F-S26). 409 invalid_state when the alert is not FIRING (already acknowledged or resolved), 404 for an unknown event. note at most 1 KB.'
+      operationId: alerts_events_ack
+      parameters:
+      - in: path
+        name: eventId
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertAckRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAlertAck'
+          description: OK
+      summary: Acknowledge a firing alert
+      tags:
+      - alert-events-controller
+      x-argos-audit: RULE_ACKED
+      x-argos-role: operator
+  /api/v1/alerts/mutes:
+    get:
+      description: The one-off mutes that have not ended, by start, at most 1,000.
+      operationId: alerts_mutes_list
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeListAlertMute'
+          description: OK
+      summary: Alert mutes
+      tags:
+      - alert-events-controller
+      x-argos-limits:
+        rows_max: 1000
+      x-argos-role: operator
+      x-argos-source:
+      - postgres:mutes
+    post:
+      description: 'No rule matching the target (every target field optional: absent matches any) is evaluated between from and to. At most 30 days, ending in the future (400 invalid_request otherwise); reason at most 1 KB.'
+      operationId: alerts_mutes_create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertMuteRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAlertMute'
+          description: Created
+      summary: Create an alert mute
+      tags:
+      - alert-events-controller
+      x-argos-audit: MUTE_CREATED
+      x-argos-role: operator
+  /api/v1/alerts/mutes/{muteId}:
+    delete:
+      operationId: alerts_mutes_delete
+      parameters:
+      - in: path
+        name: muteId
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: No Content
+      summary: Delete an alert mute
+      tags:
+      - alert-events-controller
+      x-argos-audit: MUTE_DELETED
+      x-argos-role: operator
+  /api/v1/alerts/rules:
+    get:
+      description: The rules that are not deleted, newest first, at most 1,000 (meta.truncated at the limit). Without app every rule, server self rules included; env matches the rules of that environment and those of every environment.
+      operationId: alerts_rules_list
+      parameters:
+      - description: Application id
+        in: query
+        name: app
+        required: false
+        schema:
+          format: int32
+          type: integer
+      - description: Environment
+        in: query
+        name: env
+        required: false
+        schema:
+          type: string
+      - description: Only enabled (true) or only disabled (false) rules
+        in: query
+        name: enabled
+        required: false
+        schema:
+          type: boolean
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeListAlertRule'
+          description: OK
+      summary: Alert rules
+      tags:
+      - alert-rules-controller
+      x-argos-limits:
+        rows_max: 1000
+      x-argos-role: viewer
+      x-argos-source:
+      - postgres:alert_rules
+    post:
+      description: 400 invalid_request with one detail per invalid field (unknown fields included), 422 template_variable_forbidden for a message template variable outside the allowed set (SEC-39). The application and the channels must exist.
+      operationId: alerts_rules_create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertRuleRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAlertRule'
+          description: Created
+      summary: Create an alert rule
+      tags:
+      - alert-rules-controller
+      x-argos-audit: RULE_CREATED
+      x-argos-role: operator
+  /api/v1/alerts/rules/preview:
+    post:
+      description: 'The rule''s metric over the last days (default and at most 7) from the minute rollups, in consecutive buckets of step_s (the rule window rounded up to whole minutes, at least days × 1440 / 336 minutes, so short windows are smoothed), and the firings its warn (or critical) threshold would have caused: a run of breaching buckets (with at least min_samples requests for request metrics) lasting at least for. Metrics outside the rollups (active transactions, server self metrics, instance state, batch elapsed time) answer 400 with metric/preview_unsupported; a service, instance or host rule needs one target id. Heavy rate-limit bucket (14 §2.7).'
+      operationId: alerts_rules_preview
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertRulePreviewRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAlertRulePreview'
+          description: OK
+      summary: Preview an alert rule
+      tags:
+      - alert-rules-controller
+      x-argos-audit: none
+      x-argos-limits:
+        range_max: 7d
+        rows_max: 336
+        timeout_s: 25
+      x-argos-role: operator
+      x-argos-source:
+      - instance_stat_1m
+      - service_stat_1m
+      - ext_stat_1m
+      - metric_1m
+  /api/v1/alerts/rules/{ruleId}:
+    delete:
+      description: 'Soft delete: the rule leaves the lists and the engine (its active alerts resolve), its events stay readable for their retention.'
+      operationId: alerts_rules_delete
+      parameters:
+      - in: path
+        name: ruleId
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: No Content
+      summary: Delete an alert rule
+      tags:
+      - alert-rules-controller
+      x-argos-audit: RULE_DELETED
+      x-argos-role: operator
+    get:
+      description: The rule, its 20 newest versions (alert_rule_history) and, when its template has a newer version than the rule was made from, the differing fields (F-S24).
+      operationId: alerts_rules_get
+      parameters:
+      - in: path
+        name: ruleId
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAlertRuleDetail'
+          description: OK
+      summary: One alert rule
+      tags:
+      - alert-rules-controller
+      x-argos-limits:
+        rows_max: 20
+      x-argos-role: viewer
+      x-argos-source:
+      - postgres:alert_rules
+      - postgres:alert_rule_history
+    put:
+      description: The whole rule (read-only fields such as rule_id and version are ignored). Channels are chosen by id; a channel's URL never changes here.
+      operationId: alerts_rules_update
+      parameters:
+      - in: path
+        name: ruleId
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertRuleRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAlertRule'
+          description: OK
+      summary: Replace an alert rule
+      tags:
+      - alert-rules-controller
+      x-argos-audit: RULE_UPDATED
+      x-argos-role: operator
+  /api/v1/alerts/rules/{ruleId}/clone:
+    post:
+      description: A copy of the rule for another application and environment (not server rules).
+      operationId: alerts_rules_clone
+      parameters:
+      - in: path
+        name: ruleId
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertRuleCloneRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAlertRule'
+          description: Created
+      summary: Clone an alert rule
+      tags:
+      - alert-rules-controller
+      x-argos-audit: RULE_CREATED
+      x-argos-role: operator
+  /api/v1/alerts/rules/{ruleId}/disable:
+    post:
+      operationId: alerts_rules_disable
+      parameters:
+      - in: path
+        name: ruleId
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: No Content
+      summary: Disable an alert rule
+      tags:
+      - alert-rules-controller
+      x-argos-audit: RULE_DISABLED
+      x-argos-role: operator
+  /api/v1/alerts/rules/{ruleId}/enable:
+    post:
+      operationId: alerts_rules_enable
+      parameters:
+      - in: path
+        name: ruleId
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: No Content
+      summary: Enable an alert rule
+      tags:
+      - alert-rules-controller
+      x-argos-audit: RULE_UPDATED
+      x-argos-role: operator
+  /api/v1/alerts/stats:
+    get:
+      description: 'Per rule over the last days (7 or 30): firings (FIRING transitions from a state that was not firing), the average firing duration of the resolved alerts, the average time from the firing to the acknowledgement and to the resolution, most firings first, at most 1,000 rules (finding noisy rules).'
+      operationId: alerts_stats_get
+      parameters:
+      - description: 7 (default) or 30
+        in: query
+        name: days
+        required: false
+        schema:
+          format: int32
+          type: integer
+      - description: Application id
+        in: query
+        name: app
+        required: false
+        schema:
+          format: int32
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeListAlertRuleStats'
+          description: OK
+      summary: Alert statistics per rule
+      tags:
+      - alert-events-controller
+      x-argos-limits:
+        range_max: 30d
+        rows_max: 1000
+        timeout_s: 10
+      x-argos-role: viewer
+      x-argos-source:
+      - postgres:alert_events
+      - postgres:alert_rules
+  /api/v1/alerts/templates:
+    get:
+      description: 'The 14 templates of 01 Appendix A with their version and the rules they create (scope app: per application; server: once for the server).'
+      operationId: alerts_templates_list
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeListAlertTemplate'
+          description: OK
+      summary: Default alert templates
+      tags:
+      - alert-rules-controller
+      x-argos-role: viewer
+      x-argos-source:
+      - memory:templates
+  /api/v1/alerts/templates/apply:
+    post:
+      description: 'Creates the application rules of the templates (default: every application template) for the application; a template whose rule exists (deleted ones included), a server template, an unknown key and, without keys, the batch template of an application without BATCH transactions are skipped with the reason.'
+      operationId: alerts_templates_apply
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertTemplatesApplyRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAlertTemplatesApplied'
+          description: OK
+      summary: Apply default templates
+      tags:
+      - alert-rules-controller
+      x-argos-audit: RULE_CREATED
+      x-argos-role: operator
   /api/v1/apps:
     get:
-      description: 'At most 500 applications by name (meta.truncated when there are more). q is a case-insensitive substring of the name (at most 1 KB). Instance state: UP while the server has a live agent session for the instance, DOWN otherwise; STALE and WARN (12 §4.2) are not reported before the instance state machine exists (WO-22, ADR-0010 C-160).'
+      description: 'At most 500 applications by name (meta.truncated when there are more). q is a case-insensitive substring of the name (at most 1 KB). Instance state (12 §4.2): UP while heartbeats arrive, STALE after 60 s without a heartbeat, DOWN after 180 s without one, 5 minutes after the agent''s shutdown message without a reconnect, or when never connected since the server started; WARN while up with a clock offset of 1 s or more, drops in the last 5 minutes, the lowest accepted agent version, a disabled module, the kill switch on, a configuration hash that differs from the application''s majority or a leaked-context count in the last 5 minutes. instances_up counts the instances in UP or WARN.'
       operationId: apps_list
       parameters:
       - in: query
@@ -182,7 +755,7 @@ paths:
       - memory:sessions
   /api/v1/apps/{appId}:
     get:
-      description: '404 not_found for an unknown application. Instance state: UP while the server has a live agent session for the instance, DOWN otherwise; STALE and WARN (12 §4.2) are not reported before the instance state machine exists (WO-22, ADR-0010 C-160).'
+      description: '404 not_found for an unknown application. kinds lists the transaction kinds recorded in the last 7 days (service_stat_1h; null when ClickHouse cannot answer). Instance state (12 §4.2): UP while heartbeats arrive, STALE after 60 s without a heartbeat, DOWN after 180 s without one, 5 minutes after the agent''s shutdown message without a reconnect, or when never connected since the server started; WARN while up with a clock offset of 1 s or more, drops in the last 5 minutes, the lowest accepted agent version, a disabled module, the kill switch on, a configuration hash that differs from the application''s majority or a leaked-context count in the last 5 minutes. instances_up counts the instances in UP or WARN.'
       operationId: apps_get
       parameters:
       - in: path
@@ -208,9 +781,10 @@ paths:
       - postgres:apps
       - postgres:instances
       - memory:sessions
+      - service_stat_1h
   /api/v1/apps/{appId}/active:
     get:
-      description: The latest 5-second snapshot of every live agent session (memory). At most 2,000 items, longest first (meta.truncated). Instances are UP while their session lives (STALE and WARN arrive with the instance state machine, WO-22).
+      description: The latest 5-second snapshot of every live agent session (memory). At most 2,000 items, longest first (meta.truncated). per_instance lists only the instances with a live session, each with its instance state (UP, WARN, STALE, DOWN) as in GET /apps/{appId}/instances.
       operationId: active_get
       parameters:
       - in: path
@@ -311,7 +885,7 @@ paths:
       - memory:sessions
   /api/v1/apps/{appId}/dashboard:
     get:
-      description: 'Tiles, series and baseline of [from, to) by the source rule of 14 §3 (meta.source; at most 1 year and 720 buckets; step optional). Series values are null where there is no data; series.count is 0 for a covered bucket without transactions, so Σ count equals the transactions of the range (D-03). Percentiles merge the DD states of the rollups (C-53). With instance[] the transactions come from instance_stat_1m (minute level for every range). delta: basis prev (previous range of the same length) or 7d (with baseline=7d); tps and p95_ms relative, error_rate absolute. Live values (tiles.active, collection.clock_skew_instances, collection.batch_running) only for a range ending in the last 2 minutes, else null. series.active is null until the server records active-transaction gauges (WO-22, ADR-0010 C-178). firing is null until the alert engine exists (WO-25); collection.server_drops and the historic ingest lag are null until the server records its own series (WO-28). Instance states: UP with a live agent session, DOWN otherwise (STALE and WARN come with WO-22, ADR-0010 C-160).'
+      description: 'Tiles, series and baseline of [from, to) by the source rule of 14 §3 (meta.source; at most 1 year and 720 buckets; step optional). Series values are null where there is no data; series.count is 0 for a covered bucket without transactions, so Σ count equals the transactions of the range (D-03). Percentiles merge the DD states of the rollups (C-53). With instance[] or exclude_instance[] the transactions come from instance_stat_1m/1h (ADR-0010 C-212 (1)); exclude_instance leaves its instances out of the transactions, the JVM series, the live values, the instance tiles, collection.late and the outages. delta: basis prev (previous range of the same length) or 7d (with baseline=7d); tps, avg_ms, p95_ms and p99_ms relative to the same tile over the basis range, error_rate absolute, active relative to the mean of series.active over the basis range (null when tiles.active is null or that mean is missing or 0). series.cpu and series.system_cpu are per bucket the mean over the instances of their average process_cpu_usage_ratio and system_cpu_usage_ratio. Live values (tiles.active, collection.clock_skew_instances, collection.batch_running) only for a range ending in the last 2 minutes, else null. series.active is per bucket the sum over the instances of their average argos_active_transactions gauge, which the server records from every active snapshot (ADR-0010 C-178 (1)); null for a bucket without a snapshot. firing lists the application''s active alerts now (FIRING and ACKED, newest first, whatever the range; ADR-0010 C-212 (2)); collection.server_drops and the historic ingest lag are null until the server records its own series (WO-28). Instance states (12 §4.2): UP, STALE (60 s without a heartbeat), DOWN (180 s without one, or 5 minutes after the agent''s shutdown message) or WARN (up with a WARN condition).'
       operationId: dashboard_get
       parameters:
       - in: path
@@ -357,6 +931,15 @@ paths:
             format: int32
             type: integer
           type: array
+      - description: Instance ids to leave out (ADR-0010 C-212 (1)), at most 100. Not together with the same id in instance.
+        in: query
+        name: exclude_instance
+        required: false
+        schema:
+          items:
+            format: int32
+            type: integer
+          type: array
       responses:
         '200':
           content:
@@ -376,6 +959,7 @@ paths:
       - app_stat_1m
       - app_stat_1h
       - instance_stat_1m
+      - instance_stat_1h
       - metric
       - metric_1m
       - metric_1h
@@ -384,9 +968,10 @@ paths:
       - ext_stat_1h
       - postgres:events
       - memory:sessions
+      - memory:alerts
   /api/v1/apps/{appId}/errors/groups:
     get:
-      description: 'Per error group of [from, to) from error_stat_1m (raw rows for the tail and edges): count, first and last occurrence in the range, top 5 services and versions, with the class, masked message pattern (at most 1 KB) and top frame of error_groups. is_new: first seen ever inside the range; new_only=true lists only those. sort: count (default), first_seen or last_seen. limit at most 500 (default 100). Also as CSV (format=csv, tz). meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.'
+      description: 'Per error group of [from, to) from error_stat_1m (raw rows for the tail and edges): count, first and last occurrence in the range, top 5 services and versions, with the class, masked message pattern (at most 1 KB) and top frame of error_groups. is_new: first seen ever inside the range; new_only=true lists only those. sort: count (default), first_seen or last_seen. limit at most 500 (default 100). compare_prev=true adds delta against the previous range of the same length: count relative (null when the group had no occurrence there), p95_ms and error_rate always null. Also as CSV (format=csv, tz). meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.'
       operationId: error_groups_list
       parameters:
       - in: path
@@ -428,6 +1013,12 @@ paths:
         schema:
           format: int32
           type: integer
+      - in: query
+        name: compare_prev
+        required: false
+        schema:
+          default: false
+          type: boolean
       - in: query
         name: format
         required: false
@@ -571,7 +1162,7 @@ paths:
       - postgres:events
   /api/v1/apps/{appId}/external/stats:
     get:
-      description: 'Per host of [from, to) from ext_stat_raw/1m/1h; percentiles estimated from the 15 latency buckets (estimated: true, C-14). path_pattern is not stored yet; decided with HTTP client instrumentation (WO-14, ADR-0010 C-178), always null. sort: count, errors, timeouts, sum_ms (default), avg_ms or max_ms. limit at most 500 (default 100). compare_prev=true adds delta. Also as CSV (format=csv, tz). meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.'
+      description: 'Per host of [from, to) from ext_stat_raw/1m/1h; percentiles estimated from the 15 latency buckets (estimated: true, C-14). path_pattern is not stored: the statistics key is the host (ADR-0010 C-178 (3), C-223 (5)), always null. sort: count, errors, timeouts, sum_ms (default), avg_ms, max_ms or p95_ms (the estimated p95, ordered like the returned p95_ms values). limit at most 500 (default 100). compare_prev=true adds delta. Also as CSV (format=csv, tz). meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.'
       operationId: external_stats_list
       parameters:
       - in: path
@@ -654,7 +1245,7 @@ paths:
       - postgres:dictionary
   /api/v1/apps/{appId}/external/{hostId}:
     get:
-      description: The host's series of [from, to) (percentiles estimated, C-14), and the services and related transactions of its profiled callers (HTTP steps of profile_step, a sample) in raw_window. 404 for an unknown key. meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.
+      description: The host's series of [from, to) (percentiles estimated, C-14; timeouts and connect_failures per bucket, ADR-0010 C-222 (7)), and the services and related transactions of its profiled callers (HTTP steps of profile_step, a sample) in raw_window. 404 for an unknown key. meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.
       operationId: external_get
       parameters:
       - in: path
@@ -712,7 +1303,7 @@ paths:
       - xlog
   /api/v1/apps/{appId}/instances:
     get:
-      description: 'At most 1,000 instances by name; archived ones only with archived=true. state filters by UP, DOWN, STALE or WARN. drops_24h is the agent''s argos_agent_dropped_total increase of the last 24 h (null when the agent reported no such series or ClickHouse cannot answer); modules_disabled is null until WO-22 records it. Instance state: UP while the server has a live agent session for the instance, DOWN otherwise; STALE and WARN (12 §4.2) are not reported before the instance state machine exists (WO-22, ADR-0010 C-160).'
+      description: 'At most 1,000 instances by name; archived ones only with archived=true. state filters by UP, DOWN, STALE or WARN. drops_24h is the agent''s argos_agent_dropped_total increase of the last 24 h (null when the agent reported no such series or ClickHouse cannot answer); modules_disabled lists the modules the agent reported disabled since it started (null for an instance the server has not seen since it started). Instance state (12 §4.2): UP while heartbeats arrive, STALE after 60 s without a heartbeat, DOWN after 180 s without one, 5 minutes after the agent''s shutdown message without a reconnect, or when never connected since the server started; WARN while up with a clock offset of 1 s or more, drops in the last 5 minutes, the lowest accepted agent version, a disabled module, the kill switch on, a configuration hash that differs from the application''s majority or a leaked-context count in the last 5 minutes. instances_up counts the instances in UP or WARN.'
       operationId: instances_list
       parameters:
       - in: path
@@ -754,7 +1345,7 @@ paths:
       - metric_1m
   /api/v1/apps/{appId}/instances/compare:
     get:
-      description: 'Per instance over [from, to) (at most 1 year): transactions from instance_stat_1m (raw rows for the live tail and unaligned edges), heap ratio, CPU and pool usage averages from metric*, and outlier flags (p95, error rate, CPU) by leave-one-out (ADR-0010 C-177): for each instance, mean and sample standard deviation of the other instances'' values; the instance is an outlier when at least 3 instances have the value and |value - mean| > 2 x max(standard deviation, 0.05 x |mean|) (strict). With 2 or fewer instances with the value the flag is false; null without a value. Also as CSV (format=csv, tz). Instance states: UP with a live agent session, DOWN otherwise (STALE and WARN come with WO-22, ADR-0010 C-160).'
+      description: 'Per instance over [from, to) (at most 1 year): transactions from instance_stat_1m/1h (raw rows for the live tail and unaligned edges; ADR-0010 C-212 (1)), heap ratio, CPU and pool usage averages from metric*, and outlier flags (p95, error rate, CPU) by leave-one-out (ADR-0010 C-177): for each instance, mean and sample standard deviation of the other instances'' values; the instance is an outlier when at least 3 instances have the value and |value - mean| > 2 x max(standard deviation, 0.05 x |mean|) (strict). With 2 or fewer instances with the value the flag is false; null without a value. exclude_instance leaves instances out (no row, not part of the outlier statistics). Also as CSV (format=csv, tz). Instance states (12 §4.2): UP, STALE (60 s without a heartbeat), DOWN (180 s without one, or 5 minutes after the agent''s shutdown message) or WARN (up with a WARN condition).'
       operationId: instances_compare
       parameters:
       - in: path
@@ -793,6 +1384,15 @@ paths:
         required: false
         schema:
           type: string
+      - description: Instance ids to leave out (ADR-0010 C-212 (1)), at most 100.
+        in: query
+        name: exclude_instance
+        required: false
+        schema:
+          items:
+            format: int32
+            type: integer
+          type: array
       responses:
         '200':
           content:
@@ -817,6 +1417,7 @@ paths:
       x-argos-source:
       - xlog
       - instance_stat_1m
+      - instance_stat_1h
       - metric
       - metric_1m
       - metric_1h
@@ -975,7 +1576,7 @@ paths:
       - postgres:error_groups
   /api/v1/apps/{appId}/sql/stats:
     get:
-      description: 'Per SQL statement and JDBC target of [from, to) (complete counts, D-12) from sql_stat_raw/1m/1h. Percentiles are estimated from the 15 latency buckets (estimated: true, C-14). sort: sum_ms (default), count, avg_ms, max_ms or errors. db_id filters one target. limit at most 500 (default 100). compare_prev=true adds delta. Also as CSV (format=csv, tz). meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.'
+      description: 'Per SQL statement and JDBC target of [from, to) (complete counts, D-12) from sql_stat_raw/1m/1h. Percentiles are estimated from the 15 latency buckets (estimated: true, C-14). sort: sum_ms (default), count, avg_ms, max_ms, errors or p95_ms (the estimated p95, ordered like the returned p95_ms values). db_id filters one target. limit at most 500 (default 100). compare_prev=true adds delta. Also as CSV (format=csv, tz). meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.'
       operationId: sql_stats_list
       parameters:
       - in: path
@@ -1176,7 +1777,7 @@ paths:
       - xlog
   /api/v1/apps/{appId}/xlog:
     get:
-      description: 'Range at most 24 h. With more points than limit (at most 100,000) the server samples deterministically (A-5): every error, every slow point (elapsed_ms >= meta.slow_threshold_ms) and cityHash64(tx_id) % N = 0, N = ceil(total / limit); meta.shown, meta.total and meta.sampling.rule say so, and the same request returns the same points. Inside the limit errors and slow points come first (sampled points beyond it are dropped evenly over the range); only when errors and slow points alone exceed limit are some of them left out. meta.truncated is true when more points satisfy the sampling rule than limit, so that some of them (sampled points first) were left out: narrow the range or raise limit. 64-bit ids are decimal strings. The body is gzip-compressed for clients that accept it (above 2 KB). meta.outages lists the collection outages of the range (the dashboard''s spans; instance state events are recorded from WO-22 on, so before it only server outages appear).'
+      description: 'Range at most 24 h. With more points than limit (at most 100,000) the server samples deterministically (A-5): every error, every slow point (elapsed_ms >= meta.slow_threshold_ms) and cityHash64(tx_id) % N = 0, N = ceil(total / limit); meta.shown, meta.total and meta.sampling.rule say so, and the same request returns the same points. Inside the limit errors and slow points come first (sampled points beyond it are dropped evenly over the range); only when errors and slow points alone exceed limit are some of them left out. meta.truncated is true when more points satisfy the sampling rule than limit, so that some of them (sampled points first) were left out: narrow the range or raise limit. 64-bit ids are decimal strings. The body is gzip-compressed for clients that accept it (above 2 KB). meta.outages lists the collection outages of the range (the dashboard''s spans, from the instance state events and the server''s stop and start events).'
       operationId: xlog_get
       parameters:
       - in: path
@@ -1404,7 +2005,7 @@ paths:
       x-argos-role: public
   /api/v1/instances/{instanceId}:
     get:
-      description: '404 not_found for an unknown instance. Instance state: UP while the server has a live agent session for the instance, DOWN otherwise; STALE and WARN (12 §4.2) are not reported before the instance state machine exists (WO-22, ADR-0010 C-160).'
+      description: '404 not_found for an unknown instance. Instance state (12 §4.2): UP while heartbeats arrive, STALE after 60 s without a heartbeat, DOWN after 180 s without one, 5 minutes after the agent''s shutdown message without a reconnect, or when never connected since the server started; WARN while up with a clock offset of 1 s or more, drops in the last 5 minutes, the lowest accepted agent version, a disabled module, the kill switch on, a configuration hash that differs from the application''s majority or a leaked-context count in the last 5 minutes. instances_up counts the instances in UP or WARN.'
       operationId: instances_get
       parameters:
       - in: path
@@ -1514,7 +2115,7 @@ paths:
       - metric_1h
   /api/v1/overview:
     get:
-      description: 'At most 500 applications (meta.truncated when there are more) with instance counts, status, the TPS, p95 and error rate of the last 5 minutes, the last hour per minute (app_stat_1m with the raw live tail), live active and batch counts, the last deploy marker and the server summary. Cached for 5 s per filter. Status: UP when every instance has a live agent session, DOWN otherwise (STALE and WARN come with WO-22, ADR-0010 C-160). firing and alerts_firing_total are null until the alert engine exists (WO-25); server.disk_usage_ratio and server.cert_expiry_days until WO-28, server.channel_failures_24h until WO-25.'
+      description: At most 500 applications (meta.truncated when there are more) with instance counts, status, the TPS, p95 and error rate of the last 5 minutes, the last hour per minute (app_stat_1m with the raw live tail), live active and batch counts, the last deploy marker and the server summary. Cached for 5 s per filter. status is the worst state of the application's instances that are not archived (DOWN, then STALE, then WARN, then UP; DOWN without instances), each state as in GET /apps/{appId}/instances (12 §4.2); instances.up counts the instances in UP or WARN, instances.total those that are not archived. firing counts the application's active alerts (FIRING and ACKED) by severity and alerts_firing_total the rows of GET /overview/alerts with the same env (server self alerts included), both from the alert engine now (ADR-0010 C-212 (2)); server.channel_failures_24h counts the deliveries that failed in the last 24 h; server.disk_usage_ratio and server.cert_expiry_days are null until WO-28.
       operationId: overview_get
       parameters:
       - in: query
@@ -1551,11 +2152,14 @@ paths:
       - xlog
       - app_stat_1m
       - postgres:apps
+      - postgres:instances
       - postgres:events
+      - postgres:notification_deliveries
       - memory:sessions
+      - memory:alerts
   /api/v1/overview/alerts:
     get:
-      description: The FIRING and ACKED alert events of every application (14 §4.13 event schema), at most 1,000. Always an empty list until the alert engine exists (WO-25); the filters are checked already.
+      description: 'The active (FIRING and ACKED) alerts of every application and of the server itself, newest first, at most 1,000 (meta.truncated beyond): the 14 §4.13 event schema subset of the alert engine''s current state (ADR-0010 C-212 (2)). event_id is the FIRING event of the current firing (the acknowledgement target and the deep link''s alert); duration_s counts from the firing to now. env keeps that environment''s application alerts and the server self alerts.'
       operationId: overview_alerts_list
       parameters:
       - in: query
@@ -1580,7 +2184,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ResponseEnvelopeListObject'
+                $ref: '#/components/schemas/ResponseEnvelopeListAlertEventItem'
           description: OK
       summary: Firing and acknowledged alerts of every application
       tags:
@@ -1589,7 +2193,7 @@ paths:
         rows_max: 1000
       x-argos-role: viewer
       x-argos-source:
-      - postgres:alert_events
+      - memory:alerts
   /api/v1/search:
     get:
       description: 'type=auto: 15-20 digits whose time is not in the future are a transaction id (an id counts from 2026-01-01: 18 digits in 2026), 32 hex digits a trace id, anything else text (services, SQL, instances; at least 3 characters). type=tx takes any unsigned 64-bit decimal. user and request searches need from and to (at most 24 h); user ids match applications in plain mode (an application in hashed mode answers 422 user_id_hash_unavailable). q is at most 1 KB. Heavy bucket: 10 a minute.'
@@ -1660,7 +2264,7 @@ paths:
       - postgres:instances
   /api/v1/server/health:
     get:
-      description: 'The data.server block of the overview: current ingest lag (p99, null before the first insert) and live agent sessions. disk_usage_ratio and cert_expiry_days are null until WO-28 records them, channel_failures_24h until the alert engine exists (WO-25).'
+      description: 'The data.server block of the overview: current ingest lag (p99, null before the first insert), the notification deliveries that failed in the last 24 h (null only while PostgreSQL cannot be read) and live agent sessions. disk_usage_ratio and cert_expiry_days are null until WO-28 records them.'
       operationId: server_health_get
       responses:
         '200':
@@ -1672,10 +2276,13 @@ paths:
       summary: Server summary
       tags:
       - health-controller
+      x-argos-limits:
+        timeout_s: 10
       x-argos-role: viewer
       x-argos-source:
       - memory:meters
       - memory:sessions
+      - postgres:notification_deliveries
   /api/v1/setup/admin:
     post:
       operationId: setup_create_admin
@@ -2075,6 +2682,1226 @@ components:
       - updated_at
       - username
       type: object
+    AlertAck:
+      properties:
+        acked_at:
+          format: date-time
+          type: string
+        acked_by:
+          type: string
+          x-argos-untrusted: true
+        event_id:
+          type: string
+        note:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        state:
+          enum:
+          - ACKED
+          type: string
+      required:
+      - acked_at
+      - acked_by
+      - event_id
+      - note
+      - state
+      type: object
+    AlertAckRequest:
+      properties:
+        note:
+          description: A note, at most 1 KB (UTF-8) and 512 characters
+          type: string
+      type: object
+    AlertApp:
+      properties:
+        id:
+          format: int32
+          type: integer
+        name:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+      required:
+      - id
+      - name
+      type: object
+    AlertDelivery:
+      properties:
+        attempts:
+          format: int32
+          type: integer
+        channel_id:
+          type: string
+        last_error_code:
+          type:
+          - string
+          - 'null'
+        status:
+          enum:
+          - pending
+          - sent
+          - failed
+          - dropped
+          type: string
+      required:
+      - attempts
+      - channel_id
+      - last_error_code
+      - status
+      type: object
+    AlertEvent:
+      properties:
+        acked_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        acked_by:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        app:
+          anyOf:
+          - $ref: '#/components/schemas/AlertApp'
+          - type: 'null'
+        deeplink:
+          type: string
+        deliveries:
+          items:
+            $ref: '#/components/schemas/AlertDelivery'
+          type: array
+        duration_s:
+          format: int32
+          type:
+          - integer
+          - 'null'
+        env:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        event_id:
+          type: string
+        from_state:
+          enum:
+          - OK
+          - PENDING
+          - FIRING
+          - ACKED
+          - RESOLVED
+          - NO_DATA
+          - null
+          type:
+          - string
+          - 'null'
+        note:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        reason:
+          description: Why the transition happened; null for events stored before the reason was recorded
+          enum:
+          - condition
+          - cleared
+          - escalated
+          - acked
+          - resolved
+          - target_gone
+          - rule_disabled
+          - rule_deleted
+          - no_data
+          - data_returned
+          - null
+          type:
+          - string
+          - 'null'
+        rule:
+          $ref: '#/components/schemas/AlertRuleRef'
+        severity:
+          enum:
+          - warn
+          - critical
+          - null
+          type:
+          - string
+          - 'null'
+        state:
+          enum:
+          - OK
+          - PENDING
+          - FIRING
+          - ACKED
+          - RESOLVED
+          - NO_DATA
+          type: string
+        target:
+          $ref: '#/components/schemas/AlertTarget'
+        threshold:
+          format: double
+          type:
+          - number
+          - 'null'
+        ts:
+          format: date-time
+          type: string
+        value:
+          format: double
+          type:
+          - number
+          - 'null'
+      required:
+      - acked_at
+      - acked_by
+      - app
+      - deeplink
+      - deliveries
+      - duration_s
+      - env
+      - event_id
+      - from_state
+      - note
+      - reason
+      - rule
+      - severity
+      - state
+      - target
+      - threshold
+      - ts
+      - value
+      type: object
+    AlertEventItem:
+      properties:
+        acked_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        acked_by:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        app:
+          anyOf:
+          - $ref: '#/components/schemas/AlertApp'
+          - type: 'null'
+        deeplink:
+          type: string
+        duration_s:
+          format: int64
+          type: integer
+        env:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        event_id:
+          type: string
+        note:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        rule:
+          $ref: '#/components/schemas/AlertRuleRef'
+        severity:
+          enum:
+          - warn
+          - critical
+          type: string
+        state:
+          enum:
+          - FIRING
+          - ACKED
+          type: string
+        target:
+          $ref: '#/components/schemas/AlertTarget'
+        threshold:
+          format: double
+          type:
+          - number
+          - 'null'
+        ts:
+          format: date-time
+          type: string
+        value:
+          format: double
+          type:
+          - number
+          - 'null'
+      required:
+      - acked_at
+      - acked_by
+      - app
+      - deeplink
+      - duration_s
+      - env
+      - event_id
+      - note
+      - rule
+      - severity
+      - state
+      - target
+      - threshold
+      - ts
+      - value
+      type: object
+    AlertMute:
+      properties:
+        created_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        created_by:
+          type:
+          - string
+          - 'null'
+        from:
+          format: date-time
+          type: string
+        mute_id:
+          type: string
+        reason:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        target:
+          $ref: '#/components/schemas/AlertMuteTarget'
+        to:
+          format: date-time
+          type: string
+      required:
+      - created_at
+      - created_by
+      - from
+      - mute_id
+      - reason
+      - target
+      - to
+      type: object
+    AlertMuteRequest:
+      properties:
+        from:
+          description: ISO-8601 UTC
+          type: string
+        reason:
+          description: At most 1 KB (UTF-8) and 512 characters
+          type: string
+        target:
+          $ref: '#/components/schemas/AlertMuteTargetRequest'
+        to:
+          description: ISO-8601 UTC
+          type: string
+      required:
+      - from
+      - to
+      type: object
+    AlertMuteTarget:
+      properties:
+        app:
+          format: int32
+          type:
+          - integer
+          - 'null'
+        env:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        instance:
+          format: int32
+          type:
+          - integer
+          - 'null'
+        rule:
+          type:
+          - string
+          - 'null'
+      required:
+      - app
+      - env
+      - instance
+      - rule
+      type: object
+    AlertMuteTargetRequest:
+      properties:
+        app:
+          format: int32
+          type: integer
+        env:
+          type: string
+        instance:
+          format: int32
+          type: integer
+        rule:
+          format: uuid
+          type: string
+      type: object
+    AlertPreviewFiring:
+      properties:
+        peak_value:
+          format: double
+          type: number
+        ts_end:
+          format: date-time
+          type: string
+        ts_start:
+          format: date-time
+          type: string
+      required:
+      - peak_value
+      - ts_end
+      - ts_start
+      type: object
+    AlertPreviewSeries:
+      properties:
+        ts:
+          items:
+            format: date-time
+            type: string
+          type: array
+        value:
+          items:
+            format: double
+            type:
+            - number
+            - 'null'
+          type: array
+      required:
+      - ts
+      - value
+      type: object
+    AlertRule:
+      properties:
+        active_time:
+          items:
+            $ref: '#/components/schemas/AlertRuleActiveTime'
+          type: array
+        channels:
+          $ref: '#/components/schemas/AlertRuleChannels'
+        condition:
+          $ref: '#/components/schemas/AlertRuleCondition'
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          type:
+          - string
+          - 'null'
+        enabled:
+          type: boolean
+        evaluation_unit:
+          enum:
+          - app
+          - instance
+          type: string
+        for:
+          type: string
+        kind:
+          enum:
+          - HTTP
+          - BATCH
+          type: string
+        message_template:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        metric:
+          description: 'An F-S31 metric: one of the AlertRuleRef.metric values (the closed list there; here a plain string so that the 14 §4.13 contract stays compatible)'
+          type: string
+        min_samples:
+          format: int32
+          type: integer
+        mute_schedules:
+          items:
+            $ref: '#/components/schemas/AlertRuleMuteSchedule'
+          type: array
+        name:
+          type: string
+          x-argos-untrusted: true
+        no_data:
+          enum:
+          - ignore
+          - warn
+          - critical
+          type: string
+        recover:
+          anyOf:
+          - $ref: '#/components/schemas/AlertRuleRecover'
+          - type: 'null'
+        renotify_interval:
+          type: string
+        rule_id:
+          type: string
+        runbook_url:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        target:
+          $ref: '#/components/schemas/AlertRuleTarget'
+        template_key:
+          type:
+          - string
+          - 'null'
+        template_version:
+          format: int32
+          type:
+          - integer
+          - 'null'
+        updated_at:
+          format: date-time
+          type: string
+        version:
+          format: int32
+          type: integer
+        warmup_grace:
+          type: string
+        window:
+          type: string
+      required:
+      - active_time
+      - channels
+      - condition
+      - created_at
+      - created_by
+      - enabled
+      - evaluation_unit
+      - for
+      - kind
+      - message_template
+      - metric
+      - min_samples
+      - mute_schedules
+      - name
+      - no_data
+      - recover
+      - renotify_interval
+      - rule_id
+      - runbook_url
+      - target
+      - template_key
+      - template_version
+      - updated_at
+      - version
+      - warmup_grace
+      - window
+      type: object
+    AlertRuleActiveTime:
+      properties:
+        days:
+          items:
+            type: string
+          type: array
+        from:
+          type: string
+        to:
+          type: string
+      required:
+      - days
+      - from
+      - to
+      type: object
+    AlertRuleActiveTimeRequest:
+      properties:
+        days:
+          description: Mon, Tue, ... Sun
+          items:
+            type: string
+          type: array
+        from:
+          description: HH:mm
+          type: string
+        to:
+          description: HH:mm or 24:00
+          type: string
+      required:
+      - days
+      - from
+      - to
+      type: object
+    AlertRuleChannels:
+      properties:
+        critical:
+          items:
+            type: string
+          type: array
+        warn:
+          items:
+            type: string
+          type: array
+      required:
+      - critical
+      - warn
+      type: object
+    AlertRuleChannelsRequest:
+      properties:
+        critical:
+          items:
+            type: string
+          type: array
+        warn:
+          items:
+            type: string
+          type: array
+      type: object
+    AlertRuleCloneRequest:
+      properties:
+        app:
+          format: int32
+          type: integer
+        env:
+          description: 'The environment, or null: every environment'
+          type: string
+      required:
+      - app
+      type: object
+    AlertRuleCondition:
+      properties:
+        critical:
+          format: double
+          type:
+          - number
+          - 'null'
+        operator:
+          enum:
+          - '>'
+          - '>='
+          - <
+          - <=
+          - ==
+          - '!='
+          type: string
+        warn:
+          format: double
+          type:
+          - number
+          - 'null'
+      required:
+      - critical
+      - operator
+      - warn
+      type: object
+    AlertRuleConditionRequest:
+      properties:
+        critical:
+          format: double
+          type: number
+        operator:
+          enum:
+          - '>'
+          - '>='
+          - <
+          - <=
+          - ==
+          - '!='
+          type: string
+        warn:
+          format: double
+          type: number
+      required:
+      - operator
+      type: object
+    AlertRuleDefaults:
+      properties:
+        active_time:
+          items:
+            $ref: '#/components/schemas/AlertRuleActiveTime'
+          type: array
+        channels:
+          $ref: '#/components/schemas/AlertRuleChannels'
+        condition:
+          $ref: '#/components/schemas/AlertRuleCondition'
+        enabled:
+          type: boolean
+        evaluation_unit:
+          enum:
+          - app
+          - instance
+          type: string
+        for:
+          type: string
+        kind:
+          enum:
+          - HTTP
+          - BATCH
+          type: string
+        message_template:
+          type:
+          - string
+          - 'null'
+        metric:
+          type: string
+        min_samples:
+          format: int32
+          type: integer
+        mute_schedules:
+          items:
+            $ref: '#/components/schemas/AlertRuleMuteSchedule'
+          type: array
+        name:
+          type: string
+          x-argos-untrusted: true
+        no_data:
+          enum:
+          - ignore
+          - warn
+          - critical
+          type: string
+        recover:
+          anyOf:
+          - $ref: '#/components/schemas/AlertRuleRecover'
+          - type: 'null'
+        renotify_interval:
+          type: string
+        runbook_url:
+          type:
+          - string
+          - 'null'
+        target:
+          $ref: '#/components/schemas/AlertRuleTarget'
+        template_key:
+          type:
+          - string
+          - 'null'
+        template_version:
+          format: int32
+          type:
+          - integer
+          - 'null'
+        warmup_grace:
+          type: string
+        window:
+          type: string
+      required:
+      - active_time
+      - channels
+      - condition
+      - enabled
+      - evaluation_unit
+      - for
+      - kind
+      - message_template
+      - metric
+      - min_samples
+      - mute_schedules
+      - name
+      - no_data
+      - recover
+      - renotify_interval
+      - runbook_url
+      - target
+      - template_key
+      - template_version
+      - warmup_grace
+      - window
+      type: object
+    AlertRuleDetail:
+      properties:
+        history:
+          items:
+            $ref: '#/components/schemas/AlertRuleHistoryEntry'
+          type: array
+        rule:
+          $ref: '#/components/schemas/AlertRule'
+        template_diff:
+          anyOf:
+          - $ref: '#/components/schemas/AlertTemplateDiff'
+          - type: 'null'
+      required:
+      - history
+      - rule
+      - template_diff
+      type: object
+    AlertRuleHistoryEntry:
+      properties:
+        changed_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        changed_by:
+          type:
+          - string
+          - 'null'
+        changed_by_name:
+          description: The user's name; null for the server or a deleted user
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        version:
+          format: int32
+          type: integer
+      required:
+      - changed_at
+      - changed_by
+      - changed_by_name
+      - version
+      type: object
+    AlertRuleMuteSchedule:
+      properties:
+        cron:
+          type: string
+        duration:
+          type: string
+        reason:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+      required:
+      - cron
+      - duration
+      - reason
+      type: object
+    AlertRuleMuteScheduleRequest:
+      properties:
+        cron:
+          description: 5-field cron
+          type: string
+        duration:
+          description: Duration such as 2h
+          type: string
+        reason:
+          type: string
+      required:
+      - cron
+      - duration
+      type: object
+    AlertRulePreview:
+      properties:
+        count:
+          format: int32
+          type: integer
+        firings:
+          items:
+            $ref: '#/components/schemas/AlertPreviewFiring'
+          type: array
+        max_duration_s:
+          format: int64
+          type: integer
+        series:
+          $ref: '#/components/schemas/AlertPreviewSeries'
+        step_s:
+          format: int64
+          type: integer
+      required:
+      - count
+      - firings
+      - max_duration_s
+      - series
+      - step_s
+      type: object
+    AlertRulePreviewRequest:
+      properties:
+        days:
+          description: Days back from now (default 7)
+          format: int32
+          maximum: 7
+          minimum: 1
+          type: integer
+        rule:
+          $ref: '#/components/schemas/AlertRuleRequest'
+          description: The rule (need not be saved)
+      required:
+      - rule
+      type: object
+    AlertRuleRecover:
+      properties:
+        for:
+          type:
+          - string
+          - 'null'
+        threshold:
+          format: double
+          type:
+          - number
+          - 'null'
+      required:
+      - for
+      - threshold
+      type: object
+    AlertRuleRecoverRequest:
+      properties:
+        for:
+          description: 'Duration such as 2m; null: the condition false for for/2'
+          type: string
+        threshold:
+          format: double
+          type: number
+      type: object
+    AlertRuleRef:
+      properties:
+        id:
+          type: string
+        metric:
+          description: The rule's metric (F-S31 wire name, as AlertRule.metric)
+          enum:
+          - response_time_p50
+          - response_time_p95
+          - response_time_p99
+          - tps
+          - error_rate
+          - apdex
+          - active_transactions
+          - active_ratio_to_max_threads
+          - jvm_heap_used_ratio
+          - jvm_old_gen_after_gc_ratio
+          - jvm_gc_pause_ratio
+          - jvm_threads_live
+          - tomcat_threads_usage_ratio
+          - jdbc_pool_waiting
+          - jdbc_pool_usage_ratio
+          - ext_call_p95
+          - ext_call_error_ratio
+          - ext_call_timeout_ratio
+          - batch_elapsed_seconds
+          - system_cpu_ratio
+          - system_memory_ratio
+          - system_disk_usage_ratio
+          - argos_agent_dropped_total
+          - argos_server_dropped_total
+          - argos_server_ingest_lag_seconds
+          - argos_server_disk_usage_ratio
+          - argos_notification_failures_total
+          - argos_server_tls_cert_expiry_days
+          - agent_token_expiry_days
+          - instance_state
+          - error_group_new
+          type: string
+        name:
+          type: string
+          x-argos-untrusted: true
+        unit:
+          description: 'Unit of value and threshold: ratio is 0..1 (shown as a percentage), score is Apdex 0..1, state 1 = DOWN'
+          enum:
+          - ms
+          - seconds
+          - days
+          - ratio
+          - score
+          - count
+          - per_second
+          - state
+          - null
+          type:
+          - string
+          - 'null'
+      required:
+      - id
+      - metric
+      - name
+      - unit
+      type: object
+    AlertRuleRequest:
+      properties:
+        active_time:
+          items:
+            $ref: '#/components/schemas/AlertRuleActiveTimeRequest'
+          type: array
+        channels:
+          $ref: '#/components/schemas/AlertRuleChannelsRequest'
+        condition:
+          $ref: '#/components/schemas/AlertRuleConditionRequest'
+        enabled:
+          type: boolean
+        evaluation_unit:
+          enum:
+          - app
+          - instance
+          type: string
+        for:
+          type: string
+        kind:
+          enum:
+          - HTTP
+          - BATCH
+          type: string
+        message_template:
+          maxLength: 2048
+          type: string
+        metric:
+          description: An F-S31 metric
+          type: string
+        min_samples:
+          format: int32
+          type: integer
+        mute_schedules:
+          items:
+            $ref: '#/components/schemas/AlertRuleMuteScheduleRequest'
+          type: array
+        name:
+          maxLength: 128
+          type: string
+        no_data:
+          enum:
+          - ignore
+          - warn
+          - critical
+          type: string
+        recover:
+          $ref: '#/components/schemas/AlertRuleRecoverRequest'
+        renotify_interval:
+          type: string
+        runbook_url:
+          type: string
+        target:
+          $ref: '#/components/schemas/AlertRuleTargetRequest'
+        template_key:
+          type: string
+        template_version:
+          format: int32
+          type: integer
+        warmup_grace:
+          type: string
+        window:
+          type: string
+      required:
+      - condition
+      - metric
+      - name
+      - target
+      type: object
+    AlertRuleStats:
+      properties:
+        avg_duration_s:
+          format: double
+          type:
+          - number
+          - 'null'
+        avg_time_to_ack_s:
+          format: double
+          type:
+          - number
+          - 'null'
+        avg_time_to_resolve_s:
+          format: double
+          type:
+          - number
+          - 'null'
+        firings:
+          format: int64
+          type: integer
+        name:
+          type: string
+          x-argos-untrusted: true
+        rule_id:
+          type: string
+      required:
+      - avg_duration_s
+      - avg_time_to_ack_s
+      - avg_time_to_resolve_s
+      - firings
+      - name
+      - rule_id
+      type: object
+    AlertRuleTarget:
+      properties:
+        app_id:
+          format: int32
+          type:
+          - integer
+          - 'null'
+        env:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        ids:
+          items:
+            type: string
+          type: array
+        type:
+          enum:
+          - app
+          - instance
+          - service
+          - ext_host
+          - server
+          type: string
+      required:
+      - app_id
+      - env
+      - ids
+      - type
+      type: object
+    AlertRuleTargetRequest:
+      properties:
+        app_id:
+          description: The application; null only for server rules
+          format: int32
+          type: integer
+        env:
+          description: The environment, or null for every environment of the application
+          type: string
+        ids:
+          description: 'Instance ids, service or host keys (decimal); empty: all, at most 100'
+          items:
+            type: string
+          type: array
+        type:
+          enum:
+          - app
+          - instance
+          - service
+          - ext_host
+          - server
+          type: string
+      required:
+      - type
+      type: object
+    AlertTarget:
+      properties:
+        id:
+          pattern: ^[0-9]{1,20}$
+          type:
+          - string
+          - 'null'
+        name:
+          type:
+          - string
+          - 'null'
+          x-argos-untrusted: true
+        type:
+          enum:
+          - app
+          - instance
+          - service
+          - ext_host
+          - server
+          type: string
+      required:
+      - id
+      - name
+      - type
+      type: object
+    AlertTemplate:
+      properties:
+        applies_when:
+          enum:
+          - always
+          - batch
+          - server
+          type: string
+        defaults:
+          description: The rules the template creates (two for a template of two metrics)
+          items:
+            $ref: '#/components/schemas/AlertTemplatePart'
+          type: array
+        key:
+          type: string
+        name:
+          type: string
+        version:
+          format: int32
+          type: integer
+      required:
+      - applies_when
+      - defaults
+      - key
+      - name
+      - version
+      type: object
+    AlertTemplateDiff:
+      properties:
+        changes:
+          items:
+            $ref: '#/components/schemas/AlertTemplateDiffChange'
+          type: array
+        rule_version:
+          format: int32
+          type: integer
+        template_key:
+          type: string
+        template_version:
+          format: int32
+          type: integer
+      required:
+      - changes
+      - rule_version
+      - template_key
+      - template_version
+      type: object
+    AlertTemplateDiffChange:
+      properties:
+        field:
+          type: string
+        rule:
+          description: The rule's value (JSON)
+        template:
+          description: The template's value (JSON)
+      required:
+      - field
+      - rule
+      - template
+      type: object
+    AlertTemplatePart:
+      properties:
+        rule:
+          $ref: '#/components/schemas/AlertRuleDefaults'
+        scope:
+          enum:
+          - app
+          - server
+          type: string
+      required:
+      - rule
+      - scope
+      type: object
+    AlertTemplateSkipped:
+      properties:
+        key:
+          type: string
+        reason:
+          enum:
+          - exists
+          - server_scope
+          - no_batch_transactions
+          - unknown_template
+          type: string
+      required:
+      - key
+      - reason
+      type: object
+    AlertTemplatesApplied:
+      properties:
+        created:
+          items:
+            type: string
+          type: array
+        skipped:
+          items:
+            $ref: '#/components/schemas/AlertTemplateSkipped'
+          type: array
+      required:
+      - created
+      - skipped
+      type: object
+    AlertTemplatesApplyRequest:
+      properties:
+        app:
+          format: int32
+          type: integer
+        env:
+          description: 'The environment; default: the application''s'
+          type: string
+        keys:
+          description: 'Template keys; default: every application template'
+          items:
+            type: string
+          type: array
+      required:
+      - app
+      type: object
     App:
       properties:
         apdex_t_ms:
@@ -2100,6 +3927,13 @@ components:
         instances_up:
           format: int32
           type: integer
+        kinds:
+          description: Transaction kinds (HTTP, BATCH, MESSAGE) recorded in the last 7 days, sorted. Only GET /apps/{appId} fills it; null in the list and when ClickHouse cannot answer (unknown, not none). The UI disables the batch kind filter for an application whose kinds lack BATCH (ADR-0010 C-191 (2)).
+          items:
+            type: string
+          type:
+          - array
+          - 'null'
         last_seen_at:
           format: date-time
           type:
@@ -2128,6 +3962,7 @@ components:
       - group
       - instances_total
       - instances_up
+      - kinds
       - last_seen_at
       - name
       - recommended_rules_applied
@@ -2150,6 +3985,67 @@ components:
       - app_id
       - env
       - name
+      type: object
+    ChannelView:
+      properties:
+        allow_http:
+          type: boolean
+        channel_id:
+          type: string
+        consecutive_failures:
+          format: int32
+          type: integer
+        created_at:
+          format: date-time
+          type: string
+        enabled:
+          type: boolean
+        last_failure_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        last_success_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
+        name:
+          type: string
+          x-argos-untrusted: true
+        signing_enabled:
+          type: boolean
+        status:
+          enum:
+          - ok
+          - failing
+          type: string
+        target_masked:
+          description: The URL (scheme, host and port, rest ****) or masked recipients
+          type: string
+        type:
+          enum:
+          - email
+          - slack
+          - webhook
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+      - allow_http
+      - channel_id
+      - consecutive_failures
+      - created_at
+      - enabled
+      - last_failure_at
+      - last_success_at
+      - name
+      - signing_enabled
+      - status
+      - target_masked
+      - type
+      - updated_at
       type: object
     ClockSkew:
       properties:
@@ -2205,6 +4101,31 @@ components:
       - server_drops
       - server_drops_quota
       type: object
+    CreateChannelRequest:
+      properties:
+        allow_http:
+          description: Allow a plain http URL; needs argos.alert.webhook.allow-http=true on the server
+          type: boolean
+        name:
+          maxLength: 128
+          type: string
+        secret:
+          description: 'Webhook only: a signing secret of 32 to 256 printable characters; generated (and returned once) when absent'
+          type: string
+        target:
+          description: The webhook or Slack URL (https; validated, SEC-51), or the e-mail recipients separated by commas
+          type: string
+        type:
+          enum:
+          - email
+          - slack
+          - webhook
+          type: string
+      required:
+      - name
+      - target
+      - type
+      type: object
     CreateUserRequest:
       properties:
         must_change_password:
@@ -2234,6 +4155,19 @@ components:
       required:
       - user
       type: object
+    CreatedChannelView:
+      properties:
+        channel:
+          $ref: '#/components/schemas/ChannelView'
+        signing_key:
+          description: 'Webhook: the generated signing secret, shown once (null when the request gave one, and for other types)'
+          type:
+          - string
+          - 'null'
+      required:
+      - channel
+      - signing_key
+      type: object
     CsrfResponse:
       properties:
         csrf_token:
@@ -2252,10 +4186,9 @@ components:
             $ref: '#/components/schemas/Event'
           type: array
         firing:
-          items: {}
-          type:
-          - array
-          - 'null'
+          items:
+            $ref: '#/components/schemas/AlertEventItem'
+          type: array
         instances:
           items:
             $ref: '#/components/schemas/DashboardInstance'
@@ -2392,6 +4325,16 @@ components:
       type: object
     DashboardDelta:
       properties:
+        active:
+          format: double
+          type:
+          - number
+          - 'null'
+        avg_ms:
+          format: double
+          type:
+          - number
+          - 'null'
         basis:
           type: string
         error_rate:
@@ -2404,15 +4347,23 @@ components:
           type:
           - number
           - 'null'
+        p99_ms:
+          format: double
+          type:
+          - number
+          - 'null'
         tps:
           format: double
           type:
           - number
           - 'null'
       required:
+      - active
+      - avg_ms
       - basis
       - error_rate
       - p95_ms
+      - p99_ms
       - tps
       type: object
     DashboardInstance:
@@ -2453,6 +4404,10 @@ components:
           type:
           - number
           - 'null'
+        warn_reasons:
+          items:
+            type: string
+          type: array
       required:
       - active
       - avg_ms
@@ -2463,6 +4418,7 @@ components:
       - p95_ms
       - state
       - tps
+      - warn_reasons
       type: object
     DashboardSeries:
       properties:
@@ -2564,6 +4520,13 @@ components:
             x-argos-untrusted: true
           type: object
           x-argos-untrusted: true
+        system_cpu:
+          items:
+            format: double
+            type:
+            - number
+            - 'null'
+          type: array
         tomcat_busy_ratio:
           items:
             format: double
@@ -2597,6 +4560,7 @@ components:
       - p95_ms
       - p99_ms
       - pool_usage_ratio
+      - system_cpu
       - tomcat_busy_ratio
       - tps
       - ts
@@ -2688,10 +4652,90 @@ components:
       - data
       - meta
       type: object
+    EnvelopeAlertAck:
+      properties:
+        data:
+          $ref: '#/components/schemas/AlertAck'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeAlertMute:
+      properties:
+        data:
+          $ref: '#/components/schemas/AlertMute'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeAlertRule:
+      properties:
+        data:
+          $ref: '#/components/schemas/AlertRule'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeAlertRuleDetail:
+      properties:
+        data:
+          $ref: '#/components/schemas/AlertRuleDetail'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeAlertRulePreview:
+      properties:
+        data:
+          $ref: '#/components/schemas/AlertRulePreview'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeAlertTemplatesApplied:
+      properties:
+        data:
+          $ref: '#/components/schemas/AlertTemplatesApplied'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeChannelView:
+      properties:
+        data:
+          $ref: '#/components/schemas/ChannelView'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
     EnvelopeCreateUserResponse:
       properties:
         data:
           $ref: '#/components/schemas/CreateUserResponse'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeCreatedChannelView:
+      properties:
+        data:
+          $ref: '#/components/schemas/CreatedChannelView'
         meta:
           $ref: '#/components/schemas/QueryMeta'
       required:
@@ -2713,6 +4757,66 @@ components:
         data:
           items:
             $ref: '#/components/schemas/AdminUserView'
+          type: array
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeListAlertMute:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/AlertMute'
+          type: array
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeListAlertRule:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/AlertRule'
+          type: array
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeListAlertRuleStats:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/AlertRuleStats'
+          type: array
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeListAlertTemplate:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/AlertTemplate'
+          type: array
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    EnvelopeListChannelView:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/ChannelView'
           type: array
         meta:
           $ref: '#/components/schemas/QueryMeta'
@@ -2750,6 +4854,16 @@ components:
       - data
       - meta
       type: object
+    EnvelopeRotatedKeyView:
+      properties:
+        data:
+          $ref: '#/components/schemas/RotatedKeyView'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
     EnvelopeSetupAdminResponse:
       properties:
         data:
@@ -2770,11 +4884,23 @@ components:
       - data
       - meta
       type: object
+    EnvelopeTestResultView:
+      properties:
+        data:
+          $ref: '#/components/schemas/TestResultView'
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
     ErrorGroup:
       properties:
         count:
           format: int64
           type: integer
+        delta:
+          $ref: '#/components/schemas/StatsDelta'
         error_class:
           type:
           - string
@@ -3047,6 +5173,18 @@ components:
       - path_pattern
       - sum_ms
       - timeouts
+      type: object
+    FiringCounts:
+      properties:
+        critical:
+          format: int32
+          type: integer
+        warn:
+          format: int32
+          type: integer
+      required:
+      - critical
+      - warn
       type: object
     HealthSeries:
       properties:
@@ -3595,9 +5733,7 @@ components:
       properties:
         alerts_firing_total:
           format: int64
-          type:
-          - integer
-          - 'null'
+          type: integer
         apps:
           items:
             $ref: '#/components/schemas/OverviewApp'
@@ -3632,7 +5768,8 @@ components:
           type:
           - number
           - 'null'
-        firing: {}
+        firing:
+          $ref: '#/components/schemas/FiringCounts'
         group:
           type:
           - string
@@ -3986,6 +6123,30 @@ components:
       - data
       - meta
       type: object
+    ResponseEnvelopeListAlertEvent:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/AlertEvent'
+          type: array
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
+    ResponseEnvelopeListAlertEventItem:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/AlertEventItem'
+          type: array
+        meta:
+          $ref: '#/components/schemas/QueryMeta'
+      required:
+      - data
+      - meta
+      type: object
     ResponseEnvelopeListApp:
       properties:
         data:
@@ -4063,17 +6224,6 @@ components:
         data:
           items:
             $ref: '#/components/schemas/MetricName'
-          type: array
-        meta:
-          $ref: '#/components/schemas/QueryMeta'
-      required:
-      - data
-      - meta
-      type: object
-    ResponseEnvelopeListObject:
-      properties:
-        data:
-          items: {}
           type: array
         meta:
           $ref: '#/components/schemas/QueryMeta'
@@ -4204,6 +6354,18 @@ components:
       required:
       - data
       - meta
+      type: object
+    RotatedKeyView:
+      properties:
+        previous_valid_until:
+          description: The previous key signs too (a second v1= value) until this time
+          format: date-time
+          type: string
+        signing_key:
+          type: string
+      required:
+      - previous_valid_until
+      - signing_key
       type: object
     SearchMatch:
       properties:
@@ -4673,6 +6835,13 @@ components:
           type:
           - array
           - 'null'
+        connect_failures:
+          items:
+            format: int64
+            type:
+            - integer
+            - 'null'
+          type: array
         count:
           items:
             format: int64
@@ -4712,6 +6881,13 @@ components:
             format: double
             type:
             - number
+            - 'null'
+          type: array
+        timeouts:
+          items:
+            format: int64
+            type:
+            - integer
             - 'null'
           type: array
         ts:
@@ -4883,6 +7059,30 @@ components:
       required:
       - bytes
       - segments
+      type: object
+    TestResultView:
+      properties:
+        delivered:
+          type: boolean
+        duration_ms:
+          format: int64
+          type: integer
+        error:
+          description: Error code of a failed send (e.g. timeout, tls_failed, redirect)
+          type:
+          - string
+          - 'null'
+        status_code:
+          description: HTTP status, or the SMTP reply code; null without an answer
+          format: int32
+          type:
+          - integer
+          - 'null'
+      required:
+      - delivered
+      - duration_ms
+      - error
+      - status_code
       type: object
     Trace:
       properties:
@@ -5827,6 +8027,19 @@ components:
       - max_ms
       - step_type
       - total_ms
+      type: object
+    UpdateChannelRequest:
+      properties:
+        allow_http:
+          type: boolean
+        enabled:
+          type: boolean
+        name:
+          maxLength: 128
+          type: string
+        target:
+          description: A new URL or recipient list (re-entered in full)
+          type: string
       type: object
     UserView:
       properties:

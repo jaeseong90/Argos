@@ -2,6 +2,7 @@
 package io.argos.agent.core.transport;
 
 import com.google.protobuf.ByteString;
+import com.google.protobuf.Message;
 import io.argos.agent.bootstrap.DictKind;
 import io.argos.agent.bootstrap.StepType;
 import io.argos.agent.bootstrap.TraceContext;
@@ -11,9 +12,15 @@ import io.argos.agent.core.trace.ProfileSteps;
 import io.argos.agent.core.trace.RemoteIps;
 import io.argos.agent.core.trace.Transaction;
 import io.argos.proto.ProtocolLimits;
+import io.argos.proto.v1.ActiveState;
+import io.argos.proto.v1.ActiveTransaction;
+import io.argos.proto.v1.ActiveTransactionSnapshot;
+import io.argos.proto.v1.ExtStat;
 import io.argos.proto.v1.KeyValue;
 import io.argos.proto.v1.Limits;
 import io.argos.proto.v1.ProfileStep;
+import io.argos.proto.v1.SqlStat;
+import io.argos.proto.v1.StatBatch;
 import io.argos.proto.v1.TransactionProfile;
 import io.argos.proto.v1.TransactionRecord;
 
@@ -50,10 +57,12 @@ import io.argos.proto.v1.TransactionRecord;
  *
  * <p>Not filled yet (no producer before the work order named): {@code headers}, {@code request_id},
  * {@code sql_ids}, {@code dbc_wait_ms}, {@code dispatch_count}, {@code timed_out}, {@code
- * error_top_frame_id}, {@code caller_app_id} (WO-12/13/14/19), {@code ProfileStep.failure} (WO-14),
- * {@code app_version_id} (0: the instance's {@code AgentHello.app_version}). {@code
- * ProfileStep.batch_size} is the step's {@code executeBatch} item count ({@code Tracer.stepBatch},
- * WO-13), absent when not set.
+ * error_top_frame_id} (WO-12/13/19), {@code app_version_id} (0: the instance's {@code
+ * AgentHello.app_version}). {@code ProfileStep.batch_size} is the step's {@code executeBatch} item
+ * count ({@code Tracer.stepBatch}, WO-13), absent when not set. WO-14 fills {@code caller_app_id}
+ * (the incoming {@code tracestate} {@code argos} entry), {@code ProfileStep.failure} (HTTP steps)
+ * and {@code ext_count} / {@code ext_time_ms} (written by {@code Tracer.httpEnd} through {@code
+ * TraceContext.addExternalCall}).
  */
 final class BatchAssembler {
   private final Dictionary dictionary;
@@ -128,6 +137,8 @@ final class BatchAssembler {
             .setSpanId(ctx.spanId)
             .setParentSpanId(ctx.parentSpanId)
             .setIncomingTrace(ctx.parentSpanId != 0)
+            // WO-14: the app id of the incoming tracestate argos entry (0: none, malformed).
+            .setCallerAppId(ctx.callerAppId)
             .setKindValue(ctx.kind)
             .setStartTsMs(ctx.startEpochMs)
             .setElapsedUs(Math.max(0L, tx.elapsedNanos()) / 1000L)
@@ -237,6 +248,12 @@ final class BatchAssembler {
               .setStatus(Math.max(0, steps.status(i)))
               .setError(steps.error(i))
               .setRepeatCount(Math.max(1, steps.repeatCount(i)));
+      int failure = steps.failure(i);
+      if (failure != 0) {
+        // WO-14: the outcome class of an HTTP step (10 §6.5); the server keeps the status when it
+        // is not 0 and the failure number otherwise (ADR-0010 C-141, C-143 (5)).
+        step.setFailureValue(failure);
+      }
       int batchSize = steps.batchSize(i);
       if (batchSize > 0) {
         step.setBatchSize(batchSize);
@@ -283,6 +300,65 @@ final class BatchAssembler {
       dictionaryCache.reference(nameKind(steps.summaryType(key)), nameId);
     }
     return out.setTruncated(truncated).build();
+  }
+
+  /**
+   * A batch its producer built ({@link PreparedBatch}, WO-16) as it is sent: the dictionary ids of
+   * a statistics batch ({@code sql_id}, {@code db_id}, {@code host_id}) and of an active snapshot
+   * ({@code service_id}, {@code thread_name_id}, {@code state_name_id} by state) go to the {@link
+   * DictionaryCache} so that their texts are pre-sent (11 §7 (1)); an active snapshot keeps at most
+   * the session's {@code Limits.max_active_items} items (the longest running, the items are sorted)
+   * and is then {@code truncated}. Metric batches carry their series names inline and pass as they
+   * are.
+   */
+  Message prepared(BatchKind kind, Message body) {
+    if (kind == BatchKind.STATS && body instanceof StatBatch) {
+      StatBatch stats = (StatBatch) body;
+      for (SqlStat row : stats.getSqlList()) {
+        dictionaryCache.reference(DictKind.SQL, row.getSqlId());
+        dictionaryCache.reference(DictKind.DB_TARGET, row.getDbId());
+      }
+      for (ExtStat row : stats.getExtList()) {
+        dictionaryCache.reference(DictKind.HOST, row.getHostId());
+      }
+      return body;
+    }
+    if (kind == BatchKind.ACTIVE && body instanceof ActiveTransactionSnapshot) {
+      ActiveTransactionSnapshot snapshot = (ActiveTransactionSnapshot) body;
+      int max = Math.max(1, Math.min(limits.getMaxActiveItems(), ProtocolLimits.MAX_ACTIVE_ITEMS));
+      if (snapshot.getItemsCount() > max) {
+        ActiveTransactionSnapshot.Builder fewer =
+            snapshot.toBuilder().clearItems().setTruncated(true);
+        for (int i = 0; i < max; i++) {
+          fewer.addItems(snapshot.getItems(i));
+        }
+        snapshot = fewer.build();
+      }
+      for (ActiveTransaction item : snapshot.getItemsList()) {
+        dictionaryCache.reference(DictKind.SERVICE, item.getServiceId());
+        dictionaryCache.reference(DictKind.THREAD, item.getThreadNameId());
+        int stateKind = activeStateKind(item.getStateValue());
+        if (stateKind != 0) {
+          dictionaryCache.reference(stateKind, item.getStateNameId());
+        }
+      }
+      return snapshot;
+    }
+    return body;
+  }
+
+  /** The dictionary kind of {@code ActiveTransaction.state_name_id} by state (11 §4.4); 0: none. */
+  static int activeStateKind(int state) {
+    switch (state) {
+      case ActiveState.IN_SQL_VALUE:
+        return DictKind.SQL;
+      case ActiveState.IN_HTTP_VALUE:
+        return DictKind.HOST;
+      case ActiveState.IN_DBC_WAIT_VALUE:
+        return DictKind.DB_TARGET;
+      default:
+        return 0;
+    }
   }
 
   /** The dictionary kind of a step's {@code name_id} by step type (a fallback, see the cache). */

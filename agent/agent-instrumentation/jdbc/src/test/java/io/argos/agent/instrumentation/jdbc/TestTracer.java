@@ -167,8 +167,18 @@ final class TestTracer implements Tracer {
   }
 
   @Override
+  public void recordSqlFetch(TraceContext ctx, long sqlId, long dbId, long fetchNanos, long rows) {
+    delegate.recordSqlFetch(ctx, sqlId, dbId, fetchNanos, rows);
+  }
+
+  @Override
   public void recordExtStat(long hostId, long elapsedNanos, int failureKind) {
     delegate.recordExtStat(hostId, elapsedNanos, failureKind);
+  }
+
+  @Override
+  public void connectionWait(TraceContext ctx, boolean waiting) {
+    delegate.connectionWait(ctx, waiting);
   }
 
   @Override
@@ -179,6 +189,48 @@ final class TestTracer implements Tracer {
   @Override
   public long sqlId(String rawSql, long dbId) {
     return delegate.sqlId(rawSql, dbId);
+  }
+
+  @Override
+  public TraceContext begin(
+      int kind, String entryName, long startNanos, String traceparent, String tracestate) {
+    return delegate.begin(kind, entryName, startNanos, traceparent, tracestate);
+  }
+
+  @Override
+  public String[] outgoingHeaders(
+      TraceContext ctx, String host, String existingTraceparent, String existingTracestate) {
+    return delegate.outgoingHeaders(ctx, host, existingTraceparent, existingTracestate);
+  }
+
+  @Override
+  public long hostId(String scheme, String host, int port) {
+    return delegate.hostId(scheme, host, port);
+  }
+
+  @Override
+  public int httpStart(
+      TraceContext ctx,
+      long hostId,
+      String method,
+      String hostPort,
+      String rawPath,
+      String preservedTraceparent,
+      long startNanos) {
+    return delegate.httpStart(
+        ctx, hostId, method, hostPort, rawPath, preservedTraceparent, startNanos);
+  }
+
+  @Override
+  public void httpEnd(
+      TraceContext ctx,
+      int seq,
+      long hostId,
+      int status,
+      Throwable error,
+      long startNanos,
+      long endNanos) {
+    delegate.httpEnd(ctx, seq, hostId, status, error, startNanos, endNanos);
   }
 
   @Override

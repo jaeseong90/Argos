@@ -73,6 +73,11 @@ function lookup(names: readonly string[] | null, index: number): string | null {
   return names[index] ?? null;
 }
 
+export interface SummaryOptions {
+  readonly topServices?: number;
+  readonly sampled?: boolean;
+}
+
 /**
  * Summarises every point of `points` (a selection snapshot, see XLogBuffer.extract). Runs in
  * O(points + dictionary).
@@ -80,7 +85,32 @@ function lookup(names: readonly string[] | null, index: number): string | null {
 export function summarizeSelection(
   points: XLogBuffer,
   dictionary: XLogDictionary,
-  options: { readonly topServices?: number; readonly sampled?: boolean } = {},
+  options: SummaryOptions = {},
+): SelectionSummary {
+  return summarize(points, points.size, (logical) => points.physical(logical), dictionary, options);
+}
+
+/**
+ * Summarises the points `indices` (physical indices into `buffer`, e.g. a selection query's
+ * answer) in place, without the snapshot copy of XLogBuffer.extract: the same summary as
+ * summarizeSelection(buffer.extract(indices), dictionary, options). O(indices + dictionary).
+ */
+export function summarizeIndices(
+  buffer: XLogBuffer,
+  indices: ArrayLike<number>,
+  dictionary: XLogDictionary,
+  options: SummaryOptions = {},
+): SelectionSummary {
+  return summarize(buffer, indices.length, (i) => indices[i] ?? 0, dictionary, options);
+}
+
+/** The summary of `count` points of `points`, the i-th at physical index `physicalAt(i)`. */
+function summarize(
+  points: XLogBuffer,
+  count: number,
+  physicalAt: (i: number) => number,
+  dictionary: XLogDictionary,
+  options: SummaryOptions,
 ): SelectionSummary {
   const topServices = options.topServices ?? TOP_SERVICES;
   const serviceKeys = Math.max(dictionary.services.length, 1);
@@ -99,8 +129,8 @@ export function summarizeSelection(
   let slow = 0;
   let error = 0;
 
-  for (let logical = 0; logical < points.size; logical += 1) {
-    const p = points.physical(logical);
+  for (let i = 0; i < count; i += 1) {
+    const p = physicalAt(i);
     const e = points.elapsed[p] ?? 0;
     const status = points.status[p] ?? 0;
     const isError = status === STATUS_ERROR;
@@ -184,11 +214,11 @@ export function summarizeSelection(
           .sort((a, b) => b.count - a.count || a.errorClass - b.errorClass);
 
   return {
-    count: points.size,
+    count,
     services,
     serviceCount: serviceIds.length,
     instances,
-    status: { normal: points.size - slow - error, slow, error },
+    status: { normal: count - slow - error, slow, error },
     httpStatus,
     errorClasses: errorRows,
     sampled: options.sampled === true,

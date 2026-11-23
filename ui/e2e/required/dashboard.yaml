@@ -1,0 +1,110 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# docs/05 §2.3 "대시보드" as data-driven E2E tests (docs/18 §13, DSN-18-10): one entry per bullet of
+# the checklist (2.3-1 .. 2.3-7), in checklist order. Each item opens the dashboard of the primary
+# app of the seeded stack and runs a named check of e2e/required/dashboardChecks.ts that asserts
+# exact values from the URL, the seed manifest or the API asked the same question (GET /dashboard,
+# /instances/compare, /events). The WO-22 entries run since the pair 7 wrap-up (ADR-0010 C-216 (2)):
+# outage shading from the seeded collection outage and live refresh from the real WebSocket server.
+# The WO-25 entry checks the firing panel against the seed's real FIRING alert (manifest `alert`).
+# Parts the seed cannot show yet are test.fixme entries naming the owning work order.
+screen: dashboard
+title: Application dashboard
+source: docs/05 §2.3
+items:
+  - id: 2.3-1
+    title: summary tiles TPS, average, p95 and p99 response time, error rate and active, each with its change against the previous range or 7 days ago
+    req: [F-U01, F-U19]
+    owner: WO-32
+    route: /apps/{primary_app_id}/dashboard?from={range_from}&to={range_to}
+    assert:
+      - visible: dashboard-page
+      - check: dashboardTiles
+
+  - id: 2.3-2
+    title: nine time series charts (CPU with process and system series) with one cursor, drag to zoom, the 1 day and 7 days baseline and event markers
+    req: [F-U01, F-U16, F-U19]
+    owner: WO-32
+    route: /apps/{primary_app_id}/dashboard?from={range_from}&to={range_to}
+    assert:
+      - visible: dashboard-chart-tps
+      - check: dashboardCharts
+
+  - id: 2.3-2
+    title: collection outages are shaded on every chart and counted in the legend
+    req: [F-U01, D-18]
+    owner: WO-22
+    route: /apps/{traffic_app_id}/dashboard
+    assert:
+      - check: dashboardOutageShading
+
+  - id: 2.3-3
+    title: instance tiles with the state colour, click opens the instance detail
+    req: [F-U01, F-S28]
+    owner: WO-32
+    route: /apps/{primary_app_id}/dashboard?from={range_from}&to={range_to}
+    assert:
+      - visible: dashboard-instance-tiles
+      - check: dashboardInstanceTiles
+
+  - id: 2.3-3
+    title: STALE (yellow) and WARN (orange border) instance tiles
+    req: [F-U01, F-S28]
+    owner: WO-39
+    coverage: T-UI-008 component tests of the instance tiles (UP, STALE, DOWN, WARN colours with StatusBadge, the seven WARN reasons as text, ADR-0010 C-216 (2)); the server's warn_reasons in ClockSkewIT (T-ACC-02); the 2.3-3 check above compares every tile's state and WARN reasons with GET /dashboard; the seeded stack has no instance that stays STALE or WARN (the seed agent stops after the outage seed), a kill switch from the admin screen of WO-39 makes one (PM decision pending)
+
+  - id: 2.3-4
+    title: instance comparison table with its columns, sorting and the server's outlier highlights, the instance value filters the dashboard
+    req: [F-U20, F-U16]
+    owner: WO-32
+    route: /apps/{primary_app_id}/dashboard?from={range_from}&to={range_to}
+    assert:
+      - visible: dashboard-compare-table
+      - check: dashboardCompareTable
+
+  - id: 2.3-5
+    title: firing alerts panel of the application and environment, its link opens the alert history
+    req: [F-U01]
+    owner: WO-32
+    route: /apps/{primary_app_id}/dashboard?from={range_from}&to={range_to}
+    assert:
+      - visible: dashboard-firing-panel
+      - check: dashboardFiring
+
+  - id: 2.3-5
+    title: firing alerts listed as the engine reports them (the seed's real FIRING alert among them), a click opens that alert in the history
+    req: [F-U01]
+    owner: WO-25
+    coverage: the null (not available) and empty states are component tests of src/features/dashboard FiringPanel (T-UI-007); the stack's alert engine always answers a list
+    route: /apps/{primary_app_id}/dashboard?from={range_from}&to={range_to}
+    assert:
+      - visible: dashboard-firing-panel
+      - check: dashboardFiringAlerts
+
+  - id: 2.3-6
+    title: collection status panel with agent drops, server drops, ingest lag, clock skew, excluded requests, late arrivals and running batches
+    req: [F-U01, D-06, D-18, D-19]
+    owner: WO-32
+    route: /apps/{primary_app_id}/dashboard?from={range_from}&to={range_to}
+    assert:
+      - visible: dashboard-collection-panel
+      - check: dashboardCollection
+
+  - id: 2.3-7
+    title: live refresh every 5 seconds through the counter topic, a past range is a query without live data
+    req: [F-U01, F-U16]
+    owner: WO-32
+    route: /apps/{primary_app_id}/dashboard?from=now-15m&live=1
+    assert:
+      - visible: live-toggle
+      - check: dashboardLive
+
+  - id: 2.3-7
+    title: live refresh from the real WebSocket server
+    req: [F-U01, F-U16]
+    owner: WO-22
+    ws: server
+    route: /apps/{primary_app_id}/dashboard?from=now-15m&live=1
+    assert:
+      - visible: live-toggle
+      - check: dashboardLiveServer

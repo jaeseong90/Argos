@@ -17,9 +17,13 @@ import { useUiStore } from './uiStore';
 import { buildUrl, CommonQ, parseUrl, URL_WRITE_LIMIT, XLogQ } from './urlState';
 import { onResumeLive, useTimeRange, type TimeRangeApi } from './useTimeRange';
 import {
+  freshUrl,
+  recordWrite,
+  resetWrittenUrls,
   urlLoader,
   useUrlState,
   validateUrl,
+  WRITE_CATCH_UP_MS,
   type RouteHandle,
   type UrlStateApi,
 } from './useUrlState';
@@ -82,6 +86,7 @@ function current(): UrlStateApi<typeof XLogQ> {
 }
 
 beforeEach(() => {
+  resetWrittenUrls();
   sink.api = null;
   sink.common = null;
   sink.time = null;
@@ -294,5 +299,61 @@ describe('T-UI-002 useTimeRange (docs/15 §5)', () => {
     expect(gaps[0]?.to).toBeGreaterThanOrEqual(T0 + 120_000);
     expect(gaps[0]?.to).toBeLessThan(T0 + 121_000);
     off();
+  });
+});
+
+describe('T-UI-002 writes before their render (05 §2.0-3, T-E2E-common-5)', () => {
+  function timeApi(): TimeRangeApi {
+    if (sink.time === null) throw new Error('not rendered');
+    return sink.time;
+  }
+
+  it('T-UI-002 a second action from the same render builds on the first write, not on the stale render', async () => {
+    // React Router renders a navigation in a transition after the history entry changed; a key
+    // pressed in between used to act on the previous range (zoom centred one range off).
+    const app = setup('/apps/1/xlog?from=2026-11-14T00:00:00.000Z&to=2026-11-14T00:30:00.000Z');
+    await rendered();
+    const stale = timeApi();
+    act(() => {
+      stale.dispatch({ type: 'next' });
+      stale.dispatch({ type: 'zoomIn' });
+    });
+    await waitFor(() => {
+      expect(app.url()).toBe(
+        '/apps/1/xlog?from=2026-11-14T00:37:30.000Z&to=2026-11-14T00:52:30.000Z',
+      );
+    });
+    // Caught up: the next action uses the rendered range again.
+    act(() => {
+      timeApi().dispatch({ type: 'zoomOut' });
+    });
+    await waitFor(() => {
+      expect(app.url()).toBe(
+        '/apps/1/xlog?from=2026-11-14T00:30:00.000Z&to=2026-11-14T01:00:00.000Z',
+      );
+    });
+  });
+
+  it('T-UI-002 freshUrl: the last write while the render shows the chain; the render after catching up, another navigation or the time limit', () => {
+    expect(freshUrl('/a?x=1', 0)).toBe('/a?x=1');
+    recordWrite('/a?x=1', '/a?x=2', 0);
+    recordWrite('/a?x=2', '/a?x=3', 10);
+    // The render still shows the base or an earlier write: the newest write.
+    expect(freshUrl('/a?x=1', 20)).toBe('/a?x=3');
+    expect(freshUrl('/a?x=2', 20)).toBe('/a?x=3');
+    // Caught up: the rendered URL, and the chain ends.
+    expect(freshUrl('/a?x=3', 30)).toBe('/a?x=3');
+    expect(freshUrl('/a?x=1', 40)).toBe('/a?x=1');
+    // Another navigation (not a URL of the chain) wins.
+    recordWrite('/a?x=1', '/a?x=2', 50);
+    expect(freshUrl('/other', 60)).toBe('/other');
+    expect(freshUrl('/a?x=1', 70)).toBe('/a?x=1');
+    // A chain older than the limit is dropped.
+    recordWrite('/a?x=1', '/a?x=2', 100);
+    expect(freshUrl('/a?x=1', 100 + WRITE_CATCH_UP_MS + 1)).toBe('/a?x=1');
+    // A write on top of a URL that is not the chain's newest starts a new chain.
+    recordWrite('/a?x=1', '/a?x=2', 200);
+    recordWrite('/b', '/b?y=1', 210);
+    expect(freshUrl('/a?x=1', 220)).toBe('/a?x=1');
   });
 });

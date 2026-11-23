@@ -34,6 +34,7 @@ class DeduplicationTokenIT {
     "service_stat_1m",
     "service_stat_1h",
     "instance_stat_1m",
+    "instance_stat_1h",
     "error_stat_1m",
     "sql_stat_1m",
     "sql_stat_1h",
@@ -65,7 +66,7 @@ class DeduplicationTokenIT {
     assertThat(snapshot(p)).isEqualTo(once);
     assertThat(once.get("xlog").get(0).get(0)).isEqualTo("400");
     Evidence.record(
-        "dedup", "duplicate insert round trip, 12 views (us per insert)", perInsertMicros);
+        "dedup", "duplicate insert round trip, 13 views (us per insert)", perInsertMicros);
   }
 
   @Test

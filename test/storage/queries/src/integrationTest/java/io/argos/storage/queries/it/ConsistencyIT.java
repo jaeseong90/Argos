@@ -101,6 +101,38 @@ class ConsistencyIT {
           .as(r.label() + " " + r.violations() + " " + firstRows(r))
           .isEqualTo(Verdict.PASS);
     }
+    // The 1h instance cascade of ADR-0010 C-212 (1) (schema V003): per (app, instance, kind, hour)
+    // count(xlog) = sum(instance_stat_1m) = sum(instance_stat_1h), in the C-65 form.
+    SchemaParameters p = Fixture.schema();
+    String sql =
+        "SELECT count() FROM (SELECT app_id, instance_id, kind, h,"
+            + " sumIf(c, src = 'xlog') AS x, sumIf(c, src = 'inst_1m') AS m,"
+            + " sumIf(c, src = 'inst_1h') AS hr FROM ("
+            + "SELECT 'xlog' AS src, app_id, instance_id, kind, toStartOfHour(ts) AS h, count() AS c"
+            + " FROM "
+            + p.table("xlog")
+            + " GROUP BY app_id, instance_id, kind, h"
+            + " UNION ALL SELECT 'inst_1m', app_id, instance_id, kind, toStartOfHour(minute) AS h,"
+            + " sum(count) FROM "
+            + p.table("instance_stat_1m")
+            + " GROUP BY app_id, instance_id, kind, h"
+            + " UNION ALL SELECT 'inst_1h', app_id, instance_id, kind, hour, sum(count) FROM "
+            + p.table("instance_stat_1h")
+            + " GROUP BY app_id, instance_id, kind, hour)"
+            + " GROUP BY app_id, instance_id, kind, h HAVING x != m OR x != hr)";
+    long instanceHours =
+        ctx.client(Account.MIGRATOR)
+            .scalarLong(
+                "SELECT count() FROM (SELECT DISTINCT app_id, instance_id, kind, hour FROM "
+                    + p.table("instance_stat_1h")
+                    + ")");
+    long mismatches = ctx.client(Account.MIGRATOR).scalarLong(sql);
+    Evidence.record(
+        "consistency",
+        "Q12 instance 1h cascade (C-212): (app, instance, kind, hour) keys / mismatching keys",
+        instanceHours + " / " + mismatches);
+    assertThat(instanceHours).as("instance_stat_1h keys").isPositive();
+    assertThat(mismatches).as("xlog vs instance_stat_1m vs instance_stat_1h per hour").isZero();
   }
 
   @Test

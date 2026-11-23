@@ -16,6 +16,9 @@
 //     always at the full devicePixelRatio.
 // Only numbers are drawn on the canvases; collected strings (service names, …) are rendered by
 // React as text nodes (SEC-60).
+import { colorTokens } from '../styles/tokens';
+
+import { hatchSegments, type OverlayMarker, type PlotBand } from './overlayMarks';
 import {
   dataRectToPixels,
   linearTicks,
@@ -55,7 +58,11 @@ export function pointLayerScale(dpr: number, maxDpr: number = POINT_LAYER_MAX_DP
 }
 
 /** Point colours by status (docs/15 §13 --point-normal, --point-slow, --point-error). */
-export const STATUS_COLORS: readonly string[] = ['#3b82f6', '#f59e0b', '#dc2626'];
+export const STATUS_COLORS: readonly string[] = [
+  colorTokens['point-normal'],
+  colorTokens['point-slow'],
+  colorTokens['point-error'],
+];
 
 /**
  * Categorical palette for colouring by instance or service (docs/15 §7.2: 12 colours + grey).
@@ -63,20 +70,20 @@ export const STATUS_COLORS: readonly string[] = ['#3b82f6', '#f59e0b', '#dc2626'
  * never the only cue (the legend and the summary name every entity).
  */
 export const CATEGORY_PALETTE: readonly string[] = [
-  '#2a78d6',
-  '#eb6834',
-  '#1baf7a',
-  '#eda100',
-  '#e87ba4',
-  '#008300',
-  '#6250d6',
-  '#e34948',
-  '#2fa4c8',
-  '#a8551c',
-  '#7c9c00',
-  '#b54bc4',
+  colorTokens['xlog-cat-1'],
+  colorTokens['xlog-cat-2'],
+  colorTokens['xlog-cat-3'],
+  colorTokens['xlog-cat-4'],
+  colorTokens['xlog-cat-5'],
+  colorTokens['xlog-cat-6'],
+  colorTokens['xlog-cat-7'],
+  colorTokens['xlog-cat-8'],
+  colorTokens['xlog-cat-9'],
+  colorTokens['xlog-cat-10'],
+  colorTokens['xlog-cat-11'],
+  colorTokens['xlog-cat-12'],
 ];
-export const OTHER_COLOR = '#9ca3af';
+export const OTHER_COLOR: string = colorTokens['xlog-cat-other'];
 
 export type ColorBy = 'status' | 'instance' | 'service';
 export type DrawMode = 'path' | 'rect' | 'pixels';
@@ -679,6 +686,15 @@ export interface OverlayInput {
   readonly drag: PixelRect | null;
   /** Hovered point, plot pixels. */
   readonly hover: { readonly x: number; readonly y: number } | null;
+  /**
+   * Collection outages (C-5, D-18) as hatched grey bands, plot px, already clipped to the plot
+   * (overlayMarks.outageBands). Drawn under the grid; none by default.
+   */
+  readonly outages?: readonly PlotBand[];
+  /** Event marker groups (docs/15 §6.1), plot px (overlayMarks.overlayMarkers); none by default. */
+  readonly markers?: readonly OverlayMarker[];
+  /** Keyboard selection band (full height, plot px; docs/15 §13); none by default. */
+  readonly band?: PlotBand | null;
 }
 
 const AXIS_TEXT = '#6b7280';
@@ -690,6 +706,13 @@ const SELECTION_FILL = 'rgba(47, 111, 235, 0.12)';
 const SELECTION_STROKE = '#2f6feb';
 const HOVER = '#111827';
 const FONT = '11px system-ui, sans-serif';
+/** Outage shading: a light fill under hatch lines (tokens outage-bg / outage-hatch). */
+const OUTAGE_FILL = 'rgba(139, 146, 156, 0.16)';
+const OUTAGE_HATCH = colorTokens['outage-hatch'];
+const BAND_FILL = 'rgba(47, 111, 235, 0.10)';
+const MARKER_FONT = '10px system-ui, sans-serif';
+/** Half size of a marker glyph, CSS px; glyphs sit in the top margin above the plot. */
+export const MARKER_GLYPH_HALF = 4;
 
 /** The part of a 2D context the overlay uses. */
 export type OverlayContext = Pick<
@@ -700,6 +723,7 @@ export type OverlayContext = Pick<
   | 'moveTo'
   | 'lineTo'
   | 'stroke'
+  | 'fill'
   | 'fillRect'
   | 'strokeRect'
   | 'fillText'
@@ -720,7 +744,122 @@ export function yTicks(scale: PlotScale): number[] {
   return scale.yType === 'log' ? logTicks(scale.yMax) : linearTicks(scale.yMax, 5);
 }
 
-/** Draws axes, grid, threshold line, selection, drag rectangle and hover ring. */
+/**
+ * Outage bands (C-5, D-18): a light fill and 45° hatch lines, clipped to the plot by computation
+ * (overlayMarks.hatchSegments), so a band never paints outside the plot area.
+ */
+function drawOutages(ctx: OverlayContext, scale: PlotScale, bands: readonly PlotBand[]): void {
+  const left = PLOT_MARGIN.left;
+  const top = PLOT_MARGIN.top;
+  for (const band of bands) {
+    const x1 = Math.max(0, Math.min(scale.width, band.x1));
+    const x2 = Math.max(0, Math.min(scale.width, band.x2));
+    if (!(x2 > x1)) {
+      continue;
+    }
+    ctx.fillStyle = OUTAGE_FILL;
+    ctx.fillRect(left + x1, top, x2 - x1, scale.height);
+    ctx.strokeStyle = OUTAGE_HATCH;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    for (const [xa, ya, xb, yb] of hatchSegments(x1, x2, 0, scale.height)) {
+      ctx.moveTo(left + xa, top + ya);
+      ctx.lineTo(left + xb, top + yb);
+    }
+    ctx.stroke();
+  }
+}
+
+/** One marker glyph centred at (cx, cy) (docs/15 §6.1 ▲ ● ○ ◆ ✱ ■). */
+function drawGlyph(ctx: OverlayContext, marker: OverlayMarker, cx: number, cy: number): void {
+  const h = marker.emphasized ? MARKER_GLYPH_HALF + 1 : MARKER_GLYPH_HALF;
+  ctx.fillStyle = marker.color;
+  ctx.strokeStyle = marker.color;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  switch (marker.shape) {
+    case 'triangle':
+      ctx.moveTo(cx, cy - h);
+      ctx.lineTo(cx + h, cy + h);
+      ctx.lineTo(cx - h, cy + h);
+      ctx.lineTo(cx, cy - h);
+      ctx.fill();
+      return;
+    case 'dot':
+      ctx.arc(cx, cy, h, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    case 'ring':
+      ctx.arc(cx, cy, h - 0.5, 0, Math.PI * 2);
+      ctx.stroke();
+      return;
+    case 'diamond':
+      ctx.moveTo(cx, cy - h);
+      ctx.lineTo(cx + h, cy);
+      ctx.lineTo(cx, cy + h);
+      ctx.lineTo(cx - h, cy);
+      ctx.lineTo(cx, cy - h);
+      ctx.fill();
+      return;
+    case 'asterisk':
+      ctx.moveTo(cx, cy - h);
+      ctx.lineTo(cx, cy + h);
+      ctx.moveTo(cx - h, cy - h / 2);
+      ctx.lineTo(cx + h, cy + h / 2);
+      ctx.moveTo(cx - h, cy + h / 2);
+      ctx.lineTo(cx + h, cy - h / 2);
+      ctx.stroke();
+      return;
+    case 'square':
+      ctx.fillRect(cx - h + 1, cy - h + 1, 2 * h - 2, 2 * h - 2);
+      return;
+  }
+}
+
+/**
+ * Event markers (docs/15 §6.1): a dashed vertical line through the plot and the glyph in the top
+ * margin, "+N" next to a group of N + 1 markers. The emphasised group (`alert=`, docs/15 §4.3
+ * item 4) gets a solid 2 px line and a larger glyph. Markers outside the plot are not drawn.
+ */
+function drawMarkers(
+  ctx: OverlayContext,
+  scale: PlotScale,
+  markers: readonly OverlayMarker[],
+): void {
+  const left = PLOT_MARGIN.left;
+  const top = PLOT_MARGIN.top;
+  const bottom = top + scale.height;
+  for (const marker of markers) {
+    if (!(marker.x >= 0 && marker.x <= scale.width)) {
+      continue;
+    }
+    const x = Math.round(left + marker.x) + 0.5;
+    ctx.strokeStyle = marker.color;
+    ctx.lineWidth = marker.emphasized ? 2 : 1;
+    ctx.setLineDash(marker.emphasized ? [] : [2, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, bottom);
+    ctx.stroke();
+    drawGlyph(ctx, marker, x, top / 2);
+    if (marker.count > 1) {
+      ctx.fillStyle = marker.color;
+      ctx.font = MARKER_FONT;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`+${String(marker.count - 1)}`, x + MARKER_GLYPH_HALF + 3, top / 2);
+    }
+  }
+  ctx.setLineDash([]);
+  ctx.lineWidth = 1;
+}
+
+/**
+ * Draws outage shading, axes, grid, threshold line, event markers, keyboard band, selection, drag
+ * rectangle and hover ring.
+ */
 export function drawOverlay(ctx: OverlayContext, input: OverlayInput): void {
   const { layout, scale } = input;
   const left = PLOT_MARGIN.left;
@@ -732,6 +871,9 @@ export function drawOverlay(ctx: OverlayContext, input: OverlayInput): void {
   }
   const bottom = top + scale.height;
   const right = left + scale.width;
+  if (input.outages !== undefined && input.outages.length > 0) {
+    drawOutages(ctx, scale, input.outages);
+  }
   ctx.font = FONT;
   ctx.lineWidth = 1;
   ctx.setLineDash([]);
@@ -790,6 +932,25 @@ export function drawOverlay(ctx: OverlayContext, input: OverlayInput): void {
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
     ctx.fillText(input.thresholdLabel, right - 5, y - 3);
+  }
+
+  if (input.markers !== undefined && input.markers.length > 0) {
+    drawMarkers(ctx, scale, input.markers);
+  }
+
+  // Keyboard selection band (full height, docs/15 §13): solid outline, translucent fill.
+  if (input.band !== undefined && input.band !== null) {
+    const x1 = Math.max(0, Math.min(scale.width, input.band.x1));
+    const x2 = Math.max(0, Math.min(scale.width, input.band.x2));
+    if (x2 > x1) {
+      ctx.fillStyle = BAND_FILL;
+      ctx.fillRect(left + x1, top, x2 - x1, scale.height);
+      ctx.strokeStyle = SELECTION_STROKE;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([]);
+      ctx.strokeRect(left + x1 + 1, top + 1, Math.max(0, x2 - x1 - 2), scale.height - 2);
+      ctx.lineWidth = 1;
+    }
   }
 
   // Stored selection (data space, moves with the range) and the rectangle being dragged.

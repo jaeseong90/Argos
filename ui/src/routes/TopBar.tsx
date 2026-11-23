@@ -9,7 +9,7 @@ import { useMemo, useRef, useState, type SubmitEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router';
 
-import { countFiringAlerts, listApps, type App } from '../api/apps';
+import { countFiringAlerts, getApp, listApps, type App } from '../api/apps';
 import { isApiError } from '../api/errors';
 import { queryKeys } from '../api/queryKeys';
 import { untrusted } from '../api/untrusted';
@@ -24,6 +24,7 @@ import { useLanguage } from '../i18n/useLanguage';
 import { useStaleSeconds } from '../realtime/hooks';
 import { useAuthStore } from '../state/authStore';
 import { readRecentApps, rememberRecentApp } from '../state/preferences';
+import { batchAvailable, useUiStore } from '../state/uiStore';
 import {
   carriedState,
   defaultState,
@@ -174,11 +175,8 @@ function AppAndEnv() {
   return (
     <>
       {/*
-        Intentional difference from docs/15 §3.2 (the application selector is active on
-        application routes only): it stays enabled on global routes because /overview is still a
-        placeholder (WO-31) and the side menu hides the application screens there, so this is the
-        only way into an application in this slice. Open PM decision: disable it on global routes
-        once WO-31 builds the overview's application list.
+        docs/15 §3.2: the application selector is active on application routes only (ADR-0010
+        C-189 (2)). On global routes the overview's rows and cards open an application.
       */}
       <AppSelect
         apps={apps}
@@ -186,6 +184,7 @@ function AppAndEnv() {
         onChange={switchApp}
         recentAppIds={recent}
         loading={loading}
+        disabled={appId === null}
       />
       <EnvSelect
         envs={envs}
@@ -270,22 +269,38 @@ function AlertsBadge() {
   }
   const count = query.data ?? 0;
   const label = t('shell:topbar.alerts.count', { count });
+  // The wrapper's box holds the link and its number bubble (which overflows the link at the top
+  // right): visual tests mask this box, so the live count never reaches a baseline (ADR-0010
+  // C-227 (2)). Padding grows the box over the bubble; the equal negative margin keeps the layout.
   return (
-    <Link
-      to="/alerts?state=firing"
-      className="alerts-badge"
-      aria-label={label}
-      title={label}
-      data-testid="alerts-badge"
-      data-count={count}
-    >
-      <span className="alerts-badge__icon" aria-hidden="true">
-        &#x1F514;
-      </span>
-      {count > 0 && <span className="alerts-badge__count">{count}</span>}
-    </Link>
+    <span className="alerts-badge-area" data-testid="alerts-badge-area" style={BADGE_AREA_STYLE}>
+      <Link
+        to="/alerts?state=firing"
+        className="alerts-badge"
+        aria-label={label}
+        title={label}
+        data-testid="alerts-badge"
+        data-count={count}
+      >
+        <span className="alerts-badge__icon" aria-hidden="true">
+          &#x1F514;
+        </span>
+        {count > 0 && <span className="alerts-badge__count">{count}</span>}
+      </Link>
+    </span>
   );
 }
+
+/**
+ * The badge area box: the bubble (.alerts-badge__count, shell.css) sits 2px above and 4px right
+ * of the link, so the box extends by that much on those sides.
+ */
+const BADGE_AREA_STYLE = {
+  display: 'inline-flex',
+  flex: '0 0 auto',
+  padding: '2px 4px 0 0',
+  margin: '-2px -4px 0 0',
+} as const;
 
 function AccountMenu() {
   const { t } = useTranslation(['common', 'shell']);
@@ -375,11 +390,34 @@ function AccountMenu() {
   );
 }
 
+/**
+ * False when the current application recorded no batch job in the last 7 days (`kinds` of
+ * GET /apps/{appId}, ADR-0010 C-205 (4), C-191 (2), docs/15 §3.2); true on global routes, while it
+ * loads and when the server could not say (kinds null: unknown is not "none"). The same query as
+ * AppLayout's, so it costs no extra request.
+ */
+function useBatchAvailable(): boolean {
+  const appId = useAppId();
+  const app = useQuery({
+    queryKey: queryKeys.apps.detail(appId ?? 0),
+    queryFn: () => getApp(appId ?? 0),
+    enabled: appId !== null,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const kinds = appId === null ? null : (app.data?.kinds ?? null);
+  // The active screen adds the kinds of its live snapshot (C-225 (7)).
+  const snapshot = useUiStore((ui) => ui.snapshotKinds);
+  const live = snapshot !== null && snapshot.appId === appId ? snapshot.kinds : null;
+  return batchAvailable(kinds, live);
+}
+
 export function TopBar() {
   const { t } = useTranslation(['common', 'shell']);
   const screen = useCurrentScreen();
   const { state, set } = useUrlState();
   const { hrefFor } = useCarriedNavigation();
+  const batchAvailable = useBatchAvailable();
   return (
     <header
       className="argos-shell__topbar topbar"
@@ -401,6 +439,7 @@ export function TopBar() {
         onChange={(kind: Kind) => {
           set({ kind }, { replace: false });
         }}
+        batchAvailable={batchAvailable}
       />
       <GlobalSearch />
       <AlertsBadge />

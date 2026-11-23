@@ -17,6 +17,7 @@ import io.argos.server.storage.query.TimeSegment;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -117,6 +118,19 @@ public class TimeQueries {
       return s / 60 + "m";
     }
     return s + "s";
+  }
+
+  /**
+   * Binds the instance filter of the dashboard templates: {@code all} (1 without an instance list),
+   * {@code instances} (the API's instance list) and {@code excluded} (the API's {@code
+   * exclude_instance} list, ADR-0010 C-212 (1)).
+   */
+  public static QueryParams instanceFilter(
+      QueryParams params, Collection<Integer> instances, Collection<Integer> excluded) {
+    return params
+        .int64("all", instances.isEmpty() ? 1 : 0)
+        .int64Array("instances", instances.stream().mapToLong(Integer::longValue).toArray())
+        .int64Array("excluded", excluded.stream().mapToLong(Integer::longValue).toArray());
   }
 
   /** Binds the stored {@code kind} values of a {@code kind} parameter as the template parameter. */

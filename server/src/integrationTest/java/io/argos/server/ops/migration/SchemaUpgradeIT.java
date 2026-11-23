@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * T-ST-052 path 2: "V001 + data" then the next version (V003 and the four-step M001 and M002
+ * T-ST-052 path 2: "V001 + data" then the next version (V004 and the four-step M001 and M002
  * fixtures: a daily and a monthly backfill), with the 1/1000 generator profile ({@code tiny}). The
  * 1/100 run with the 10-minute limit per script is {@link SchemaUpgradeNightlyIT} (T-SV-002).
  */
@@ -38,7 +38,7 @@ class SchemaUpgradeIT {
 
   @Test
   @DisplayName(
-      "T-ST-052 V001 + tiny data -> V003 (ADD COLUMN), M001 (4-step 1m replacement, daily"
+      "T-ST-052 V001 + tiny data -> V004 (ADD COLUMN), M001 (4-step 1m replacement, daily"
           + " backfill) and M002 (4-step 1h replacement, monthly backfill): counts kept, rollups"
           + " equal per minute and per hour, D-12 before and after, rollup_alias switched, second"
           + " start no-op")

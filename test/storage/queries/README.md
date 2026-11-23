@@ -69,7 +69,7 @@ on the dedicated host), or `none` (the first run, caches warm).
 --database argos --prefix P  [--apply-schema] [--load-ci-dataset]
 --queries all|none|Q01,...   --procedures all|none|Q05/bloom,Q11/cost,Q14,...,Q20
 --warm 3  --cold none|restart|restart+dropcache|command:SHELL
---q14-source synthetic|dataset --q14-apps 2 --q14-per-minute 3000 --q14-days 3 --q14-min-count 1000
+--q14-source synthetic|dataset --q14-apps 2 --q14-per-minute 3000 --q14-days 3 --q14-min-count 1000 [--q14-profile ci]
 --q15-tx 20000 --q15-repeats 100 --q16-rows 20000 --bloom-days 3
 --q17-users 10 --q17-interval-s 5 --q17-duration-s 1800 --q17-ingestion replay_5000_TPS --q17-window live|fixed
 --q18-wait-s 600 --q18-repeats 2 --q18-copy-hours 24 --q18-settle-s 120   --q20-repeats 2 --q20-settle-s 300

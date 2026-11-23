@@ -6,6 +6,7 @@ import io.argos.proto.v1.MetricBatch;
 import io.argos.proto.v1.ProfileBatch;
 import io.argos.proto.v1.StatBatch;
 import io.argos.proto.v1.TransactionBatch;
+import io.argos.server.ingest.api.AlertSampleSink;
 import io.argos.server.ingest.api.IngestPipeline;
 import io.argos.server.ingest.api.RealtimePublisher;
 import io.argos.server.session.api.SessionContext;
@@ -20,7 +21,9 @@ import io.argos.server.wal.WalGc;
 import io.argos.server.wal.WalRecord;
 import io.argos.server.wal.WalRecovery;
 import io.argos.server.wal.WalTailReader;
+import io.argos.server.wal.api.WalDataPayload;
 import io.argos.server.wal.api.WalPosition;
+import io.argos.server.wal.api.WalRecordType;
 import java.io.IOException;
 import java.time.Clock;
 import java.util.ArrayDeque;
@@ -64,9 +67,13 @@ import org.springframework.stereotype.Component;
  *       {@value #MAX_IN_FLIGHT} decoded records in memory and stops reading: the records stay only
  *       in the WAL (the WAL is the spool, 12 §3.8), and are read again as soon as the queues drain
  *       (the {@code WalReplayer} role).
- *   <li>XLog points of rows with {@code late = 0} go to {@link RealtimePublisher#publishXlog} only
- *       for records read within {@value #LIVE_WINDOW_MS} ms of their receipt and never during
- *       recovery (12 §3.7).
+ *   <li>XLog points of rows with {@code late = 0} go to {@link RealtimePublisher#publishXlog}, and
+ *       the heap, GC pause and CPU samples of metric rows with {@code late = 0} to {@link
+ *       RealtimePublisher#publishMetrics} (ADR-0010 C-212 (1)), only for records read within
+ *       {@value #LIVE_WINDOW_MS} ms of their receipt and never during recovery (12 §3.7).
+ *   <li>An active snapshot ({@link #onActive}) is published in real time and its {@code
+ *       total_active} is queued as a gauge record of the session for the WAL ({@link ActiveGauge},
+ *       ADR-0010 C-178 (1)); the record then takes the path above like an agent's metric batch.
  * </ul>
  *
  * <p>Recovery ({@link #recover}, the {@code WAL_RECOVERY} start phase): every intent without a
@@ -98,7 +105,9 @@ public class IngestService implements IngestPipeline, DisposableBean {
   private final RecordDecoder decoder;
   private final IngestMetrics metrics;
   private final RealtimePublisher publisher;
+  private volatile AlertSampleSink alertSink = AlertSampleSink.noop();
   private final Clock clock;
+  private final ActiveGauge activeGauge;
   private final Map<Table, Long> skipThrough = new EnumMap<>(Table.class);
   private final AtomicLong recordsLoaded = new AtomicLong();
   private volatile boolean recovering;
@@ -111,8 +120,9 @@ public class IngestService implements IngestPipeline, DisposableBean {
   private long gcPeriodMs = 60_000;
 
   /**
-   * The bean of the server. The real-time port is WO-22's {@code RealtimeBus} when that bean exists
-   * and {@link RealtimePublisher#noop()} until then (ADR-0010 C-128).
+   * The bean of the server. The real-time port is the {@code RealtimeBus} bean, or {@link
+   * RealtimePublisher#noop()} when no publisher bean exists (ADR-0010 C-128); the alert window port
+   * is the alert engine's sample intake, or {@link AlertSampleSink#noop()} (WO-25).
    */
   @Autowired
   public IngestService(
@@ -120,7 +130,8 @@ public class IngestService implements IngestPipeline, DisposableBean {
       ClickHouseBatchWriter writer,
       RecordDecoder decoder,
       IngestMetrics metrics,
-      ObjectProvider<RealtimePublisher> publishers) {
+      ObjectProvider<RealtimePublisher> publishers,
+      ObjectProvider<AlertSampleSink> alertSinks) {
     this(
         wal,
         writer,
@@ -128,6 +139,7 @@ public class IngestService implements IngestPipeline, DisposableBean {
         metrics,
         publishers.getIfUnique(RealtimePublisher::noop),
         Clock.systemUTC());
+    this.alertSink = alertSinks.getIfUnique(AlertSampleSink::noop);
   }
 
   /** A service with an explicit clock (tests). */
@@ -144,6 +156,12 @@ public class IngestService implements IngestPipeline, DisposableBean {
     this.metrics = Objects.requireNonNull(metrics, "metrics");
     this.publisher = Objects.requireNonNull(publisher, "publisher");
     this.clock = clock;
+    this.activeGauge = new ActiveGauge(wal, metrics);
+  }
+
+  /** The alert window port (WO-25): live records are handed to it like to the realtime bus. */
+  public void setAlertSampleSink(AlertSampleSink sink) {
+    this.alertSink = Objects.requireNonNull(sink, "sink");
   }
 
   /** The WAL GC period (60 s by default, 12 §3.4); tests shorten it before {@link #recover}. */
@@ -173,8 +191,14 @@ public class IngestService implements IngestPipeline, DisposableBean {
     // See onTransactions.
   }
 
+  /**
+   * Publishes the snapshot in real time and queues its {@code argos_active_transactions} gauge
+   * sample for the WAL ({@link ActiveGauge}, ADR-0010 C-178 (1)); returns without waiting for
+   * either.
+   */
   @Override
   public void onActive(SessionContext session, ActiveTransactionSnapshot snapshot) {
+    activeGauge.record(session, snapshot);
     publisher.publishActive(session, snapshot);
   }
 
@@ -442,17 +466,44 @@ public class IngestService implements IngestPipeline, DisposableBean {
     }
     recordsLoaded.incrementAndGet();
     markProcessed(record);
-    if (!recovering
-        && decoded.session() != null
-        && !decoded.points().isEmpty()
-        && clock.millis() - record.receivedMs() <= LIVE_WINDOW_MS) {
+    boolean live =
+        !recovering
+            && decoded.session() != null
+            && clock.millis() - record.receivedMs() <= LIVE_WINDOW_MS;
+    if (live) {
+      handToAlerts(record, decoded);
+    }
+    if (live && (!decoded.points().isEmpty() || !decoded.metrics().isEmpty())) {
       try {
-        publisher.publishXlog(decoded.session(), decoded.points());
+        if (!decoded.points().isEmpty()) {
+          publisher.publishXlog(decoded.session(), decoded.points());
+        }
+        if (!decoded.metrics().isEmpty()) {
+          publisher.publishMetrics(decoded.session(), decoded.metrics());
+        }
       } catch (RuntimeException e) {
         LOG.debug("Realtime publish failed: {}", e.toString());
       }
     }
     return true;
+  }
+
+  /** Hands one live record to the alert windows (WO-25); never blocks, never throws. */
+  private void handToAlerts(WalRecord record, RecordDecoder.Decoded decoded) {
+    try {
+      WalRecordType type = record.type();
+      if (type == WalRecordType.TX) {
+        if (!decoded.points().isEmpty()) {
+          alertSink.onXlog(decoded.session(), decoded.points());
+        }
+      } else if (type == WalRecordType.METRIC) {
+        alertSink.onMetricBatch(decoded.session(), WalDataPayload.decode(record.payload()).batch());
+      } else if (type == WalRecordType.STAT) {
+        alertSink.onStatBatch(decoded.session(), WalDataPayload.decode(record.payload()).batch());
+      }
+    } catch (RuntimeException e) {
+      LOG.debug("Alert window hand-off failed: {}", e.toString());
+    }
   }
 
   private void markProcessed(WalRecord record) {
@@ -464,6 +515,7 @@ public class IngestService implements IngestPipeline, DisposableBean {
   /** Stops the dispatcher, the decode pool and the WAL GC. */
   public void close() {
     stopping = true;
+    activeGauge.close();
     WalGc g = gc;
     if (g != null) {
       g.close();

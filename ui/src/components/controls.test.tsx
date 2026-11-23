@@ -3,6 +3,8 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { untrusted } from '../api/untrusted';
+
 import { FilterChipBar } from './FilterChipBar';
 import { KindFilter } from './KindFilter';
 import { installDomStubs } from './testing/dom';
@@ -174,6 +176,66 @@ describe('FilterChipBar (docs/15 §6.5, deep link 3)', () => {
     await user.type(screen.getByTestId('filter-chip-value'), 'GET /x');
     await user.click(screen.getByTestId('filter-chip-save'));
     expect(onEdit).toHaveBeenCalledWith(0, { field: 'service', op: 'ne', value: 'GET /x' });
+  });
+
+  it('names a key value (valueLabel) and keeps the key in data-value and the tooltip', () => {
+    const names: Record<string, string> = {
+      '18446744073709551610': 'GET /api/orders/{id}',
+      '7': 'api-7:8080',
+    };
+    render(
+      <FilterChipBar
+        filters={[
+          { field: 'service', op: 'eq', value: '18446744073709551610' },
+          { field: 'instance', op: 'ne', value: '7' },
+          { field: 'service', op: 'eq', value: '42' },
+          { field: 'status', op: 'eq', value: '500' },
+        ]}
+        valueLabel={(f) =>
+          f.field === 'status' || names[f.value] === undefined
+            ? null
+            : untrusted(names[f.value] ?? '')
+        }
+        onRemove={vi.fn()}
+        onClear={vi.fn()}
+      />,
+      { wrapper },
+    );
+    const chips = screen.getAllByTestId('filter-chip');
+    const value = (i: number) => chips[i]?.querySelector('.filter-chip__value');
+    // Named: the name is shown, the key is data-value and the chip's tooltip.
+    expect(value(0)).toHaveTextContent('GET /api/orders/{id}');
+    expect(chips[0]).toHaveAttribute('data-value', '18446744073709551610');
+    expect(chips[0]).toHaveAttribute('title', '18446744073709551610');
+    expect(chips[0]).toHaveAttribute('data-named', 'true');
+    expect(value(1)).toHaveTextContent('api-7:8080');
+    expect(chips[1]).toHaveAttribute('data-value', '7');
+    // Unknown key and a field without names: the value itself, no chip tooltip.
+    expect(value(2)).toHaveTextContent(/^42$/);
+    expect(chips[2]).toHaveAttribute('data-value', '42');
+    expect(chips[2]).not.toHaveAttribute('title');
+    expect(chips[2]).not.toHaveAttribute('data-named');
+    expect(value(3)).toHaveTextContent(/^500$/);
+  });
+
+  it('T-UI-005 renders named chip values (XSS seed names) as text', () => {
+    const { container } = render(
+      <FilterChipBar
+        filters={XSS_PAYLOADS.map((_, i) => ({
+          field: 'service',
+          op: 'eq' as const,
+          value: String(1000 + i),
+        }))}
+        valueLabel={(f) => untrusted(XSS_PAYLOADS[Number(f.value) - 1000] ?? '')}
+        onRemove={vi.fn()}
+        onClear={vi.fn()}
+      />,
+      { wrapper },
+    );
+    const shown = [...container.querySelectorAll('.filter-chip__value')].map((e) => e.textContent);
+    expect(shown).toEqual([...XSS_PAYLOADS]);
+    expect(findInjectedMarkup(container)).toEqual([]);
+    expect(xssFired()).toBe(false);
   });
 
   it('T-UI-005 renders chip values as text', () => {

@@ -31,14 +31,18 @@ import org.springframework.stereotype.Service;
 @Service
 public class SqlStatsService {
 
-  /** API sort fields to template columns (14 §4.8). */
+  /**
+   * API sort fields to template columns (14 §4.8; {@code p95_ms}, the bucket estimate, added for
+   * the statistics tables of 05 §2.5, WO-36).
+   */
   public static final Map<String, String> SORT =
       Map.of(
           "sum_ms", "sum_ms",
           "count", "cnt",
           "avg_ms", "avg_ms",
           "max_ms", "max_ms",
-          "errors", "err");
+          "errors", "err",
+          "p95_ms", "p95_ms");
 
   /** The {@code related_tx.note} of a SQL statement. */
   static final String RELATED_NOTE =
@@ -292,6 +296,7 @@ public class SqlStatsService {
             .uint64("db_id", dbId == null ? 0 : dbId)
             .int64("all_sql", sqls.isEmpty() ? 1 : 0)
             .uint64Array("sqls", sqls)
+            .uint64Array("bounds", StatsSupport.latencyBounds())
             .identifier("sort", sort.column())
             .int64("dir", sort.dir())
             .int64("limit", limit);

@@ -180,13 +180,22 @@ button.stat-tile:hover {
   color: var(--color-text-muted);
 }
 
+/* One text block: the change and its basis flow inline and wrap as one paragraph, so a long change
+   ("No comparison data") never splits the footer into two columns at narrow widths (C-220 (11)). */
 .stat-tile__footer {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  display: block;
   min-height: 18px;
   color: var(--color-text-muted);
   font-size: var(--fs-sm);
+  line-height: 18px;
+}
+
+.stat-tile__footer > .delta {
+  vertical-align: top;
+}
+
+.stat-tile__basis {
+  margin-left: var(--space-2);
 }
 
 .stat-tile__sparkline {

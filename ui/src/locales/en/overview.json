@@ -1,0 +1,96 @@
+{
+  "page": {
+    "title": "$t(shell:screen.overview)",
+    "basis": "Values: last 5 minutes · trend: last hour",
+    "basisTitle": "The overview always shows the last 5 minutes and the last hour per minute. The global time range applies when you open an application.",
+    "truncated": "Showing the first {{count, number}} applications. Choose an environment or a group to see the others.",
+    "empty": {
+      "title": "No applications to show.",
+      "description": "Clear the environment or group filter, or connect an agent: it registers its application on first contact.",
+      "noFilter": "No application has connected yet. Start an application with the Argos agent to see it here."
+    },
+    "clearFilters": "Clear environment and group"
+  },
+  "table": {
+    "caption": "Applications",
+    "name": "Application",
+    "status": "Status",
+    "instances": "Instances",
+    "tps": "TPS",
+    "p95": "p95",
+    "errorRate": "Errors",
+    "active": "Active",
+    "batches": "Batches",
+    "firing": "Alerts",
+    "deploy": "Last deploy",
+    "trend": "1 h trend"
+  },
+  "row": {
+    "open": "Open the dashboard of this application",
+    "pinned": "Needs attention: kept on top"
+  },
+  "instances": {
+    "title": "{{up, number}} of {{total, number}} instances up"
+  },
+  "firing": {
+    "notAvailableShort": "n/a",
+    "notAvailable": "Not available: alerts are not evaluated yet on this server.",
+    "critical_one": "{{count, number}} critical alert",
+    "critical_other": "{{count, number}} critical alerts",
+    "warn_one": "{{count, number}} warning",
+    "warn_other": "{{count, number}} warnings",
+    "none": "No firing alerts"
+  },
+  "deploy": {
+    "title": "Deployed {{time}}"
+  },
+  "spark": {
+    "tps": "TPS, last hour",
+    "p95": "p95, last hour",
+    "err": "Error rate, last hour",
+    "summary": "{{label}}: lowest {{min}}, highest {{max}}, latest {{last}}",
+    "empty": "{{label}}: no data"
+  },
+  "group": {
+    "label": "Application group",
+    "all": "All groups",
+    "groups": "Groups"
+  },
+  "sort": {
+    "label": "Sort by",
+    "status": "Status",
+    "errorRate": "Error rate",
+    "p95": "p95",
+    "firing": "Alerts",
+    "pinnedHint": "Applications that need attention stay on top whatever the sort."
+  },
+  "view": {
+    "label": "View",
+    "table": "Table",
+    "cards": "Cards"
+  },
+  "panel": {
+    "firing": {
+      "title": "Firing alerts",
+      "unavailable": "Not available: alerts are not evaluated yet on this server.",
+      "none": "No alerts are firing.",
+      "summary": "Critical {{critical, number}} · warning {{warn, number}}",
+      "more_one": "{{count, number}} more alert",
+      "more_other": "{{count, number}} more alerts",
+      "all": "View firing alerts",
+      "loading": "Loading firing alerts…"
+    },
+    "server": {
+      "title": "Collection server",
+      "ingestLag": "Ingest lag",
+      "disk": "Disk usage",
+      "channelFailures": "Channel failures (24 h)",
+      "sessions": "Agent sessions",
+      "certExpiry": "Certificate expiry",
+      "days_one": "{{count, number}} day",
+      "days_other": "{{count, number}} days",
+      "notAvailable": "Not available",
+      "notAvailableTitle": "This server does not measure this value yet."
+    }
+  }
+}

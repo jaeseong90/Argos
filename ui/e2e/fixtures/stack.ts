@@ -21,8 +21,10 @@
 //             console errors the page hooks do not count (default none); for the positive controls
 //             of e2e/specs/csp-report.spec.ts only (fixtures.ts PageHookOptions)
 //   api       apiAs(role): a Node API session of a role, for setup steps and cross-checks
-//   ws        the docs/14 §5 WebSocket stub (auto: every stack page gets it; WO-22 is not in the
-//             slice), e2e/fixtures/ws.ts
+//   ws        the docs/14 §5 WebSocket fixture (auto: every stack page gets it), e2e/fixtures/ws.ts
+//   wsMode    'stub' (default: the fixture answers as the docs/14 §5 server) | 'server' (every
+//             socket is forwarded to the stack's real /ws of WO-22 and recorded);
+//             test.use({ wsMode: 'server' })
 // It also keeps the WO-04 teardown flake (B-3) under observation: when Playwright's context close
 // fails after the test, the browser's recent stderr lines are attached to the report.
 import { readFileSync } from 'node:fs';
@@ -42,7 +44,7 @@ import { credentialFile } from '../stack/paths';
 import { readSession, type StackSession } from '../stack/session';
 
 import { installPageHooks, isOwnWebSocket, type PageHookOptions } from './fixtures';
-import { installWsStub, type WsStub } from './ws';
+import { installWsStub, type WsMode, type WsStub } from './ws';
 
 export { expect };
 
@@ -204,6 +206,7 @@ interface StackTestFixtures {
   ignoredConsoleErrors: readonly RegExp[];
   contextCsp: ContextCspRecorder;
   ws: WsStub;
+  wsMode: WsMode;
   apiAs: (role: Role) => Promise<ApiSession>;
   teardownGuard: undefined;
 }
@@ -263,12 +266,16 @@ export const test = base.extend<StackTestFixtures, StackWorkerFixtures>({
   apiAs: async ({ session, seed }, use) => {
     await use((role) => apiAs(session, seed, role));
   },
-  // Every stack page gets the WebSocket stub before it navigates.
+  wsMode: ['stub', { option: true }],
+  // Every stack page gets the WebSocket fixture before it navigates.
   ws: [
-    async ({ page, session }, use) => {
-      const stub = await installWsStub(page);
+    async ({ page, session, wsMode }, use) => {
+      const stub = await installWsStub(page, wsMode);
       await use(stub);
-      expect(stub.violations(), 'client WebSocket frames that break docs/14 §5.2').toEqual([]);
+      expect(
+        stub.violations(),
+        'WebSocket frames that break docs/14 §5.2 (server mode: also server frames the UI rejects)',
+      ).toEqual([]);
       // Routed sockets emit no `websocket` event, so the page hook cannot see them: same rule here.
       const origin = new URL(session.stack_url).origin;
       expect(
@@ -276,7 +283,7 @@ export const test = base.extend<StackTestFixtures, StackWorkerFixtures>({
           .connections()
           .map((c) => c.url)
           .filter((url) => !isOwnWebSocket(url, origin)),
-        'WebSocket to another origin (answered by the stub)',
+        'WebSocket to another origin (routed by the ws fixture)',
       ).toEqual([]);
     },
     { auto: true },

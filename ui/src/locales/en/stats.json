@@ -1,0 +1,186 @@
+{
+  "sort": {
+    "label": "Sort by",
+    "sum_ms": "Total time",
+    "count": "Count",
+    "avg_ms": "Average",
+    "p95_ms": "p95",
+    "errors": "Errors",
+    "error_rate": "Error rate",
+    "timeouts": "Timeouts",
+    "first_seen": "First seen",
+    "last_seen": "Last seen"
+  },
+  "limit": {
+    "label": "Show",
+    "option": "Top {{n}}"
+  },
+  "split": {
+    "label": "Split by version"
+  },
+  "source": {
+    "label": "Source: {{source}}",
+    "raw": "raw data",
+    "minute": "1-minute aggregates",
+    "hour": "1-hour aggregates",
+    "mixed": "raw data and aggregates",
+    "unknown": "not reported"
+  },
+  "filterScope": {
+    "client": "Filters narrow the top {{rows}} rows the server returned. Choose a larger Top N or another sort to look further.",
+    "unapplied": "Not applied on this screen:"
+  },
+  "estimated": {
+    "label": "Estimated",
+    "tooltip": "Percentiles estimated from latency buckets"
+  },
+  "delta": {
+    "points": "{{value}} pp",
+    "detail": "This range: {{current}}. Previous range: {{previous}}."
+  },
+  "state": {
+    "refreshing": "Updating statistics…",
+    "emptyDescription": "Widen the range, or check the kind, the environment and the filters.",
+    "filteredTitle": "No rows match the filters.",
+    "filteredDescription": "Clear the filters, choose a larger Top N or widen the range.",
+    "invalidKeyTitle": "This link does not name a valid item.",
+    "invalidKeyDescription": "Go back to the list and open the item from there."
+  },
+  "openXlog": "Related transactions in XLog",
+  "backToList": "Back to list",
+  "trend": {
+    "title": "Trend",
+    "volumeTitle": "Calls and errors",
+    "latencyTitle": "Response time",
+    "count": "Count",
+    "errors": "Errors",
+    "errorRate": "Error rate",
+    "timeouts": "Timeouts",
+    "connectFailures": "Connection failures",
+    "avg": "Average",
+    "p95": "p95",
+    "p99": "p99"
+  },
+  "rawWindow": {
+    "text": "Instances, SQL statements and external calls come from raw data of {{from}} to {{to}} (at most the last 24 hours of the range).",
+    "none": "No raw data in this range: instance, SQL and external call breakdowns are not available. Choose a range within the raw data retention."
+  },
+  "related": {
+    "title": "Related transactions",
+    "ts": "Time",
+    "elapsed": "Response time",
+    "instance": "Instance",
+    "profiledOnly": "Only transactions with a captured profile are listed. Open the XLog to see every transaction.",
+    "empty": "No related transactions in the raw data window. Widen the range or open the XLog.",
+    "allInXlog": "Show all transactions in XLog"
+  },
+  "columns": {
+    "service": "Service",
+    "version": "Version",
+    "count": "Count",
+    "errors": "Errors",
+    "error_rate": "Error rate",
+    "avg_ms": "Average",
+    "p50_ms": "p50",
+    "p95_ms": "p95",
+    "p99_ms": "p99",
+    "max_ms": "Max",
+    "apdex": "$t(common:term.apdex)",
+    "sum_ms": "Total time",
+    "sql_time_ratio": "SQL time share",
+    "ext_time_ratio": "External call time share",
+    "sql": "SQL",
+    "db": "Database",
+    "exec_ms": "Execution time",
+    "fetch_ms": "Fetch time",
+    "fetch_rows": "Fetched rows",
+    "share": "Share",
+    "instance": "Instance",
+    "host": "Host",
+    "errorGroup": "$t(common:term.errorGroup)",
+    "path_pattern": "Path pattern",
+    "timeouts": "Timeouts",
+    "connect_failures": "Connection failures",
+    "error_class": "Exception class",
+    "message_pattern": "Message pattern",
+    "top_frame": "Top frame",
+    "first_seen": "First seen",
+    "last_seen": "Last seen",
+    "services": "Services (top 5)",
+    "versions": "Versions"
+  },
+  "breakdown": {
+    "byVersion": "By version",
+    "byInstance": "By instance",
+    "byService": "Calling services",
+    "byDb": "By database",
+    "empty": "No data in this range. Widen the range.",
+    "rawEmpty": "No raw data in this range. Widen the range or choose a more recent one."
+  },
+  "services": {
+    "title": "Services",
+    "caption": "Service statistics",
+    "emptyTitle": "No services in the selected range.",
+    "detailTitle": "Service",
+    "detailEmptyTitle": "This service has no calls in the selected range.",
+    "cross": {
+      "label": "Cross view",
+      "sqlTab": "SQL",
+      "externalTab": "External calls",
+      "errorsTab": "$t(common:term.errorGroup)",
+      "sql": "SQL statements of this service",
+      "external": "External calls of this service",
+      "errors": "Error groups of this service",
+      "sqlEmpty": "No SQL statements recorded for this service in the raw data window.",
+      "externalEmpty": "No external calls recorded for this service in the raw data window.",
+      "errorsEmpty": "No errors for this service in the selected range."
+    }
+  },
+  "sql": {
+    "title": "SQL",
+    "caption": "SQL statistics",
+    "emptyTitle": "No SQL statements in the selected range.",
+    "detailTitle": "SQL statement",
+    "detailEmptyTitle": "This statement did not run in the selected range.",
+    "normalized": "Normalized SQL",
+    "text": "SQL text",
+    "truncated": "The SQL text is cut at 64 KB.",
+    "count": "Executions",
+    "exec": "Execution time (total)",
+    "fetch": "Fetch time (total)",
+    "wait": "Connection wait (total)",
+    "waitNotMeasured": "Connection wait is not attributed to single statements yet. See the connection wait of each transaction."
+  },
+  "external": {
+    "title": "External calls",
+    "caption": "External call statistics per host",
+    "emptyTitle": "No external calls in the selected range.",
+    "detailTitle": "External host",
+    "detailEmptyTitle": "This host was not called in the selected range.",
+    "xlogNote": "The XLog cannot filter by host: its link keeps the range and the kind only. The related transactions below called this host.",
+    "calls": "Calls",
+    "errors": "Errors"
+  },
+  "errors": {
+    "title": "Errors",
+    "caption": "Error groups",
+    "emptyTitle": "No errors in the selected range.",
+    "emptyNewTitle": "No new error groups in the selected range.",
+    "emptyNewDescription": "Turn off the new filter to see every group, or widen the range.",
+    "newOnly": "New only",
+    "newBadge": "New",
+    "newTooltip": "First seen in the selected range",
+    "detailTitle": "$t(common:term.errorGroup)",
+    "detailEmptyTitle": "This error group did not occur in the selected range.",
+    "count": "Occurrences",
+    "firstSeenEver": "First seen ever",
+    "message": "Message pattern",
+    "messageNote": "Numbers, identifiers and other variable parts are masked.",
+    "stack": "Representative stack",
+    "appFramesUnknown": "Application frames are not highlighted: the application packages are not configured yet.",
+    "appFramesBold": "Application frames are in bold.",
+    "byService": "Affected services",
+    "recent": "Last 10 transactions",
+    "recentEmpty": "No transactions of this group in the raw data window. Widen the range or open the XLog."
+  }
+}

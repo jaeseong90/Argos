@@ -4,16 +4,24 @@
 // a deep-link alias). Every screen route validates its URL in a loader (docs/15 §4.2, SEC-64)
 // and loads its element lazily (docs/15 §14). Screens of later work orders render a placeholder
 // (route-pending). /xlog-poc stays exactly as WO-04 left it: outside the shell, the Ant Design root
-// and the authentication.
+// and the authentication; it is left out of production builds (ADR-0010 C-203, XLOG_POC_ROUTE).
 import { redirect, type RouteObject } from 'react-router';
 
 import { RouteLoading } from '../app/RouteStatus';
+import { loadRouteNamespaces } from '../i18n/routeNamespaces';
 import { useUiStore } from '../state/uiStore';
 import { CommonQ, parseUrl, TxDetailQ, writeQuery } from '../state/urlState';
 import { urlLoader, type RouteHandle } from '../state/useUrlState';
 
 import type { ScreenHandle } from './navigation';
 import { SCREENS, type ScreenDef } from './screens';
+
+/**
+ * The WO-04 PoC route /xlog-poc and its synthetic data generator exist in every build except the
+ * production one (ADR-0010 C-203): Vite replaces import.meta.env.MODE and DEV at build time, so a
+ * production bundle carries neither the route nor its chunk.
+ */
+const XLOG_POC_ROUTE: boolean = import.meta.env.DEV || import.meta.env.MODE !== 'production';
 
 /** `/` and `/apps/:appId` redirect, keeping the global keys of the query (validated). */
 function redirectWithQuery(request: Request, pathname: string): Response {
@@ -38,9 +46,11 @@ function screenRoute(screen: ScreenDef): RouteObject {
     handle,
     loader: urlLoader(screen.schema),
     lazy: async () => {
+      // The screen's catalogs load with its component (ADR-0010 C-209): no render before its texts.
       const [{ ScreenRoute }, Body] = await Promise.all([
         import('./ScreenRoute'),
         screen.load === undefined ? Promise.resolve(null) : screen.load(),
+        loadRouteNamespaces(screen.id),
       ]);
       return { element: <ScreenRoute body={Body} /> };
     },
@@ -62,14 +72,24 @@ export function createRouteTree({ version }: RouteTreeOptions): RouteObject[] {
           index: true,
           loader: ({ request }) => redirectWithQuery(request, '/overview'),
         },
-        {
-          // WO-04 PoC: unchanged (no shell, no Ant Design, no session).
-          path: 'xlog-poc',
-          lazy: async () => {
-            const { XLogPocPage } = await import('../features/xlog-poc/XLogPocPage');
-            return { Component: XLogPocPage };
-          },
-        },
+        // WO-04 PoC: unchanged (no shell, no Ant Design, no session), but only outside the
+        // production bundle (ADR-0010 C-203): the dev server, the unit tests and the perf build
+        // (`vite build --mode perf`, the T-NFR-14 spec and the preview E2E project). In a
+        // production build the condition is the constant false and the chunk is not emitted.
+        ...(XLOG_POC_ROUTE
+          ? [
+              {
+                path: 'xlog-poc',
+                lazy: async () => {
+                  const [{ XLogPocPage }] = await Promise.all([
+                    import('../features/xlog-poc/XLogPocPage'),
+                    loadRouteNamespaces('xlog-poc'),
+                  ]);
+                  return { Component: XLogPocPage };
+                },
+              },
+            ]
+          : []),
         {
           lazy: async () => {
             const { AntdRoot } = await import('../app/AntdRoot');
@@ -115,7 +135,10 @@ export function createRouteTree({ version }: RouteTreeOptions): RouteObject[] {
                           handle: { urlSchema: TxDetailQ, scope: 'global' } satisfies RouteHandle,
                           loader: urlLoader(TxDetailQ),
                           lazy: async () => {
-                            const { TransactionAlias } = await import('./TransactionAlias');
+                            const [{ TransactionAlias }] = await Promise.all([
+                              import('./TransactionAlias'),
+                              loadRouteNamespaces('tx-alias'),
+                            ]);
                             return { Component: TransactionAlias };
                           },
                         },

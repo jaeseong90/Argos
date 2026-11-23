@@ -19,7 +19,8 @@ import org.springframework.stereotype.Component;
  * Accumulates error group occurrences of the decoded transactions and upserts them into {@code
  * error_groups} every {@value #FLUSH_MS} ms ({@code first_seen}, {@code last_seen}, {@code
  * count_total}, {@code message_pattern}; the store fills {@code error_class} and {@code top_frame}
- * from the dictionary once the texts are there; the representative stack is WO-27's).
+ * from the dictionary once the texts are there; the representative stack is filled by {@link
+ * ErrorGroupStackFiller}).
  *
  * <p>{@code count_total} is an operational counter: a record decoded again after a crash (its rows
  * were not inserted yet) counts again. ClickHouse ({@code xlog.error_group_id}, {@code

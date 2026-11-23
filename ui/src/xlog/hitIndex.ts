@@ -5,14 +5,7 @@
 // cell + 1), so no Map or per-cell array is allocated. Hover looks at the cursor cell and its 8
 // neighbours; a drag selection walks the cells the rectangle covers and checks the data-space
 // condition `t1 <= ts <= t2 && e1 <= elapsed <= e2`.
-import {
-  inDataRect,
-  pixelRectToData,
-  type DataRect,
-  type PixelRect,
-  type PlotScale,
-  yFraction,
-} from './scale';
+import { pixelRectToData, type DataRect, type PixelRect, type PlotScale, yFraction } from './scale';
 import type { XLogBuffer } from './XLogBuffer';
 
 export const CELL_SIZE = 8;
@@ -29,8 +22,10 @@ export class HitIndex {
   private cellOf = new Uint32Array(0);
   private xs = new Float32Array(0);
   private ys = new Float32Array(0);
-  /** Scratch of `queryData`. */
+  /** Scratch of `queryData` and `queryDataInPlace`. */
   private matches = new Uint32Array(0);
+  /** Queries that wrote `matches` (see `copyMatches`). */
+  private queries = 0;
   private count = 0;
   private builtFor: { buffer: XLogBuffer | null; version: number; key: string } = {
     buffer: null,
@@ -52,11 +47,13 @@ export class HitIndex {
     );
   }
 
-  /** Rebuilds the index unless it is current. */
-  ensure(buffer: XLogBuffer, scale: PlotScale): void {
-    if (!this.isCurrent(buffer, scale)) {
-      this.build(buffer, scale);
+  /** Rebuilds the index unless it is current; returns whether it was rebuilt. */
+  ensure(buffer: XLogBuffer, scale: PlotScale): boolean {
+    if (this.isCurrent(buffer, scale)) {
+      return false;
     }
+    this.build(buffer, scale);
+    return true;
   }
 
   build(buffer: XLogBuffer, scale: PlotScale): void {
@@ -187,34 +184,73 @@ export class HitIndex {
    * copy of exactly the matches, so a 100,000-point selection does not grow a JS array.
    */
   queryData(buffer: XLogBuffer, rect: PixelRect, data: DataRect): Uint32Array {
+    const found = this.queryDataInPlace(buffer, rect, data);
+    return found === 0 ? new Uint32Array(0) : this.matches.slice(0, found);
+  }
+
+  /**
+   * Token of the last query (`queryDataInPlace` or `queryData`): `copyMatches` copies a query's
+   * matches only while no later query has written the scratch.
+   */
+  get queryToken(): number {
+    return this.queries;
+  }
+
+  /**
+   * A copy of the `found` matches of the query whose token is `token` (`queryToken` read right
+   * after `queryDataInPlace`), or null when a later query has written the scratch since.
+   */
+  copyMatches(token: number, found: number): Uint32Array | null {
+    return token === this.queries ? this.matches.slice(0, found) : null;
+  }
+
+  /**
+   * Like `queryData`, but leaves the matches in the reused scratch and returns their number: no
+   * array is allocated for the result (unless the index grew). `copyMatches` copies them out on
+   * demand (XLogEngine: only when a consumer reads EngineSelection.indices; WO-33 review r1-new-3).
+   */
+  queryDataInPlace(buffer: XLogBuffer, rect: PixelRect, data: DataRect): number {
+    this.queries += 1;
     if (this.count === 0) {
-      return new Uint32Array(0);
+      return 0;
     }
     if (this.matches.length < this.count) {
       this.matches = new Uint32Array(this.count);
     }
     const matches = this.matches;
+    const items = this.items;
+    const offsets = this.offsets;
+    const cols = this.cols;
     let found = 0;
     const c1 = Math.max(0, Math.floor(rect.x1 / CELL_SIZE) - 1);
-    const c2 = Math.min(this.cols - 1, Math.floor(rect.x2 / CELL_SIZE) + 1);
+    const c2 = Math.min(cols - 1, Math.floor(rect.x2 / CELL_SIZE) + 1);
     const r1 = Math.max(0, Math.floor(rect.y1 / CELL_SIZE) - 1);
     const r2 = Math.min(this.rows - 1, Math.floor(rect.y2 / CELL_SIZE) + 1);
     const { ts, elapsed } = buffer;
+    // The condition of inDataRect, written out with the bounds in locals: the first queries of a
+    // page run before V8 has optimized this loop (interpreter, baseline and Maglev code while
+    // Turbofan compiles it; WO-33 review r1-new-3 traces), where a call and four property loads per
+    // point cost most of the query time.
+    const { t1, t2, e1, e2 } = data;
     for (let row = r1; row <= r2; row += 1) {
-      const base = row * this.cols;
-      const start = this.offsets[base + c1] ?? 0;
-      const end = this.offsets[base + c2 + 1] ?? 0;
+      const base = row * cols;
+      const start = offsets[base + c1] ?? 0;
+      const end = offsets[base + c2 + 1] ?? 0;
       // Cells of one row are contiguous in `items`.
       for (let i = start; i < end; i += 1) {
-        const p = this.items[i] ?? 0;
-        if (inDataRect(data, ts[p] ?? 0, elapsed[p] ?? 0)) {
-          // At most `count` matches: every indexed point is in exactly one cell.
-          matches[found] = p;
-          found += 1;
+        const p = items[i] ?? 0;
+        const t = ts[p] ?? 0;
+        if (t >= t1 && t <= t2) {
+          const e = elapsed[p] ?? 0;
+          if (e >= e1 && e <= e2) {
+            // At most `count` matches: every indexed point is in exactly one cell.
+            matches[found] = p;
+            found += 1;
+          }
         }
       }
     }
-    return matches.slice(0, found);
+    return found;
   }
 }
 

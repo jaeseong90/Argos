@@ -1,0 +1,49 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* Alert value and the alert= banner (ADR-0010 C-227 (4), C-226 (8)): AlertValue, AlertBanner. */
+.alert-value {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.alert-value--missing {
+  color: var(--color-text-muted, #5f6774);
+}
+
+.alert-value__sep {
+  color: var(--color-text-muted, #5f6774);
+}
+
+/* Summary of the alert= event above the charts (docs/15 §4.3 item 4). */
+.alert-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1, 4px) var(--space-3, 12px);
+  margin: 0 0 var(--space-2, 8px);
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  border: 1px solid var(--color-border, #d0d7de);
+  border-left: 4px solid var(--sev-warn);
+  border-radius: var(--radius, 4px);
+  background: var(--color-surface, #fff);
+  font-size: var(--fs-sm, 12px);
+}
+
+.alert-banner--critical {
+  border-left-color: var(--sev-critical);
+}
+
+.alert-banner__rule {
+  min-width: 0;
+  font-weight: 600;
+}
+
+.alert-banner__muted {
+  color: var(--color-text-muted, #5f6774);
+}
+
+.alert-banner__note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--color-text-muted, #5f6774);
+}

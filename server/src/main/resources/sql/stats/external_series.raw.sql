@@ -6,6 +6,7 @@ SELECT toStartOfInterval(ts, toIntervalSecond({step_seconds:UInt32})) AS b,
        sum(count) AS c,
        sum(error_count) AS e,
        sum(timeout_count) AS t,
+       sum(connect_fail_count) AS f,
        sum(sum_ms) AS s,
        sumForEach(arrayMap(x -> toUInt64(x), buckets)) AS bk
 FROM {db}.{p}ext_stat_raw

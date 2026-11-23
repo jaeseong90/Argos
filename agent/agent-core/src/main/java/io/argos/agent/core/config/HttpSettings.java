@@ -2,6 +2,7 @@
 package io.argos.agent.core.config;
 
 import io.argos.agent.bootstrap.CaptureConfig;
+import io.argos.agent.core.context.PropagationSettings;
 import io.argos.agent.core.trace.IgnoreRules;
 import io.argos.agent.core.trace.ServiceNames;
 
@@ -23,6 +24,18 @@ public final class HttpSettings {
         config.instrumentationIgnoreExtensions(),
         config.instrumentationIgnoreUserAgents(),
         config.instrumentationIgnoreMethods());
+  }
+
+  /**
+   * {@code propagation.exclude-hosts}, {@code propagation.argos-state.hosts} and {@code
+   * propagation.preserve-incoming} (10 §8, §15, SEC-38; WO-14). Local keys only (remote N): read
+   * once at start.
+   */
+  public static PropagationSettings propagation(AgentConfig config) {
+    return PropagationSettings.of(
+        config.propagationExcludeHosts(),
+        config.propagationArgosStateHosts(),
+        config.propagationPreserveIncoming());
   }
 
   /** {@code instrumentation.service-dictionary-max} (F-A29). */

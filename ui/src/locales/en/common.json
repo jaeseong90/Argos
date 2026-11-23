@@ -108,6 +108,9 @@
         "drops": "$t(term.drop)",
         "outdatedAgent": "Outdated agent",
         "moduleDisabled": "Module disabled",
+        "killSwitch": "Kill switch on",
+        "configDrift": "Configuration drift",
+        "contextLeak": "Context leak",
         "other": "Other"
       }
     },
@@ -122,6 +125,24 @@
     "severity": {
       "warn": "Warning",
       "critical": "Critical"
+    },
+    "alertValue": {
+      "up": "UP",
+      "down": "DOWN"
+    },
+    "alertTarget": {
+      "app": "Application",
+      "instance": "Instance",
+      "service": "Service",
+      "extHost": "External host",
+      "server": "Argos server"
+    },
+    "alertBanner": {
+      "loading": "Loading the alert…",
+      "failed": "The alert could not be loaded.",
+      "missing": "This alert has no state transition in the selected time range.",
+      "history": "Open in alert history",
+      "truncated": "Showing the newest {{count}} alert transitions of this range."
     },
     "delta": {
       "noBasis": "No comparison data",
@@ -166,7 +187,8 @@
     },
     "loading": {
       "label": "Loading",
-      "slow": "Still loading… Narrow the time range to make it faster."
+      "slow": "Still loading… Narrow the time range to make it faster.",
+      "slowWait": "Still loading…"
     },
     "partial": {
       "sampling": "Showing {{shown}} of {{total}}",

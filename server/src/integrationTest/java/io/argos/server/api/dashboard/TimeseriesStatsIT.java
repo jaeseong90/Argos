@@ -696,9 +696,10 @@ class TimeseriesStatsIT {
     assertThat(group.path("recent_tx").size()).isEqualTo(4);
     JsonNode overview = get(viewer, "/api/v1/overview").json().path("data");
     assertThat(overview.path("apps").size()).isGreaterThanOrEqualTo(data.apps().size());
-    assertThat(overview.path("alerts_firing_total").isNull()).isTrue();
+    // WO-25 (C-212 (2)): always a real count, the rows of /overview/alerts with the same env
+    assertThat(overview.path("alerts_firing_total").isIntegralNumber()).isTrue();
     assertThat(overview.path("apps").path(0).path("sparkline").path("ts").size()).isEqualTo(60);
-    assertThat(get(viewer, "/api/v1/overview/alerts").json().path("data").size()).isZero();
+    assertThat(get(viewer, "/api/v1/overview/alerts").json().path("data").isArray()).isTrue();
     assertThat(get(viewer, "/api/v1/server/health").json().path("data").has("sessions")).isTrue();
     JsonNode apps = get(viewer, "/api/v1/apps?q=wo23-ts").json().path("data");
     assertThat(apps.findValuesAsString("name")).contains("wo23-ts-dashboard", "wo23-ts-stats");

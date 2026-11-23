@@ -208,6 +208,30 @@
 | 요청 ID(`request_id`, `capture.request-id-header`, C-124) | 내부(헤더 값에 사용자 값이 들어가면 개인정보 가능) | 수집 안 함(설정한 경우만) | 헤더 1개, 값 128B 절단, 원격 설정 불가(10 §12 기본 불허) | xlog 30일 | 삭제 API(tx 범위) |
 | ClickHouse `system.query_log` 조회 문(바인딩된 검색 값 `user_id`·`request_id`·`trace_id` 포함, WO-23) | 개인정보 가능 | 기록(ClickHouse 기본 동작) | 조회 API로 노출하지 않는다. `argos_reader`와 운영자의 DB 직접 접근만. hashed 모드의 user_id는 해시 값만 남는다 | 7일(config.d TTL) | TTL 만료. 개인정보 삭제 요청 안내에 '조회 기록은 7일 안에 자연 삭제'를 적는다(WO-28 문서) |
 | 브라우저 localStorage UI 선호 키 `argos.ui.{live,sidebar,lang,refreshAt,recentApps,cols}`(WO-30) | 내부(UI 선호, 개인정보·비밀값 아님) | 수집 안 함(서버로 보내지 않음) | `refreshAt`은 탭 간 single-flight용 epoch ms(토큰 아님), `recentApps`는 앱 id ≤ 5, `cols`는 표 50·열 64 상한 | 브라우저 | 브라우저 저장소 삭제 |
+| `pending_registrations.home_app_id`(WO-22, V004) | 내부(내부 앱 id, 개인정보 아님) | 등록 대기 때 | - | 행과 같음 | 행 삭제, 기준 앱 삭제 시 CASCADE |
+| 액티브 게이지 `argos_active_transactions`(ClickHouse `metric`·`metric_1m`·`metric_1h`, WO-22, C-178 (1)) | 내부 | 수집(액티브 스냅숏마다) | 개수만, 트랜잭션 내용 없음 | 메트릭과 같음(14일/90일/1년) | - |
+| 인스턴스 1시간 롤업 `instance_stat_1h`(ClickHouse V003, WO-27, C-212 (1)) | 내부(집계, 개인정보 없음) | 수집(`instance_stat_1m` 캐스케이드) | 인스턴스·종류별 건수·합계·상태(DD 백분위 상태)만, 트랜잭션 내용 없음 | 1h 롤업과 같음(365일) | 파티션 만료 |
+| 정합 검사 결과 `reconcile_results`(PG V005, WO-27, 12 §9.1) | 내부(운영 메타데이터, 개인정보 없음) | 야간 정합·재구축 때 | `app_id`·테이블 이름·불일치 분 수·재구축 결과·digest(`detail` JSON)만 | 영구(깨끗한 날은 요약 1행) | - |
+| 서비스 Apdex T 오버라이드 `service_apdex_overrides`(PG V006, WO-27, D-17) | 내부(설정, 개인정보 없음) | 설정 변경 때 | `app_id`·`service_id`·`apdex_t_ms`·`updated_at`·`updated_by`(사용자 UUID, 외래 키 없음)만, 앱당 1,000행 상한 | 행과 같음 | 행 삭제, 앱 삭제 시 CASCADE |
+| 들어온 W3C `tracestate`(WO-14, ADR-0010 C-223 (9)) | 내부(다른 벤더 엔트리에 상대 시스템 값이 있을 수 있음) | 메모리 전달만(저장 안 함) | W3C 키·값 규칙 검사, 512자·32멤버를 넘거나 규칙을 어기면 통째로 버림, `argos` 엔트리는 `propagation.argos-state.hosts` 대상으로 나갈 때만 붙임 | 트랜잭션 수명(메모리) | - |
+| `TransactionRecord.caller_app_id`(WO-14, C-223 (9)) | 내부(신뢰하지 않는 값, 서비스 맵·트레이스 연결용) | 수집(들어온 `tracestate`의 `argos` 엔트리가 있을 때만, 없으면 0) | 앱 id(u32)만 | xlog 30일 | 삭제 API(tx 범위) |
+| HTTP 외부 호출 step detail `METHOD host[:port]/경로`(WO-14, C-223 (9)) | 개인정보 가능(경로 세그먼트에 식별자가 섞일 수 있음) | 수집 | 쿼리스트링·프래그먼트·`;` 경로 매개변수 제거, userinfo 제거, 제어문자 `?`, 4KiB(4,096자) 절단. 앱이 직접 넣어 보존한 `traceparent`가 있으면 ` traceparent=<값>`을 덧붙임 | profile 7일 | 삭제 API |
+| HOST 사전 원문 `scheme://host:port`(`DictionaryKind.HOST`, HTTP step `target_id`, ADR-0010 C-142, WO-14) | 내부 | 수집 | scheme·host 소문자, 기본 포트도 적음, IPv6 대괄호, userinfo·경로·쿼리 없음 | 사전 90일 미참조 정리(상한 C-120 비례) | 사전 관리자 삭제 |
+| 외부 호출 실패 분류 `ProfileStep.failure`(WO-14, F-A05, C-223 (3)·(9)) | 내부 | 수집 | `NONE`·`TIMEOUT`·`CONNECT_FAIL`·`HTTP_5XX`·`OTHER` 열거값만(원인 기준, 예외 내용 없음) | profile 7일 | 삭제 API |
+| 알림 단위 상태 `alert_states`(PG V007, WO-25, ADR-0010 C-226 (13)) | 내부(운영 상태). `target_name`은 인스턴스 이름·서비스 이름·호스트 원문(사전과 같은 분류), `acked_by`는 사용자 UUID, `ack_note`는 사용자가 쓴 자유 문자열(개인정보를 쓸 수 있음) | 평가·전이 때(규칙×단위 1행) | 수집 원문(SQL·예외·URL 원문·user_id) 없음. `ack_note` 512자, HTML 렌더 금지 | 규칙·단위가 있는 동안(RESOLVED·OK도 행 유지) | 규칙 삭제·단위 정리 시 행 삭제 |
+| 알림 음소거 `mutes`(PG V007, WO-25, C-226 (13)) | 내부. `reason`은 사용자가 쓴 자유 문자열(개인정보를 쓸 수 있음), `created_by`는 사용자 UUID | 운영자 생성 때 | `reason` 512자, 최대 30일, HTML 렌더 금지 | 행과 같음 | 운영자 삭제(API), 앱 삭제 시 CASCADE |
+| 알림 규칙 soft delete `alert_rules.deleted_at`(PG V007, WO-25) | 내부 | 규칙 삭제 때 | - | 영구(`alert_events`가 참조) | - |
+| 웹훅 서명 키 `webhook_signing_keys`(PG V008, WO-25, 16 §8.4, C-226 (13)) | 비밀값 | 웹훅 채널 생성·회전 때 | `key_enc` 봉투 암호문(AES-256-GCM, 마스터 키, AAD에 채널·키 id), `key_id`는 화면에 보이지 않음, 로그·번들 제외. 유효 키 최대 2개(회전 뒤 7일 유예) | 회전 뒤 7일(`retire_after`), 현재 키는 채널 수명 | 일일 정리, 채널 삭제 시 즉시 삭제 |
+| 알림 채널 상태 열 `notification_channels.status`·`consecutive_failures`·`last_success_at`·`last_failure_at`·`deleted_at`(PG V008, WO-25) | 내부(운영 상태) | 전달 결과·삭제 때 | - | 행과 같음(삭제된 채널은 비밀값을 지운 행만 남김) | soft delete(`config_enc` 비움·서명 키 삭제) |
+| 이메일 채널 수신자 주소(`notification_channels.config_enc` 안, WO-25, C-226 (5)·(13)) | 개인정보 가능 | 관리자 입력 때 | 평문 저장 안 함: `config_enc` 봉투 암호화(마스터 키), 화면·`config_masked`는 `o***@example.com` 꼴 마스킹, 채널당 20개 | 채널 수명 | 채널 삭제(soft delete 때 `config_enc` 비움) |
+| 알림 전달 기록 `notification_deliveries`(PG V001·V008, WO-25, F-S27, C-226 (13)) | 내부 | 알림 이벤트×채널마다 | `attempt`·`status`(pending·sent·failed·dropped)·마지막 `http_status`·`error`는 오류 코드만, 응답 본문·URL·수신자 없음 | 365일 | 일일 정리 |
+| 알림 전이 사유 `alert_events.reason`(PG V009, WO-38, ADR-0010 C-227 (3)·C-228 (2)(7)) | 내부(운영 코드, 개인정보 없음) | 상태 전이 때. `alert` push에도 같은 값 | 닫힌 목록 `condition`·`cleared`·`escalated`·`acked`·`resolved`·`target_gone`·`rule_disabled`·`rule_deleted`·`no_data`·`data_returned`만(검사 제약), V009 이전 행은 null | 365일(`alert_events`와 같음) | 일일 정리 |
+| 알림 규칙 이력 표시 이름 `changed_by_name`(응답 전용, WO-38, C-228 (7)) | 내부(사용자 이름, untrusted 표시) | 저장 안 함(조회 때 `users`에서 파생) | `x-argos-untrusted`, HTML 렌더 금지, 삭제된 사용자는 null | 저장 안 함 | - |
+| 알림 규칙 요약 `AlertRuleRef.metric`·`unit`(응답 전용, events·`/overview/alerts`·대시보드 `firing[]`, WO-38, C-228 (7)) | 내부(규칙 정의에서 파생) | 저장 안 함 | F-S31 메트릭 닫힌 목록·단위 열거값만 | 저장 안 함 | - |
+| 메트릭 라벨 `mount`(`system_disk_*_bytes`, WO-16, ADR-0010 C-229 (9)) | 내부(경로에 사용자 이름이 들어갈 수 있음) | 수집(Linux 로컬 파일 시스템, 최대 16개) | `/home/<name>`·`/Users/<name>`·`C:\Users\<name>` 세그먼트를 에이전트가 `~`로 바꿔 보냄, 같은 라벨은 첫 마운트만 | 메트릭과 같음(14일/90일/1년) | - |
+| 메트릭 라벨 `iface`·`pool`·memory pool·buffer 이름·표 밖 GC 원문 이름(WO-16, C-229 (9)) | 내부(운영 식별자: 네트워크 인터페이스·풀·JVM 메모리 영역·GC 이름) | 수집 | 레지스트리·시리즈 상한(`metrics.max-series` 500), 표 밖 GC는 원문 이름 그대로(앱 설정 값) | 메트릭과 같음(14일/90일/1년) | - |
+| 인스턴스 메타 `cgroup`(`AgentHello.cgroup` `v1`·`v2`·`none`, WO-16, C-229 (9)) | 내부 | 수집 | 열거값만 | 인스턴스 보관 정책 | 인스턴스 삭제 |
+| 액티브 스냅숏 항목(`ActiveSnapshot`: 서비스·경과·상태·SQL 정규화문·`user_id`·`remote_ip` 등, WO-16, C-225 (1)·C-229 (9)) | 개인정보 가능(`user_id`·`remote_ip`) | 수집(5초마다) | `user_id`·`remote_ip`는 `TransactionRecord`와 같은 캡처 모드를 적용한 값(위 user_id·remote_ip 행), SQL은 `sql_id`(정규화문 사전)만 | 서버 메모리에 인스턴스당 최신 1개만, 세션 종료 시 폐기(저장 안 함) | 세션 종료 |
 
 ## 6. 데이터 흐름
 
@@ -261,7 +285,7 @@ UI ─▶ WebSocket /ws(핸드셰이크 쿠키·Origin) ─▶ 구독 {xlog|coun
 | 테스트 ID | 18 문서의 `T-<영역>-nnn` 체계가 유일. 다른 문서의 보조 ID(예: `ST-xx`)는 별칭 |
 | 상한 | 모든 큐·캐시·사전·문자열·배치·스택에 상한. 초과는 거부 또는 드롭 + 카운터. 상한값은 설정 레퍼런스에 표로 |
 | 설정 | 에이전트 `argos-agent.yml` → `-Dargos.*` → `ARGOS_*` 순 오버라이드, 서버 Spring `argos.*`. 알 수 없는 키는 WARN. 유효 설정과 출처를 조회 가능 |
-| 메트릭 이름 | OpenMetrics: `jvm_memory_used_bytes{area="heap"}`, `jvm_gc_pause_seconds_total{gc="g1",gc_type="young"}`, `tomcat_threads_busy{connector="http-nio-8080"}`, `jdbc_pool_active{pool="HikariPool-1"}`, `argos_agent_dropped_total{queue}`, `argos_ingest_lag_seconds` |
+| 메트릭 이름 | OpenMetrics: `jvm_memory_used_bytes{area="heap"}`, `jvm_gc_pause_seconds_total{gc="g1"}`(pause 계열은 `{gc}`만, 10 §11·ADR-0010 C-229 (4)), `tomcat_threads_busy{connector="http-nio-8080"}`, `jdbc_pool_active{pool="HikariPool-1"}`, `argos_agent_dropped_total{queue}`, `argos_ingest_lag_seconds` |
 | 로그 | 에이전트: 자체 로거, 파일 롤링(10MB×5), stdout 0, INFO 이하 PII 없음. 서버: 구조화 JSON, 요청 id, 비밀값 마스킹 |
 | 에러 응답 | 4xx 표준 본문(code, message, details), 5xx + 요청 id, 스택·경로·SQL 미노출 |
 | 권한 | 관리자/운영자/조회자, OpenAPI `x-argos-role`, 객체 수준은 명령 결과(요청자·관리자) |

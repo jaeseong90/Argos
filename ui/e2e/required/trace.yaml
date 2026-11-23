@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# docs/05 §2.8 "트레이스 뷰" as data-driven E2E tests (docs/18 §13, DSN-18-10): one entry per item of
+# the WO-34 checklist (docs/04 WO-34 "05 §2.8 체크표", 2.8-1 .. 2.8-5), in checklist order. Each item
+# opens the seed manifest's trace over two applications with its ts hint and runs a named check of
+# e2e/required/traceChecks.ts that compares the screen with GET /traces/{traceId} asked the same
+# question inside the test (no fixed values, no fixed dates). The shared engine
+# (specs/required.spec.ts) declares these tests (T-E2E-trace-<n>); `coverage` names the component
+# tests behind each item.
+# Kinds the seed cannot produce yet (LOST profiles, not-yet-collected nodes) are component tests on
+# typed fixtures (TracePage.test.tsx) plus test.fixme entries of specs/trace.spec.ts naming the
+# owning work order (ADR-0010 C-207 (5)). Real three-hop traces of the agent with external failure
+# classes (timeout, connect failure, 5xx) come from the seed's hop traces since WO-14 (manifest
+# hop_traces) and are checked by specs/trace.spec.ts T-E2E-trace-12 and T-ACC-05 (server side).
+screen: trace
+title: Distributed trace view
+source: docs/05 §2.8
+items:
+  - id: 2.8-1
+    title: tree and timeline; every node shows app (env), service, instance, time, status, error and version
+    req: [F-U03, SEC-60]
+    owner: WO-34
+    coverage: E2E (T-E2E-trace-1); component TracePage.test.tsx
+    route: /traces/{tx.trace_root_two_apps.trace_id}?ts={tx.trace_root_two_apps.ts}
+    assert:
+      - visible: trace-rows
+      - check: traceTreeAndNodeLabels
+
+  - id: 2.8-2
+    title: the caller HTTP step and the callee transaction are both drawn, the difference as network / wait
+    req: [F-U03, D-05]
+    owner: WO-34
+    coverage: E2E (T-E2E-trace-2, T-ACC-05 display); component TracePage.test.tsx and traceTree.test.ts (D-05 violation)
+    route: /traces/{tx.trace_root_two_apps.trace_id}?ts={tx.trace_root_two_apps.ts}
+    assert:
+      - visible: trace-rows
+      - check: traceCallerStepAndWait
+
+  - id: 2.8-3
+    title: missing nodes - uninstrumented callee as an external node, not collected yet with query again, the D-07 reason of a profile not captured
+    req: [F-U03, D-07]
+    owner: WO-34
+    coverage: E2E (T-E2E-trace-3) for what the seed holds; component TracePage.test.tsx for external failures, both missing reasons and LOST
+    route: /traces/{tx.trace_root_two_apps.trace_id}?ts={tx.trace_root_two_apps.ts}
+    assert:
+      - visible: trace-rows
+      - check: traceMissingNodes
+
+  - id: 2.8-4
+    title: critical path emphasised; a node opens its transaction detail; an app opens its dashboard for the same time range
+    req: [F-U03, F-U14]
+    owner: WO-34
+    coverage: E2E (T-E2E-trace-4); component TracePage.test.tsx
+    route: /traces/{tx.trace_root_two_apps.trace_id}?ts={tx.trace_root_two_apps.ts}
+    assert:
+      - visible: trace-rows
+      - check: traceCriticalPathAndLinks
+
+  - id: 2.8-5
+    title: copy the trace id, open logs, export the trace as JSON
+    req: [F-U03, F-U18]
+    owner: WO-34
+    coverage: E2E (T-E2E-trace-5); component TracePage.test.tsx
+    route: /traces/{tx.trace_root_two_apps.trace_id}?ts={tx.trace_root_two_apps.ts}
+    assert:
+      - visible: trace-actions
+      - check: traceCopyLogsExport

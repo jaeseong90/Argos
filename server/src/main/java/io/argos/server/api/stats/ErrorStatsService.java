@@ -16,6 +16,7 @@ import io.argos.server.storage.query.DictionaryNames;
 import io.argos.server.storage.query.QueryParams;
 import io.argos.server.storage.query.QueryRow;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -81,6 +82,7 @@ public class ErrorStatsService {
       boolean newOnly,
       StatsSupport.Sort sort,
       int limit,
+      boolean comparePrev,
       HttpServletRequest request) {
     SourcePlan plan = plan(from, to, request);
     List<Long> groups = List.of();
@@ -95,7 +97,27 @@ public class ErrorStatsService {
     if (truncated) {
       raws = raws.subList(0, limit);
     }
-    return new ListAnswer(rows(appId, raws, from), truncated, plan);
+    Map<Long, Long> previous = null;
+    if (comparePrev) {
+      // The previous range of the same length, for the listed groups only (as services/stats).
+      previous = new HashMap<>();
+      if (!raws.isEmpty()) {
+        Duration length = Duration.between(from, to);
+        List<Long> ids = raws.stream().map(Raw::groupId).toList();
+        for (Raw p :
+            read(
+                appId,
+                kind,
+                plan(from.minus(length), from, request),
+                ids,
+                List.of(),
+                sort,
+                ids.size() + 1)) {
+          previous.put(p.groupId(), p.count());
+        }
+      }
+    }
+    return new ListAnswer(rows(appId, raws, from, previous), truncated, plan);
   }
 
   /** The top error groups of one service (service detail, 14 §4.8). */
@@ -170,7 +192,7 @@ public class ErrorStatsService {
     }
     Raw found =
         raws.isEmpty() ? new Raw(groupId, 0, null, null, List.of(), List.of()) : raws.get(0);
-    StatsViews.ErrorGroupRow group = rows(appId, List.of(found), from).get(0);
+    StatsViews.ErrorGroupRow group = rows(appId, List.of(found), from, null).get(0);
 
     QueryParams params = QueryParams.create().uint32("app", appId).uint64("group", groupId);
     TimeQueries.kinds(params, kind);
@@ -318,7 +340,12 @@ public class ErrorStatsService {
     return out;
   }
 
-  private List<StatsViews.ErrorGroupRow> rows(int appId, List<Raw> raws, Instant from) {
+  /**
+   * The rows of {@code raws}; {@code previous} (group to count in the previous range) adds the
+   * {@code delta}, null omits it.
+   */
+  private List<StatsViews.ErrorGroupRow> rows(
+      int appId, List<Raw> raws, Instant from, Map<Long, Long> previous) {
     Map<Long, ErrorGroupRecord> meta =
         catalog.errorGroups(appId, raws.stream().map(Raw::groupId).toList());
     Set<Long> services = new LinkedHashSet<>();
@@ -364,9 +391,19 @@ public class ErrorStatsService {
               firstEver,
               firstEver != null && !firstEver.isBefore(from),
               top,
-              vs));
+              vs,
+              previous == null ? null : delta(r.count(), previous.get(r.groupId()))));
     }
     return out;
+  }
+
+  /**
+   * The change of a group's count against the previous range: relative, null without occurrences
+   * there; a group has no p95 and no error rate.
+   */
+  static StatsViews.Delta delta(long count, Long previous) {
+    return new StatsViews.Delta(
+        Values.relative((double) count, previous == null ? null : (double) previous), null, null);
   }
 
   private static List<StatsViews.Breakdown> breakdown(

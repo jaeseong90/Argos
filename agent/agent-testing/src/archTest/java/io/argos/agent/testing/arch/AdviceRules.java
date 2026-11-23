@@ -72,7 +72,8 @@ public final class AdviceRules {
         noBlockingCalls(layout),
         noReflection(layout),
         noThrowableCreation(layout),
-        referenceOnlyBootstrapAndOwnHelpers(layout));
+        referenceOnlyBootstrapAndOwnHelpers(layout),
+        signatureOnlyJdkOrBootstrapTypes(layout));
   }
 
   /** T-AG-001a [ADV-01, A-3]: no lambda, method reference or invokedynamic (ASM, U-8). */
@@ -546,6 +547,53 @@ public final class AdviceRules {
                             && AgentPredicates.sameModule(layout, origin, target))))
         .as("ADV-04 [B-2] advice refers only to bootstrap classes and helpers of its own module")
         .because("inlined advice runs in the application class loader (10 §2 B-2, 10 §5.4)");
+  }
+
+  /**
+   * ADV-04b [B-2, ADR-0010 C-223 (8)]: the parameters and the return type of advice methods are
+   * primitives, JDK ({@code java.*}), bootstrap types or helpers of the advice's own module
+   * (injected next to it, as ADV-04 allows), arrays by their element type. A library type in an
+   * advice signature links the advice class against a class that the agent class loader cannot see
+   * and that the application may not have (the module's witness classes), so advice receives
+   * application values as {@code Object} and hands them to its helper.
+   */
+  public static ArchRule signatureOnlyJdkOrBootstrapTypes(AgentLayout layout) {
+    return methods()
+        .that(adviceMethods(layout))
+        .should(
+            new ArchCondition<JavaMethod>(
+                "declare only primitive, java.*, bootstrap or own-helper parameter and return"
+                    + " types") {
+              @Override
+              public void check(JavaMethod method, ConditionEvents events) {
+                List<JavaClass> types = new ArrayList<>(method.getRawParameterTypes());
+                types.add(method.getRawReturnType());
+                for (JavaClass type : types) {
+                  String name = base(type).getName();
+                  if (!base(type).isPrimitive()
+                      && !name.equals("void")
+                      && !name.startsWith("java.")
+                      && !AgentLayout.inPackage(name, layout.bootstrap())
+                      && !(AgentPredicates.isHelperName(layout, name)
+                          && AgentPredicates.sameModule(
+                              layout, method.getOwner().getName(), name))) {
+                    events.add(
+                        SimpleConditionEvent.violated(
+                            method,
+                            method.getFullName()
+                                + " uses the library type "
+                                + type.getName()
+                                + " in its signature"));
+                  }
+                }
+              }
+            })
+        .as(
+            "ADV-04b [B-2] advice method signatures use only primitive, java.*, bootstrap or"
+                + " own-module helper types (C-223 (8))")
+        .because(
+            "a library type in an inlined advice signature links against classes the agent cannot"
+                + " see (10 §2 B-2, 10 §5.4)");
   }
 
   /**

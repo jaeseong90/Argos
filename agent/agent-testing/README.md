@@ -252,6 +252,48 @@ ARGOS_TEST_ORACLE_URL=... ARGOS_TEST_ORACLE_USER=... ARGOS_TEST_ORACLE_PASSWORD=
   Free 27 s; `docker stats` memory before stop: MySQL 0.5 GiB, MariaDB 0.13 GiB, PostgreSQL 0.04
   GiB, SQL Server 1.1 GiB, Oracle Free 3.4 GiB of its 4 GiB limit).
 
+## HTTP client suite (package `httpclient`, WO-14, 10 §6.5, §8, SEC-38)
+
+`io.argos.agent.testing.httpclient` runs the shop jar apps of `-Pagent.e2e` with the release agent
+jar over gRPC to a TLS FakeCollector, each run with its own in-process ext-stub on 127.0.0.1
+(`HttpClientRuns`, at most 3 runs alive). Every client the app reports in `GET /api/runtime` is
+exercised through `/api/pay/{id}?client=..` (shop-boot2@8: hurl, hc4, okhttp, resttemplate;
+shop-boot3/4: hurl, hc5, okhttp, jdk11, webclient, resttemplate):
+
+```
+./gradlew :agent:agent-testing:integrationTest --tests '*httpclient*'          # shop-boot3@21 (default)
+./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot4@21 --tests '*httpclient*'
+```
+
+- Runs (`HttpClientRuns.Profile`): `DEFAULT`, `ARGOS_STATE` (`propagation.argos-state.hosts=127.0.0.1`),
+  `EXCLUDE` (`propagation.exclude-hosts=127.0.0.*` plus `argos-state.hosts`); every run has
+  `sampling.profile.normal-rate=1.0` and waits for its collector session (the agent's
+  `collector session established` line) before the first request. The FakeCollector answers
+  `ServerHello.app_id = V1Protocol.appIdOf(app.name)` (1..30000), so the `argos` tracestate entry
+  and `caller_app_id` are told apart per app.
+- Tests: `HttpClientStepsTest` (T-AG-056, ADR-0010 C-142, 10 U-10/U-11: exactly one HTTP step per
+  call named `http://127.0.0.1:<port>`, the transaction's trace id in the `traceparent` ext-stub
+  received, `ext_count` 1; `timeout=1` TIMEOUT, `refuse=1` CONNECT_FAIL on `http://127.0.0.1:1`,
+  `status=500` HTTP_5XX, `redirect=1` one step with the final 200; `mode=async` for OkHttp
+  `enqueue` and JDK 11 `sendAsync`), `PropagationHeadersTest` (T-AG-057, T-SEC-38: no `tracestate`
+  by default and an incoming `argos` entry read into `caller_app_id` but not forwarded; the
+  application's own `traceparent`/`tracestate` kept; inbound adoption; the `argos` entry first for
+  `argos-state.hosts`; neither header for `exclude-hosts`. Spring `WebClient` applies its
+  `ClientRequest` headers after the agent's, so for `webclient` the kept `traceparent` is not in the
+  step detail and an application `tracestate` gets no `argos` entry: asserted as the documented gap
+  of the httpclient-reactornetty README), `WebClientModesTest` (T-AG-055: `block`, `future`,
+  `subscribe` one step each; the WebFlux fixture of the shop-boot3 jar
+  (`io.argos.sample.boot3.http.webflux.WebFluxFixture`, started from the unpacked jar) gives no
+  transaction and no propagation header; its metric batches come with WO-16) and `TwoHopTraceTest`
+  (T-ACC-05 agent side, shop-boot3 only: A -> B 100 calls, same trace, B `parent_span_id` = A
+  `span_id`, B `caller_app_id` = A's app id, A's HTTP step >= B's transaction 100/100; depth 2
+  three-hop 10 calls).
+- Evidence: the console of the results (`system-out`) has `[wo14-run]`, `[wo14-table]` and
+  `[wo14-acc05]` lines; agent log and console of each run are kept as
+  `build/reports/agent-e2e/wo14-<run>-*`.
+- Times on this laptop (shared, reference only): about 2.5 minutes for shop-boot3@21 alone and
+  2 minutes for shop-boot2@8 with shop-boot4@21, with the agent jar already built.
+
 ## FakeCollector (`collector`, 18 §5.3)
 
 ```java

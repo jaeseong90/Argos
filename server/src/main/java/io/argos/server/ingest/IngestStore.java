@@ -1,19 +1,23 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.server.ingest;
 
+import io.argos.server.session.api.ApdexOverrides;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * The PostgreSQL side of the ingest pipeline (13 §12.2, §12.3): dictionary rows, error groups and
- * the Apdex T of the apps. Implemented in {@code io.argos.server.storage.postgres.ingest} with the
- * runtime account {@code argos_app} (SRV-01: JDBC only in storage packages). Every method is called
- * from the ingest helper threads ({@code argos-dict-writer}, the Apdex refresh), never from a gRPC
- * thread.
+ * their representative stack, the Apdex T of the apps and their service overrides with the change
+ * events (WO-27). Implemented in {@code io.argos.server.storage.postgres.ingest} with the runtime
+ * account {@code argos_app} (SRV-01: JDBC only in storage packages). Every method is called from
+ * the ingest helper threads ({@code argos-dict-writer}, the Apdex refresh, the stack filler) or an
+ * operator path ({@link ApdexChangeService}), never from a gRPC thread.
  */
 public interface IngestStore {
 
@@ -74,6 +78,64 @@ public interface IngestStore {
   }
 
   /**
+   * The outcome of an Apdex T change ({@link ApdexChangeService}).
+   *
+   * @param appId {@code apps.id}
+   * @param serviceId the service of an override change, {@code null} for the app's T
+   * @param oldTMs the T in effect before (for a service: its override, else the app's T)
+   * @param newTMs the T in effect after (for a removed override: the app's T)
+   * @param eventId the {@code events} row written, {@code null} when nothing changed
+   * @param ts the time of the change (the event's {@code ts})
+   */
+  record ApdexChange(int appId, Long serviceId, int oldTMs, int newTMs, UUID eventId, Instant ts) {
+
+    /** Whether the T in effect changed (an event was written). */
+    public boolean changed() {
+      return eventId != null;
+    }
+
+    /** The event title (English; the UI shows it as data). */
+    public String title() {
+      return (serviceId == null ? "Apdex T changed from " : "Service Apdex T changed from ")
+          + oldTMs
+          + " ms to "
+          + newTMs
+          + " ms";
+    }
+
+    /**
+     * The event detail: {@code {"old_t_ms": n, "new_t_ms": n, "service_id": "<unsigned decimal>" |
+     * null}}. Numbers and an id only, never collected text.
+     */
+    public String detailJson() {
+      return "{\"old_t_ms\":"
+          + oldTMs
+          + ",\"new_t_ms\":"
+          + newTMs
+          + ",\"service_id\":"
+          + (serviceId == null ? "null" : "\"" + Long.toUnsignedString(serviceId) + "\"")
+          + "}";
+    }
+  }
+
+  /**
+   * An error group without a representative stack.
+   *
+   * @param appId {@code apps.id}
+   * @param groupId {@code error_group_id}
+   */
+  record StackCandidate(int appId, long groupId) {}
+
+  /** The override limit of an app was reached ({@link ApdexOverrides#MAX_PER_APP}). */
+  final class OverrideLimitException extends Exception {
+    private static final long serialVersionUID = 1L;
+
+    public OverrideLimitException(String message) {
+      super(message);
+    }
+  }
+
+  /**
    * Inserts the rows; an existing {@code (app_id, kind, hash64)} only gets {@code last_seen =
    * now()} (11 §7, 12 §3.5 (2)).
    */
@@ -87,10 +149,55 @@ public interface IngestStore {
 
   /**
    * Adds the occurrences to {@code error_groups} (first_seen, last_seen, count_total,
-   * message_pattern; the representative stack is WO-27's).
+   * message_pattern; the representative stack is filled later by {@link ErrorGroupStackFiller}).
    */
   void upsertErrorGroups(List<ErrorGroupRow> rows) throws Exception;
 
   /** {@code apps.id → apps.apdex_t_ms} of every app. */
   Map<Integer, Integer> apdexByApp() throws Exception;
+
+  /**
+   * {@code service_apdex_overrides} of every app: {@code app_id → (service_id → apdex_t_ms)}, at
+   * most {@code perAppLimit + 1} rows per app (the caller refuses an app above the limit).
+   */
+  Map<Integer, Map<Long, Integer>> serviceApdexOverrides(int perAppLimit) throws Exception;
+
+  /**
+   * Sets {@code apps.apdex_t_ms} of {@code appId} and, when it changed, writes one {@code events}
+   * row of type {@code apdex_t_change}, in one transaction.
+   *
+   * @param actor the user who made the change, {@code null} for an operator command
+   * @return empty when the app does not exist
+   */
+  Optional<ApdexChange> changeAppApdex(int appId, int tMs, UUID actor, Instant ts) throws Exception;
+
+  /**
+   * Sets ({@code tMs} non-null) or removes ({@code tMs} null) the override of {@code serviceId}
+   * and, when the T in effect changed, writes one {@code events} row of type {@code
+   * apdex_t_change}, in one transaction.
+   *
+   * @param maxPerApp most overrides of one app
+   * @return empty when the app does not exist
+   * @throws OverrideLimitException when a new override would exceed {@code maxPerApp}
+   */
+  Optional<ApdexChange> changeServiceApdex(
+      int appId, long serviceId, Integer tMs, UUID actor, Instant ts, int maxPerApp)
+      throws Exception;
+
+  /**
+   * Error groups whose {@code sample_stack} is null and whose {@code last_seen} is at or after
+   * {@code lastSeenFrom}, latest first, at most {@code limit}.
+   */
+  List<StackCandidate> groupsWithoutStack(Instant lastSeenFrom, int limit) throws Exception;
+
+  /** The texts of {@code hashes} of {@code (appId, kind)} that have a dictionary row. */
+  Map<Long, String> dictionaryTexts(int appId, String kind, Collection<Long> hashes)
+      throws Exception;
+
+  /**
+   * Sets {@code sample_stack} of the group when it is still null.
+   *
+   * @return {@code true} when this call set it
+   */
+  boolean fillSampleStack(int appId, long groupId, String stack) throws Exception;
 }

@@ -10,5 +10,6 @@ SELECT toStartOfInterval(ts, toIntervalSecond({step_seconds:UInt32})) AS b,
 FROM {db}.{p}ext_stat_raw
 WHERE app_id = {app:UInt32} AND kind IN {kinds:Array(String)}
   AND ({all:UInt8} = 1 OR instance_id IN {instances:Array(UInt32)})
+  AND instance_id NOT IN {excluded:Array(UInt32)}
   AND ts >= {from:DateTime('UTC')} AND ts < {to:DateTime('UTC')}
 GROUP BY b

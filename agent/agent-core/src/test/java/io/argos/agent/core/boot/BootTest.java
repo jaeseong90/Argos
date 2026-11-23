@@ -161,6 +161,7 @@ class BootTest {
             "sun.net.www.protocol.http.HttpURLConnection",
             "sun.net.www.protocol.https.HttpsURLConnectionImpl",
             "jdk.internal.net.http.HttpClientImpl",
+            "jdk.internal.net.http.MultiExchange",
             "ch.qos.logback.classic.spi.LoggingEvent",
             "org.apache.logging.log4j.core.impl.ThreadContextDataInjector$ForDefaultThreadContextMap")) {
       assertThat(IgnoreMatchers.ignored(transformable, none)).as(transformable).isFalse();

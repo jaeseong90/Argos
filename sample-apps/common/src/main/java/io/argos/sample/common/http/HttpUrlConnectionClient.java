@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 /** {@code ?client=hurl}: JDK {@link HttpURLConnection} (every app, Java 8+). */
 public final class HttpUrlConnectionClient implements OutboundClient {
@@ -26,11 +27,22 @@ public final class HttpUrlConnectionClient implements OutboundClient {
 
   @Override
   public OutboundResponse get(URI uri) throws IOException {
-    HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection();
+    return send(OutboundRequest.get(uri));
+  }
+
+  @Override
+  public OutboundResponse send(OutboundRequest request) throws IOException {
+    if (!OutboundRequest.SYNC.equals(request.mode())) {
+      throw new IllegalArgumentException("Client 'hurl' supports mode sync only");
+    }
+    HttpURLConnection connection = (HttpURLConnection) request.uri().toURL().openConnection();
     connection.setConnectTimeout(connectTimeoutMs);
-    connection.setReadTimeout(readTimeoutMs);
+    connection.setReadTimeout(request.readTimeoutMs(readTimeoutMs));
     connection.setInstanceFollowRedirects(true);
     connection.setRequestProperty("Accept", "application/json");
+    for (Map.Entry<String, String> header : request.headers().entrySet()) {
+      connection.setRequestProperty(header.getKey(), header.getValue());
+    }
     int status = connection.getResponseCode();
     InputStream body = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
     return new OutboundResponse(status, read(body));

@@ -36,7 +36,9 @@ describe('routes', () => {
   it('opens the overview at / and keeps the global keys of the query', async () => {
     signedIn(installApiStub());
     const app = renderApp('/?from=now-1h&kind=batch&tab=sql');
-    expect(await screen.findByTestId('route-pending')).toHaveAttribute('data-screen', 'overview');
+    // The overview screen (WO-31) renders in place of the placeholder.
+    expect(await screen.findByTestId('overview-page', {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByTestId('route-pending')).not.toBeInTheDocument();
     expect(app.url()).toBe('/overview?from=now-1h&kind=BATCH');
   });
 

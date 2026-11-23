@@ -118,6 +118,11 @@ public final class InMemorySessionRegistry implements SessionRegistry {
   }
 
   @Override
+  public Collection<AgentSession> all() {
+    return List.copyOf(byInstance.values());
+  }
+
+  @Override
   public int countByToken(UUID tokenId) {
     synchronized (lock) {
       return perToken.getOrDefault(tokenId, 0);

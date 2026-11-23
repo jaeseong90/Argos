@@ -66,6 +66,11 @@ public enum ErrorCode {
   ALREADY_EXISTS(409, "The resource already exists"),
   /** The resource is not in a state that allows the operation. */
   INVALID_STATE(409, "The resource is not in a valid state for this operation"),
+  /**
+   * A stored secret cannot be encrypted or decrypted: no master key is configured, or the key that
+   * encrypted it is not loaded (a key rotation or a restore without the key, 16 §8.3; WO-25).
+   */
+  SECRET_UNAVAILABLE(409, "The secret is unavailable; check the master key configuration"),
 
   /** The request body has a media type the endpoint does not accept. */
   UNSUPPORTED_MEDIA_TYPE(415, "The media type is not supported"),

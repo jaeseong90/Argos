@@ -73,7 +73,16 @@ public final class ServletHelperJavax {
       tracer.countIgnored(reason);
       return null;
     }
-    TraceContext context = ServletHelperCommon.begin(tracer, method, contextPath, path);
+    // 10 §8: tracestate means nothing without a traceparent (W3C), so it is read only then.
+    String traceparent = request.getHeader("traceparent");
+    TraceContext context =
+        ServletHelperCommon.begin(
+            tracer,
+            method,
+            contextPath,
+            path,
+            traceparent,
+            traceparent == null ? null : tracestate(request));
     if (context != null) {
       request.setAttribute(ServletHelperCommon.TX_ATTRIBUTE, context);
       mappingCandidate(context, request, contextPath, method, uri);
@@ -109,6 +118,27 @@ public final class ServletHelperJavax {
       tracer.setRequestId(context, request.getHeader(requestIdHeader));
     }
     userId(tracer, context, request, capture);
+  }
+
+  /**
+   * The {@code tracestate} header lines of the request joined with commas (W3C), read up to the
+   * bound of {@link ServletHelperCommon#appendTracestate}; null when there is none. The core checks
+   * and keeps the value (10 §8, WO-14); it is never logged.
+   */
+  static String tracestate(HttpServletRequest request) {
+    Enumeration<String> values = request.getHeaders("tracestate");
+    if (values == null || !values.hasMoreElements()) {
+      return null;
+    }
+    StringBuilder joined = new StringBuilder(64);
+    int lines = 0;
+    while (values.hasMoreElements()) {
+      lines++;
+      if (!ServletHelperCommon.appendTracestate(joined, values.nextElement(), lines)) {
+        break;
+      }
+    }
+    return joined.length() == 0 ? null : joined.toString();
   }
 
   /**

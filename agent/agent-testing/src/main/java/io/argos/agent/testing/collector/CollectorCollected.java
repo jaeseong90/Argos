@@ -103,6 +103,21 @@ final class CollectorCollected implements Collected {
   }
 
   @Override
+  public Optional<List<ExtStat>> extStats() {
+    return Optional.of(protocol.extStats(collector.batches(), collector.dictionary()));
+  }
+
+  @Override
+  public Optional<List<StatWindow>> statWindows() {
+    return Optional.of(protocol.statWindows(collector.batches(), collector.dictionary()));
+  }
+
+  @Override
+  public Optional<List<ActiveSnapshot>> activeSnapshots() {
+    return Optional.of(protocol.activeSnapshots(collector.batches(), collector.dictionary()));
+  }
+
+  @Override
   public String toString() {
     return description();
   }

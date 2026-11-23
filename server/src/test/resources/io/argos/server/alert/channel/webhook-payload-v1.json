@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "alert": {
+    "kind": "firing",
+    "severity": "critical",
+    "app": { "id": 3, "name": "shop" },
+    "env": "prod",
+    "title": "shop/prod: p95 latency critical",
+    "text": "shop/prod GET /orders p95 12000ms >= 10000ms for 5m",
+    "items": [
+      {
+        "event_id": "6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b",
+        "rule_id": "0a1b2c3d-4e5f-4a6b-8c7d-8e9f0a1b2c3d",
+        "kind": "firing",
+        "severity": "critical",
+        "at": "2026-11-23T01:02:03.456Z",
+        "message": "shop/prod GET /orders p95 12000ms >= 10000ms for 5m",
+        "variables": {
+          "app": "shop",
+          "env": "prod",
+          "instance": "web-01:8080",
+          "service": "GET /orders",
+          "host": "payments.internal",
+          "metric": "response_time_p95",
+          "value": "12000",
+          "threshold": "10000",
+          "severity": "critical",
+          "duration": "5m",
+          "started_at": "2026-11-23 10:02:03 +09:00",
+          "link": "https://argos.example.test/apps/3/xlog?from=2026-11-23T00:47:03Z&to=2026-11-23T01:17:03Z",
+          "runbook": "https://wiki.example.test/runbook/p95",
+          "rule": "p95 latency"
+        }
+      }
+    ],
+    "omitted": 2
+  },
+  "link": "https://argos.example.test/apps/3/xlog?from=2026-11-23T00:47:03Z&to=2026-11-23T01:17:03Z"
+}

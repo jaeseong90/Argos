@@ -111,6 +111,11 @@ export interface DataTableColumn<Row> {
   readonly id: string;
   /** Translated header text. */
   readonly header: string;
+  /**
+   * Small static content after the header text, e.g. the "estimated" badge of bucket percentiles
+   * (C-14). No collected strings here.
+   */
+  readonly headerSuffix?: ReactNode;
   /** Cell value; null/undefined render the missing marker (T-UI-007). */
   readonly value: (row: Row) => string | number | null | undefined;
   readonly kind?: CellKind;
@@ -195,7 +200,15 @@ export interface DataTableProps<Row> {
   readonly density?: 'normal' | 'dense';
   /** Extra toolbar content (left side). */
   readonly toolbar?: ReactNode;
+  /**
+   * Extra attributes of a body row: a screen's own test id (replaces `data-table-row`) and
+   * `data-*` state such as `data-status` (the overview's pinned rows, WO-31).
+   */
+  readonly rowAttributes?: (row: Row) => RowAttributes;
 }
+
+/** Attributes a screen adds to a body row (DataTableProps.rowAttributes). */
+export type RowAttributes = Readonly<Record<`data-${string}`, string | undefined>>;
 
 const features = tableFeatures({
   rowSortingFeature,
@@ -666,6 +679,7 @@ export function DataTable<Row extends object>({
   maxHeight = DEFAULT_TABLE_MAX_HEIGHT,
   density = 'normal',
   toolbar,
+  rowAttributes,
 }: DataTableProps<Row>) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1042,7 +1056,10 @@ export function DataTable<Row extends object>({
                     data-column={column.id}
                   >
                     {column.sortable === false ? (
-                      <span className="data-table__header-text">{column.header}</span>
+                      <span className="data-table__header-text">
+                        {column.header}
+                        {column.headerSuffix}
+                      </span>
                     ) : (
                       <button
                         type="button"
@@ -1052,7 +1069,10 @@ export function DataTable<Row extends object>({
                         }}
                         data-testid={`data-table-sort-${column.id}`}
                       >
-                        <span className="data-table__header-text">{column.header}</span>
+                        <span className="data-table__header-text">
+                          {column.header}
+                          {column.headerSuffix}
+                        </span>
                         <span className="data-table__sort-indicator" aria-hidden="true">
                           {sorted === null ? null : sorted.desc ? SORT_DESC_MARK : SORT_ASC_MARK}
                         </span>
@@ -1196,6 +1216,7 @@ export function DataTable<Row extends object>({
                     }
                   }}
                   data-testid="data-table-row"
+                  {...rowAttributes?.(row)}
                 >
                   {shownColumns.map((column) => {
                     const canFilter = canFilterCell(column, row);

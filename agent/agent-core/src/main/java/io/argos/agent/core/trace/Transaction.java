@@ -34,6 +34,14 @@ public final class Transaction implements QueueItem {
   /** Estimated bytes of the transaction and its context without strings and steps. */
   static final long BASE_BYTES = 512L;
 
+  /** {@link #activeState()} values: the numbers of proto {@code ActiveState} (11 §4.4). */
+  public static final int ACTIVE_IN_METHOD = 1;
+
+  public static final int ACTIVE_IN_SQL = 2;
+  public static final int ACTIVE_IN_DBC_WAIT = 3;
+  public static final int ACTIVE_IN_HTTP = 4;
+  public static final int ACTIVE_IN_ASYNC = 5;
+
   private static final String[] NO_HEADERS = new String[0];
 
   private final TraceContext context;
@@ -49,6 +57,24 @@ public final class Transaction implements QueueItem {
   private volatile boolean userIdDecided;
   private volatile String[] headers = NO_HEADERS;
   private volatile String requestId;
+
+  /**
+   * What the transaction does now, for the active snapshot (10 §11 {@code ActiveSnapshotter}, 11
+   * {@code ActiveTransaction.state}, C-225 (1)): one of the {@code ACTIVE_*} numbers (proto {@code
+   * ActiveState}) and its {@code state_name_id} (SQL: {@code sql_id}, HTTP: {@code host_id}, DBC
+   * wait: {@code DB_TARGET}, method: 0). Written by the tracer on application threads (at most two
+   * volatile writes per change), read by {@code argos-metrics}; the two fields are not read
+   * atomically together (a snapshot may pair a new state with the previous name for one instant).
+   */
+  private volatile int activeState = ACTIVE_IN_METHOD;
+
+  private volatile long activeNameId;
+
+  /** The DBC step just opened on this transaction (pool wait counters, WO-16); -1: none. */
+  private int dbcSeq = -1;
+
+  private long dbcNameId;
+  private long dbcStartNanos;
 
   private String errorClass;
   private String errorMessage;
@@ -160,6 +186,62 @@ public final class Transaction implements QueueItem {
 
   public TraceContext context() {
     return context;
+  }
+
+  /** Sets what the transaction does now: two volatile writes, the name first. */
+  void active(int state, long nameId) {
+    activeNameId = nameId;
+    activeState = state;
+  }
+
+  /**
+   * Back to {@link #ACTIVE_IN_METHOD} when the transaction is still in {@code state} (a step of
+   * that kind ended); one volatile read when it is not.
+   */
+  void leave(int state) {
+    if (activeState == state) {
+      activeState = ACTIVE_IN_METHOD;
+      activeNameId = 0L;
+    }
+  }
+
+  /** The {@code ACTIVE_*} state (proto {@code ActiveState} number). */
+  public int activeState() {
+    return activeState;
+  }
+
+  /** The {@code state_name_id} of {@link #activeState()}; 0 for a method. */
+  public long activeNameId() {
+    return activeNameId;
+  }
+
+  /** Remembers the DBC step {@code seq} that just opened (same thread as its end). */
+  void dbcOpened(int seq, long nameId, long startNanos) {
+    dbcSeq = seq;
+    dbcNameId = nameId;
+    dbcStartNanos = startNanos;
+  }
+
+  /**
+   * True when {@code seq} is the DBC step that just opened, which is then forgotten (its pool name
+   * id and start stay readable with {@link #dbcNameId()} and {@link #dbcStartNanos()}).
+   */
+  boolean dbcClosed(int seq) {
+    if (dbcSeq < 0 || dbcSeq != seq) {
+      return false;
+    }
+    dbcSeq = -1;
+    return true;
+  }
+
+  /** The pool name id of the last DBC step that opened. */
+  long dbcNameId() {
+    return dbcNameId;
+  }
+
+  /** The start ({@code System.nanoTime()}) of the last DBC step that opened. */
+  long dbcStartNanos() {
+    return dbcStartNanos;
   }
 
   /**

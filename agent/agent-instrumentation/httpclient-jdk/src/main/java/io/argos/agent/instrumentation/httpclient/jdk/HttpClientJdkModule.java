@@ -15,24 +15,19 @@ import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
 /**
- * Outgoing calls through {@code java.net.HttpURLConnection} (10 §6.5, F-A05), WO-02 P-6 scope: one
- * point, {@code sun.net.www.protocol.http.HttpURLConnection.getInputStream()} of {@code java.base}
- * (HTTP, and HTTPS through its delegate). The class is on the JDK allow-list of the core; when the
- * application uses it before the agent starts it is retransformed at premain, and the core adds the
- * read edge {@code java.base} → Argos bootstrap module (JPMS, 10 §4.4) before the class is
- * (re)defined.
+ * Outgoing calls through {@code java.net.HttpURLConnection} (10 §6.5, F-A05, F-A06, F-A32): the
+ * state machine of 10 §6.5 over {@code connect()}, {@code getOutputStream()}, {@code
+ * getInputStream()} and {@code getErrorStream()} of {@code
+ * sun.net.www.protocol.http.HttpURLConnection} (java.base; HTTPS connections delegate to a subclass
+ * of it, which inherits these methods). {@code getResponseCode()} is not declared by that class:
+ * {@code java.net.HttpURLConnection.getResponseCode()} calls {@code getInputStream()}, which is the
+ * exchange point.
  *
- * <p>The JDK runs the request/response exchange in the first {@code getInputStream()} call ({@code
- * getResponseCode()} calls it too, and the JDK calls it again from inside itself); the advice
- * records that first call once per connection: an HTTP step (name = host, detail = {@code METHOD
- * host[:port]/path}, query string never kept), {@code traceparent} on a request that is not
- * connected yet and has none (F-A32), status, failure class ({@code FailureKind}) and {@code
- * recordExtStat}. The advice runs in the bootstrap class loader, so it has no helper and uses the
- * bootstrap API only (10 §5.4).
- *
- * <p>Not in the PoC (WO-14): {@code connect()}/{@code getOutputStream()} start points (a POST body
- * written before {@code getInputStream()} is outside the step and gets no header), {@code
- * tracestate}, {@code propagation.exclude-hosts}, URL path masking of the detail.
+ * <p>The class is on the JDK allow-list of the core; when the application uses it before the agent
+ * starts it is retransformed at premain, and the core adds the read edge {@code java.base} → Argos
+ * bootstrap module (JPMS, 10 §4.4) before the class is (re)defined. The advice runs in the
+ * bootstrap class loader, so the module has no helper and uses the bootstrap API only (10 §5.4).
+ * Matching is by name (10 §5.1 "named() first"); the HTTPS delegate needs no own rule.
  */
 public final class HttpClientJdkModule implements InstrumentationModule {
   public static final int MODULE_ID = ModuleIds.HTTPCLIENT_JDK;
@@ -61,18 +56,28 @@ public final class HttpClientJdkModule implements InstrumentationModule {
 
           @Override
           public void transform(TypeTransformer transformer) {
-            transformer.applyAdvice(getInputStream(), HttpUrlConnectionAdvice.class.getName());
+            transformer.applyAdvice(statePoints(), HttpUrlConnectionAdvice.class.getName());
           }
 
           @Override
           public String toString() {
-            return "httpclient-jdk(" + CONNECTION_CLASS + ".getInputStream)";
+            return "httpclient-jdk("
+                + CONNECTION_CLASS
+                + ".connect/getOutputStream/getInputStream/getErrorStream)";
           }
         });
   }
 
-  static ElementMatcher.Junction<MethodDescription> getInputStream() {
-    return named("getInputStream").and(takesArguments(0));
+  /**
+   * The methods of the state machine (10 §6.5): {@code connect()}, {@code getOutputStream()},
+   * {@code getInputStream()}, {@code getErrorStream()}, all without arguments.
+   */
+  static ElementMatcher.Junction<MethodDescription> statePoints() {
+    return named("connect")
+        .or(named("getOutputStream"))
+        .or(named("getInputStream"))
+        .or(named("getErrorStream"))
+        .and(takesArguments(0));
   }
 
   @Override

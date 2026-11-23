@@ -64,3 +64,43 @@ export function checkFrameBudget(
   }
   return { pass: reasons.length === 0, reasons };
 }
+
+/** One measured run as the per-run verdict reads it. */
+export interface RunFrames {
+  readonly run: number;
+  readonly frames: Distribution;
+}
+
+/**
+ * ADR-0003 C-35: the C-34 statistic (p95 and mean <= the budget) applied to every run; a scenario
+ * passes only when each of its runs passes. The pooled frame count must still reach `minFrames`,
+ * so an empty or truncated measurement never passes; the maxima are reported, not judged.
+ */
+export function checkRunBudgets(
+  runs: readonly RunFrames[],
+  pooledCount: number,
+  budgetMs: number = FRAME_BUDGET_MS,
+  minFrames = 60,
+): BudgetVerdict {
+  const reasons: string[] = [];
+  if (runs.length === 0) {
+    reasons.push('no run measured');
+  }
+  if (pooledCount < minFrames) {
+    reasons.push(`only ${String(pooledCount)} frames measured (at least ${String(minFrames)})`);
+  }
+  for (const run of runs) {
+    const label = `run ${String(run.run)}`;
+    if (run.frames.count === 0) {
+      reasons.push(`${label}: no frame measured`);
+      continue;
+    }
+    if (run.frames.p95 > budgetMs) {
+      reasons.push(`${label}: p95 ${run.frames.p95.toFixed(1)} ms > ${String(budgetMs)} ms`);
+    }
+    if (run.frames.mean > budgetMs) {
+      reasons.push(`${label}: mean ${run.frames.mean.toFixed(1)} ms > ${String(budgetMs)} ms`);
+    }
+  }
+  return { pass: reasons.length === 0, reasons };
+}

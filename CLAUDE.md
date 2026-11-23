@@ -62,7 +62,9 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
 ./gradlew checkLicenses checkDevOnlyLicenses      # 라이선스 허용 목록(테스트 전용 예외: docs/licenses/dev-only.md)
 ./gradlew integrationTest                         # Testcontainers(Docker), 샘플 앱 shop-boot3 스모크 3변형·시드 센티널, 저장소 스키마·생성기·쿼리(실제 ClickHouse). check에 포함되지 않음
 ./gradlew integrationTest -Pqueries.profile=ci    # CI와 같다: 저장소 정합 T-ST-030~033·053을 생성기 1/100 프로파일로(12스레드 개발 머신에서 전체 약 7분)
-./gradlew :agent:agent-core:integrationTest       # T-ACC-11(tx_id 1,000만 건 충돌 0·tx_id >> 23 ±1ms·두 인스턴스·begin 경로 start_ts 일치)과 N-02 축소판 힙 예산(포크 JVM, 큐·사전 상한, io.argos.agent. ≤ 64MB),
+./gradlew :test:storage:queries:integrationTest --tests '*PercentileErrorIT' -Pqueries.profile=ci
+                                                  # T-ST-042 백분위 상태 병합 값 오차 1m·1h·1d(C-53): 합성 Q14/dd, 적재 데이터 Q14/dd_stored, 재구축 DD 상태 바이트 동일(Q14/d14_rebuild). 약 2.5분
+./gradlew :agent:agent-core:integrationTest       # T-ACC-11(tx_id 1,000만 건 충돌 0·tx_id >> 23 ±1ms·두 인스턴스·begin 경로 start_ts 일치)과 N-02 축소판 힙 예산(포크 JVM, 큐·사전·전수 통계 창 2개 상한, io.argos.agent. ≤ 64MB),
                                                   # SessionFlowControlIntegrationTest(실제 grpc-netty 스택: isReady 백프레셔·메타데이터·SESSION_REQUIRED 같은 seq 재전송),
                                                   # SqlNormalizerTimingIntegrationTest(@Tag slow, SQL 정규화 1ms 예산 실측: 64KB 최악 입력 8종을 함께 워밍업한 뒤 입력마다 라운드 최솟값의 중앙값, 최대 3회 시도, [sql-timing] 줄에 중앙값·p90도, 조용한 머신에서). 약 1.5~2분
 ./gradlew :agent:agent-testing:integrationTest -Pagent.attach.jdks=8,11,17,21,25 -Pagent.e2e=shop-boot2@8,shop-boot2@11,shop-boot2@17,shop-boot2@21,shop-boot3@17,shop-boot3@21,shop-boot3@25,shop-boot4@21
@@ -70,7 +72,7 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
                                                   # (T-AG-005·010·040~045·050·053·060·070, T-BLD-006·010, T-NFR-30a premain 클래스 예산, C-27 플래그, JDK 25는 deny).
                                                   # 서블릿 스위트(WO-12, 패키지 io.argos.agent.testing.servlet, --tests '*servlet*'): T-AG-010~017·020, T-ACC-04·19·21,
                                                   # T-SEC-26b·31·32·34·37 에이전트 측을 -Pagent.e2e의 부트 앱마다 실행(앱당 실행 4개, 동시 6개 상한).
-                                                  # 기본은 부착 JDK 8·21 + shop-boot3@21(이 노트북 약 19분), -Pagent.e2e=none이면 종단 생략. 결과 agent/agent-testing/build/reports/agent-e2e/
+                                                  # 기본은 부착 JDK 8·21 + shop-boot3@21(이 노트북 약 30분, WO-14 httpclient·WO-16 metric·stats·active 스위트 포함), -Pagent.e2e=none이면 종단 생략. 결과 agent/agent-testing/build/reports/agent-e2e/
                                                   # (<app>-jdk<N>-transform.log, 서블릿 스위트는 wo12-<app>-jdk<N>-<profile>[-<n>]-{agent,stdout,tomcat}.log,
                                                   # <n>은 같은 실행의 재기동 순번, WAR 무에이전트 기준선은 wo12-<app>-jdk<N>-war-noagent-tomcat.log).
                                                   # 자가 진단(18 §19)은 개발 빌드 전용 키 -Dargos.test.selfdiag-file=<파일>(C-95)로 하네스가 읽는다(RunningApp.selfDiagnostics(),
@@ -90,6 +92,26 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
                                                   # -Pagent.jdbc.oracle=true면 gvenzl/oracle-free(4 GiB, FUTC dev-only, C-149 (3)). 사내 Oracle 19c·Tibero·Altibase·CUBRID·DB2는
                                                   # ARGOS_TEST_<DB>_URL·_USER·_PASSWORD(없으면 사유와 함께 skip, 사람 확인). 이 노트북 H2 약 6분, 컨테이너 + Oracle 약 10분(DB당 컨테이너 ≤ 4 GiB, Oracle 실측 약 3.1 GiB).
                                                   # 로그 agent/agent-testing/build/reports/agent-e2e/wo13-*, 콘솔 [wo13-table]·[wo13-db]·[wo13-sql-ids] 줄은 결과 XML의 system-out에
+./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot4@21 --tests '*httpclient*'
+                                                  # HTTP 클라이언트 스위트(WO-14, 패키지 io.argos.agent.testing.httpclient, 기본 integrationTest에도 포함되며 기본은 shop-boot3@21):
+                                                  # 앱이 /api/runtime에 알리는 클라이언트마다(boot2@8: hurl·hc4·okhttp·resttemplate, boot3/4: hurl·hc5·okhttp·jdk11·webclient·resttemplate)
+                                                  # T-AG-056(HTTP step 1개·C-142 HOST http://127.0.0.1:<port>·TIMEOUT·CONNECT_FAIL·HTTP_5XX·리다이렉트, U-10/U-11 mode=async),
+                                                  # T-AG-057·T-SEC-38(기본 tracestate 없음·앱 헤더 보존·수신 채택·argos-state.hosts·exclude-hosts), T-AG-055(WebClient block·future·subscribe,
+                                                  # WebFlux 픽스처 트랜잭션 0), T-ACC-05 에이전트 측(shop-boot3 A → B 100회, 호출자 step ≥ 피호출 트랜잭션, shop-boot3에서만).
+                                                  # 이 노트북 boot3@21 약 2.5분, boot2@8 + boot4@21 약 2분(에이전트 jar 빌드 후). 로그 build/reports/agent-e2e/wo14-*, [wo14-table]·[wo14-acc05]는 결과 XML system-out
+                                                  # OkHttp callTimeout(C-224 (1))은 TIMEOUT: 인터셉터는 InterruptedIOException("timeout")을 못 보므로 취소된 호출 + Call.timeout() 설정 +
+                                                  # 경과 ≥ timeout − min(20ms, timeout/2)로 판정(앱 예외 불변). 단위 OkHttpCallTimeoutTest는 :agent:agent-instrumentation:httpclient-okhttp:check(3.14.9·4.12.0)
+./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot3@21 -Pagent.gc.jdks=8,11,17,21,25 --tests '*metric*' --tests '*stats*' --tests '*active*'
+                                                  # 메트릭·전수 통계·액티브 스위트(WO-16, 패키지 io.argos.agent.testing.{metric,stats,active}, 기본 integrationTest에도 포함되며 기본은 부착 JDK·shop-boot3@21):
+                                                  # T-AG-062 MetricsE2eTest(Spring 기본 JMX off, JVM·GC·풀·Tomcat·시스템·자기 시리즈, 5초 격자, 시리즈 ≤ 500, counter delta, Hello cgroup = 호스트),
+                                                  # T-ACC-25 GcLabelsTest(-Pagent.gc.jdks의 JDK마다 G1·Parallel·Serial·CMS·Shenandoah·ZGC(단일·세대형) 라벨, pause 시리즈에 cycle·concurrent 없음,
+                                                  # Shenandoah 없는 빌드는 사유와 skip, [wo16-gc]에 MXBean 원문 = 10 U-14, 기본값은 부착 JDK), T-AG-061 StatsWindowTest(10초 창 실행 수·timeout·connect_fail·fetch_rows),
+                                                  # T-ACC-12 FullStatsAppCounterTest(shop-boot3만, normal-rate=0 1만 요청: Σ sqlStatements = Σ sql_count = Σ SqlStat.count, 약 20~30초),
+                                                  # C-225 (1) ActiveSnapshotE2eTest(5초 ActiveTransactionSnapshot, IN_SQL 이름이 사전 선전송으로 풀림, 약 25초). 이 노트북 약 10분(GcLabelsTest 26조합 약 7.5분).
+                                                  # 결과 줄 [wo16-metrics]·[wo16-gc]·[wo16-stats]·[wo16-fullstats]·[wo16-active]는 결과 XML system-out, 로그 build/reports/agent-e2e/wo16-*
+./gradlew :agent:agent-testing:integrationTest -Pagent.container=true --tests '*CgroupContainer*'
+                                                  # T-AG-063 cgroup v2(Docker, --cpus 1.5 --memory 512m, 약 40초): Hello cgroup=v2, container_cpu_limit_cores 1.5,
+                                                  # container_memory_limit_bytes = system_memory_total_bytes = 512 MiB, [wo16-cgroup]. 실제 cgroup v1 호스트는 WO-50 매트릭스(사람 확인)
 ./gradlew :agent:agent-testing:integrationTest --tests '*transport*' -Pagent.jdk8u252=<JRE> -Pagent.jdk8u242=<JRE>
                                                   # gRPC 전송(WO-11) 대 FakeCollector: T-AG-071·067, T-ACC-02a·06a, T-SEC-06·07a·08c, T-NFR-26a, C-74 증명(T-BLD-004a), C-75, T-BLD-011·011a(실행 시점 프록시 미사용),
                                                   # 세션 반응(ConnectionTransportTest: 백오프당 TCP 접속·DNS 조회 1회, 해석 불가 주소 WARN 분당 1회, 영구 거부·REPLACED 뒤 연결·argos-io 해제, Ack.throttle).
@@ -103,6 +125,16 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
                                                   # P-3 측정 매트릭스(약 35분) → test/agent/transport-poc/build/poc/bench/<시각>/summary.md. 조용한 머신에서
 ./gradlew :server:bootJar                         # 서버 실행 jar → server/build/libs/argos-server-<버전>.jar(레이어 4종: java -Djarmode=tools -jar <jar> list-layers).
                                                   # -Pargos.ui.skip=true가 없으면 ui/dist를 static/에 넣는다. :server:checkFlywayNames(check 포함)는 db/pg 파일명 규칙(C-28)
+java -jar server/build/libs/argos-server-<버전>.jar admin rollup rebuild --date <yyyy-MM-dd> [--table <t>]... [--json]
+                                                  # argos-admin(WO-27, C-59): 그날 1m 롤업과 같은 달 1h 롤업을 <t>_rebuild 스테이징 + REPLACE PARTITION으로 재구축(--app 없음, C-59 (c)),
+                                                  # 파티션별 재구축 전후 digest(키 수 + 키별 cityHash64 합)를 출력. 설정은 서버와 같은 ARGOS_* 환경(migrator 계정), 로그는 stderr JSON, 결과는 stdout.
+                                                  # 종료 코드 0 성공, 1 실패(롤업 락 점유·스키마 미적용·DB 오류·보존 밖·미래 날짜), 2 인자 오류. 세 명령과 야간 잡이 PG advisory lock 하나를 공유
+java -jar server/build/libs/argos-server-<버전>.jar admin consistency check --date <yyyy-MM-dd> [--rebuild] [--json]
+                                                  # 야간 정합(argos.ops.reconcile.cron, 기본 03:00 서버 시각, 전날 UTC)의 수동 실행: D-03(xlog 분별 count 대 app/service/instance_stat_1m),
+                                                  # 원본 대 1m 롤업, 1m 대 1h, D-12(Σsql/ext_count 대 sql/ext_stat_raw, 기록만). --rebuild면 재구축 후 재검사(최대 2회). 결과는 reconcile_results(PG V005),
+                                                  # 종료 코드 0 롤업 불일치 없음, 1 남음·실패, 2 인자 오류(D-12는 종료 코드에 반영 안 함)
+java -jar server/build/libs/argos-server-<버전>.jar admin apdex reapply --app <id> [--service <unsigned id>] --from <d> --to <d> [--json]
+                                                  # Apdex T 소급(D-17, 수동 실행만): 원본 보존 기간 안의 xlog.apdex_t_ms를 현재 T(앱·서비스 오버라이드)로 뮤테이션(mutations_sync=2)한 뒤 그날들을 재구축. 최대 400일
 ./gradlew :server:integrationTest                 # 서버 기동 순서·설정·관리 포트·PG/CH 마이그레이션·DB 권한(실제 PostgreSQL 16·ClickHouse 26.8, Testcontainers),
                                                   # WO-21 수집 경로(collector·ingest·e2e: FakeAgent → gRPC → WAL → ClickHouse, T-SV-010은 bootJar 자식 JVM 강제 종료 2회,
                                                   # T-ACC-13 (c) ClickHouse 3분 중단 2종(ingest 수준·gRPC 종단) 포함, WO-23 조회 API 포함 약 22분. bootJar를 먼저 빌드한다).
@@ -117,6 +149,29 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
                                                   # traceabilityReport에서 나머지가 NOT RUN이 된다(전체 실행 뒤에 돌릴 것). :server:securityTest와 한 실행에 주면 병렬로 돈다(org.gradle.parallel)
                                                   # WO-23 조회 API(소스 선택·T-ACC-03 정합·C-50 조회 순서·XLog 샘플링·FakeAgent → 적재 → API 종단)도 여기 있다. 공유 조회 데이터
                                                   # (QueryTestData.shared(), 생성기 tiny, CH 1.5GiB + PG 0.5GiB)를 JVM 끝까지 유지하므로 -Pserver.load·-Pserver.nightly·apiBench는 --tests로 따로 돌린다
+                                                  # WO-36 통계 화면용 가산 매개변수(sql·external sort=p95_ms, errors/groups compare_prev, T-API-011a/b)는
+                                                  # --tests 'io.argos.server.api.stats.*'(StatsScreenParamsIT, 앱 id 930, 약 1분)
+                                                  # WO-38 알림 화면용 가산(alert_events.reason V009 닫힌 목록, 이벤트·/overview/alerts·대시보드 firing[]의 rule.metric/unit,
+                                                  # 규칙 이력 changed_by_name, T-API-012a)은 --tests 'io.argos.server.api.alerts.*'(AlertsApiIT, 약 30초)와 MigrationStartupIT(V009 CHECK·멱등)
+                                                  # WO-22 세션·상태·실시간(@Tag("slow") 없음, 클래스당 약 10~35초): io.argos.server.session(InstanceStateIT·ClockSkewIT·OutageIT는 MutableClock으로
+                                                  # 60/180초·Bye 유예 5분·수집 중단 outages[], RegistrationPolicyIT 승인 대기 큐, InstanceNamingIT 이름 병합·보관 SQL 경계),
+                                                  # io.argos.server.realtime(WebSocketProtocolIT·RealtimeE2eIT: JDK WebSocket 클라이언트 testFixtures io.argos.server.testing.ws.WsTestClient로
+                                                  # 실제 /ws, FakeAgent → xlog push ≤ 1초, 서버 시계를 옮기므로 WS는 점프 사이에 ping), ingest.ActiveGaugeIT(C-178 (1) series.active).
+                                                  # 보고서 server/build/reports/realtime/ws-latency.md(참고값)·vt-pinning.md(JFR jdk.VirtualThreadPinned, 12 미결 4).
+                                                  # WS 서버 프레임 벡터는 단위 테스트 WsFrameVectorsTest(check 포함)가 고정본 server/src/test/resources/io/argos/server/realtime/ws-frame-vectors.json과
+                                                  # 대조하고, 다르면 생성본을 server/build/ws-frame-vectors.generated.json에 쓴다(의도한 변경이면 복사해 커밋, ui/e2e/fixtures/wsServerFrames.test.ts가 같은 파일을 읽음)
+                                                  # WO-27 통계·롤업·정합: --tests 'io.argos.server.ops.rollup.*'(약 1.5분) = RollupRebuildIT(T-SV-019·T-ACC-14 재구축 digest 동일·월 경계·1h 이중 집계 없음·CLI 종료 코드),
+                                                  # ReconcileJobIT(손상 주입 → 탐지 분 수·reconcile_results·게이지·자동 재구축·재검사 0, D-12 기록만), ApdexReapplyIT(T-ACC-17 소급).
+                                                  # 서버 RollupRebuildIT와 test/storage RollupRebuildIT는 단순 이름이 같으므로 --tests에는 FQCN을 쓴다.
+                                                  # io.argos.server.ingest의 StatsRollupIT(T-SV-018)·FullStatsIT(T-ACC-12 서버 측 1만 건)·ApdexOverrideIT(T-SV-017·T-ACC-17, WAL format 2)·
+                                                  # ErrorGroupStackIT(T-SV-016e)는 클래스마다 자체 서버(AgentServerStack, 합계 약 1.5분). realtime.CounterMetricsIT: FakeAgent MetricBatch →
+                                                  # counter push heap_used·gc_pause_ms·cpu(C-212 (1), 약 40초), api.dashboard.DashboardC212IT: system_cpu·증감·exclude_instance·instance_stat_1h(약 50초)
+                                                  # WO-25 알림: --tests 'io.argos.server.alert.*' --tests 'io.argos.server.api.alerts.*'(약 3분) = AlertInstanceStateIT(T-SV-023 Bye 후 5분 안 재접속 다운 알림 0·워밍업 3분 미평가·
+                                                  # WS alert push·ACK·재기동 복원), AlertTemplatesIT(T-SV-033 기본 템플릿 14종·권장 규칙·서버 규칙 1회·템플릿 차이), AlertDeliveryLatencyIT(T-SV-030 조건 충족 → 웹훅 수신 ≤ 30초,
+                                                  # [T-SV-030] 줄이 결과 XML system-out), channel.NotifierChannelFailureIT(T-SV-034 재시도 3회·채널 failing → 다른 채널 self 알림, DeliveryCleanupJob 365일 정리),
+                                                  # AlertsApiIT(/alerts REST·대시보드·overview firing 실값·channel_failures_24h). 가짜 수신기는 testFixtures io.argos.server.testing.alert의 FakeWebhookReceiver(HTTP/HTTPS·302·500·지연)·
+                                                  # FakeSmtpServer(STARTTLS 켜기/끄기)·TestTls·TestMasterKey(실행 시 생성 0600 키 파일 → argos.master-key-file). 개발 빌드 전용 키 argos.testing.notify-retry-delays(재시도 1s/5s/30s 단축)·
+                                                  # argos.testing.alert-ca-file(시험 CA 신뢰), 루프백 수신기는 argos.alert.webhook.allow-cidrs[0]=127.0.0.1/32. 외부 Slack·SMTP는 호출하지 않는다
 ./gradlew :server:generateOpenApi                 # docs/api/openapi.yaml 재생성(생성본, 손 편집 금지, C-28). 컨트롤러·DTO를 바꾸면 돌리고 함께 커밋한다(빌드 버전과 무관, info.version v1).
                                                   # :server:contractTest(check 포함)가 커밋본 = 생성본, 14 §2.9 린트(JUnit, Spectral 없음, C-151), 저장소 조회 operation의 x-argos-limits,
                                                   # 커밋본 스펙의 권한 매트릭스(T-API-010), oasdiff 네거티브(T-API-002, Docker)를 검사한다. 서버 jar를 다시 만들 수 있어 서버 통합 실행 중에는 돌리지 않는다.
@@ -132,6 +187,9 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
 ./gradlew :server:loadQueryTestData -Pquerydata.clickhouse=<url> -Pquerydata.postgres=<jdbc-url> [-Pquerydata.profile=tiny|ci|local|full]
                                                   # 조회 테스트 데이터(생성기, 시드 42)를 스키마가 있는 실행 중 설치에 적재(개발 전용, WO-30 E2E 시드). 비밀번호는 환경변수
                                                   # ARGOS_CH_WRITER_PASSWORD·ARGOS_PG_PASSWORD로만. 매니페스트 server/build/query-test-data/query-test-data.json(-Pquerydata.out)
+./gradlew :server:activeFeedJar                   # 개발 전용 FakeAgent 액티브 피더(WO-35, 배포물 아님) → server/build/active-feed/active-feed.jar + lib/. 액티브 E2E의 전제
+                                                  # (실제 에이전트의 ActiveTransactionSnapshot은 WO-16 몫). 앱 e2e-active·인스턴스 2개로 실제 수집기에 5초마다 스냅샷을 보낸다.
+                                                  # java -jar <jar> --target H:P --token-file T --instances 2 --ready-file F [--duration s] [--interval s] [--app] [--env]
 ./gradlew :server:jibDockerBuild                  # 로컬 이미지 argos-server:<버전>(linux/amd64, 베이스 다이제스트 고정, user 10001:10001, HOME=/data, 포트 8080·9100, UI 포함.
                                                   # -Pargos.ui.skip=true면 UI 없음). Jib은 구성 캐시 미호환. 서버 jar를 다시 만들므로 .gradle/argos-locks/server-it를 잡고 돈다.
                                                   # /data·/data/tmp·/logs는 이미지에서 10001:10001 0700이라 새 named volume은 준비가 필요 없다(bind mount만 chown, server/README.md)
@@ -155,6 +213,11 @@ test/storage/bench/bench-server.sh start          # 저장소 PoC 벤치용 단�
                                                   # 실제 로그인 세션 권한 매트릭스, 미존재 사용자명 잠금(재기동·노드 간 유지). Testcontainers, 약 4분). 실측 표 server/build/reports/rate-limits.md·permission-matrix-session.md.
                                                   # WO-21 수집기: T-SEC-07b TLS 1.1·CBC 거부, T-SEC-11 gzip 폭탄(bootJar 자식 JVM, 최대 RSS 증가 ≤ 200MB, 조용한 머신에서),
                                                   # T-SEC-11~14 공격 중 다른 인스턴스 적재 ≤ 5초, T-SEC-15 리플렉션·미인증·Hello 폭주 차단
+                                                  # WO-22 /ws(WebSocketSecurityTest): T-SEC-44 핸드셰이크 401(쿠키 없음·위조)·403(교차 Origin), 로그아웃·관리자 폐기·비밀번호 변경·비활성 → reauth + close 4401 ≤ 1초,
+                                                  # 역할 강등 시 admin 구독 forbidden, 로그에 토큰 없음(자기 서버만 realtime DEBUG), T-SEC-45 /ws 거부 응답의 보안 헤더
+                                                  # WO-25 알림 채널(io.argos.server.security.alert): ChannelTlsSecurityTest(Docker 불필요, T-SV-035 STARTTLS·HTTPS 고정 IP·T-SEC-54 평문 SMTP 거부),
+                                                  # AlertChannelSecurityTest(SecuritySuite 환경: T-SEC-51 목적지 검증 7단계·금지 대역 422 webhook_destination_blocked·리다이렉트 미추종·allow-cidrs, T-SEC-52 PG 덤프에 평문 비밀값 0·
+                                                  # 마스킹 GET·이전 키 복호화, T-SEC-53 서명 회전 v1 두 개, 키 없음 409 secret_unavailable, 서버 로그에 비밀값 0)
                                                   # 웹 계층 스텁 매트릭스(Docker 없음)는 :server:contractTest → permission-matrix.md. 두 Gradle 실행이 같은 :server:securityTest를 동시에 돌리면 결과 파일이 깨진다
 java server/scripts/GeneratePasswordDenylist.java # 비밀번호 금지 목록 해시 재생성(개발 도구, SecLists 10k를 고정 커밋·SHA-256으로 내려받음, 출처 NOTICE)
                                                   # → server/src/main/resources/security/password-denylist.sha256. 빌드·실행 시에는 아무것도 내려받지 않는다
@@ -186,25 +249,58 @@ pnpm -C ui build && pnpm -C ui test               # build = tsc + vite + 번들 
                                                   # 예산 초과는 경고, 청크 그래프 결함은 실패. 결과 ui/build/bundle-size.json)
 pnpm -C ui lint && pnpm -C ui typecheck && pnpm -C ui format:check            # ESLint, tsc strict, Prettier
 pnpm -C ui check:i18n && pnpm -C ui check:external && pnpm -C ui check:licenses  # i18n 키, 외부 참조, 라이선스
+                                                  # 로캘은 common·shell·auth만 엔트리 번들, 화면 네임스페이스(xlog·tx·trace·dashboard)는 라우트와 함께 지연 로드(C-209).
+                                                  # 새 화면 네임스페이스는 ui/src/i18n/routeNamespaces.ts에 등록(routeNamespaces.test가 모듈 그래프와 대조). 앱은 createAppI18n, 테스트는 createI18n(eager)
 pnpm -C ui check:licenses:dev                     # 허용 목록 밖 UI 개발 도구가 dev-only.md `npm:` 행에 있는지
 pnpm -C ui gen:api && pnpm -C ui check:api       # docs/api/openapi.yaml → src/api/generated/schema.ts(손 편집 금지, x-argos-untrusted → Untrusted 브랜드).
                                                   # check:api(= test에도 포함)는 커밋본 스펙으로 재생성한 결과와 diff 0. 스펙이 바뀌면 gen:api 후 함께 커밋
 pnpm -C ui playwright:install                     # Playwright Chromium 설치(머신당 1회, e2e·perf 전제)
-pnpm -C ui e2e                                    # vite build + Playwright E2E: preview 프로젝트(WO-04 spec, vite preview) + stack 프로젝트(WO-30 spec 전부,
+pnpm -C ui e2e                                    # vite build --mode perf --outDir build/perf-dist(/xlog-poc는 perf 빌드에만, 운영 번들 제외 C-203) + Playwright E2E:
+                                                  # preview 프로젝트(WO-04 spec, 그 빌드의 vite preview) + stack 프로젝트(e2e/specs 전부,
                                                   # 이 트리의 서버 bootJar + PostgreSQL·ClickHouse 컨테이너, 127.0.0.1 무작위 포트, 라벨 io.argos.e2e·접두 argos-e2e-, ≤ 5GiB,
                                                   # 시드: :server:loadQueryTestData tiny(오늘 UTC 앵커, C-170) + 사용자 3 + shop-boot3·에이전트·seed-traffic.sh, 매니페스트
-                                                  # ui/e2e/.stack/seed-manifest.json, WS만 스텁). 전제: Docker, JAVA_HOME JDK 21, Windows는 Git Bash, 그리고 jar 5개
+                                                  # ui/e2e/.stack/seed-manifest.json, WS는 기본 스텁·wsMode 'server' spec만 실서버). 전제: Docker, JAVA_HOME JDK 21, Windows는 Git Bash, 그리고 jar 5개
                                                   # ./gradlew :server:bootJar :agent:agent-dist:agentJar :sample-apps:shop-boot3:sampleAppJar :sample-apps:ext-stub:sampleAppJar :sample-apps:smoke:sampleAppJar
-                                                  # (UI·서버 소스보다 오래된 bootJar는 거부). 재시도 0, 이 노트북 약 3분(스택 기동·시드 약 1분). test·Gradle check에 포함되지 않음.
+                                                  # (UI·서버 소스보다 오래된 bootJar는 거부. 출력이 같아 Gradle이 UP-TO-DATE로 두면 ./gradlew :server:bootJar --rerun).
+                                                  # 재시도 0, 이 노트북 약 5.5분(스택 기동·시드 약 1분). test·Gradle check에 포함되지 않음.
                                                   # 실서버 실행은 server-it 락. 서버 CSP 카운터는 Chromium에서 검증 불가(csp-counter-not-verifiable 주석, ui/e2e/README.md CSP 절)
 pnpm -C ui e2e:preview                            # preview 프로젝트만 / pnpm -C ui e2e:stack [--shard=i/n]: stack 프로젝트만
+pnpm -C ui e2e:stack --grep "T-E2E-08[0-9]|T-E2E-dashboard|T-E2E-common-(2|7) "   # 대시보드(WO-32) 부분 실행: dashboard.spec·required/dashboard.yaml·common 2.0-1·2.0-5
+pnpm -C ui e2e:stack --grep "T-E2E-stats|T-E2E-service-version|T-E2E-errors"   # 통계 4종(WO-36) 부분 실행(약 3분, 스택 기동·시드 포함): stats.spec·required/stats.yaml(목록·상세 값 = 같은 질문의 API, 서버 CSV,
+                                                  # C-14 estimated 배지, 서비스 버전별 p95·배포 마커, 신규 에러 3클릭). 시각 기준 stats-*.png는 e2e:docker 전용(T-E2E-stats-30~36)
+pnpm -C ui e2e:stack --grep "T-E2E-alerts"         # 알림 화면(WO-38) 부분 실행(약 2.5분 + 스택 기동·시드 약 1.7분): alerts.spec(템플릿 규칙 → 발화 → 이력 → ACK 직렬 블록 4~9,
+                                                  # 채널·1366·딥링크·WS 10~12)·required/alerts.yaml(T-E2E-alerts-30~40). 직렬 블록 일부만 --grep하면 앞 시험이 만든 규칙이 없어 실패한다.
+                                                  # 가짜 수신기: 스택이 서버에 --add-host argos-e2e-receivers:host-gateway, webhook allow-cidrs = 127.0.0.1/32 + 그 별칭의 /etc/hosts 주소 전부,
+                                                  # SMTP = 별칭의 무작위 포트, 실행별 마스터 키(ARGOS_MASTER_KEY, secrets/의 env 파일)를 주고(ui/e2e/.stack/<run>/receivers.json),
+                                                  # 시험이 호스트 127.0.0.1에 node:http 웹훅·Slack과 node:net SMTP 수신기를 띄운다(e2e/fixtures/fakeReceivers.ts, 외부망 없음).
+                                                  # Linux Docker Engine 호스트 실행과 e2e:docker의 SMTP는 사유를 남기고 skip. UI 없는 bootJar(-Pargos.ui.skip)는 스택 기동 전에 거부(C-227 (5)).
+                                                  # 시각 기준 alerts-*.png는 e2e:docker 전용(T-E2E-alerts-20~25)
+pnpm -C ui e2e:stack --grep "T-E2E-09[0-9]|T-E2E-overview"   # 전체 현황(WO-31) 부분 실행: overview.spec·required/overview.yaml(약 2.2분, 스택 기동·시드 포함).
+                                                  # T-E2E-090은 실서버 응답을 타입 맞춘 행으로 30개까지 채워(page.route) 1366×768 무스크롤·숫자 셀 잘림 0을 본다.
+                                                  # T-E2E-099(wsMode server)는 호스트 JVM으로 shop-boot3 + 에이전트를 띄워 실제 overview push를 받는다
+                                                  # (로그 ui/e2e/.stack/<run>/logs/overview-live-shop-boot3.log, JVM 없는 e2e:docker에서는 추적 중인 시드 앱으로 시도하고 없으면 skip)
+pnpm -C ui e2e:stack --grep "T-E2E-active"        # 액티브 트랜잭션(WO-35) 부분 실행: active.spec·required/active.yaml(약 4.6분, 스택 기동·시드 포함, jar 5개 + :server:activeFeedJar 전제).
+                                                  # beforeAll이 피더(앱 e2e-active)를 띄워 실서버 active push·REST·화면을 대조, 끊김·인스턴스 상태는 WS 스텁.
+                                                  # 실데이터 테스트는 JVM 없는 e2e:docker 안에서 skip(시각 기준 active-*.png T-E2E-active-40~43만). 피더 로그 ui/e2e/.stack/<run>/logs/active-feed.log
+pnpm -C ui e2e:stack --grep "T-E2E-alerts|T-E2E-09[67] |T-E2E-dashboard|T-E2E-overview" # 알림 패널(WO-25) 부분 실행: 시드 (e)가 주 앱에 실제 FIRING 알림을 만들고(seed/alerts.ts, 매니페스트 alert, timings.seed_alert_s),
+                                                  # T-E2E-alerts-1·2(대시보드·전체 현황 패널 = 페이지가 받은 응답, 링크 /alerts?…&alert=<event_id>)·-3(권장 템플릿 규칙 적용, 템플릿 part 중복 없음),
+                                                  # T-E2E-096·097, required 2.3-5·2.10-4. 스택 서버에 마스터 키가 없어 채널은 만들지 않는다(409 secret_unavailable). 규칙 창이 1h라 재사용 스택은 적재 1시간 뒤 알림이 풀린다
+pnpm -C ui e2e:stack --grep "T-SV-020e|T-SEC-44c|T-E2E-xlog-10 "   # 실서버 WS(WO-22) 부분 실행. spec에서 test.use({ wsMode: 'server' })면 ws 픽스처가 스텁 대신 실제 /ws로 중계하며
+                                                  # 클라이언트 프레임은 14 §5.2로, 서버 프레임은 UI parseServerFrame으로 검사(serverFrames()·waitForServerFrame()·waitForClose()). 기본은 'stub'.
+                                                  # 시드는 에이전트를 Node TCP 프록시(e2e/stack/seed/grpcProxy.ts) 뒤에 두고, 데이터가 조회되면 프록시를 얼려 인스턴스가 STALE이 될 때까지
+                                                  # 폴링한 뒤 풀어 session_lost 수집 중단 1구간을 만든다(seed/outage.ts, 매니페스트 outage, timings.seed_outage_s·seed_outage_extra_s,
+                                                  # 못 만들면 missing_optional category outage). T-SV-020e는 JVM이 없는 e2e:docker 이미지에서는 skip
 pnpm -C ui e2e:docker [-- --update-snapshots=missing|all]   # stack 프로젝트를 다이제스트 고정 Linux Playwright 이미지 안에서(컨테이너는 pnpm-lock.yaml에서 만든 package-lock.json을
                                                   # npm ci로 무결성 검사하며 설치. UI를 바꾼 뒤에는 --update-snapshots=all로 다시 만들고 이미지를 확인. 시각 회귀 기준 이미지 생성·비교는
                                                   # 여기서만, 그 밖에서는 screenshot-linux-only로 skip). CI pr.yml e2e 잡(4샤드)이 이것을 쓴다. 기준 이미지 갱신은 quiet 락
 pnpm -C ui e2e:stack:up && pnpm -C ui e2e:stack:down   # 시드된 스택을 띄워 두고(ARGOS_E2E_STACK_URL=<URL>로 재사용) / 제거. node e2e/stack/cli.ts restart-server는
                                                   # DB를 둔 채 새 bootJar로 서버만 재기동. 변수·픽스처·required YAML은 ui/e2e/README.md
 pnpm -C ui perf:initial-load                      # 스택 위 초기 로드(T-NFR-14 골격, Navigation Timing 5회·CPU 부하 기록, 참고값). 같은 jar 전제
-pnpm -C ui perf                                   # vite build + XLog 프레임 시간 spec(T-NFR-14, Chrome tracing). 조용한 머신에서, 약 12~16분
+pnpm -C ui perf                                   # vite build --mode perf --outDir build/perf-dist + XLog 프레임 시간 spec(T-NFR-14, Chrome tracing): 기본은 /xlog-poc(합성 점).
+                                                  # 조용한 머신에서, 약 12~16분. XLOG_PERF_TARGET=route XLOG_PERF_SCENARIOS=static,interaction,selection이면 E2E 스택(jar 5개 전제,
+                                                  # server-it 락)의 정식 XLog 화면: 프레임 C-35 런별, 선택 계산·화면 선택(selectMs)·화면 반영(놓은 뒤 요약·목록 첫 행 프레임, GPU 포함)
+                                                  # C-36 런별(전체 플롯·부분 선택 2변형), 10만 점 창 로드 3회. DPR 1·2 약 9분. route에서 realtime은 WS 스텁(10만 점 + 500점/s),
+                                                  # XLOG_PERF_ROUTE_UNSAMPLED=1은 비표본 약 10만 점 창. 결과 ui/perf/results/xlog-frame-<runId>.md(ui/README.md "Performance, XLog screen")
 
 bash test/lint/check-spdx.sh                      # SPDX 헤더 전수(T-BLD-007)
 bash sample-apps/load/run-bench.sh --summary build/bench/summary.json   # k6 bench.js 1,000/s × 1분(Docker), 결과 JSON·머신 부하

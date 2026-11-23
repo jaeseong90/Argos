@@ -66,6 +66,11 @@ final class Recording {
     return runtime.tracer();
   }
 
+  /** The recording runtime ({@code argos-metrics}, WO-16: queues, statistics, active registry). */
+  TraceRuntime runtime() {
+    return runtime;
+  }
+
   /** The tracer implementation (its pool and Tomcat registries, WO-13), or null. */
   TracerImpl tracerImpl() {
     return runtime.tracerImpl();

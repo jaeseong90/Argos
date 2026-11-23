@@ -67,6 +67,7 @@ export function resetShellState(): FakeSockets {
     resumeAvailable: false,
     sidebarCollapsed: false,
     shortcutHelpOpen: false,
+    snapshotKinds: null,
   });
   useConnectionStore.setState(INITIAL_CONNECTION_STATE);
   const sockets = fakeSockets();
@@ -120,6 +121,8 @@ export function appBody(
     registered_from_app_id: null,
     registration_policy: 'auto',
     slow_threshold_ms: 1000,
+    // Transaction kinds of the last 7 days (GET /apps/{appId} only; null = unknown, C-205 (4)).
+    kinds: null,
     ...overrides,
   };
 }

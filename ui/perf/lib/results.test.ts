@@ -9,9 +9,13 @@ import {
   appendRecord,
   poolSelections,
   readRecords,
+  REFLECT_BUDGET_MS,
   renderMarkdown,
   runMaxima,
   SELECTION_BUDGET_MS,
+  selectionReasons,
+  selectionRunMaxima,
+  selectionRunMaxSelect,
   triple,
   type EnvironmentInfo,
   type ResultRecord,
@@ -235,5 +239,136 @@ describe('selection timing (docs/15 §7.3, not judged)', () => {
       '| 1 | 5 / 40 | yes | 2 | 2.0 / 3.0 / 3.0 | 8.0 / 9.0 / 9.0 | 50.0 / 51.0 / 51.0 |',
     );
     expect(md).toContain('- n');
+  });
+});
+
+describe('selection verdict (ADR-0003 C-36: per run, query p95 <= 5 ms, screen reflect p95 <= 100 ms)', () => {
+  const judgedRun = (
+    n: number,
+    queries: readonly number[],
+    reflects: readonly (number | null)[],
+  ): SelectionRun => ({
+    run: n,
+    loadBefore: 5,
+    quiet: true,
+    waitedMs: 0,
+    loadDuring: 30,
+    samples: queries.map((queryMs, i) => ({
+      points: 99_900,
+      queryMs,
+      computeMs: 3,
+      commitMs: 40,
+      reflectMs: reflects[i] ?? null,
+      reflectPageMs: reflects[i] ?? null,
+      reflectTraceMs: null,
+      summaryMs: 30,
+    })),
+  });
+
+  it('passes only when every run keeps both budgets', () => {
+    const ok = [judgedRun(1, [1, 2, 4.9], [60, 70, 99]), judgedRun(2, [1, 1, 1], [50, 50, 50])];
+    expect(selectionReasons(ok)).toEqual([]);
+    expect(selectionRunMaxima(ok)).toEqual({ query: 4.9, reflect: 99 });
+    const slow = [judgedRun(1, [1, 2, 6.4], [60, 70, 80]), judgedRun(2, [1, 1, 1], [90, 95, 140])];
+    expect(selectionReasons(slow)).toEqual([
+      'run 1: selection query p95 6.40 ms > 5 ms',
+      'run 2: screen reflect p95 140.0 ms > 100 ms',
+    ]);
+    expect(SELECTION_BUDGET_MS).toBe(5);
+    expect(REFLECT_BUDGET_MS).toBe(100);
+  });
+
+  it('judges the screen selection (selectMs) per run when a select budget is given (XLog screen)', () => {
+    const withSelect = (run: SelectionRun, selects: readonly (number | null)[]): SelectionRun => ({
+      ...run,
+      samples: run.samples.map((s, i) => ({ ...s, selectMs: selects[i] ?? null })),
+    });
+    const ok = [
+      withSelect(judgedRun(1, [1, 2, 3], [60, 70, 80]), [1.5, 4.9, 2]),
+      withSelect(judgedRun(2, [1, 1, 1], [50, 50, 50]), [1, 1, 1]),
+    ];
+    expect(
+      selectionReasons(ok, SELECTION_BUDGET_MS, REFLECT_BUDGET_MS, SELECTION_BUDGET_MS),
+    ).toEqual([]);
+    expect(selectionRunMaxSelect(ok)).toBe(4.9);
+    // The engine query is within budget, the screen's selection is not: the run fails.
+    const slow = [
+      withSelect(judgedRun(1, [1, 2, 3], [60, 70, 80]), [6, 12.9, 3]),
+      withSelect(judgedRun(2, [1, 1, 1], [50, 50, 50]), [1, 1, 1]),
+    ];
+    expect(
+      selectionReasons(slow, SELECTION_BUDGET_MS, REFLECT_BUDGET_MS, SELECTION_BUDGET_MS),
+    ).toEqual(['run 1: screen selection p95 12.90 ms > 5 ms']);
+    // A judged run without selectMs fails; without a select budget (PoC page) it is not judged.
+    const missing = [judgedRun(1, [1, 2, 3], [60, 70, 80])];
+    expect(
+      selectionReasons(missing, SELECTION_BUDGET_MS, REFLECT_BUDGET_MS, SELECTION_BUDGET_MS),
+    ).toEqual(['run 1: no screen selection time (selectMs)']);
+    expect(selectionReasons(missing)).toEqual([]);
+    expect(selectionRunMaxSelect(missing)).toBeNull();
+    // The report shows query, select and compute next to each other (select appended).
+    const result: SelectionResult = {
+      title: 'selection route 100k drag render=default dpr=1',
+      points: 99_900,
+      dpr: 1,
+      render: 'default',
+      runs: slow,
+      pooled: poolSelections(slow),
+      budgetMs: SELECTION_BUDGET_MS,
+      reflectBudgetMs: REFLECT_BUDGET_MS,
+      selectJudged: true,
+      judged: true,
+      pass: false,
+      reasons: ['run 1: screen selection p95 12.90 ms > 5 ms'],
+      notes: [],
+    };
+    const md = renderMarkdown([{ type: 'selection', result }]);
+    expect(md).toContain('| FAIL | 1.0 / 12.9 / 12.9 | 12.9 |');
+    expect(md).toContain('| 30.0 / 30.0 / 30.0 | 6.0 / 12.9 / 12.9 |');
+    expect(md).toContain('- run 1: screen selection p95 12.90 ms > 5 ms');
+  });
+
+  it('fails a run without reflect or query values and a scenario without runs', () => {
+    expect(selectionReasons([judgedRun(1, [1], [null])])).toEqual([
+      'run 1: no screen reflect measured',
+    ]);
+    expect(selectionReasons([])).toEqual(['no run measured']);
+    expect(selectionRunMaxima([])).toEqual({ query: null, reflect: null });
+  });
+
+  it('renders the per-run maxima, the reflect distributions and the verdict', () => {
+    const runs = [judgedRun(1, [1, 2, 3], [60, 70, 80]), judgedRun(2, [2, 2, 2], [90, 95, 99])];
+    const result: SelectionResult = {
+      title: 'selection route 100k drag render=default dpr=1',
+      points: 99_900,
+      dpr: 1,
+      render: 'default',
+      runs,
+      pooled: poolSelections(runs),
+      budgetMs: SELECTION_BUDGET_MS,
+      reflectBudgetMs: REFLECT_BUDGET_MS,
+      judged: true,
+      pass: true,
+      reasons: [],
+      notes: [],
+    };
+    const md = renderMarkdown([{ type: 'selection', result }]);
+    expect(md).toContain('| 5 | 3.0 | 80.0 / 99.0 / 99.0 | 99.0 | 30.0 / 30.0 / 30.0 | PASS |');
+    // Reflect, its trace value and its GPU value (review fe-perf-6; none in this run's samples).
+    expect(md).toContain(
+      '| 2 | 5 / 30 | yes | 3 | 2.0 / 2.0 / 2.0 | 3.0 / 3.0 / 3.0 | 40.0 / 40.0 / 40.0 | 95.0 / 99.0 / 99.0 | - | - | 30.0 / 30.0 / 30.0 |',
+    );
+    const failed = renderMarkdown([
+      {
+        type: 'selection',
+        result: {
+          ...result,
+          pass: false,
+          reasons: ['run 2: screen reflect p95 140.0 ms > 100 ms'],
+        },
+      },
+    ]);
+    expect(failed).toContain('| FAIL |');
+    expect(failed).toContain('- run 2: screen reflect p95 140.0 ms > 100 ms');
   });
 });

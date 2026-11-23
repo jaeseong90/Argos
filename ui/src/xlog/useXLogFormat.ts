@@ -6,8 +6,9 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { durationUnitFor, toUnit, type DurationUnit } from './scale';
+import { durationUnitFor, type DurationUnit } from './scale';
 import { STATUS_ERROR, STATUS_SLOW } from './XLogBuffer';
+import { formatDuration } from './xlogFormat';
 
 export interface XLogFormat {
   /** Duration in the given unit, e.g. "1,200 ms", "1.2 s". */
@@ -41,17 +42,8 @@ export function useXLogFormat(): XLogFormat {
       hourCycle: 'h23',
     });
     const numbers = new Intl.NumberFormat(language);
-    const duration = (ms: number, unit: DurationUnit = durationUnitFor(ms)): string => {
-      const value = toUnit(ms, unit);
-      switch (unit) {
-        case 'ms':
-          return t('xlog:unit.ms', { value });
-        case 's':
-          return t('xlog:unit.s', { value });
-        case 'min':
-          return t('xlog:unit.min', { value });
-      }
-    };
+    const duration = (ms: number, unit: DurationUnit = durationUnitFor(ms)): string =>
+      formatDuration((key, values) => t(key, values), ms, unit);
     return {
       duration,
       axisTime: (ts) => axis.format(ts),

@@ -24,3 +24,5 @@
 #   logging (logback): LoggingEvent.getMDCPropertyMap @Return -> map with the Argos MDC keys
 #   logging (log4j1): LoggingEvent.<init> @FieldValue("mdcCopy") -> MDC copy with the Argos keys
 #   httpclient-reactornetty: only if 10 §6.5 needs it
+
+httpclient-jdk11 | io.argos.agent.instrumentation.httpclient.jdk11.HttpClientSendAdvice | enter | Argument | HttpClientImpl.send/sendAsync request -> the same request plus propagation headers (Jdk11RequestHelper delegates every other method; 10 §5.3 A-5, approved for 1.0)

@@ -5,6 +5,16 @@
 // in with `update`; buffer changes arrive through `XLogBuffer.subscribe`, so realtime data never
 // re-renders React. A frame is requested only when something is dirty (docs/15 §7.2 "프레임").
 import { HitIndex } from './hitIndex';
+import {
+  bandPixels,
+  outageBands,
+  overlayMarkers,
+  type OverlayMarker,
+  type PlotBand,
+  type TimeBand,
+  type XLogMarker,
+  type XLogOutage,
+} from './overlayMarks';
 import type { BenchmarkOptions, FrameSample } from './perf';
 import {
   PLOT_MARGIN,
@@ -29,6 +39,7 @@ import {
   type PlotScale,
   type YScaleType,
 } from './scale';
+import { scanDataRect } from './scanSelection';
 import type { XLogBuffer } from './XLogBuffer';
 
 /** Minimum drag size in CSS px; smaller gestures are clicks. */
@@ -39,13 +50,27 @@ export const MAX_BENCHMARK_FRAMES = 600;
 
 export interface EngineSelection {
   readonly rect: DataRect;
-  /** Physical buffer indices of the selected points, valid until the buffer changes. */
+  /**
+   * Physical buffer indices of the selected points, valid until the buffer changes. Made when
+   * first read, outside queryMs: a copy of the query's matches, or, when another query has run
+   * since, a scan of the buffer for `rect` (the same points while the buffer is unchanged, oldest
+   * first). A consumer that reads only `rect` (the XLog screen, which selects through the URL)
+   * makes no copy (WO-33 review r1-new-3).
+   */
   readonly indices: Uint32Array;
   /**
    * Time of the selection computation (docs/15 §7.3 "10만 점 선택 계산 ≤ 5ms"): hit index check
    * (rebuilt when stale) and rectangle query, ms.
    */
   readonly queryMs?: number;
+  /**
+   * Whether queryMs includes a rebuild of the hit index (the buffer or the scale changed since the
+   * index was built, and no hover rebuilt it first). Diagnostics of ADR-0003 C-36 (WO-33 review
+   * r1-new-3).
+   */
+  readonly indexRebuilt?: boolean;
+  /** The rebuild's share of queryMs, ms (0 when the index was current). */
+  readonly indexBuildMs?: number;
 }
 
 export interface EngineHover {
@@ -82,10 +107,23 @@ export interface EngineProps {
   readonly formatTime: (ts: number) => string;
   readonly formatDuration: (ms: number, unit: DurationUnit) => string;
   readonly formatThreshold: (ms: number) => string;
+  /**
+   * Collection outages (docs/14 `meta.outages`, C-5, D-18): hatched grey bands on the overlay.
+   * Overlay only: a change never redraws the point layer. None by default.
+   */
+  readonly outages?: readonly XLogOutage[];
+  /** Event markers (docs/15 §6.1) on the overlay, grouped when they overlap. None by default. */
+  readonly markers?: readonly XLogMarker[];
+  /** Event id of the `alert=` deep-link key: its marker leads its group and is emphasised. */
+  readonly emphasizedMarkerId?: string | null;
+  /** Keyboard selection band (data space, full height, docs/15 §13). None by default. */
+  readonly band?: TimeBand | null;
   readonly onSelect?: (selection: EngineSelection) => void;
   readonly onHover?: (hover: EngineHover | null) => void;
   readonly onPointClick?: (index: number) => void;
   readonly onFrame?: (sample: FrameSample) => void;
+  /** Plot area size (CSS px) after every measurement, for DOM parts placed over the plot. */
+  readonly onLayout?: (layout: { readonly plotWidth: number; readonly plotHeight: number }) => void;
 }
 
 /** Browser services the engine uses; injectable for tests. */
@@ -171,6 +209,11 @@ interface Drag {
 }
 
 export class XLogEngine {
+  /**
+   * The canvas container: carries `data-y-unit` (ms, s or min), the unit of the linear y axis
+   * (docs/15 §7.2 batch unit), for tests and the E2E suite.
+   */
+  private readonly container: HTMLElement;
   private readonly pointsCanvas: HTMLCanvasElement;
   private readonly overlayCanvas: HTMLCanvasElement;
   private props: EngineProps;
@@ -210,6 +253,17 @@ export class XLogEngine {
   private drag: Drag | null = null;
   private bench: Benchmark | null = null;
   private lastVisible = 0;
+  /** Overlay marks of the last overlay draw, reused while scale and inputs are unchanged. */
+  private marks: {
+    key: string;
+    outages: readonly XLogOutage[] | undefined;
+    markers: readonly XLogMarker[] | undefined;
+    emphasized: string | null | undefined;
+    band: TimeBand | null | undefined;
+    bands: readonly PlotBand[];
+    groups: readonly OverlayMarker[];
+    keyboard: PlotBand | null;
+  } | null = null;
 
   constructor(
     container: HTMLElement,
@@ -218,6 +272,7 @@ export class XLogEngine {
     props: EngineProps,
     env: EngineEnvironment = defaultEnvironment(),
   ) {
+    this.container = container;
     this.pointsCanvas = pointsCanvas;
     this.overlayCanvas = overlayCanvas;
     this.props = props;
@@ -278,7 +333,12 @@ export class XLogEngine {
       next.selection !== prev.selection ||
       next.formatTime !== prev.formatTime ||
       next.formatDuration !== prev.formatDuration ||
-      next.formatThreshold !== prev.formatThreshold
+      next.formatThreshold !== prev.formatThreshold ||
+      // Overlay marks (docs/15 §7.2): the overlay only, never the point layer.
+      next.outages !== prev.outages ||
+      next.markers !== prev.markers ||
+      next.emphasizedMarkerId !== prev.emphasizedMarkerId ||
+      next.band !== prev.band
     ) {
       this.overlayDirty = true;
       this.requestFrame();
@@ -348,6 +408,37 @@ export class XLogEngine {
     this.pointer = null;
     this.clearHover();
     this.markAll();
+    this.props.onLayout?.({ plotWidth, plotHeight });
+  }
+
+  /**
+   * Selects every point of a time band over the full height (the keyboard alternative to a drag
+   * and "select visible range", docs/15 §13, WO-04 C-12) through the same hit index query as a
+   * drag, and reports it with onSelect like a drag. The band is clipped to the range; returns null
+   * (and reports nothing) when nothing of it is inside the plot.
+   */
+  selectTimeBand(band: TimeBand): EngineSelection | null {
+    if (this.destroyed) {
+      return null;
+    }
+    const scale = this.scale();
+    const t1 = Math.max(scale.from, Math.min(band.t1, band.t2));
+    const t2 = Math.min(scale.to, Math.max(band.t1, band.t2));
+    const pixels = bandPixels(scale, { t1, t2 });
+    if (pixels === null || scale.height <= 0) {
+      return null;
+    }
+    const started = this.env.now();
+    const buildMs = this.ensureIndex(scale);
+    const rect: DataRect = { t1, t2, e1: 0, e2: Number.POSITIVE_INFINITY };
+    const found = this.hitIndex.queryDataInPlace(
+      this.props.buffer,
+      { x1: pixels.x1, x2: pixels.x2, y1: 0, y2: scale.height },
+      rect,
+    );
+    const selection = this.selectionOf(rect, found, this.env.now() - started, buildMs);
+    this.props.onSelect?.(selection);
+    return selection;
   }
 
   /**
@@ -575,9 +666,13 @@ export class XLogEngine {
     }
     const props = this.props;
     const unit = durationUnitFor(scale.yMax);
+    if (this.container.dataset['yUnit'] !== unit) {
+      this.container.dataset['yUnit'] = unit;
+    }
     const offset = -new Date(props.from).getTimezoneOffset() * 60_000;
     const drag = this.drag;
     const { plotWidth, plotHeight } = this.plotSize();
+    const marks = this.overlayMarks(scale);
     drawOverlay(ctx, {
       layout: { width: this.width, height: this.height, dpr: this.dpr },
       scale,
@@ -594,7 +689,45 @@ export class XLogEngine {
           ? null
           : normalizeRect(drag.x0, drag.y0, drag.x1, drag.y1, plotWidth, plotHeight),
       hover: this.hover === null ? null : { x: this.hover.x, y: this.hover.y },
+      outages: marks.bands,
+      markers: marks.groups,
+      band: marks.keyboard,
     });
+  }
+
+  /** Outage bands, marker groups and keyboard band for the scale (cached per scale and inputs). */
+  private overlayMarks(scale: PlotScale): {
+    bands: readonly PlotBand[];
+    groups: readonly OverlayMarker[];
+    keyboard: PlotBand | null;
+  } {
+    const props = this.props;
+    const key = this.overlayScaleKey;
+    const cached = this.marks;
+    if (
+      cached?.key === key &&
+      cached.outages === props.outages &&
+      cached.markers === props.markers &&
+      cached.emphasized === props.emphasizedMarkerId &&
+      cached.band === props.band
+    ) {
+      return cached;
+    }
+    const next = {
+      key,
+      outages: props.outages,
+      markers: props.markers,
+      emphasized: props.emphasizedMarkerId,
+      band: props.band,
+      bands: props.outages === undefined ? [] : outageBands(scale, props.outages),
+      groups:
+        props.markers === undefined
+          ? []
+          : overlayMarkers(scale, props.markers, props.emphasizedMarkerId),
+      keyboard: bandPixels(scale, props.band),
+    };
+    this.marks = next;
+    return next;
   }
 
   /** Pointer position relative to the plot area. */
@@ -610,6 +743,44 @@ export class XLogEngine {
   private freshIndex(scale: PlotScale): HitIndex {
     this.hitIndex.ensure(this.props.buffer, scale);
     return this.hitIndex;
+  }
+
+  /**
+   * Makes the hit index current for `scale` (like freshIndex) and returns the rebuild's time in
+   * ms, or null when the index was current: a selection reports whether its queryMs includes a
+   * rebuild (WO-33 review r1-new-3).
+   */
+  private ensureIndex(scale: PlotScale): number | null {
+    const started = this.env.now();
+    return this.hitIndex.ensure(this.props.buffer, scale) ? this.env.now() - started : null;
+  }
+
+  /**
+   * The reported selection of a query whose `found` matches are in the hit index's scratch: its
+   * `indices` are made when first read (EngineSelection.indices), so the query itself allocates
+   * no result array. Before WO-33 review r1-new-3 every drag copied its matches (about 356 KB for
+   * an 89,000-point selection) inside queryMs, also for the XLog screen, which never reads them.
+   */
+  private selectionOf(
+    rect: DataRect,
+    found: number,
+    queryMs: number,
+    buildMs: number | null,
+  ): EngineSelection {
+    const index = this.hitIndex;
+    const token = index.queryToken;
+    const buffer = this.props.buffer;
+    let indices: Uint32Array | null = null;
+    return {
+      rect,
+      get indices(): Uint32Array {
+        indices ??= index.copyMatches(token, found) ?? scanDataRect(buffer, rect);
+        return indices;
+      },
+      queryMs,
+      indexRebuilt: buildMs !== null,
+      indexBuildMs: buildMs ?? 0,
+    };
   }
 
   /**
@@ -726,7 +897,7 @@ export class XLogEngine {
     this.requestFrame();
     const scale = this.scale();
     const started = this.env.now();
-    const index = this.freshIndex(scale);
+    const buildMs = this.ensureIndex(scale);
     if (Math.abs(drag.x1 - drag.x0) >= MIN_DRAG_PX && Math.abs(drag.y1 - drag.y0) >= MIN_DRAG_PX) {
       const rect: PixelRect = normalizeRect(
         drag.x0,
@@ -737,11 +908,11 @@ export class XLogEngine {
         scale.height,
       );
       const data = pixelRectToData(scale, rect);
-      const indices = index.queryData(this.props.buffer, rect, data);
-      this.props.onSelect?.({ rect: data, indices, queryMs: this.env.now() - started });
+      const found = this.hitIndex.queryDataInPlace(this.props.buffer, rect, data);
+      this.props.onSelect?.(this.selectionOf(data, found, this.env.now() - started, buildMs));
       return;
     }
-    const hit = index.nearest(point.x, point.y);
+    const hit = this.hitIndex.nearest(point.x, point.y);
     if (hit >= 0) {
       this.props.onPointClick?.(hit);
     }

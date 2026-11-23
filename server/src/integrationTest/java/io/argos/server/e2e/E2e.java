@@ -45,10 +45,18 @@ import org.testcontainers.DockerClientFactory;
  */
 final class E2e {
 
-  /** The rollups whose {@code sum(count)} must equal the transactions sent (T-ACC-13). */
+  /**
+   * The rollups whose {@code sum(count)} must equal the transactions sent (T-ACC-13), {@code
+   * instance_stat_1h} of ADR-0010 C-212 (1) included.
+   */
   static final List<String> TRANSACTION_ROLLUPS =
       List.of(
-          "app_stat_1m", "app_stat_1h", "service_stat_1m", "service_stat_1h", "instance_stat_1m");
+          "app_stat_1m",
+          "app_stat_1h",
+          "service_stat_1m",
+          "service_stat_1h",
+          "instance_stat_1m",
+          "instance_stat_1h");
 
   private E2e() {}
 

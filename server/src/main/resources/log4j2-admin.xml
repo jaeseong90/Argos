@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  Log of the argos-admin command line (io.argos.server.cli.AdminCli, WO-27): the same JSON Lines
+  events as the server log (argos-server-log.json, masked by MaskingLogEventFactory), on standard
+  error only. Standard output carries the command's result (table or JSON), and the command does
+  not write the running server's log file. Log levels: logging.level.* (ARGOS_LOG_LEVEL).
+-->
+<Configuration status="WARN">
+  <Appenders>
+    <Console name="console" target="SYSTEM_ERR" follow="true">
+      <JsonTemplateLayout eventTemplateUri="classpath:argos-server-log.json" maxStringLength="40000"/>
+    </Console>
+  </Appenders>
+  <Loggers>
+    <Root level="INFO">
+      <AppenderRef ref="console"/>
+    </Root>
+  </Loggers>
+</Configuration>

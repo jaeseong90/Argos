@@ -65,10 +65,15 @@ class WalDataPayloadTest {
     byte[] bytes =
         WalDataPayload.of(SESSION, TransactionBatch.getDefaultInstance().toByteString()).encode();
     byte[] wrongFormat = bytes.clone();
-    wrongFormat[0] = 2;
+    // Formats 1 and 2 are known (format 2: with service Apdex overrides, WO-27).
+    wrongFormat[0] = 3;
     assertThatThrownBy(() -> WalDataPayload.decode(wrongFormat))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("format 2");
+        .hasMessageContaining("format 3");
+    byte[] formatTwoWithoutList = bytes.clone();
+    formatTwoWithoutList[0] = 2;
+    assertThatThrownBy(() -> WalDataPayload.decode(formatTwoWithoutList))
+        .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> WalDataPayload.decode(Arrays.copyOf(bytes, 10)))
         .isInstanceOf(IllegalArgumentException.class);
     SessionContext longVersion = SESSION.withAppVersion("v".repeat(70_000));

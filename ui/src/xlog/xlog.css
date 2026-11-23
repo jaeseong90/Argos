@@ -123,3 +123,103 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Keyboard selection (docs/15 §13): the focusable plot shows the focus ring inside its frame. */
+.xlog-canvas__plot--focusable:focus-visible {
+  outline: 2px solid var(--color-focus, #2f6feb);
+  outline-offset: -2px;
+}
+
+/* Event marker hit targets over the glyphs the overlay draws in the top margin (docs/15 §6.1).
+   The list itself lets drags through; only the targets take the pointer. */
+.xlog-markers {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+}
+
+.xlog-markers__item {
+  position: absolute;
+  top: 0;
+}
+
+.xlog-marker {
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.xlog-marker:focus-visible {
+  outline: 2px solid var(--color-focus, #2f6feb);
+  outline-offset: 0;
+}
+
+.xlog-marker--emphasized {
+  box-shadow: 0 0 0 2px var(--sev-warn, #d97706);
+}
+
+.xlog-marker-tip {
+  position: absolute;
+  top: 18px;
+  left: 0;
+  z-index: 2;
+  box-sizing: border-box;
+  min-width: 200px;
+  max-width: 360px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #1f2328;
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.xlog-marker-tip__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.xlog-marker-tip__time {
+  color: #c3c7cf;
+}
+
+.xlog-marker-tip__more {
+  margin: 4px 0 0;
+  color: #c3c7cf;
+}
+
+/* Collection outages legend (C-5, D-18): the hatch swatch names the grey bands. */
+.xlog-outage-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  color: #1f2328;
+}
+
+.xlog-outage-legend__swatch {
+  flex: none;
+  width: 14px;
+  height: 10px;
+  border: 1px solid var(--outage-hatch, #8b929c);
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--outage-hatch, #8b929c) 0 1px,
+    var(--outage-bg, #f1f2f4) 1px 4px
+  );
+}

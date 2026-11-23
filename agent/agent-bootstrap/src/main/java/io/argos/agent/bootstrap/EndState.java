@@ -2,6 +2,7 @@
 package io.argos.agent.bootstrap;
 
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
 /**
  * Holder of the {@link TraceContext#markEnded()} and {@link TraceContext#addFlags(int)} updaters,
@@ -14,6 +15,14 @@ final class EndState {
 
   static final AtomicIntegerFieldUpdater<TraceContext> FLAGS =
       AtomicIntegerFieldUpdater.newUpdater(TraceContext.class, "flags");
+
+  /** {@link TraceContext#addExternalCall(long)} (WO-14). */
+  static final AtomicIntegerFieldUpdater<TraceContext> EXT_COUNT =
+      AtomicIntegerFieldUpdater.newUpdater(TraceContext.class, "extCount");
+
+  /** {@link TraceContext#addExternalCall(long)} (WO-14). */
+  static final AtomicLongFieldUpdater<TraceContext> EXT_NANOS =
+      AtomicLongFieldUpdater.newUpdater(TraceContext.class, "extNanos");
 
   private EndState() {}
 }

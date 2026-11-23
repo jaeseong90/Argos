@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.server.ops.migration;
 
+import io.argos.server.storage.clickhouse.RollupPartitions;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -486,19 +486,20 @@ public final class ClickHouseMigrationRunner {
           continue;
         }
         long partStart = System.nanoTime();
-        List<String> sql = partitionStatements(monthly, key);
+        RollupPartitions.Partition partition = RollupPartitions.Partition.ofKey(monthly, key);
         String partDescription = "backfill " + step.table() + " " + key;
         long rows;
         try {
-          clickHouse.execute(sql.get(0));
-          clickHouse.execute(sql.get(1));
-          clickHouse.execute(sql.get(2));
-          List<String> count = clickHouse.queryColumn("SELECT toString(count()) FROM " + staging());
-          rows = count.isEmpty() ? 0 : Long.parseLong(count.get(0));
-          if (rows > 0) {
-            clickHouse.execute(sql.get(3));
-          }
-          clickHouse.execute(sql.get(4));
+          rows =
+              RollupPartitions.replace(
+                      clickHouse,
+                      params.table(step.table()),
+                      staging(),
+                      partition,
+                      templates.rollupSelect(
+                          step.table(), params, "AND (" + partition.sourcePredicate() + ")"),
+                      RollupPartitions.EmptyStaging.KEEP)
+                  .stagingRows();
         } catch (MigrationException e) {
           recordFailure(progressVersion, partDescription, step.checksum(), partStart, e);
           recordFailure(step.version(), description, step.checksum(), start, e);
@@ -570,37 +571,13 @@ public final class ClickHouseMigrationRunner {
       return new ArrayList<>(keys);
     }
 
+    /**
+     * The staging table of the backfill. {@link RollupPartitions#replace} drops a leftover one,
+     * creates and fills it, replaces the partition (skipped when the staging table stays empty: the
+     * partition is kept) and drops it.
+     */
     private String staging() {
       return params.table(step.table() + STAGING_SUFFIX);
-    }
-
-    /**
-     * Drop leftover staging, create staging, fill it, replace the partition, drop staging (the
-     * {@code REPLACE PARTITION} is skipped when the staging table is empty).
-     */
-    private List<String> partitionStatements(boolean monthly, String key) {
-      String partition;
-      String predicate;
-      if (monthly) {
-        YearMonth month = YearMonth.parse(key, MONTH_KEY);
-        partition = MONTH_KEY.format(month);
-        predicate = "toYYYYMM(minute) = " + partition;
-      } else {
-        LocalDate day = LocalDate.parse(key, DAY_KEY);
-        partition = "'" + day + "'";
-        predicate = "toDate(ts) = '" + day + "'";
-      }
-      String staging = staging();
-      String target = params.table(step.table());
-      return List.of(
-          "DROP TABLE IF EXISTS " + staging + " SYNC",
-          "CREATE TABLE " + staging + " AS " + target,
-          "INSERT INTO "
-              + staging
-              + "\n"
-              + templates.rollupSelect(step.table(), params, "AND (" + predicate + ")"),
-          "ALTER TABLE " + target + " REPLACE PARTITION " + partition + " FROM " + staging,
-          "DROP TABLE IF EXISTS " + staging + " SYNC");
     }
   }
 

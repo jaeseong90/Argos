@@ -107,7 +107,7 @@ export function AuthGate() {
   if (status === 'unknown') {
     return (
       <main className="auth-gate">
-        <LoadingState data-testid="loading-state" />
+        <LoadingState slowHint="wait" data-testid="loading-state" />
       </main>
     );
   }

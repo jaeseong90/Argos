@@ -11,8 +11,11 @@
  * InstanceUpdate} (C-146).
  *
  * <p>WO-22 adds the instance state machine (UP/STALE/DOWN/WARN), offset persistence, the {@code
- * AgentBye} grace, the approval queue, the 90 s idle timeout (C-19), events and the realtime bus
- * behind the same registry.
+ * AgentBye} grace, the approval queue ({@link
+ * io.argos.server.session.SessionStore#recordPendingRegistration}), the 90 s idle timeout (C-19),
+ * the merge of a temporary {@code host:pid} instance into the existing instance of its new name
+ * (C-158 (2)), the daily instance retention ({@link io.argos.server.session.InstanceRetentionJob}),
+ * events and the realtime bus behind the same registry.
  *
  * <p>Owner: WO-21 (lane collector), then WO-22.
  */

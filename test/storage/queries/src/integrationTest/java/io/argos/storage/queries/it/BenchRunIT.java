@@ -83,7 +83,7 @@ class BenchRunIT {
             files,
             selected,
             new PercentileAccuracy.Options(
-                PercentileAccuracy.Source.SYNTHETIC, 1, 600, 1, 1, 1, 1, 500),
+                PercentileAccuracy.Source.SYNTHETIC, 1, 600, 1, 1, 1, 1, 500, ""),
             500,
             smoke ? 10 : 100,
             1000,
@@ -196,7 +196,15 @@ class BenchRunIT {
         PercentileAccuracy.run(
             ctx,
             new PercentileAccuracy.Options(
-                PercentileAccuracy.Source.DATASET, 0, 0, 0, 1, 1, 1, 50));
+                PercentileAccuracy.Source.DATASET,
+                0,
+                0,
+                0,
+                1,
+                1,
+                1,
+                50,
+                System.getProperty("argos.queries.profile", "")));
     Map<String, ProcedureResult> byId =
         results.stream().collect(Collectors.toMap(ProcedureResult::id, p -> p));
     assertThat(byId)

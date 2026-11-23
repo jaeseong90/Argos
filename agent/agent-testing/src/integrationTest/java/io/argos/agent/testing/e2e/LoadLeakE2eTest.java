@@ -137,7 +137,7 @@ class LoadLeakE2eTest {
       List<String> agentThreads = ThreadCounter.namesStartingWith(dump, "argos-");
       assertThat(agentThreads)
           .as("agent threads (N-26 budget 6)")
-          .contains("argos-logger", "argos-watch")
+          .contains("argos-logger", "argos-watch", "argos-metrics")
           .hasSizeLessThanOrEqualTo(6);
 
       LeakReport report = LeakProbe.of(running).check();

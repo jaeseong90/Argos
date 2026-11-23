@@ -59,6 +59,15 @@ public final class ServletHelperCommon {
    */
   static final int MAX_FORWARDED_LINES = 32;
 
+  /**
+   * Characters of the joined {@code tracestate} header lines read at most: one more than the core
+   * accepts (512, W3C), so that a longer value is still recognized as too long and dropped.
+   */
+  static final int MAX_TRACESTATE_CHARS = 513;
+
+  /** {@code tracestate} header lines read at most (W3C: 32 list members). */
+  static final int MAX_TRACESTATE_LINES = 32;
+
   /** {@code HttpServletMapping} matches that name a service (Servlet 4+, 10 §6.1 exit). */
   private static final String[] NAMING_MATCHES = {"EXACT", "PATH", "EXTENSION"};
 
@@ -142,12 +151,25 @@ public final class ServletHelperCommon {
     return contextPath + " " + method + " " + path;
   }
 
-  /** NONE -> ACTIVE: a new HTTP transaction at depth 1, or null when the tracer cannot record. */
+  /**
+   * NONE -> ACTIVE: a new HTTP transaction at depth 1, or null when the tracer cannot record. The
+   * raw {@code traceparent} and {@code tracestate} header values (null when absent) go to the core,
+   * which checks them (10 §8, W3C) and adopts a valid incoming trace (WO-14).
+   */
   public static TraceContext begin(
-      Tracer tracer, String method, String contextPath, String pathWithinApp) {
+      Tracer tracer,
+      String method,
+      String contextPath,
+      String pathWithinApp,
+      String traceparent,
+      String tracestate) {
     TraceContext context =
         tracer.begin(
-            Kind.HTTP, provisionalName(contextPath, method, pathWithinApp), System.nanoTime());
+            Kind.HTTP,
+            provisionalName(contextPath, method, pathWithinApp),
+            System.nanoTime(),
+            traceparent,
+            tracestate);
     if (context != null) {
       context.dispatchDepth = 1;
       context.dispatchCount = 1;
@@ -338,6 +360,26 @@ public final class ServletHelperCommon {
     }
     String kept = start > 0 ? joined.substring(start) : joined.toString();
     return kept.isEmpty() ? null : kept;
+  }
+
+  /**
+   * Appends one {@code tracestate} header line to {@code joined} (W3C: several lines are one list,
+   * joined with commas) and returns false once the bound is reached ({@value #MAX_TRACESTATE_CHARS}
+   * characters, {@value #MAX_TRACESTATE_LINES} lines): the caller stops reading lines. Over the
+   * bound the value is cut, so the core drops it as too long.
+   */
+  public static boolean appendTracestate(StringBuilder joined, String line, int lines) {
+    if (line == null) {
+      return lines < MAX_TRACESTATE_LINES;
+    }
+    if (joined.length() > 0) {
+      joined.append(',');
+    }
+    int room = MAX_TRACESTATE_CHARS - joined.length();
+    if (room > 0) {
+      joined.append(line, 0, Math.min(line.length(), room));
+    }
+    return joined.length() < MAX_TRACESTATE_CHARS && lines < MAX_TRACESTATE_LINES;
   }
 
   // --- streaming response end (10 §6.7, F-A34, C-127) -----------------------------------------

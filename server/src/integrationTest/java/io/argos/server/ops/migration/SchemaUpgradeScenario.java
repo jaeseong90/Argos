@@ -22,22 +22,28 @@ import java.util.concurrent.TimeUnit;
 import org.springframework.context.ConfigurableApplicationContext;
 
 /**
- * The incremental migration path of 13 §13.2 (T-ST-052 path 2, T-SV-002): the bundled scripts (V001
- * and the V002 ingest columns of ADR-0010 C-144) on empty databases, generator data in every raw
- * table (rollups filled by the views), then the next-version fixture ({@code
- * migration-fixtures/upgrade-v003}: V003 with {@code ADD COLUMN IF NOT EXISTS}, the M001 procedure
- * that replaces the 1m rollup {@code instance_stat_1m} in four steps with a daily backfill, and the
- * M002 procedure that replaces the 1h rollup {@code app_stat_1h} with a monthly backfill). Row
- * counts must be the same before and after, the new rollups must equal their source per minute and
- * per hour (D-03 form), D-12 must hold before and after (Q13 form), {@code settings.rollup_alias}
- * must point at the new tables, every script, step and backfill partition must finish within 10
- * minutes, and a further start applies nothing.
+ * The incremental migration path of 13 §13.2 (T-ST-052 path 2, T-SV-002): the bundled scripts
+ * (V001, the V002 ingest columns of ADR-0010 C-144 and the V003 instance_stat_1h of C-212 (1)) on
+ * empty databases, generator data in every raw table (rollups filled by the views), then the
+ * next-version fixture ({@code migration-fixtures/upgrade-v004}: V004 with {@code ADD COLUMN IF NOT
+ * EXISTS}, the M001 procedure that replaces the 1m rollup {@code error_stat_1m} in four steps with
+ * a daily backfill, and the M002 procedure that replaces the 1h rollup {@code app_stat_1h} with a
+ * monthly backfill). M001 replaced {@code instance_stat_1m} until WO-27; since V003 cascades {@code
+ * instance_stat_1h} from it, a procedure may not drop that table (the ordering rule of {@link
+ * MigrationCatalog}), so the fixture replaces the other 1m rollup without a 1h cascade. Row counts
+ * must be the same before and after, the new rollups must equal their source per minute and per
+ * hour (D-03 form), D-12 must hold before and after (Q13 form), {@code settings.rollup_alias} must
+ * point at the new tables, every script, step and backfill partition must finish within 10 minutes,
+ * and a further start applies nothing.
  *
  * <p>Generated rows are placed relative to the current time (the generator's default range ends
  * before now and crosses the last UTC midnight), so they are inside every retention whatever the
  * date of the run (WO-03F anchor-date rule).
  */
 final class SchemaUpgradeScenario {
+
+  /** The rows of error_stat_1m and of the fixture's error_stat_1m_v2 (failed, with a group). */
+  private static final String GROUPED_ERRORS = "error = 1 AND error_group_id != 0";
 
   private SchemaUpgradeScenario() {}
 
@@ -85,13 +91,17 @@ final class SchemaUpgradeScenario {
           .isPositive();
     }
     assertThat(ch.scalarLong("SELECT sum(count) FROM argos.instance_stat_1m")).isEqualTo(xlog);
+    assertThat(ch.scalarLong("SELECT sum(count) FROM argos.instance_stat_1h")).isEqualTo(xlog);
     assertThat(ch.scalarLong("SELECT sum(count) FROM argos.app_stat_1h")).isEqualTo(xlog);
+    long errors = ch.scalarLong("SELECT count() FROM argos.xlog WHERE " + GROUPED_ERRORS);
+    assertThat(errors).as("failed transactions with an error group").isPositive();
+    assertThat(ch.scalarLong("SELECT sum(count) FROM argos.error_stat_1m")).isEqualTo(errors);
     assertD12(ch, data, "before the upgrade");
 
     ClickHouseMigrationRunner.Result upgrade;
     long upgradeStart = System.nanoTime();
     try (ConfigurableApplicationContext ctx =
-        MigrationApps.start(env, MigrationApps.withFixture("upgrade-v003"), Map.of())) {
+        MigrationApps.start(env, MigrationApps.withFixture("upgrade-v004"), Map.of())) {
       upgrade = ctx.getBean(ClickHouseMigrationPhase.class).lastResult();
       assertThat(ctx.getBean(PostgresMigrationPhase.class).lastResult().migrationsExecuted())
           .isZero();
@@ -108,10 +118,10 @@ final class SchemaUpgradeScenario {
         upgrade.applied().stream().map(ClickHouseMigrationRunner.Applied::version).toList();
     // Scripts first, then the procedures in number and step order; backfill progress rows (one per
     // day of M001, one per month of M002) come right before their step.
-    assertThat(versions).startsWith("V003", "M001.create_v2");
+    assertThat(versions).startsWith("V004", "M001.create_v2");
     assertThat(versions.stream().filter(v -> !v.contains("/")).toList())
         .containsExactly(
-            "V003",
+            "V004",
             "M001.create_v2",
             "M001.backfill",
             "M001.switch",
@@ -153,18 +163,20 @@ final class SchemaUpgradeScenario {
         .isEqualTo("['fixture_unit','fixture_v002']");
 
     // The backfilled rollup equals the source per minute (D-03 form, ADR-0007 C-65).
-    assertThat(ch.scalarLong("SELECT sum(count) FROM argos.instance_stat_1m_v2")).isEqualTo(xlog);
+    assertThat(ch.scalarLong("SELECT sum(count) FROM argos.error_stat_1m_v2")).isEqualTo(errors);
     assertThat(
             ch.scalarLong(
                 "SELECT count() FROM (SELECT m, sumIf(c, src = 'xlog') AS xc, sumIf(c, src = 'v2') AS vc"
                     + " FROM (SELECT 'xlog' AS src, toStartOfMinute(ts) AS m, count() AS c FROM argos.xlog"
-                    + " GROUP BY m UNION ALL SELECT 'v2', minute, sum(count) FROM argos.instance_stat_1m_v2"
+                    + " WHERE "
+                    + GROUPED_ERRORS
+                    + " GROUP BY m UNION ALL SELECT 'v2', minute, sum(count) FROM argos.error_stat_1m_v2"
                     + " GROUP BY minute) GROUP BY m HAVING xc != vc)"))
-        .as("minutes where instance_stat_1m_v2 differs from xlog")
+        .as("minutes where error_stat_1m_v2 differs from xlog")
         .isZero();
     assertThat(
             ch.scalarLong(
-                "SELECT count() FROM argos.instance_stat_1m_v2 FINAL WHERE max_cpu_time_ms != 0"))
+                "SELECT count() FROM argos.error_stat_1m_v2 FINAL WHERE max_elapsed_ms != 0"))
         .as("the new measure is filled")
         .isPositive();
 
@@ -183,10 +195,10 @@ final class SchemaUpgradeScenario {
     // Step 4: the old views and tables are gone, the new views and no staging table remain.
     assertThat(
             ch.rows(
-                "SELECT name FROM system.tables WHERE database = 'argos' AND name LIKE 'instance_stat%'"
+                "SELECT name FROM system.tables WHERE database = 'argos' AND name LIKE 'error_stat%'"
                     + " ORDER BY name"))
         .extracting(r -> r.get(0))
-        .containsExactly("instance_stat_1m_v2", "instance_stat_1m_v2_mv");
+        .containsExactly("error_stat_1m_v2", "error_stat_1m_v2_mv");
     assertThat(
             ch.rows(
                 "SELECT name FROM system.tables WHERE database = 'argos' AND name LIKE 'app_stat_1h%'"
@@ -199,8 +211,8 @@ final class SchemaUpgradeScenario {
             MigrationApps.pgScalar(
                 env,
                 PgAccount.APP,
-                "SELECT value ->> 'instance_stat_1m' FROM argos.settings WHERE key = 'rollup_alias'"))
-        .isEqualTo("instance_stat_1m_v2");
+                "SELECT value ->> 'error_stat_1m' FROM argos.settings WHERE key = 'rollup_alias'"))
+        .isEqualTo("error_stat_1m_v2");
     assertThat(
             MigrationApps.pgScalar(
                 env,
@@ -227,7 +239,7 @@ final class SchemaUpgradeScenario {
 
     // Once applied, a further start applies nothing.
     try (ConfigurableApplicationContext ctx =
-        MigrationApps.start(env, MigrationApps.withFixture("upgrade-v003"), Map.of())) {
+        MigrationApps.start(env, MigrationApps.withFixture("upgrade-v004"), Map.of())) {
       assertThat(ctx.getBean(ClickHouseMigrationPhase.class).lastResult().applied()).isEmpty();
     }
     timings.note(

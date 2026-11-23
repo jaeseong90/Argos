@@ -24,9 +24,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 
 /**
- * Applies V001 on an empty server (own container: no argos database) and applies it again (13 §13.2
- * migration path "empty DB -> all scripts", T-ST-052). Verifies the DDL of 13 §3/§4 as created by
- * the server: engines, partition and sort keys, TTL, codecs, skip indexes, definer views.
+ * Applies the schema scripts (V001, V002 of ADR-0010 C-144, V003 instance_stat_1h of C-212 (1)) on
+ * an empty server (own container: no argos database) and applies them again (13 §13.2 migration
+ * path "empty DB -> all scripts", T-ST-052). Verifies the DDL of 13 §3/§4 as created by the server:
+ * engines, partition and sort keys, TTL, codecs, skip indexes, definer views.
  */
 @Tag("integration")
 @Tag("req:N-22")
@@ -107,6 +108,13 @@ class SchemaApplyIT {
                   "app_id, instance_id, kind, minute",
                   "TTL minute + toIntervalDay(90)")),
           Map.entry(
+              "instance_stat_1h",
+              List.of(
+                  "AggregatingMergeTree",
+                  "toYYYYMM(hour)",
+                  "app_id, instance_id, kind, hour",
+                  "TTL hour + toIntervalDay(365)")),
+          Map.entry(
               "error_stat_1m",
               List.of(
                   "AggregatingMergeTree",
@@ -174,7 +182,8 @@ class SchemaApplyIT {
 
   @Test
   @Order(1)
-  @DisplayName("T-ST-052 V001 applies on an empty server: database, 17 tables, 12 definer views")
+  @DisplayName(
+      "T-ST-052 V001 to V003 apply on an empty server: database, 18 tables, 13 definer views")
   void appliesOnEmptyServer() {
     assertThat(migrator.scalarLong("SELECT count() FROM system.databases WHERE name = 'argos'"))
         .isZero();
@@ -209,7 +218,7 @@ class SchemaApplyIT {
         migrator.rows(
             "SELECT name, create_table_query FROM system.tables"
                 + " WHERE database = 'argos' AND engine = 'MaterializedView' ORDER BY name");
-    assertThat(views).hasSize(12);
+    assertThat(views).hasSize(13);
     for (List<String> view : views) {
       assertThat(view.get(1))
           .as(view.get(0))
@@ -294,6 +303,9 @@ class SchemaApplyIT {
             List.of("app_stat_1h", "AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32)"),
             List.of("app_stat_1m", "AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32)"),
             List.of(
+                "instance_stat_1h",
+                "AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32)"),
+            List.of(
                 "instance_stat_1m",
                 "AggregateFunction(quantilesDD(0.01, 0.5, 0.95, 0.99), UInt32)"),
             List.of(
@@ -351,7 +363,8 @@ class SchemaApplyIT {
 
   @Test
   @Order(3)
-  @DisplayName("T-ST-052 applying V001 twice is a no-op: same objects (UUID, DDL), data kept")
+  @DisplayName(
+      "T-ST-052 applying V001 to V003 twice is a no-op: same objects (UUID, DDL), data kept")
   void secondApplyIsNoOp() {
     String snapshot =
         "SELECT name, uuid, create_table_query, metadata_modification_time FROM system.tables"
@@ -399,6 +412,17 @@ class SchemaApplyIT {
     }
     assertThat(migrator.scalarLong("SELECT count() FROM argos.xlog")).isEqualTo(rows);
     assertThat(migrator.scalarLong("SELECT sum(count) FROM argos.app_stat_1h")).isEqualTo(rollup);
+
+    // V003 (ADR-0010 C-212 (1), CREATE ... IF NOT EXISTS) applied again changes nothing at all.
+    long hourly = migrator.scalarLong("SELECT sum(count) FROM argos.instance_stat_1h");
+    assertThat(hourly).isEqualTo(rows);
+    List<String> secondV003 =
+        SchemaApplier.apply(
+            migrator, renderer.render(renderer.migrations().get(2), SchemaParameters.defaults()));
+    assertThat(secondV003).hasSize(2);
+    assertThat(migrator.rows(snapshot)).isEqualTo(after);
+    assertThat(migrator.scalarLong("SELECT sum(count) FROM argos.instance_stat_1h"))
+        .isEqualTo(hourly);
   }
 
   @Test

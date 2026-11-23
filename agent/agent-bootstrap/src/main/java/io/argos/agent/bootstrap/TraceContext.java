@@ -127,9 +127,30 @@ public final class TraceContext {
    */
   public int sqlCount;
 
-  public int extCount;
+  /**
+   * External calls of the transaction (11 {@code ext_count}) and their time (11 {@code
+   * ext_time_ms}); written only through {@link #addExternalCall(long)} (WO-14), which is safe from
+   * any thread: a WebClient call ends on a Netty event loop while the request thread runs.
+   */
+  public volatile int extCount;
+
   public long sqlNanos;
-  public long extNanos;
+
+  /** See {@link #extCount}. */
+  public volatile long extNanos;
+
+  /**
+   * The {@code tracestate} header of the incoming request after the W3C checks (at most 512
+   * characters and 32 entries), forwarded on outgoing calls (10 §8); null when there was none or it
+   * was dropped. WO-14 addition to 10 §3.
+   */
+  public final String incomingTracestate;
+
+  /**
+   * The app id of the {@code argos=<app>:<inst>:<svc>} entry of the incoming {@code tracestate} (11
+   * {@code caller_app_id}); 0 when absent or malformed. WO-14 addition to 10 §3.
+   */
+  public final int callerAppId;
 
   /**
    * Connection acquisition wait of the transaction: the sum of its outermost {@code
@@ -160,6 +181,44 @@ public final class TraceContext {
       boolean virtualThread,
       long cpuStartNanos,
       long allocStartBytes) {
+    this(
+        txId,
+        traceIdHi,
+        traceIdLo,
+        spanId,
+        parentSpanId,
+        kind,
+        startNanos,
+        startEpochMs,
+        thread,
+        virtualThread,
+        cpuStartNanos,
+        allocStartBytes,
+        null,
+        0);
+  }
+
+  /**
+   * A context with the incoming propagation data of 10 §8 ({@link #incomingTracestate}, {@link
+   * #callerAppId}); WO-14.
+   */
+  public TraceContext(
+      long txId,
+      long traceIdHi,
+      long traceIdLo,
+      long spanId,
+      long parentSpanId,
+      int kind,
+      long startNanos,
+      long startEpochMs,
+      Thread thread,
+      boolean virtualThread,
+      long cpuStartNanos,
+      long allocStartBytes,
+      String incomingTracestate,
+      int callerAppId) {
+    this.incomingTracestate = incomingTracestate;
+    this.callerAppId = callerAppId;
     this.txId = txId;
     this.traceIdHi = traceIdHi;
     this.traceIdLo = traceIdLo;
@@ -206,6 +265,18 @@ public final class TraceContext {
       if ((current & add) == add || EndState.FLAGS.compareAndSet(this, current, current | add)) {
         return;
       }
+    }
+  }
+
+  /**
+   * Adds one external call of {@code elapsedNanos} (negative counts as 0) to {@link #extCount} and
+   * {@link #extNanos}: lock-free, safe from any thread, never blocks (WO-14). The two values are
+   * not updated as one; a record built at the same moment may see the count before the time.
+   */
+  public void addExternalCall(long elapsedNanos) {
+    EndState.EXT_COUNT.incrementAndGet(this);
+    if (elapsedNanos > 0) {
+      EndState.EXT_NANOS.addAndGet(this, elapsedNanos);
     }
   }
 

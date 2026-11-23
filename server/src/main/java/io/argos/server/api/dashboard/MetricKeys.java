@@ -24,6 +24,8 @@ import org.springframework.stereotype.Component;
  *   <tr><td>{@value #GC_PAUSE}</td><td>{@code jvm_gc_pause_seconds_total} (pauses only, D-25)</td>
  *       <td>increase</td></tr>
  *   <tr><td>{@value #CPU}</td><td>{@code process_cpu_usage_ratio}</td><td>gauge</td></tr>
+ *   <tr><td>{@value #SYSTEM_CPU}</td><td>{@code system_cpu_usage_ratio} (the agent's cgroup-limited
+ *       system CPU, 10 §11; ADR-0010 C-212 (1))</td><td>gauge</td></tr>
  *   <tr><td>{@value #TOMCAT_BUSY}, {@value #TOMCAT_MAX}</td><td>{@code tomcat_threads_busy},
  *       {@code tomcat_threads_max}</td><td>gauge</td></tr>
  *   <tr><td>{@value #POOL_ACTIVE}, {@value #POOL_MAX}</td><td>{@code jdbc_pool_active}, {@code
@@ -31,6 +33,8 @@ import org.springframework.stereotype.Component;
  *   <tr><td>{@value #AGENT_DROPS}</td><td>{@code argos_agent_dropped_total}</td><td>increase</td></tr>
  *   <tr><td>{@value #EXCLUDED}</td><td>{@code argos_agent_ignored_total} (label: reason)</td>
  *       <td>increase</td></tr>
+ *   <tr><td>{@value #ACTIVE}</td><td>{@code argos_active_transactions} (recorded by the server
+ *       from each active snapshot, ADR-0010 C-178 (1))</td><td>gauge</td></tr>
  * </table>
  *
  * A gauge is first averaged per instance (value sum / samples), then summed ({@code total}) or
@@ -52,6 +56,9 @@ public class MetricKeys {
   /** Process CPU ratio. */
   public static final String CPU = "cpu";
 
+  /** System CPU ratio (ADR-0010 C-212 (1)). */
+  public static final String SYSTEM_CPU = "system_cpu";
+
   /** Busy Tomcat threads. */
   public static final String TOMCAT_BUSY = "tomcat_busy";
 
@@ -70,6 +77,9 @@ public class MetricKeys {
   /** Transactions the agent excluded by rule. */
   public static final String EXCLUDED = "excluded";
 
+  /** Active transactions (the server's gauge of the active snapshots, ADR-0010 C-178 (1)). */
+  public static final String ACTIVE = "active";
+
   /** Every key. */
   public static final Set<String> ALL =
       Set.of(
@@ -77,12 +87,14 @@ public class MetricKeys {
           HEAP_MAX,
           GC_PAUSE,
           CPU,
+          SYSTEM_CPU,
           TOMCAT_BUSY,
           TOMCAT_MAX,
           POOL_ACTIVE,
           POOL_MAX,
           AGENT_DROPS,
-          EXCLUDED);
+          EXCLUDED,
+          ACTIVE);
 
   private static final String FRAGMENTS = "dashboard/metric_keys";
 
@@ -120,10 +132,26 @@ public class MetricKeys {
   /** The {@code keys} per bucket of the plan, of the {@code instances} (all when empty). */
   public List<BucketValue> series(
       int appId, Collection<Integer> instances, SourcePlan plan, Collection<String> keys) {
+    return series(appId, instances, List.of(), plan, keys);
+  }
+
+  /**
+   * The {@code keys} per bucket of the plan, of the {@code instances} (all when empty) without the
+   * {@code excluded} ones ({@code exclude_instance}, ADR-0010 C-212 (1)).
+   */
+  public List<BucketValue> series(
+      int appId,
+      Collection<Integer> instances,
+      Collection<Integer> excluded,
+      SourcePlan plan,
+      Collection<String> keys) {
     List<BucketValue> out = new ArrayList<>();
     for (QueryRow r :
         queries.run(
-            "dashboard/metric_keys.outer", FRAGMENTS, plan, params(appId, instances, keys))) {
+            "dashboard/metric_keys.outer",
+            FRAGMENTS,
+            plan,
+            params(appId, instances, excluded, keys))) {
       out.add(
           new BucketValue(
               r.getInstant("b"),
@@ -139,10 +167,23 @@ public class MetricKeys {
   /** The {@code keys} per instance over the plan's range. */
   public List<InstanceValue> perInstance(
       int appId, Collection<Integer> instances, SourcePlan plan, Collection<String> keys) {
+    return perInstance(appId, instances, List.of(), plan, keys);
+  }
+
+  /** The {@code keys} per instance over the plan's range, without the {@code excluded} ones. */
+  public List<InstanceValue> perInstance(
+      int appId,
+      Collection<Integer> instances,
+      Collection<Integer> excluded,
+      SourcePlan plan,
+      Collection<String> keys) {
     List<InstanceValue> out = new ArrayList<>();
     for (QueryRow r :
         queries.run(
-            "dashboard/metric_instances.outer", FRAGMENTS, plan, params(appId, instances, keys))) {
+            "dashboard/metric_instances.outer",
+            FRAGMENTS,
+            plan,
+            params(appId, instances, excluded, keys))) {
       out.add(
           new InstanceValue(
               (int) r.getLong("i"),
@@ -155,11 +196,12 @@ public class MetricKeys {
   }
 
   private static QueryParams params(
-      int appId, Collection<Integer> instances, Collection<String> keys) {
-    return QueryParams.create()
-        .uint32("app", appId)
-        .int64("all", instances.isEmpty() ? 1 : 0)
-        .int64Array("instances", instances.stream().mapToLong(Integer::longValue).toArray())
+      int appId,
+      Collection<Integer> instances,
+      Collection<Integer> excluded,
+      Collection<String> keys) {
+    return TimeQueries.instanceFilter(
+            QueryParams.create().uint32("app", appId), instances, excluded)
         .stringArray("keys", List.copyOf(keys));
   }
 }

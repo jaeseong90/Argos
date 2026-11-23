@@ -13,7 +13,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * The running transactions of an application (14 §4.9, F-U04): the latest snapshot of each live
  * agent session (5-second snapshots, kept in memory by the collector). The same schema as the
- * WebSocket {@code active} topic (14 §5.2, WO-22).
+ * WebSocket {@code active} topic (14 §5.2).
  *
  * @param snapshotAt the time of the newest snapshot, null without any
  * @param perInstance one entry per instance with a live session
@@ -31,8 +31,9 @@ public record ActiveTransactions(
    *
    * @param instanceId instance
    * @param name its name
-   * @param state {@code UP} (a live session; ADR-0010 C-160: STALE and WARN come with WO-22, an
-   *     instance without a session is not listed)
+   * @param state the state of the instance state machine (12 §4.2), in the WebSocket {@code active}
+   *     topic and in {@code GET /apps/{appId}/active} (ADR-0010 C-218 (4)); an instance without a
+   *     live session is not listed
    * @param snapshotAt the time of its snapshot, null when it sent none yet
    * @param count running transactions (the agent's total, which can exceed the items it sent)
    * @param maxElapsedMs the longest running one, null without any

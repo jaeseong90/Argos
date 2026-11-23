@@ -459,7 +459,9 @@ class TransportPartsTest {
         .as("TLS reports plaintext=false explicitly (optional field, C-101)")
         .isTrue();
     assertThat(tlsHello.getPlaintext()).isFalse();
-    assertThat(hello.getCgroup()).isEqualTo("none");
+    assertThat(hello.getCgroup())
+        .as("the cgroup mode of this machine (WO-16, 10 §11)")
+        .isEqualTo(io.argos.agent.core.metric.CgroupReader.systemMode());
     assertThat(hello.getInstanceName()).isEqualTo(identity.host() + ":" + identity.pid());
     assertThat(hello.getPid()).isEqualTo((int) identity.pid());
     assertThat(hello.getIpMode()).isEqualTo(IpMode.IP_FULL);

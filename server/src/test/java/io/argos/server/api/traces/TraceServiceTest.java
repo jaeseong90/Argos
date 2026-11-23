@@ -61,6 +61,7 @@ class TraceServiceTest {
     node.put("elapsed_ms", 25L);
     node.put("caller_app_id", 0L);
     node.put("incoming_trace", false);
+    node.put("span_id", 0L);
     node.put("parent_span_id", 0L);
     node.put("instance_id", 50L);
     node.put("service_id", 11L);

@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from 'vitest';
 
-import { checkFrameBudget, distribution, FRAME_BUDGET_MS, percentile } from './stats';
+import {
+  checkFrameBudget,
+  checkRunBudgets,
+  distribution,
+  FRAME_BUDGET_MS,
+  percentile,
+} from './stats';
 
 describe('percentile', () => {
   it('uses the nearest rank', () => {
@@ -65,5 +71,44 @@ describe('checkFrameBudget', () => {
     });
     expect(checkFrameBudget(frames(Array.from({ length: 59 }, () => 1))).pass).toBe(false);
     expect(checkFrameBudget(frames(Array.from({ length: 60 }, () => 1))).pass).toBe(true);
+  });
+});
+
+describe('checkRunBudgets (ADR-0003 C-35: the verdict is per run)', () => {
+  const run = (n: number, p95: number, mean: number, count = 119) => ({
+    run: n,
+    frames: { count, mean, p50: mean, p95, max: p95 + 2 },
+  });
+
+  it('passes when every run keeps p95 and mean within 16 ms', () => {
+    expect(checkRunBudgets([run(1, 12, 9), run(2, 15.9, 11), run(3, 16, 16)], 357)).toEqual({
+      pass: true,
+      reasons: [],
+    });
+  });
+
+  it('fails when one run alone is over the budget, although the pooled values pass', () => {
+    // runB-pixels static 100k, first series (WO-04 report C-3): run 1 p95 16.7 ms.
+    const verdict = checkRunBudgets(
+      [run(1, 16.7, 11.6), run(2, 15.5, 11.2), run(3, 12.5, 10.2)],
+      357,
+    );
+    expect(verdict.pass).toBe(false);
+    expect(verdict.reasons).toEqual(['run 1: p95 16.7 ms > 16 ms']);
+    expect(checkRunBudgets([run(1, 15, 16.5)], 119).reasons).toEqual([
+      'run 1: mean 16.5 ms > 16 ms',
+    ]);
+  });
+
+  it('never passes an empty or truncated measurement', () => {
+    expect(checkRunBudgets([], 0).reasons).toEqual([
+      'no run measured',
+      'only 0 frames measured (at least 60)',
+    ]);
+    expect(checkRunBudgets([run(1, 5, 4, 0)], 0).pass).toBe(false);
+    expect(checkRunBudgets([run(1, 5, 4, 20)], 20).reasons).toEqual([
+      'only 20 frames measured (at least 60)',
+    ]);
+    expect(FRAME_BUDGET_MS).toBe(16);
   });
 });

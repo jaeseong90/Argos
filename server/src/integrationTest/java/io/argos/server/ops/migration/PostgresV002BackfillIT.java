@@ -125,16 +125,55 @@ class PostgresV002BackfillIT {
         insertV001Session(c, s);
       }
     }
+    // An alert transition as a V001..V008 server writes it (no reason column yet, WO-38 V009).
+    UUID oldRule = UUID.randomUUID();
+    UUID oldEvent = UUID.randomUUID();
+    try (Connection c = env.connect(PgAccount.OWNER);
+        PreparedStatement rule =
+            c.prepareStatement(
+                "INSERT INTO argos.alert_rules (id, name, enabled, spec) VALUES (?, 'v001 rule',"
+                    + " false, CAST(? AS jsonb))");
+        PreparedStatement event =
+            c.prepareStatement(
+                "INSERT INTO argos.alert_events (id, rule_id, target_kind, from_state, to_state,"
+                    + " severity, value, threshold, duration_s, ts) VALUES (?, ?, 'server', 'PENDING',"
+                    + " 'FIRING', 'warn', 2, 1, 0, now())")) {
+      rule.setObject(1, oldRule);
+      rule.setString(
+          2,
+          "{\"name\":\"v001 rule\",\"enabled\":false,\"target\":{\"app_id\":null,"
+              + "\"env\":null,\"type\":\"server\",\"ids\":[]},"
+              + "\"metric\":\"argos_server_dropped_total\",\"window\":\"5m\",\"for\":\"0s\","
+              + "\"condition\":{\"operator\":\">\",\"warn\":1}}");
+      rule.executeUpdate();
+      event.setObject(1, oldEvent);
+      event.setObject(2, oldRule);
+      event.executeUpdate();
+    }
 
     try (ConfigurableApplicationContext ctx = MigrationApps.start(env)) {
       PostgresMigrationPhase.Result v002 = ctx.getBean(PostgresMigrationPhase.class).lastResult();
-      // V002 (WO-24) and the later V003 (dict_kind 'pool', ADR-0010 C-101, WO-21).
+      // V002 (WO-24), the later V003 (dict_kind 'pool', ADR-0010 C-101, WO-21) and V004
+      // (pending_registrations.home_app_id, C-155 (3), WO-22), V005 (reconcile_results) and V006
+      // (service_apdex_overrides, both WO-27), V007 (alert engine) and V008 (alert channels, both
+      // WO-25) and V009 (alert_events.reason, WO-38).
       assertThat(v002.applied())
           .extracting(PostgresMigrationPhase.Applied::version)
-          .containsExactly("002", "003");
-      assertThat(v002.schemaVersion()).isEqualTo("003");
+          .containsExactly("002", "003", "004", "005", "006", "007", "008", "009");
+      assertThat(v002.schemaVersion()).isEqualTo("009");
       TIMINGS.flyway("V001 + 2 users, 3 sessions -> start", v002);
     }
+
+    assertThat(
+            MigrationApps.pg(
+                env,
+                PgAccount.OWNER,
+                "SELECT to_state || ' ' || coalesce(reason, '<null>') FROM argos.alert_events"
+                    + " WHERE id = '"
+                    + oldEvent
+                    + "'"))
+        .as("V009: a row written before it keeps reason NULL")
+        .containsExactly("FIRING <null>");
 
     Map<UUID, Map<String, Object>> after = sessionsAfter(sessions);
     assertThat(after).hasSize(sessions.size());

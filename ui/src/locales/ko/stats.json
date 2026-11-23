@@ -1,0 +1,186 @@
+{
+  "sort": {
+    "label": "정렬",
+    "sum_ms": "총 시간",
+    "count": "횟수",
+    "avg_ms": "평균",
+    "p95_ms": "p95",
+    "errors": "에러",
+    "error_rate": "에러율",
+    "timeouts": "타임아웃",
+    "first_seen": "최초 발생",
+    "last_seen": "최근 발생"
+  },
+  "limit": {
+    "label": "표시",
+    "option": "상위 {{n}}"
+  },
+  "split": {
+    "label": "버전별 분리"
+  },
+  "source": {
+    "label": "소스: {{source}}",
+    "raw": "원본 데이터",
+    "minute": "$t(common:term.rollup1m)",
+    "hour": "$t(common:term.rollup1h)",
+    "mixed": "원본 데이터와 집계",
+    "unknown": "알 수 없음"
+  },
+  "filterScope": {
+    "client": "필터는 서버가 돌려준 상위 {{rows}}행 안에서만 적용됩니다. 더 보려면 표시 개수를 늘리거나 정렬을 바꾸세요.",
+    "unapplied": "이 화면에서 적용하지 않은 필터:"
+  },
+  "estimated": {
+    "label": "추정",
+    "tooltip": "응답시간 구간 분포로 추정한 백분위"
+  },
+  "delta": {
+    "points": "{{value}}%p",
+    "detail": "이 기간: {{current}}. 직전 기간: {{previous}}."
+  },
+  "state": {
+    "refreshing": "통계를 갱신하는 중…",
+    "emptyDescription": "기간을 넓히거나 종류·환경·필터를 확인하세요.",
+    "filteredTitle": "필터에 맞는 행이 없습니다.",
+    "filteredDescription": "필터를 지우거나 표시 개수를 늘리거나 기간을 넓히세요.",
+    "invalidKeyTitle": "이 링크가 가리키는 항목이 올바르지 않습니다.",
+    "invalidKeyDescription": "목록으로 돌아가 항목을 다시 여세요."
+  },
+  "openXlog": "XLog에서 관련 트랜잭션 보기",
+  "backToList": "목록으로",
+  "trend": {
+    "title": "추이",
+    "volumeTitle": "호출 수와 에러",
+    "latencyTitle": "응답시간",
+    "count": "횟수",
+    "errors": "에러",
+    "errorRate": "에러율",
+    "timeouts": "타임아웃",
+    "connectFailures": "연결 실패",
+    "avg": "평균",
+    "p95": "p95",
+    "p99": "p99"
+  },
+  "rawWindow": {
+    "text": "인스턴스·SQL·외부 호출은 {{from}}부터 {{to}}까지의 원본 데이터 기준입니다(기간의 마지막 24시간 이내).",
+    "none": "이 기간에는 원본 데이터가 없어 인스턴스·SQL·외부 호출 분포를 볼 수 없습니다. 원본 보존 기간 안의 기간을 고르세요."
+  },
+  "related": {
+    "title": "관련 트랜잭션",
+    "ts": "시각",
+    "elapsed": "응답시간",
+    "instance": "인스턴스",
+    "profiledOnly": "프로파일 수집 트랜잭션만 표시합니다. 모든 트랜잭션은 XLog에서 보세요.",
+    "empty": "원본 데이터 기간에 관련 트랜잭션이 없습니다. 기간을 넓히거나 XLog를 여세요.",
+    "allInXlog": "XLog에서 모든 트랜잭션 보기"
+  },
+  "columns": {
+    "service": "서비스",
+    "version": "버전",
+    "count": "횟수",
+    "errors": "에러",
+    "error_rate": "에러율",
+    "avg_ms": "평균",
+    "p50_ms": "p50",
+    "p95_ms": "p95",
+    "p99_ms": "p99",
+    "max_ms": "최대",
+    "apdex": "$t(common:term.apdex)",
+    "sum_ms": "총 시간",
+    "sql_time_ratio": "SQL 시간 비중",
+    "ext_time_ratio": "외부 호출 시간 비중",
+    "sql": "SQL",
+    "db": "데이터베이스",
+    "exec_ms": "실행 시간",
+    "fetch_ms": "fetch 시간",
+    "fetch_rows": "fetch 행 수",
+    "share": "비중",
+    "instance": "인스턴스",
+    "host": "호스트",
+    "errorGroup": "$t(common:term.errorGroup)",
+    "path_pattern": "경로 패턴",
+    "timeouts": "타임아웃",
+    "connect_failures": "연결 실패",
+    "error_class": "예외 클래스",
+    "message_pattern": "메시지 패턴",
+    "top_frame": "최상위 프레임",
+    "first_seen": "최초 발생",
+    "last_seen": "최근 발생",
+    "services": "서비스(상위 5)",
+    "versions": "버전"
+  },
+  "breakdown": {
+    "byVersion": "버전별",
+    "byInstance": "인스턴스별",
+    "byService": "실행 서비스",
+    "byDb": "데이터베이스별",
+    "empty": "이 기간에 데이터가 없습니다. 기간을 넓히세요.",
+    "rawEmpty": "이 기간에 원본 데이터가 없습니다. 기간을 넓히거나 더 최근 기간을 고르세요."
+  },
+  "services": {
+    "title": "서비스",
+    "caption": "서비스 통계",
+    "emptyTitle": "선택 기간에 서비스가 없습니다.",
+    "detailTitle": "서비스",
+    "detailEmptyTitle": "선택 기간에 이 서비스의 호출이 없습니다.",
+    "cross": {
+      "label": "교차 뷰",
+      "sqlTab": "SQL",
+      "externalTab": "외부 호출",
+      "errorsTab": "$t(common:term.errorGroup)",
+      "sql": "이 서비스의 SQL",
+      "external": "이 서비스의 외부 호출",
+      "errors": "이 서비스의 에러 그룹",
+      "sqlEmpty": "원본 데이터 기간에 이 서비스의 SQL 기록이 없습니다.",
+      "externalEmpty": "원본 데이터 기간에 이 서비스의 외부 호출 기록이 없습니다.",
+      "errorsEmpty": "선택 기간에 이 서비스의 에러가 없습니다."
+    }
+  },
+  "sql": {
+    "title": "SQL",
+    "caption": "SQL 통계",
+    "emptyTitle": "선택 기간에 SQL이 없습니다.",
+    "detailTitle": "SQL 문",
+    "detailEmptyTitle": "선택 기간에 이 SQL이 실행되지 않았습니다.",
+    "normalized": "정규화 SQL",
+    "text": "SQL 원문",
+    "truncated": "SQL 원문은 64KB에서 잘렸습니다.",
+    "count": "실행 횟수",
+    "exec": "실행 시간(합계)",
+    "fetch": "fetch 시간(합계)",
+    "wait": "$t(common:term.dbcStep)(합계)",
+    "waitNotMeasured": "커넥션 대기는 아직 SQL 문 단위로 나누지 않습니다. 트랜잭션별 커넥션 대기를 보세요."
+  },
+  "external": {
+    "title": "외부 호출",
+    "caption": "호스트별 외부 호출 통계",
+    "emptyTitle": "선택 기간에 외부 호출이 없습니다.",
+    "detailTitle": "외부 호스트",
+    "detailEmptyTitle": "선택 기간에 이 호스트를 호출하지 않았습니다.",
+    "xlogNote": "XLog는 호스트로 필터할 수 없어 링크에는 기간과 종류만 담깁니다. 아래 관련 트랜잭션이 이 호스트를 호출한 트랜잭션입니다.",
+    "calls": "호출 수",
+    "errors": "에러"
+  },
+  "errors": {
+    "title": "에러",
+    "caption": "$t(common:term.errorGroup)",
+    "emptyTitle": "선택 기간에 에러가 없습니다.",
+    "emptyNewTitle": "선택 기간에 새 에러 그룹이 없습니다.",
+    "emptyNewDescription": "신규 필터를 끄면 모든 그룹을 볼 수 있습니다. 또는 기간을 넓히세요.",
+    "newOnly": "신규만",
+    "newBadge": "신규",
+    "newTooltip": "선택 기간에 처음 발생",
+    "detailTitle": "$t(common:term.errorGroup)",
+    "detailEmptyTitle": "선택 기간에 이 에러 그룹이 발생하지 않았습니다.",
+    "count": "발생 횟수",
+    "firstSeenEver": "최초 발생(전체 기간)",
+    "message": "메시지 패턴",
+    "messageNote": "숫자·식별자 같은 가변 부분은 마스킹되어 있습니다.",
+    "stack": "대표 스택",
+    "appFramesUnknown": "애플리케이션 패키지가 아직 설정되지 않아 애플리케이션 프레임을 강조하지 않습니다.",
+    "appFramesBold": "애플리케이션 프레임은 굵게 표시합니다.",
+    "byService": "영향받은 서비스",
+    "recent": "최근 트랜잭션 10건",
+    "recentEmpty": "원본 데이터 기간에 이 그룹의 트랜잭션이 없습니다. 기간을 넓히거나 XLog를 여세요."
+  }
+}

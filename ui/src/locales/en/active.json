@@ -1,0 +1,116 @@
+{
+  "page": {
+    "title": "$t(common:term.activeTransactions)",
+    "ignoredFilters": "Not applied on this screen: {{fields}}. The list filters by instance, service and state.",
+    "truncatedList": "Showing the {{count, number}} longest running transactions.",
+    "empty": {
+      "noInstance": {
+        "title": "No instance is connected.",
+        "description": "Running transactions appear while an instance of this application is connected. Start the application with the Argos agent, or check its instances.",
+        "instances": "Open instances"
+      },
+      "idle": {
+        "title": "Nothing is running now.",
+        "description": "The connected instances reported no running transaction in their latest snapshot."
+      },
+      "filtered": {
+        "title": "No running transaction matches the filters.",
+        "description": "Clear the filters or choose all kinds to see the other running transactions.",
+        "allKinds": "Show all kinds"
+      }
+    }
+  },
+  "summary": {
+    "total": "Running",
+    "max": "Most on one instance",
+    "slowApproximate": "Estimated: some agents sent only their longest running transactions.",
+    "ruleLink": "Alert rules for active transactions",
+    "ruleLinkNoPermission": "Editing alert rules needs the operator or administrator role."
+  },
+  "asOf": {
+    "label": "As of {{seconds, number}} s ago",
+    "paused": "Paused · as of {{seconds, number}} s ago",
+    "none": "No snapshot yet",
+    "title": "Age of the shown snapshot, measured on the server clock. Agents send a snapshot every 5 seconds.",
+    "polling": "Polling every 5 s"
+  },
+  "pause": {
+    "pause": "Pause",
+    "resume": "Resume",
+    "hint": "Freeze the screen. Snapshots keep arriving; the newest one shows when you resume."
+  },
+  "stale": {
+    "badge": "Updates stopped {{seconds, number}} s",
+    "title": "No new snapshot arrived. The connection recovers automatically and the screen updates with the next snapshot."
+  },
+  "bars": {
+    "label": "Running transactions per instance",
+    "unnamed": "Instance {{id}}",
+    "filter": "Show only this instance in the list",
+    "unfilter": "Show every instance in the list again",
+    "count_one": "{{count, number}} running",
+    "count_other": "{{count, number}} running",
+    "max": "Longest",
+    "approximate": "approx.",
+    "approximateTitle": "Estimated split: the agent sent only its longest running transactions, and the others may fall into more than the first band.",
+    "truncated": "The agent sent only its 500 longest"
+  },
+  "band": {
+    "legend": "Elapsed time colours",
+    "first": "< {{to}} s",
+    "middle": "{{from}}–{{to}} s",
+    "last": "≥ {{from}} s"
+  },
+  "thresholds": {
+    "label": "Colour thresholds (s)",
+    "t1": "First threshold in seconds",
+    "t2": "Second threshold in seconds",
+    "t3": "Third threshold in seconds",
+    "apply": "Apply",
+    "reset": "Default",
+    "error": {
+      "notNumber": "Enter three numbers of seconds.",
+      "notPositive": "The first threshold must be above 0 s.",
+      "notAscending": "Each threshold must be larger than the one before.",
+      "tooLarge": "The thresholds can be at most 3,600 s."
+    }
+  },
+  "state": {
+    "SQL": "Running SQL",
+    "HTTP": "Calling",
+    "DBC": "Connection wait",
+    "METHOD": "Running method",
+    "ASYNC": "Async wait",
+    "unknown": "Unknown state",
+    "all": "All states",
+    "filterLabel": "State"
+  },
+  "table": {
+    "caption": "Running transactions",
+    "instance": "Instance",
+    "service": "Service",
+    "elapsed": "Elapsed",
+    "state": "Current state",
+    "thread": "Thread",
+    "user": "User ID",
+    "ip": "IP",
+    "kind": "Kind",
+    "started": "Started",
+    "unknownKind": "Other",
+    "virtualThread": "VT",
+    "virtualThreadTitle": "Runs on a virtual thread",
+    "notCollected": "Not collected",
+    "notCollectedTitle": "The agent of this instance does not collect this value."
+  },
+  "actions": {
+    "label": "Actions for the selected transaction",
+    "selected": "Selected:",
+    "stack": "This thread's stack",
+    "dump": "Thread dump of this instance",
+    "recent": "Recent completions of this service",
+    "commandsUnavailable": "Requires remote commands, not available in this version",
+    "noService": "The transaction has no service yet.",
+    "finished": "No longer running in the latest snapshot",
+    "clear": "Clear selection"
+  }
+}

@@ -9,6 +9,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * GET /api/pay/{id} (18 §4.2): one outgoing call to ext-stub with the chosen client. Targets:
@@ -22,11 +23,26 @@ import java.util.Map;
  *   <li>{@code status=500}: {@code /status/500} (app: 502)
  *   <li>{@code redirect=1}: {@code /redirect?to=/pay/{id}}, followed by the client (app: 200)
  * </ul>
+ *
+ * <p>{@code mode=} picks the client call style ({@link OutboundClient#modes()}: {@code sync}
+ * always, {@code async} for OkHttp {@code enqueue} and java.net.http {@code sendAsync}, {@code
+ * block|future|subscribe} for WebClient); {@code preset=1} makes the app set its own {@code
+ * traceparent} and {@code tracestate} ({@value #PRESET_TRACESTATE}) on the request, reported as
+ * {@code presetTraceparent} (the agent must keep it, 10 §8).
  */
 public final class PayService {
 
   /** Default client of GET /api/pay/{id} (available in every app). */
   public static final String DEFAULT_CLIENT = "hurl";
+
+  /** W3C trace context request header. */
+  public static final String TRACEPARENT = "traceparent";
+
+  /** W3C trace context request header. */
+  public static final String TRACESTATE = "tracestate";
+
+  /** The {@code tracestate} the app sets itself with {@code preset=1} (one vendor entry). */
+  public static final String PRESET_TRACESTATE = "shop=preset1";
 
   private final SampleConfig config;
   private final Map<String, OutboundClient> clients = new LinkedHashMap<>();
@@ -53,6 +69,20 @@ public final class PayService {
     boolean refuse;
     Integer status;
     boolean redirect;
+    String mode = OutboundRequest.SYNC;
+    boolean preset;
+
+    /** {@code ?mode=}: the client call style (null or empty: {@code sync}). */
+    public Options mode(String value) {
+      this.mode = value == null || value.isEmpty() ? OutboundRequest.SYNC : value;
+      return this;
+    }
+
+    /** {@code ?preset=1}: the app sets its own {@code traceparent} and {@code tracestate}. */
+    public Options preset(boolean value) {
+      this.preset = value;
+      return this;
+    }
 
     public Options client(String value) {
       if (value != null && !value.isEmpty()) {
@@ -127,7 +157,8 @@ public final class PayService {
     } else {
       target = base + "/pay/" + orderId;
     }
-    Result result = call(options.client, URI.create(target));
+    OutboundRequest request = OutboundRequest.get(URI.create(target)).mode(options.mode);
+    Result result = call(options.client, request, options.preset);
     result.body.put("orderId", orderId);
     return result;
   }
@@ -136,7 +167,10 @@ public final class PayService {
    * Calls {@code <SAMPLE_EXT_URL>/seed/<segment>} (XSS seed in the external call path, 18 §4.3).
    */
   public Result callSeedPath(String client, String rawSegment) {
-    return call(client, URI.create(config.extUrl() + "/seed/" + encodePathSegment(rawSegment)));
+    return call(
+        client,
+        OutboundRequest.get(URI.create(config.extUrl() + "/seed/" + encodePathSegment(rawSegment))),
+        false);
   }
 
   /**
@@ -164,19 +198,67 @@ public final class PayService {
 
   private static final char[] HEX = "0123456789ABCDEF".toCharArray();
 
-  private Result call(String clientName, URI target) {
+  private static final char[] LOWER_HEX = "0123456789abcdef".toCharArray();
+
+  /**
+   * A valid W3C {@code traceparent} the app sets itself ({@code preset=1}): version 00, a random
+   * trace id and parent id (never all zero), sampled flag.
+   */
+  public static String newTraceparent() {
+    ThreadLocalRandom random = ThreadLocalRandom.current();
+    return "00-" + hex(random, 16) + "-" + hex(random, 8) + "-01";
+  }
+
+  private static String hex(ThreadLocalRandom random, int bytes) {
+    char[] out = new char[bytes * 2];
+    boolean nonZero = false;
+    for (int i = 0; i < bytes; i++) {
+      int b = random.nextInt(256);
+      nonZero |= b != 0;
+      out[2 * i] = LOWER_HEX[b >> 4];
+      out[2 * i + 1] = LOWER_HEX[b & 0xf];
+    }
+    if (!nonZero) {
+      out[out.length - 1] = '1';
+    }
+    return new String(out);
+  }
+
+  /**
+   * One outgoing call with {@code clientName}; {@code preset} adds the app's own {@code
+   * traceparent} and {@code tracestate} (reported as {@code presetTraceparent} and {@code
+   * presetTracestate}). Throws IllegalArgumentException (400) for an unknown client or a mode the
+   * client does not support.
+   */
+  Result call(String clientName, OutboundRequest request, boolean preset) {
     OutboundClient client = clients.get(clientName);
     if (client == null) {
       throw new IllegalArgumentException(
           "Unknown client '" + clientName + "'; this app supports " + clients.keySet());
     }
+    if (!client.modes().contains(request.mode())) {
+      throw new IllegalArgumentException(
+          "Client '"
+              + clientName
+              + "' does not support mode '"
+              + request.mode()
+              + "'; it supports "
+              + client.modes());
+    }
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("client", client.name());
-    body.put("target", target.toString());
+    body.put("mode", request.mode());
+    body.put("target", request.uri().toString());
+    if (preset) {
+      String traceparent = newTraceparent();
+      request.header(TRACEPARENT, traceparent).header(TRACESTATE, PRESET_TRACESTATE);
+      body.put("presetTraceparent", traceparent);
+      body.put("presetTracestate", PRESET_TRACESTATE);
+    }
     long start = System.nanoTime();
     OutboundOutcome outcome;
     try {
-      OutboundResponse response = client.get(target);
+      OutboundResponse response = client.send(request);
       outcome = OutboundOutcome.ofStatus(response.status());
       body.put("upstreamStatus", response.status());
       body.put("upstreamBody", response.body());

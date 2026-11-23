@@ -22,12 +22,21 @@ import {
   state,
 } from '../fixtures/ui';
 import { effectiveKind, PRESETS } from '../fixtures/urlModel';
+import type { WsStub } from '../fixtures/ws';
 import { XSS_PAYLOADS } from '../fixtures/xssPayloads';
 import type { ApiSession } from '../stack/api';
 import type { Role, SeedManifest } from '../stack/manifest';
 import { credentialFile } from '../stack/paths';
 
+import { ACTIVE_CHECKS } from './activeChecks';
+import { ALERTS_CHECKS } from './alertsChecks';
+import { DASHBOARD_CHECKS } from './dashboardChecks';
+import { OVERVIEW_CHECKS } from './overviewChecks';
+import { STATS_CHECKS } from './statsChecks';
+import { TRACE_CHECKS } from './traceChecks';
+import { TRANSACTION_CHECKS } from './transactionChecks';
 import { manifestVariables } from './variables';
+import { XLOG_CHECKS } from './xlogChecks';
 
 export interface CheckContext {
   readonly page: Page;
@@ -35,6 +44,8 @@ export interface CheckContext {
   readonly testInfo: TestInfo;
   readonly apiAs: (role: Role) => Promise<ApiSession>;
   readonly role: Role | null;
+  /** The docs/14 §5 WebSocket stub of the test (realtime checks, WO-33). */
+  readonly ws?: WsStub;
 }
 
 export type Check = (ctx: CheckContext) => Promise<void>;
@@ -199,15 +210,24 @@ const fixedRangeNotLive: Check = async ({ page, seed }) => {
 };
 
 /** 2.0-7 deep link 3: the target filters are chips; removing one updates the URL. */
-const filtersAreChips: Check = async ({ page }) => {
-  const before = state(page).filters;
+const filtersAreChips: Check = async ({ page, seed }) => {
+  const current = state(page);
+  const before = current.filters;
   expect(before.length, 'the item opens a link with two filters').toBe(2);
   const chips = page.getByTestId('filter-chip');
   await expect(chips).toHaveCount(2);
+  // The XLog screen names instance keys in its chips (routes/filterLabels.tsx, WO-33 review
+  // qa-ux-sec-5); the key stays in the URL and in data-value.
+  const xlog = /^\/apps\/\d+\/xlog$/.test(current.path);
+  const instanceNames = new Map(
+    seed.apps.flatMap((a) => a.instances.map((i) => [String(i.instance_id), i.name] as const)),
+  );
   for (const [i, f] of before.entries()) {
     await expect(chips.nth(i)).toHaveAttribute('data-field', f.field);
     await expect(chips.nth(i)).toHaveAttribute('data-op', f.op);
-    await expect(chips.nth(i).locator('.filter-chip__value')).toHaveText(f.value);
+    await expect(chips.nth(i)).toHaveAttribute('data-value', f.value);
+    const name = xlog && f.field === 'instance' ? instanceNames.get(f.value) : undefined;
+    await expect(chips.nth(i).locator('.filter-chip__value')).toHaveText(name ?? f.value);
   }
   await chips.nth(0).getByTestId('filter-chip-remove').click();
   const after = await expectUrl(page, (s) => s.filters.length === 1, 'one filter left in the URL');
@@ -325,4 +345,19 @@ export const CHECKS: Readonly<Record<string, Check>> = {
   emptyStateNextAction,
   browserTimeZone,
   collectedTextOnly,
+  // The XLog screen's checks (WO-33): docs/05 §2.1 and its items of common.yaml.
+  ...XLOG_CHECKS,
+  // The transaction detail's and the trace view's checks (WO-34): docs/05 §2.2 and §2.8.
+  ...TRANSACTION_CHECKS,
+  ...TRACE_CHECKS,
+  // The dashboard's checks (WO-32): docs/05 §2.3 and its items of common.yaml.
+  ...DASHBOARD_CHECKS,
+  // The overview's checks (WO-31): docs/05 §2.10.
+  ...OVERVIEW_CHECKS,
+  // The statistics screens' checks (WO-36): docs/05 §2.5.
+  ...STATS_CHECKS,
+  // The active transactions screen's checks (WO-35): docs/05 §2.6.
+  ...ACTIVE_CHECKS,
+  // The alert screens' checks (WO-38): docs/05 §2.4 and §2.9.
+  ...ALERTS_CHECKS,
 };

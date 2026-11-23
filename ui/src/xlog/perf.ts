@@ -147,19 +147,61 @@ export interface SelectionTiming {
    * and rectangle query, ms; null for a click (no rectangle query).
    */
   readonly queryMs: number | null;
-  /** Snapshot copy + summary (docs/15 §7.4), synchronous in the pointerup handler. */
+  /**
+   * XLog screen only (absent on the PoC page): the screen's own selection computation, finding
+   * the points of the URL selection in the buffer (selectedIndices, no summary), ms. ADR-0003
+   * C-36 judges it with queryMs (p95 <= 5 ms per run). Added to version 1 (optional field).
+   */
+  readonly selectMs?: number | null;
+  /**
+   * XLog screen only (absent on the PoC page): whether queryMs includes a rebuild of the hit index
+   * (EngineSelection.indexRebuilt), and the rebuild's share of queryMs in ms (0 when the index was
+   * current); null for a click. Diagnostics of ADR-0003 C-36 (WO-33 review r1-new-3), added to
+   * version 1 (optional fields; queryMs keeps its meaning).
+   */
+  readonly indexRebuilt?: boolean | null;
+  readonly indexBuildMs?: number | null;
+  /**
+   * PoC: snapshot copy + summary (docs/15 §7.4), synchronous in the pointerup handler. XLog
+   * screen: selection + summary (part of the C-36 100 ms screen reflect path, not the 5 ms one).
+   */
   readonly computeMs: number;
   /** From pointerup to the React commit of summary and list (list computation included). */
   readonly commitMs: number;
 }
 
 /**
- * `window.__xlogPerf` (installed by the /xlog-poc page). Stable contract for the performance spec:
+ * Cost of the last data load of the XLog screen (WO-33: docs/14 §4.5 N-07 "10만 점 2초", docs/13
+ * §15 Q3): request, response end (Resource Timing), JSON available, columns in the buffer, first
+ * full frame, all performance.now() ms; sizes in bytes (null when the browser does not expose them).
+ */
+export interface LoadTiming {
+  readonly points: number;
+  readonly shown: number | null;
+  readonly total: number | null;
+  readonly sampled: boolean;
+  readonly requestedAt: number;
+  readonly responseEndAt: number | null;
+  readonly receivedAt: number;
+  readonly convertedAt: number;
+  readonly txIdParseMs: number;
+  readonly convertMs: number;
+  readonly encodedBytes: number | null;
+  readonly decodedBytes: number | null;
+  readonly transferBytes: number | null;
+  readonly firstFrameAt: number | null;
+}
+
+/**
+ * `window.__xlogPerf` (installed by the /xlog-poc page, and by the XLog screen when the browser
+ * preference `argos.ui.xlogPerf` is '1'). Stable contract for the performance spec:
  *   ready           true once the dataset is generated and the first frame is drawn
  *   pointCount()    points held by the buffer; visibleCount() points drawn in the last full frame
  *   samples()       recorded frames (bounded ring), stats() their distribution, reset() clears them
  *   benchmark()     forces consecutive full redraws and resolves with their samples and stats
- *   lastSelection() timing of the last drag selection, or null
+ *   lastSelection() timing of the last drag selection, or null (selectMs, indexRebuilt and
+ *                   indexBuildMs: XLog screen only)
+ *   lastLoad()      (optional, XLog screen only) cost of the last data load, or null
  */
 export interface XLogPerfHook {
   readonly version: 1;
@@ -171,6 +213,7 @@ export interface XLogPerfHook {
   reset(): void;
   benchmark(options?: BenchmarkOptions): Promise<BenchmarkResult>;
   lastSelection(): SelectionTiming | null;
+  lastLoad?(): LoadTiming | null;
 }
 
 declare global {

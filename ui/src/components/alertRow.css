@@ -1,0 +1,74 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* AlertSummaryRow (ADR-0010 C-227 (4)), part of the overview chunk: keep it small. */
+/* The rule name owns the first line next to the state; the rest goes to the second line. In a
+   narrow panel (the overview's side panel at 1366 px) the name wraps below the state instead of
+   being squeezed to a letter. */
+.alert-summary-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 2px var(--space-1, 4px);
+  border-radius: var(--radius, 4px);
+  color: var(--color-text, #1f2328);
+  text-decoration: none;
+}
+
+.alert-summary-row:hover {
+  background: var(--color-hover, #eef2f7);
+}
+
+.alert-summary-row:hover .alert-summary-row__rule-text {
+  text-decoration: underline;
+}
+
+.alert-summary-row__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-1, 4px) var(--space-2, 8px);
+  min-width: 0;
+}
+
+.alert-summary-row__head > .alert-state {
+  flex: none;
+}
+
+.alert-summary-row__rule {
+  flex: 1 1 10em;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.alert-summary-row__rule-text {
+  overflow-wrap: anywhere;
+}
+
+.alert-summary-row__since {
+  flex: none;
+  margin-left: auto;
+  color: var(--color-text-muted, #5f6774);
+  font-size: var(--fs-xs, 11px);
+  white-space: nowrap;
+}
+
+.alert-summary-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2, 8px);
+  min-width: 0;
+  color: var(--color-text-muted, #5f6774);
+  font-size: var(--fs-sm, 12px);
+}
+
+.alert-summary-row__app {
+  color: var(--color-text, #1f2328);
+}
+
+.alert-summary-row__app,
+.alert-summary-row__target {
+  min-width: 0;
+  max-width: 100%;
+}

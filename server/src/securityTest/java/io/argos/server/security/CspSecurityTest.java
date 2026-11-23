@@ -177,7 +177,6 @@ class CspSecurityTest {
             "/actuator",
             "/actuator/health",
             "/actuator/env",
-            "/ws",
             "/ws/anything",
             "/assets/missing.js",
             "/apps/3/missing.js",
@@ -189,6 +188,12 @@ class CspSecurityTest {
       assertThat(response.body()).as(path).doesNotContain("Argos test page");
       assertThat(response.header("Content-Security-Policy")).as(path).isEmpty();
     }
+    // /ws is the WebSocket endpoint since WO-22: a plain GET without the page's Origin is refused
+    // by the handshake before any upgrade (14 §5.1, T-SEC-44), and it is never the page.
+    ApiResponse ws = browser().get("/ws");
+    assertThat(ws.status()).as("/ws").isEqualTo(403);
+    assertThat(ws.body()).as("/ws").doesNotContain("Argos test page");
+    assertThat(ws.header("Content-Security-Policy")).as("/ws").isEmpty();
     ApiResponse file = browser().get("/assets/fixture.js");
     assertThat(file.status()).isEqualTo(200);
     assertThat(file.body()).contains("static file of the security suite");

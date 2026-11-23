@@ -243,9 +243,7 @@ class ErrorBodyIT {
   }
 
   private static String newLog() throws IOException {
-    byte[] all = Files.readAllBytes(IntegrationLogs.logFile());
-    int from = (int) Math.min(logStart, all.length);
-    return new String(all, from, all.length - from, StandardCharsets.UTF_8);
+    return IntegrationLogs.since(logStart);
   }
 
   /**

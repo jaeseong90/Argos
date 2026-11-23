@@ -83,6 +83,14 @@ public interface SessionStore {
    */
   Optional<AppRef> createVariantApp(String name, String env, int homeAppId, int maxVariants);
 
+  /**
+   * Queues a refused registration in the approval queue (12 §4.4, F-S30, ADR-0010 C-155 (3)):
+   * ({@code name}, {@code env}, {@code host}) upserted with one more attempt at {@code at}, for the
+   * agent token's home app {@code homeAppId}; at most 1,000 rows, the least recently attempted one
+   * replaced beyond them.
+   */
+  void recordPendingRegistration(String name, String env, String host, int homeAppId, Instant at);
+
   /** The id of instance ({@code appId}, {@code name}) when it exists (11 §5: reused). */
   OptionalInt findInstance(int appId, String name);
 

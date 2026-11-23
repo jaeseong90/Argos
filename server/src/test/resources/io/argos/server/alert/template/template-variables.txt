@@ -1,0 +1,17 @@
+# Allowed alert message template variables (12 §5.5, 14 §4.13, SEC-39; T-SEC-39, T-API-008).
+# A public contract (O-R03): adding a variable is a reviewed change of this snapshot; removing one
+# breaks stored templates. One name per line, sorted.
+app
+duration
+env
+host
+instance
+link
+metric
+rule
+runbook
+service
+severity
+started_at
+threshold
+value

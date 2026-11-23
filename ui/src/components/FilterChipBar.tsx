@@ -2,10 +2,14 @@
 //
 // Applied filters as chips (docs/15 §6.5, 05 §2.0-4, deep link 3): click a chip to edit it, × to
 // remove one, "Clear all" to remove every filter. The value is rendered with SafeText (it may be a
-// collected string taken from a table cell or a link). Controlled: the shell owns the filters (URL).
+// collected string taken from a table cell or a link). A screen whose filter values are keys (a
+// service key, an instance id) can name them (valueLabel): the chip then shows the name, and the
+// key stays in data-value and the tooltip. Controlled: the shell owns the filters (URL).
 import { CloseOutlined } from '@ant-design/icons';
 import { useRef, useState, type SubmitEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import type { Untrusted } from '../api/untrusted';
 
 import {
   FILTER_OPS,
@@ -39,7 +43,16 @@ export interface FilterChipBarProps {
   readonly onEdit?: (index: number, next: FilterSpec) => void;
   /** Operators offered by the editor. Default: eq and ne (docs/14 §6 grammar). */
   readonly editableOps?: readonly FilterOp[];
+  /**
+   * The name of a filter's value when the value is a key (a service key, an instance id): shown
+   * instead of the key (SafeText; collected text), the key kept in data-value and the tooltip.
+   * Null, or no function, shows the value itself.
+   */
+  readonly valueLabel?: FilterValueLabel;
 }
+
+/** Name of a filter value that is a key (collected text), or null to show the value itself. */
+export type FilterValueLabel = (filter: FilterSpec) => Untrusted | null;
 
 /** Translated operator text for a chip. */
 function useOpLabel(): (op: FilterOp) => string {
@@ -130,12 +143,15 @@ function ChipEditor({ filter, ops, onSave, onCancel }: ChipEditorProps) {
 interface ChipProps {
   readonly filter: FilterSpec;
   readonly label: string;
+  /** Names the value when it is a key (FilterChipBar valueLabel). */
+  readonly valueLabel: FilterValueLabel | undefined;
   readonly ops: readonly FilterOp[];
   readonly onRemove: () => void;
   readonly onEdit?: (next: FilterSpec) => void;
 }
 
-function Chip({ filter, label, ops, onRemove, onEdit }: ChipProps) {
+function Chip({ filter, label, valueLabel, ops, onRemove, onEdit }: ChipProps) {
+  const valueName = valueLabel?.(filter) ?? null;
   const { t } = useTranslation();
   const opLabel = useOpLabel();
   const [editing, setEditing] = useState(false);
@@ -144,7 +160,7 @@ function Chip({ filter, label, ops, onRemove, onEdit }: ChipProps) {
     <>
       <span className="filter-chip__field">{label}</span>
       <span className="filter-chip__op">{opLabel(filter.op)}</span>
-      <SafeText value={filter.value} className="filter-chip__value" />
+      <SafeText value={valueName ?? filter.value} className="filter-chip__value" />
     </>
   );
   return (
@@ -153,6 +169,10 @@ function Chip({ filter, label, ops, onRemove, onEdit }: ChipProps) {
       data-testid="filter-chip"
       data-field={filter.field}
       data-op={filter.op}
+      data-value={filter.value}
+      data-named={valueName === null ? undefined : 'true'}
+      // A named chip keeps its key visible on hover (the name has its own SafeText tooltip).
+      title={valueName === null ? undefined : filter.value}
     >
       {onEdit === undefined ? (
         <span className="filter-chip__body">{content}</span>
@@ -214,6 +234,7 @@ export function FilterChipBar({
   onClear,
   onEdit,
   editableOps = ['eq', 'ne'],
+  valueLabel,
 }: FilterChipBarProps) {
   const { t } = useTranslation();
   if (filters.length === 0) {
@@ -231,6 +252,7 @@ export function FilterChipBar({
           key={`${filter.field}\u0000${filter.op}\u0000${filter.value}\u0000${String(index)}`}
           filter={filter}
           label={fieldLabel(filter.field)}
+          valueLabel={valueLabel}
           ops={editableOps}
           onRemove={() => {
             onRemove(index);

@@ -64,6 +64,21 @@ public final class JsonlCollected implements Collected {
   }
 
   @Override
+  public Optional<List<ExtStat>> extStats() {
+    return Optional.empty();
+  }
+
+  @Override
+  public Optional<List<StatWindow>> statWindows() {
+    return Optional.empty();
+  }
+
+  @Override
+  public Optional<List<ActiveSnapshot>> activeSnapshots() {
+    return Optional.empty();
+  }
+
+  @Override
   public String toString() {
     return description();
   }

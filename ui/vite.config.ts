@@ -58,6 +58,15 @@ const PREVIEW_CSP = [
 const BUNDLE_GRAPH_FILE = 'build/bundle-graph.json';
 
 /**
+ * The graph file of a build mode: the production build's is the one the bundle size report reads;
+ * another mode (the perf build into build/perf-dist, ADR-0010 C-203) writes its own, so a perf build
+ * running next to a production build never replaces the graph that build is measured with.
+ */
+function bundleGraphFile(mode: string): string {
+  return mode === 'production' ? BUNDLE_GRAPH_FILE : `build/bundle-graph-${mode}.json`;
+}
+
+/**
  * Records the chunk graph of a production build for the bundle size report
  * (scripts/bundle-size.mjs, docs/15 §14): per chunk its file, entry kind, static and dynamic
  * imports, the CSS Vite loads with it and the project source modules it contains (to find the
@@ -65,6 +74,7 @@ const BUNDLE_GRAPH_FILE = 'build/bundle-graph.json';
  */
 function bundleGraph(): Plugin {
   let root = process.cwd();
+  let file = BUNDLE_GRAPH_FILE;
   /** A module id as a project path (`src/routes/Shell.tsx`), or null for dependencies. */
   const projectPath = (id: string): string | null => {
     if (id.startsWith('\0') || !isAbsolute(id)) {
@@ -81,6 +91,7 @@ function bundleGraph(): Plugin {
     enforce: 'post',
     configResolved(config) {
       root = config.root;
+      file = bundleGraphFile(config.mode);
     },
     writeBundle(options, bundle) {
       const chunks = [];
@@ -113,7 +124,7 @@ function bundleGraph(): Plugin {
         chunks: chunks.sort((a, b) => a.fileName.localeCompare(b.fileName)),
         assets: assets.sort((a, b) => a.fileName.localeCompare(b.fileName)),
       };
-      const target = resolve(root, BUNDLE_GRAPH_FILE);
+      const target = resolve(root, file);
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, `${JSON.stringify(graph, null, 2)}\n`);
     },

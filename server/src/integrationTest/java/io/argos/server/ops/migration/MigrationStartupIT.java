@@ -45,16 +45,26 @@ class MigrationStartupIT {
 
   /**
    * The PostgreSQL scripts of db/pg: V001 (13 §12, WO-20), V002 (authentication, WO-24) and V003
-   * (dict_kind 'pool', ADR-0010 C-101, and apps.registered_from_app_id, C-155; WO-21).
+   * (dict_kind 'pool', ADR-0010 C-101, and apps.registered_from_app_id, C-155; WO-21), V004
+   * (pending_registrations.home_app_id, WO-22), V005 ({@code reconcile_results}, WO-27) and V006
+   * ({@code service_apdex_overrides}, WO-27), V007 (alert engine: {@code alert_states}, {@code
+   * mutes}, WO-25), V008 (alert channels: {@code webhook_signing_keys}, WO-25) and V009 ({@code
+   * alert_events.reason}, ADR-0010 C-227 (3), WO-38).
    */
-  static final List<String> PG_VERSIONS = List.of("001", "002", "003");
+  static final List<String> PG_VERSIONS =
+      List.of("001", "002", "003", "004", "005", "006", "007", "008", "009");
 
-  /** The bundled ClickHouse scripts: V001 and V002 (ingest columns, ADR-0010 C-144, WO-21). */
-  static final List<String> CH_VERSIONS = List.of("V001", "V002");
+  /**
+   * The bundled ClickHouse scripts: V001, V002 (ingest columns, ADR-0010 C-144, WO-21) and V003
+   * ({@code instance_stat_1h}, C-212 (1), WO-27).
+   */
+  static final List<String> CH_VERSIONS = List.of("V001", "V002", "V003");
 
   /**
    * The 13 §12 tables of V001 (ADR-0010 C-98) and {@code user_permissions} and {@code
-   * login_failures_unknown} of V002 (WO-24).
+   * login_failures_unknown} of V002 (WO-24), {@code reconcile_results} of V005 and {@code
+   * service_apdex_overrides} of V006 (WO-27), {@code alert_states} and {@code mutes} of V007 and
+   * {@code webhook_signing_keys} of V008 (WO-25).
    */
   static final List<String> PG_TABLES =
       List.of(
@@ -62,6 +72,7 @@ class MigrationStartupIT {
           "alert_events",
           "alert_rule_history",
           "alert_rules",
+          "alert_states",
           "apps",
           "audit_logs",
           "ch_schema_history",
@@ -74,14 +85,18 @@ class MigrationStartupIT {
           "events",
           "instances",
           "login_failures_unknown",
+          "mutes",
           "notification_channels",
           "notification_deliveries",
           "pending_registrations",
           "privacy_jobs",
+          "reconcile_results",
+          "service_apdex_overrides",
           "settings",
           "user_permissions",
           "user_sessions",
-          "users");
+          "users",
+          "webhook_signing_keys");
 
   private static final Pattern CREATED =
       Pattern.compile(
@@ -144,6 +159,7 @@ class MigrationStartupIT {
           .noneMatch(n -> n.toLowerCase(Locale.ROOT).contains("flyway"));
 
       assertPostgresSchema();
+      assertAlertEventReason();
       assertClickHouseSchema();
       assertConnections(ctx);
       flywayBefore = flywayHistory();
@@ -240,14 +256,21 @@ class MigrationStartupIT {
             "ix_agent_tokens_app",
             "ix_alert_events_app_ts",
             "ix_alert_events_rule_ts",
+            "ix_alert_rules_app",
+            "ix_alert_states_active",
             "ix_audit_actor_ts",
             "ix_audit_ts",
             "ix_deliveries_channel_sent",
+            "ix_deliveries_event",
+            "ix_deliveries_sent",
             "ix_dictionary_last_seen",
             "ix_dictionary_text_trgm",
             "ix_events_app_ts",
             "ix_instances_app_status",
             "ix_login_failures_unknown_last_failed",
+            "ix_mutes_ends",
+            "ix_pending_registrations_last_attempt",
+            "ix_reconcile_results_day",
             "ix_user_sessions_family",
             "ix_user_sessions_user");
     assertThat(
@@ -266,18 +289,111 @@ class MigrationStartupIT {
     assertThat(installedBy).isEqualTo(PgAccount.OWNER.user());
   }
 
+  /**
+   * V009 (ADR-0010 C-227 (3), WO-38): {@code alert_events.reason VARCHAR(16)} NULL with a
+   * closed-list CHECK on the partitioned parent and every partition; NULL and the listed codes are
+   * accepted, any other value is refused (23514); running the script again changes nothing. The
+   * probe rows are rolled back.
+   */
+  private static void assertAlertEventReason() throws Exception {
+    assertThat(
+            pgScalar(
+                env,
+                PgAccount.OWNER,
+                "SELECT data_type || ' ' || character_maximum_length || ' ' || is_nullable"
+                    + " FROM information_schema.columns WHERE table_schema = 'argos'"
+                    + " AND table_name = 'alert_events' AND column_name = 'reason'"))
+        .isEqualTo("character varying 16 YES");
+    String checks =
+        "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid"
+            + " WHERE c.conname = 'ck_alert_events_reason' AND c.contype = 'c'"
+            + " AND (r.oid = 'argos.alert_events'::regclass OR r.oid IN (SELECT inhrelid"
+            + " FROM pg_inherits WHERE inhparent = 'argos.alert_events'::regclass))";
+    assertThat(pgScalar(env, PgAccount.OWNER, checks))
+        .as("the parent and its three monthly partitions")
+        .isEqualTo("4");
+    String script;
+    try (var in =
+        MigrationStartupIT.class.getResourceAsStream("/db/pg/V009__alert_event_reason.sql")) {
+      assertThat(in).isNotNull();
+      script = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+    }
+    try (Connection c = env.connect(PgAccount.OWNER)) {
+      c.setAutoCommit(false);
+      try (Statement st = c.createStatement()) {
+        java.util.UUID rule = java.util.UUID.randomUUID();
+        st.executeUpdate(
+            "INSERT INTO argos.alert_rules (id, name, enabled, spec) VALUES ('"
+                + rule
+                + "', 'v009 probe', false, '{}'::jsonb)");
+        for (String reason :
+            List.of(
+                "NULL",
+                "'condition'",
+                "'cleared'",
+                "'escalated'",
+                "'acked'",
+                "'resolved'",
+                "'target_gone'",
+                "'rule_disabled'",
+                "'rule_deleted'",
+                "'no_data'",
+                "'data_returned'")) {
+          st.executeUpdate(probeEvent(rule, reason));
+        }
+        java.sql.Savepoint sp = c.setSavepoint();
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> st.executeUpdate(probeEvent(rule, "'flapping'")))
+            .isInstanceOfSatisfying(
+                java.sql.SQLException.class, e -> assertThat(e.getSQLState()).isEqualTo("23514"))
+            .hasMessageContaining("ck_alert_events_reason");
+        c.rollback(sp);
+        st.execute(script);
+        try (ResultSet rs = st.executeQuery(checks)) {
+          rs.next();
+          assertThat(rs.getInt(1)).as("the script again: no second constraint").isEqualTo(4);
+        }
+        try (ResultSet rs =
+            st.executeQuery(
+                "SELECT count(*), count(reason) FROM argos.alert_events WHERE rule_id = '"
+                    + rule
+                    + "'")) {
+          rs.next();
+          assertThat(rs.getInt(1)).isEqualTo(11);
+          assertThat(rs.getInt(2)).isEqualTo(10);
+        }
+      } finally {
+        c.rollback();
+      }
+    }
+  }
+
+  private static String probeEvent(java.util.UUID rule, String reason) {
+    return "INSERT INTO argos.alert_events (id, rule_id, from_state, to_state, ts, reason) VALUES"
+        + " (gen_random_uuid(), '"
+        + rule
+        + "', 'OK', 'PENDING', now(), "
+        + reason
+        + ")";
+  }
+
   private static void assertClickHouseSchema() {
     MigrationSource source = MigrationApps.bundled();
     MigrationCatalog catalog = MigrationCatalog.load(source, new SchemaTemplates(source));
     Set<String> expected = new LinkedHashSet<>();
-    for (String statement :
-        SchemaTemplates.render(catalog.scripts().get(0).expanded(), SchemaParameters.defaults())) {
-      Matcher m = CREATED.matcher(statement);
-      if (m.find()) {
-        expected.add(m.group(1));
+    for (SchemaScript script : catalog.scripts()) {
+      for (String statement :
+          SchemaTemplates.render(script.expanded(), SchemaParameters.defaults())) {
+        Matcher m = CREATED.matcher(statement);
+        if (m.find()) {
+          expected.add(m.group(1));
+        }
       }
     }
-    assertThat(expected).as("5 raw + 12 rollup tables + 12 views").hasSize(29);
+    assertThat(expected)
+        .as("5 raw + 12 rollup tables + 12 views of V001, instance_stat_1h and its view of V003")
+        .hasSize(31)
+        .contains("instance_stat_1h", "instance_stat_1h_mv");
     ClickHouseHttp migrator = env.clickHouse(Account.MIGRATOR);
     Set<String> actual = new LinkedHashSet<>();
     for (List<String> row :
@@ -415,7 +531,8 @@ class MigrationStartupIT {
     assertThat(
             MigrationApps.chCount(
                 env, "SELECT count() FROM system.tables WHERE database = 'argos'"))
-        .isEqualTo(29);
+        .as("V001: 5 raw tables, 12 rollups, 12 views; V003: instance_stat_1h and its view")
+        .isEqualTo(31);
     assertThat(pg(env, PgAccount.APP, "SELECT version FROM argos.ch_schema_history ORDER BY 1"))
         .isEqualTo(before);
   }

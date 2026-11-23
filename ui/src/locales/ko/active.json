@@ -1,0 +1,115 @@
+{
+  "page": {
+    "title": "$t(common:term.activeTransactions)",
+    "ignoredFilters": "이 화면에서 적용하지 않는 필터: {{fields}}. 목록은 인스턴스·서비스·상태로 거릅니다.",
+    "truncatedList": "경과가 긴 진행 중 트랜잭션 {{count, number}}건만 표시합니다.",
+    "empty": {
+      "noInstance": {
+        "title": "연결된 인스턴스가 없습니다.",
+        "description": "이 애플리케이션의 인스턴스가 연결되어 있을 때 진행 중 트랜잭션이 보입니다. Argos 에이전트로 애플리케이션을 시작하거나 인스턴스 상태를 확인하세요.",
+        "instances": "인스턴스 보기"
+      },
+      "idle": {
+        "title": "지금 진행 중인 트랜잭션이 없습니다.",
+        "description": "연결된 인스턴스의 마지막 스냅샷에 진행 중 트랜잭션이 없습니다."
+      },
+      "filtered": {
+        "title": "필터에 맞는 진행 중 트랜잭션이 없습니다.",
+        "description": "필터를 지우거나 모든 종류를 선택하면 다른 진행 중 트랜잭션이 보입니다.",
+        "allKinds": "모든 종류 보기"
+      }
+    }
+  },
+  "summary": {
+    "total": "진행 중",
+    "max": "인스턴스별 최대",
+    "slowApproximate": "추정치: 일부 에이전트가 경과가 긴 트랜잭션만 보냈습니다.",
+    "ruleLink": "액티브 트랜잭션 알림 규칙",
+    "ruleLinkNoPermission": "알림 규칙 편집에는 운영자 또는 관리자 역할이 필요합니다."
+  },
+  "asOf": {
+    "label": "{{seconds, number}}초 전 기준",
+    "paused": "일시정지 · {{seconds, number}}초 전 기준",
+    "none": "아직 스냅샷 없음",
+    "title": "표시 중인 스냅샷의 경과 시간(서버 시계 기준). 에이전트는 5초마다 스냅샷을 보냅니다.",
+    "polling": "5초마다 조회 중"
+  },
+  "pause": {
+    "pause": "일시정지",
+    "resume": "재개",
+    "hint": "화면을 고정합니다. 스냅샷은 계속 받고, 재개하면 최신 스냅샷이 보입니다."
+  },
+  "stale": {
+    "badge": "갱신 중단 {{seconds, number}}초",
+    "title": "새 스냅샷이 오지 않았습니다. 연결은 자동으로 복구되고 다음 스냅샷으로 화면이 갱신됩니다."
+  },
+  "bars": {
+    "label": "인스턴스별 진행 중 트랜잭션",
+    "unnamed": "인스턴스 {{id}}",
+    "filter": "목록에서 이 인스턴스만 보기",
+    "unfilter": "목록에서 모든 인스턴스 다시 보기",
+    "count_other": "{{count, number}}건 진행 중",
+    "max": "최장",
+    "approximate": "추정",
+    "approximateTitle": "추정 분포: 에이전트가 경과가 긴 트랜잭션만 보냈고, 나머지는 첫 구간 밖에 있을 수 있습니다.",
+    "truncated": "에이전트가 경과가 긴 500건만 보냄"
+  },
+  "band": {
+    "legend": "경과 시간 색",
+    "first": "{{to}}초 미만",
+    "middle": "{{from}}~{{to}}초",
+    "last": "{{from}}초 이상"
+  },
+  "thresholds": {
+    "label": "색 기준(초)",
+    "t1": "첫째 기준(초)",
+    "t2": "둘째 기준(초)",
+    "t3": "셋째 기준(초)",
+    "apply": "적용",
+    "reset": "기본값",
+    "error": {
+      "notNumber": "초 단위 숫자 세 개를 입력하세요.",
+      "notPositive": "첫째 기준은 0초보다 커야 합니다.",
+      "notAscending": "각 기준은 앞의 기준보다 커야 합니다.",
+      "tooLarge": "기준은 최대 3,600초입니다."
+    }
+  },
+  "state": {
+    "SQL": "SQL 실행 중",
+    "HTTP": "외부 호출 중",
+    "DBC": "커넥션 대기",
+    "METHOD": "메서드 실행 중",
+    "ASYNC": "비동기 대기",
+    "unknown": "알 수 없는 상태",
+    "all": "모든 상태",
+    "filterLabel": "상태"
+  },
+  "table": {
+    "caption": "진행 중 트랜잭션",
+    "instance": "인스턴스",
+    "service": "서비스",
+    "elapsed": "경과",
+    "state": "현재 상태",
+    "thread": "스레드",
+    "user": "사용자 ID",
+    "ip": "IP",
+    "kind": "종류",
+    "started": "시작",
+    "unknownKind": "기타",
+    "virtualThread": "VT",
+    "virtualThreadTitle": "가상 스레드에서 실행 중",
+    "notCollected": "수집 안 함",
+    "notCollectedTitle": "이 인스턴스의 에이전트는 이 값을 수집하지 않습니다."
+  },
+  "actions": {
+    "label": "선택한 트랜잭션 동작",
+    "selected": "선택:",
+    "stack": "이 스레드 스택",
+    "dump": "이 인스턴스 스레드 덤프",
+    "recent": "같은 서비스의 최근 완료 트랜잭션",
+    "commandsUnavailable": "에이전트 명령이 필요하며, 이 버전에서는 사용할 수 없습니다",
+    "noService": "이 트랜잭션에는 아직 서비스가 없습니다.",
+    "finished": "최신 스냅샷에서는 더 이상 진행 중이 아님",
+    "clear": "선택 해제"
+  }
+}

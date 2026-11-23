@@ -33,8 +33,10 @@ import {
 } from '../../test/renderApp';
 import { createQueryClient } from '../api/queryClient';
 import { queryKeys } from '../api/queryKeys';
+import { transactionDetailFixture } from '../features/transaction/data/testing/fixtures';
 import { createI18n } from '../i18n';
 import enShell from '../locales/en/shell.json';
+import enTx from '../locales/en/tx.json';
 import { useConnectionStore } from '../realtime/connectionStore';
 import { useAuthStore } from '../state/authStore';
 import { useUiStore } from '../state/uiStore';
@@ -71,11 +73,12 @@ async function shellAt(path: string, roles: string[] = ['viewer']) {
 
 describe('shell: route tree and placeholders (docs/15 §3.1)', () => {
   it('renders the shell: top bar, side menu and the placeholder of a later screen', async () => {
-    await shellAt('/overview');
+    // /alerts got its screen (WO-38); the administration screens are still placeholders (WO-39).
+    await shellAt('/admin/apps', ['admin']);
     expect(screen.getByTestId('topbar')).toBeInTheDocument();
     expect(screen.getByTestId('side-menu')).toBeInTheDocument();
     const pending = await screen.findByTestId('route-pending', {}, FIND);
-    expect(pending).toHaveAttribute('data-owner', 'WO-31');
+    expect(pending).toHaveAttribute('data-owner', 'WO-39');
     // Placeholders show no data: only the empty state with the next action.
     expect(within(pending).getByTestId('empty-state')).toBeInTheDocument();
     expect(screen.getByTestId('time-range-picker')).toBeInTheDocument();
@@ -84,7 +87,8 @@ describe('shell: route tree and placeholders (docs/15 §3.1)', () => {
     expect(screen.getByTestId('account-menu')).toBeInTheDocument();
   });
 
-  it.each(SCREENS.filter((s) => s.id !== 'account').map((s) => [s.id, s] as const))(
+  // Screens with a component (`load`: /account, the WO-34 detail and trace) are not placeholders.
+  it.each(SCREENS.filter((s) => s.load === undefined).map((s) => [s.id, s] as const))(
     'renders the placeholder of %s for an administrator',
     async (_id, def) => {
       const path = screenPath(def, 1).replace(/:[A-Za-z]+/g, '7');
@@ -94,6 +98,21 @@ describe('shell: route tree and placeholders (docs/15 §3.1)', () => {
       expect(pending).toHaveAttribute('data-owner', def.owner);
     },
   );
+
+  it('opens the overview (WO-31) at /overview with the application selector disabled (docs/15 §3.2, C-189 (2))', async () => {
+    const app = await shellAt('/overview');
+    expect(await screen.findByTestId('overview-page', {}, FIND)).toBeInTheDocument();
+    expect(screen.queryByTestId('route-pending')).not.toBeInTheDocument();
+    const selector = screen.getByTestId('app-select');
+    expect(selector.querySelector('.ant-select-disabled')).not.toBeNull();
+    // On an application route the selector is active again.
+    act(() => {
+      void app.router.navigate('/apps/1/active');
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('app-select').querySelector('.ant-select-disabled')).toBeNull();
+    }, FIND);
+  });
 
   it('opens /account (built by WO-30) inside the shell', async () => {
     await shellAt('/account');
@@ -175,19 +194,53 @@ describe('T-UI-003 shell and the URL state (docs/15 §4.2, SEC-64)', () => {
     const app = await shellAt('/apps/1/dashboard?kind=nope');
     expect(await screen.findByTestId('url-restore-notice', {}, FIND)).toBeInTheDocument();
     await user.click(screen.getByTestId('side-menu-xlog'));
+    // The XLog route and its parts load lazily: under a loaded full run that takes more than the
+    // default second (WO-33 review r1-new-4).
     await waitFor(() => {
       expect(app.url()).toBe('/apps/1/xlog');
-    });
+    }, FIND);
+    // The notice is hidden in the render that sees the new path; the store is cleared in the
+    // passive effect of that commit, which a loaded run may flush after the DOM check passed.
     await waitFor(() => {
       expect(screen.queryByTestId('url-restore-notice')).not.toBeInTheDocument();
-    });
-    expect(useUiStore.getState().restoreNotice).toBeNull();
+      expect(useUiStore.getState().restoreNotice).toBeNull();
+    }, FIND);
   });
 
   it('T-SEC-64 the start page redirect also reports invalid items', async () => {
     const app = await shellAt('/?kind=nope&from=now-1h');
     expect(await screen.findByTestId('url-restore-notice', {}, FIND)).toBeInTheDocument();
     expect(app.url()).toBe('/overview?from=now-1h');
+  });
+
+  it('disables the batch kind for an application without batch jobs in the last 7 days (C-205 (4))', async () => {
+    signedIn(stub);
+    stub.on('GET /api/v1/apps/3', () =>
+      envelope(appBody(3, 'billing', 'prod', { kinds: ['HTTP'] })),
+    );
+    stub.on('GET /api/v1/apps/1', () =>
+      envelope(appBody(1, 'order-api', 'prod', { kinds: ['BATCH', 'HTTP'] })),
+    );
+    const app = renderApp('/apps/3/dashboard?from=now-1h');
+    await screen.findByTestId('app-shell', {}, FIND);
+    await waitFor(() => {
+      expect(screen.getByTestId('kind-filter-batch')).toHaveAttribute('aria-disabled', 'true');
+    }, FIND);
+    fireEvent.click(screen.getByTestId('kind-filter-batch'));
+    expect(app.url()).toBe('/apps/3/dashboard?from=now-1h');
+    // An application with batch jobs (and one whose kinds are unknown) keeps the option.
+    act(() => {
+      void app.router.navigate('/apps/1/dashboard?from=now-1h');
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('kind-filter-batch')).not.toHaveAttribute('aria-disabled');
+    }, FIND);
+    act(() => {
+      void app.router.navigate('/apps/2/dashboard?from=now-1h');
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('kind-filter-batch')).not.toHaveAttribute('aria-disabled');
+    }, FIND);
   });
 
   it('writes the kind filter to the URL as a new history entry', async () => {
@@ -348,7 +401,8 @@ describe('T-SEC-44 shell realtime (docs/15 §3.4, §10)', () => {
 
   it('opens no socket when live is off', async () => {
     await shellAt('/apps/1/dashboard');
-    await screen.findByTestId('route-pending', {}, FIND);
+    // The dashboard screen (WO-32) renders in place of the placeholder; not live, no socket.
+    await screen.findByTestId('dashboard-page', {}, FIND);
     expect(sockets.sockets).toHaveLength(0);
   });
 
@@ -444,6 +498,27 @@ describe('shell: top bar data (docs/15 §3.2)', () => {
     expect(badge).toHaveAttribute('href', '/alerts?state=firing');
   });
 
+  it('wraps the badge and its number bubble in the masked badge area (ADR-0010 C-227 (2))', async () => {
+    signedIn(stub);
+    stub.on('GET /api/v1/overview/alerts', () => envelope([{ id: 'a' }, { id: 'b' }, { id: 'c' }]));
+    renderApp('/overview');
+    const area = await screen.findByTestId('alerts-badge-area', {}, FIND);
+    const badge = within(area).getByTestId('alerts-badge');
+    await waitFor(() => {
+      expect(badge).toHaveAttribute('data-count', '3');
+    });
+    const bubble = area.querySelector('.alerts-badge__count');
+    expect(bubble).not.toBeNull();
+    expect(bubble).toHaveTextContent('3');
+    expect(area.contains(bubble)).toBe(true);
+    // The area's box reaches over the bubble (shell.css: top -2px, right -4px of the link)
+    // without moving the link: padding on those sides, cancelled by the same negative margin.
+    expect(area.style.paddingTop).toBe('2px');
+    expect(area.style.paddingRight).toBe('4px');
+    expect(area.style.marginTop).toBe('-2px');
+    expect(area.style.marginRight).toBe('-4px');
+  });
+
   it('hides the alerts badge when the API is missing', async () => {
     signedIn(stub);
     stub.on('GET /api/v1/overview/alerts', () => errorBody(404, 'not_found'));
@@ -452,6 +527,7 @@ describe('shell: top bar data (docs/15 §3.2)', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('alerts-badge')).not.toBeInTheDocument();
     });
+    expect(screen.queryByTestId('alerts-badge-area')).not.toBeInTheDocument();
   });
 
   it('shows the role in the account menu', async () => {
@@ -464,8 +540,15 @@ describe('shell: top bar data (docs/15 §3.2)', () => {
 
 describe('shell: /tx/:txId alias (ADR-0010 C-166)', () => {
   it('looks up the application and replaces the URL with the app-scoped route', async () => {
+    // A complete detail (the detail screen renders it after the redirect, WO-34).
     stub.on('GET /api/v1/transactions/18446744073709551615', () =>
-      envelope({ app: { app_id: 3 }, ts: '2026-11-14T00:00:01.000Z' }),
+      envelope(
+        transactionDetailFixture({
+          tx_id: '18446744073709551615',
+          app: { ...transactionDetailFixture().app, app_id: 3 },
+          ts: '2026-11-14T00:00:01.000Z',
+        }),
+      ),
     );
     const app = await shellAt('/tx/18446744073709551615?tab=sql');
     await waitFor(() => {
@@ -480,7 +563,19 @@ describe('shell: /tx/:txId alias (ADR-0010 C-166)', () => {
       errorBody(404, 'not_found', { details: [{ field: 'tx_id', reason: 'clock_skew_possible' }] }),
     );
     await shellAt('/tx/42');
-    expect(await screen.findByTestId('transaction-not-found', {}, FIND)).toBeInTheDocument();
+    expect(await screen.findByTestId('transaction-not-found', {}, FIND)).toHaveTextContent(
+      enShell.transactionLink.notFoundDescription,
+    );
+  });
+
+  it('with a ts hint the not-found text does not repeat the ts advice (C-50)', async () => {
+    stub.on('GET /api/v1/transactions/42', () =>
+      errorBody(404, 'not_found', { details: [{ field: 'tx_id', reason: 'not_found' }] }),
+    );
+    await shellAt('/tx/42?ts=2026-11-14T00:00:01.000Z');
+    expect(await screen.findByTestId('transaction-not-found', {}, FIND)).toHaveTextContent(
+      enTx.notFound.hinted,
+    );
   });
 });
 
@@ -736,7 +831,8 @@ describe('shell: kiosk only on the overview, the dashboard and active (docs/15 �
 
   it('opens no kiosk subscription for ?kiosk=1 on XLog with live off', async () => {
     await shellAt('/apps/1/xlog?kiosk=1');
-    await screen.findByTestId('route-pending', {}, FIND);
+    // The XLog screen (WO-33) with live off: no topic, so no socket.
+    await screen.findByTestId('xlog-page', {}, FIND);
     expect(screen.getByTestId('topbar')).toBeInTheDocument();
     expect(sockets.sockets).toHaveLength(0);
   });

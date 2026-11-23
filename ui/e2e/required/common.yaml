@@ -21,7 +21,11 @@ items:
     title: chart drag and XLog drag set the same global range
     req: [F-U16]
     owner: WO-32
-    coverage: component T-UI-002 (src/state/timeRange.test.ts chartDrag, xlogDrag); screen drag sources come with WO-32 (charts) and WO-33 (XLog)
+    coverage: a dashboard chart drag on the stack (the dragged span to the pixel, then the XLog screen opens with it); the XLog drag is proven by the WO-33 items; component T-UI-002 (src/state/timeRange.test.ts chartDrag, xlogDrag)
+    route: /apps/{primary_app_id}/dashboard?from={mid15_from}&to={mid15_to}
+    assert:
+      - visible: dashboard-chart-response
+      - check: dashboardChartDrag
 
   - id: 2.0-2
     title: leaving now turns live off, the live toggle turns it on again with a range ending now
@@ -35,7 +39,11 @@ items:
     title: dragging the past while live offers "resume live", which refills the gap through REST
     req: [F-U16]
     owner: WO-33
-    coverage: component T-UI-002 (src/state/timeRange.test.ts resume) and the WsManager resync callback tests (src/realtime); the drag sources are WO-32 and WO-33 screens
+    coverage: the XLog drag on the stack; component T-UI-002 (src/state/timeRange.test.ts resume) and the WsManager resync callback tests (src/realtime); the chart drag source is WO-32
+    route: /apps/{primary_app_id}/xlog?from=now-5m&live=1
+    assert:
+      - visible: xlog-page
+      - check: xlogResumeLiveRefill
 
   - id: 2.0-3
     title: presets 5m 15m 1h 6h 24h 7d 30d today yesterday, previous next zoom now by buttons and shortcuts
@@ -49,13 +57,21 @@ items:
     title: table cell value to include or exclude filter, chips, individual removal, filters in the URL
     req: [F-U16, SEC-64]
     owner: WO-33
-    coverage: component T-UI-004 (src/components DataTable value menu cell-filter-include and cell-filter-exclude, FilterChipBar) and URL level T-UI-003; deep link 3 below proves chips and removal on the stack
+    coverage: the XLog transaction list on the stack; component T-UI-004 (src/components DataTable value menu cell-filter-include and cell-filter-exclude, FilterChipBar) and URL level T-UI-003; deep link 3 below proves chips and removal
+    route: /apps/{primary_app_id}/xlog?from={mid15_from}&to={mid15_to}
+    assert:
+      - visible: xlog-list
+      - check: xlogCellFilterChips
 
   - id: 2.0-5
-    title: time series point click menu, event markers and collection outage shading
+    title: time series point click menu and event markers
     req: [F-U16]
     owner: WO-32
-    coverage: component tests of src/charts TimeSeriesChart (click menu of range/60 at least 1 minute, markers, outages shading C-5, alternative table)
+    coverage: the dashboard charts on the stack (the XLog link of a point click is the bucket ± range/60, at least 1 minute; markers = GET /events of the range); component tests of src/charts TimeSeriesChart (click menu, markers, alternative table)
+    route: /apps/{primary_app_id}/dashboard?from={range_from}&to={range_to}
+    assert:
+      - visible: dashboard-chart-tps
+      - check: dashboardPointMenuMarkers
 
   - id: 2.0-6
     title: the kind filter is global with requests as default, the environment filter is global
@@ -97,14 +113,22 @@ items:
   - id: 2.0-7
     title: deep link 4, the alert event and its state transitions are chart markers
     req: [F-U14]
-    owner: WO-33
-    coverage: URL level T-UI-003 (alert key, live off) and the TimeSeriesChart marker component tests; alerts exist from WO-25
+    owner: WO-38
+    coverage: the XLog markers on the stack around the seed alert (ADR-0010 C-226 (8)) - marker count = GET /events + the GET /alerts/events transitions the page asked for in the same range (the replay of the same question lists them), alert=<seed FIRING event> emphasises exactly that marker (data-marker-type alert) with live off and the alert-banner names the rule; the deploy event markers and the XSS title stay checked by 2.1-10 (xlog.yaml); URL level T-UI-003 (alert key, live off) and the TimeSeriesChart, XLog marker and AlertBanner component tests
+    route: /apps/{primary_app_id}/xlog?from={range_from}&to={range_to}
+    assert:
+      - visible: xlog-page
+      - check: xlogAlertMarker
 
   - id: 2.0-7
     title: deep link 5, the same data within the retention a week later
     req: [F-U14]
     owner: WO-33
-    coverage: URL level T-UI-003 (absolute ranges stay absolute); the data comparison needs the XLog screen
+    coverage: the same absolute XLog link opened twice on the stack (points, selection summary and list); URL level T-UI-003 (absolute ranges stay absolute)
+    route: /apps/{primary_app_id}/xlog?from={mid15_from}&to={mid15_to}
+    assert:
+      - visible: xlog-page
+      - check: xlogDeterministicReload
 
   - id: 2.0-8
     title: an error answer of the server names the next action and the request id
@@ -124,9 +148,13 @@ items:
 
   - id: 2.0-8
     title: the empty state links the excluded transactions ("excluded N")
-    req: [F-U16]
+    req: [F-U16, D-19]
     owner: WO-33
-    coverage: component tests of src/components EmptyState (empty-state-excluded, D-19)
+    coverage: the empty XLog list of the traffic window on the stack (fixme while the API reports no excluded request); component tests of src/components EmptyState and src/features/xlog/list (empty-state-excluded, D-19)
+    route: /apps/{traffic_app_id}/xlog?from={range_from}&to={range_to}
+    assert:
+      - visible: xlog-page
+      - check: xlogEmptyExcluded
 
   - id: 2.0-9
     title: timestamps in the browser time zone, absolute times name the UTC offset
@@ -150,3 +178,14 @@ items:
     req: [SEC-60, SEC-62]
     owner: WO-46
     coverage: component T-UI-005 (SafeText, SafeLink, CodeBlock with the C-45 payloads) and the page hook of every E2E test (window.__xss, dialogs); the walk over all screens is WO-46
+
+  # Appended after the checklist so that the T-E2E-common-<n> numbers of the entries above stay as
+  # the WO-30 and WO-33 reports cite them: the outage shading part of 2.0-5 (WO-32 runs the click
+  # menu and the markers above).
+  - id: 2.0-5
+    title: collection outage shading on the time series
+    req: [F-U16, D-18]
+    owner: WO-22
+    route: /apps/{traffic_app_id}/dashboard
+    assert:
+      - check: dashboardOutageShading

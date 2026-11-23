@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Applications and instances (14 §4.3, GET only; the mutations are WO-26, ADR-0010 C-153). Instance
- * states come from the session registry until WO-22 (C-160).
+ * states come from the instance state machine (12 §4.2, WO-22).
  */
 @RestController
 @RequiresRole(Role.VIEWER)
@@ -31,9 +31,13 @@ public class AppsController {
   private static final Set<String> STATES = Set.of("UP", "DOWN", "STALE", "WARN");
 
   private static final String STATE_NOTE =
-      " Instance state: UP while the server has a live agent session for the instance, DOWN"
-          + " otherwise; STALE and WARN (12 §4.2) are not reported before the instance state"
-          + " machine exists (WO-22, ADR-0010 C-160).";
+      " Instance state (12 §4.2): UP while heartbeats arrive, STALE after 60 s without a"
+          + " heartbeat, DOWN after 180 s without one, 5 minutes after the agent's shutdown"
+          + " message without a reconnect, or when never connected since the server started; WARN"
+          + " while up with a clock offset of 1 s or more, drops in the last 5 minutes, the lowest"
+          + " accepted agent version, a disabled module, the kill switch on, a configuration hash"
+          + " that differs from the application's majority or a leaked-context count in the last"
+          + " 5 minutes. instances_up counts the instances in UP or WARN.";
 
   private final AppsService apps;
   private final AppScope scope;
@@ -60,7 +64,8 @@ public class AppsController {
       @RequestParam(value = "q", required = false) String q) {
     List<AppRecord> rows = apps.apps(env, group, q);
     boolean truncated = rows.size() > AppsService.MAX_APPS;
-    List<AppViews.App> out = rows.stream().limit(AppsService.MAX_APPS).map(apps::app).toList();
+    List<AppViews.App> out =
+        apps.views(rows.subList(0, Math.min(rows.size(), AppsService.MAX_APPS)));
     return ResponseEnvelope.builder(out).truncated(truncated).build();
   }
 
@@ -69,11 +74,14 @@ public class AppsController {
   @Operation(
       operationId = "apps_get",
       summary = "An application with its settings summary",
-      description = "404 not_found for an unknown application." + STATE_NOTE)
+      description =
+          "404 not_found for an unknown application. kinds lists the transaction kinds recorded"
+              + " in the last 7 days (service_stat_1h; null when ClickHouse cannot answer)."
+              + STATE_NOTE)
   @ArgosLimits(timeoutS = CatalogRepository.STATEMENT_TIMEOUT_S)
-  @ArgosSource({"postgres:apps", "postgres:instances", "memory:sessions"})
+  @ArgosSource({"postgres:apps", "postgres:instances", "memory:sessions", "service_stat_1h"})
   public ResponseEnvelope<AppViews.App> get(@PathVariable("appId") int appId) {
-    return ResponseEnvelope.of(apps.app(scope.app(appId)));
+    return ResponseEnvelope.of(apps.appDetail(scope.app(appId)));
   }
 
   /** The instances of an application (14 §4.3). */
@@ -85,7 +93,9 @@ public class AppsController {
           "At most 1,000 instances by name; archived ones only with archived=true. state filters"
               + " by UP, DOWN, STALE or WARN. drops_24h is the agent's argos_agent_dropped_total"
               + " increase of the last 24 h (null when the agent reported no such series or"
-              + " ClickHouse cannot answer); modules_disabled is null until WO-22 records it."
+              + " ClickHouse cannot answer); modules_disabled lists the modules the agent"
+              + " reported disabled since it started (null for an instance the server has not"
+              + " seen since it started)."
               + STATE_NOTE)
   @ArgosLimits(rowsMax = AppsService.MAX_INSTANCES, timeoutS = 10)
   @ArgosSource({"postgres:instances", "memory:sessions", "metric", "metric_1m"})

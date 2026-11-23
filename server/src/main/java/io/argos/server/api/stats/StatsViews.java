@@ -97,6 +97,9 @@ public final class StatsViews {
    * @param avgMs average; null for an error group
    * @param p95Ms p95; null for an error group
    * @param p99Ms p99 (transactions; absent for the bucket estimates)
+   * @param timeouts timeouts per bucket (0 for a covered bucket without rows; outgoing call hosts
+   *     only, absent elsewhere; ADR-0010 C-222 (7), 14 §4.8 correction)
+   * @param connectFailures connection failures per bucket (as {@code timeouts})
    */
   @Schema(name = "StatsSeries")
   public record Series(
@@ -107,7 +110,23 @@ public final class StatsViews {
       @JsonProperty("avg_ms") @Nullable List<@Nullable Double> avgMs,
       @JsonProperty("p95_ms") @Nullable List<@Nullable Double> p95Ms,
       @JsonProperty("p99_ms") @JsonInclude(JsonInclude.Include.NON_NULL)
-          List<@Nullable Double> p99Ms) {}
+          List<@Nullable Double> p99Ms,
+      @JsonInclude(JsonInclude.Include.NON_NULL) List<@Nullable Long> timeouts,
+      @JsonProperty("connect_failures") @JsonInclude(JsonInclude.Include.NON_NULL)
+          List<@Nullable Long> connectFailures) {
+
+    /** A series without the outgoing call failure classes. */
+    public Series(
+        List<Instant> ts,
+        List<@Nullable Long> count,
+        @Nullable List<@Nullable Long> errors,
+        @Nullable List<@Nullable Double> errorRate,
+        @Nullable List<@Nullable Double> avgMs,
+        @Nullable List<@Nullable Double> p95Ms,
+        @Nullable List<@Nullable Double> p99Ms) {
+      this(ts, count, errors, errorRate, avgMs, p95Ms, p99Ms, null, null);
+    }
+  }
 
   /**
    * A count of a dimension value.
@@ -288,8 +307,8 @@ public final class StatsViews {
    *
    * @param hostId key
    * @param host {@code scheme://host:port}
-   * @param pathPattern path pattern: not stored yet; decided with HTTP client instrumentation
-   *     (WO-14, ADR-0010 C-178), always null
+   * @param pathPattern path pattern: not stored, the statistics key is the host (ADR-0010 C-178
+   *     (3), C-223 (5)), always null
    * @param count calls
    * @param errors errors (5xx and other exceptions)
    * @param timeouts timeouts
@@ -357,6 +376,9 @@ public final class StatsViews {
    * @param isNew whether the group first appeared in the range
    * @param services the top 5 services by count
    * @param versions the application versions it occurred in (at most 20)
+   * @param delta changes ({@code compare_prev=true}): {@code count} relative to the previous range
+   *     of the same length (null when it had none), {@code p95_ms} and {@code error_rate} always
+   *     null (a group has neither); absent otherwise and in the group detail
    */
   @Schema(name = "ErrorGroup")
   public record ErrorGroupRow(
@@ -370,7 +392,8 @@ public final class StatsViews {
       @JsonProperty("first_seen_ever") @Nullable Instant firstSeenEver,
       @JsonProperty("is_new") boolean isNew,
       List<Breakdown> services,
-      List<VersionRef> versions) {}
+      List<VersionRef> versions,
+      @JsonInclude(JsonInclude.Include.NON_NULL) Delta delta) {}
 
   /**
    * An application version.

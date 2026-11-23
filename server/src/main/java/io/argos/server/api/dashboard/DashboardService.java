@@ -1,16 +1,20 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.server.api.dashboard;
 
+import io.argos.server.alert.AlertStatusService;
+import io.argos.server.api.alerts.AlertViews;
 import io.argos.server.api.apps.InstanceStates;
 import io.argos.server.api.error.ApiException;
 import io.argos.server.api.error.ErrorCode;
 import io.argos.server.api.events.EventService;
+import io.argos.server.api.events.EventViews;
 import io.argos.server.api.health.ServerMeters;
 import io.argos.server.api.health.ServerSeries;
 import io.argos.server.api.query.QueryLimits;
 import io.argos.server.api.query.QuerySources;
 import io.argos.server.api.query.SourcePlan;
 import io.argos.server.api.query.UntrustedStrings;
+import io.argos.server.session.AgentSession;
 import io.argos.server.storage.postgres.catalog.CatalogRepository;
 import io.argos.server.storage.postgres.catalog.CatalogRepository.AppRecord;
 import io.argos.server.storage.postgres.catalog.CatalogRepository.InstanceRecord;
@@ -33,18 +37,24 @@ import org.springframework.stereotype.Service;
  * The dashboard of an application (14 §4.4, F-U01, F-U19, F-U20).
  *
  * <ul>
- *   <li>Transactions: one plan of 14 §3 ({@code app_stat_*}, or {@code instance_stat_1m} with an
- *       instance filter, which keeps the plan on minutes), series and range totals in one
+ *   <li>Transactions: one plan of 14 §3 ({@code app_stat_*}, or {@code instance_stat_1m/1h} with an
+ *       instance filter or exclusion, ADR-0010 C-212 (1)), series and range totals in one
  *       statement.
- *   <li>JVM series ({@code metric*}) and outgoing call errors ({@code ext_stat_*}) are planned for
- *       their own families with the same step, so the grids line up; when their level cannot serve
- *       that step (a range older than their raw retention) their buckets are mapped onto the
- *       transaction grid by containment.
+ *   <li>JVM series and {@code series.active} ({@code metric*}; active = the sum over the instances
+ *       of the server's {@code argos_active_transactions} gauge, ADR-0010 C-178 (1)) and outgoing
+ *       call errors ({@code ext_stat_*}) are planned for their own families with the same step, so
+ *       the grids line up; when their level cannot serve that step (a range older than their raw
+ *       retention) their buckets are mapped onto the transaction grid by containment.
  *   <li>Delta basis {@code prev} (the previous range of the same length) or {@code 7d} with {@code
  *       baseline=7d}; the baseline is the transaction series of the range shifted back by 1 or 7
- *       days, on the same grid.
+ *       days, on the same grid. The active delta compares the live active count with the mean of
+ *       {@code series.active} over the basis range ({@link #activeMean}).
+ *   <li>{@code exclude_instance} leaves instances out of the transactions, the JVM series, the live
+ *       values, the instance tiles, the late count and the outages (ADR-0010 C-212 (1)).
  *   <li>Live values (active, running batches, clock skew) only for a range that ends in the last 2
- *       minutes; firing alerts null until WO-25; events and outages from PostgreSQL {@code events}.
+ *       minutes; firing alerts are the application's active alerts of the alert engine now (FIRING
+ *       and ACKED, whatever the range, ADR-0010 C-212 (2)); events and outages from PostgreSQL
+ *       {@code events}.
  * </ul>
  */
 @Service
@@ -60,12 +70,14 @@ public class DashboardService {
           MetricKeys.HEAP_MAX,
           MetricKeys.GC_PAUSE,
           MetricKeys.CPU,
+          MetricKeys.SYSTEM_CPU,
           MetricKeys.TOMCAT_BUSY,
           MetricKeys.TOMCAT_MAX,
           MetricKeys.POOL_ACTIVE,
           MetricKeys.POOL_MAX,
           MetricKeys.AGENT_DROPS,
-          MetricKeys.EXCLUDED);
+          MetricKeys.EXCLUDED,
+          MetricKeys.ACTIVE);
 
   private final TimeQueries queries;
   private final TxSeries tx;
@@ -75,6 +87,7 @@ public class DashboardService {
   private final EventService events;
   private final ServerSeries serverSeries;
   private final ServerMeters serverMeters;
+  private final AlertStatusService alerts;
 
   public DashboardService(
       TimeQueries queries,
@@ -84,7 +97,8 @@ public class DashboardService {
       CatalogRepository catalog,
       EventService events,
       ServerSeries serverSeries,
-      ServerMeters serverMeters) {
+      ServerMeters serverMeters,
+      AlertStatusService alerts) {
     this.queries = queries;
     this.tx = tx;
     this.metrics = metrics;
@@ -93,6 +107,7 @@ public class DashboardService {
     this.events = events;
     this.serverSeries = serverSeries;
     this.serverMeters = serverMeters;
+    this.alerts = alerts;
   }
 
   /**
@@ -105,6 +120,7 @@ public class DashboardService {
    * @param step the {@code step} parameter, or null
    * @param baseline {@code 1d}, {@code 7d} or null
    * @param instances instance filter (empty: the whole application)
+   * @param excluded instances left out ({@code exclude_instance}, never also in {@code instances})
    * @param request the HTTP request (debug source header)
    */
   public record Request(
@@ -115,7 +131,14 @@ public class DashboardService {
       String step,
       String baseline,
       Set<Integer> instances,
-      HttpServletRequest request) {}
+      Set<Integer> excluded,
+      HttpServletRequest request) {
+
+    /** Whether the request reads per instance (an instance filter or an exclusion). */
+    boolean perInstance() {
+      return !instances.isEmpty() || !excluded.isEmpty();
+    }
+  }
 
   /**
    * The dashboard and its transaction plan (the envelope's source).
@@ -134,56 +157,57 @@ public class DashboardService {
     QuerySources sources = queries.sources();
     int appId = r.app().id();
     Set<Integer> instances = r.instances();
-    var family = instances.isEmpty() ? sources.transactions() : sources.transactionsMinuteOnly();
+    Set<Integer> excluded = r.excluded();
+    var family = r.perInstance() ? sources.instanceTransactions() : sources.transactions();
     SourcePlan plan =
         sources.plan(r.from(), r.to(), r.step(), QueryLimits.SERIES_RANGE_MAX, family, r.request());
     Instant now = queries.now();
     SeriesGrid grid = new SeriesGrid(plan, now);
-    TxSeries.Result current = tx.read(appId, r.kind(), instances, plan);
+    TxSeries.Result current = tx.read(appId, r.kind(), instances, excluded, plan);
 
     // Delta basis and baseline.
     DashboardViews.Baseline baseline = null;
-    TxSeries.Aggregate basisTotal;
-    double basisSeconds;
-    String basis;
+    TxSeries.Aggregate basisTotal = null;
+    double basisSeconds = 0;
+    String basis = "prev";
     if (r.baseline() != null) {
       Duration offset = BASELINES.get(r.baseline());
       SourcePlan basePlan =
           queries.planLike(
               r.from().minus(offset), r.to().minus(offset), plan.step(), family, r.request());
-      TxSeries.Result base = tx.read(appId, r.kind(), instances, basePlan);
+      TxSeries.Result base = tx.read(appId, r.kind(), instances, excluded, basePlan);
       baseline = baseline(r.baseline(), offset, basePlan, base, now);
-      basis = "7d".equals(r.baseline()) ? "7d" : "prev";
-      if (basis.equals("7d")) {
+      if ("7d".equals(r.baseline())) {
+        basis = "7d";
         basisTotal = base.total();
         basisSeconds = new SeriesGrid(basePlan, now.minus(offset)).rangeSeconds();
-      } else {
-        basisTotal = null;
-        basisSeconds = 0;
       }
-    } else {
-      basis = "prev";
-      basisTotal = null;
-      basisSeconds = 0;
     }
+    Instant basisFrom;
+    Instant basisTo;
     if (basisTotal == null) {
       Duration length = Duration.between(r.from(), r.to());
+      basisFrom = r.from().minus(length);
+      basisTo = r.from();
       SourcePlan prev =
-          sources.plan(
-              r.from().minus(length),
-              r.from(),
-              null,
-              QueryLimits.SERIES_RANGE_MAX,
-              family,
-              r.request());
-      basisTotal = tx.read(appId, r.kind(), instances, prev).total();
+          sources.plan(basisFrom, basisTo, null, QueryLimits.SERIES_RANGE_MAX, family, r.request());
+      basisTotal = tx.read(appId, r.kind(), instances, excluded, prev).total();
       basisSeconds = new SeriesGrid(prev, now).rangeSeconds();
+    } else {
+      Duration offset = BASELINES.get(r.baseline());
+      basisFrom = r.from().minus(offset);
+      basisTo = r.to().minus(offset);
     }
 
-    InstanceStates.Live live = states.live(appId, instances, r.to());
+    InstanceStates.Live live = states.live(appId, liveInstances(appId, r), r.to());
     TxSeries.Aggregate total = current.total();
     Double tps = Values.tps(total.count(), grid.rangeSeconds());
     Double basisTps = basisTotal.count() == 0 ? null : Values.tps(basisTotal.count(), basisSeconds);
+    Double activeDelta =
+        live.active() == null
+            ? null
+            : Values.relative(
+                live.active().doubleValue(), basisActiveMean(appId, r, basisFrom, basisTo));
     DashboardViews.Tiles tiles =
         new DashboardViews.Tiles(
             total.count(),
@@ -196,33 +220,101 @@ public class DashboardService {
             new DashboardViews.Delta(
                 basis,
                 Values.relative(tps, basisTps),
+                Values.relative(total.avgMs(), basisTotal.avgMs()),
                 Values.relative(total.p95(), basisTotal.p95()),
-                Values.absolute(total.errorRate(), basisTotal.errorRate())));
+                Values.relative(total.p99(), basisTotal.p99()),
+                Values.absolute(total.errorRate(), basisTotal.errorRate()),
+                activeDelta));
 
     // JVM and agent series.
     SourcePlan metricPlan =
         queries.planLike(r.from(), r.to(), plan.step(), sources.metrics(), r.request());
     List<MetricKeys.BucketValue> metricValues =
-        metrics.series(appId, instances, metricPlan, SERIES_KEYS);
+        metrics.series(appId, instances, excluded, metricPlan, SERIES_KEYS);
     SourcePlan extPlan =
         queries.planLike(r.from(), r.to(), plan.step(), sources.statistics(), r.request());
-    Map<Integer, Long> extErrors = extErrors(appId, r.kind(), instances, extPlan);
+    Map<Integer, Long> extErrors = extErrors(appId, r.kind(), instances, excluded, extPlan);
 
     DashboardViews.Series series =
         series(grid, current, metricPlan, metricValues, extPlan, extErrors);
     List<DashboardViews.InstanceTile> tiles2 = instanceTiles(r, grid, live);
     DashboardViews.CollectionBlock collection = collection(r, metricValues, metricPlan, live);
+    List<EventViews.Outage> outages =
+        events.outages(appId, r.from(), r.to(), instances).stream()
+            .filter(o -> o.instanceId() == null || !excluded.contains(o.instanceId()))
+            .toList();
     return new Answer(
         new DashboardViews.Dashboard(
             tiles,
             series,
             baseline,
             tiles2,
-            null,
+            firing(appId),
             collection,
             events.events(appId, r.from(), r.to(), List.of(), EventService.MAX_EVENTS),
-            events.outages(appId, r.from(), r.to(), instances)),
+            outages),
         plan);
+  }
+
+  /** The application's active alerts now, newest first (C-212 (2)). */
+  private List<AlertViews.AlertEventItem> firing(int appId) {
+    Instant now = alerts.now();
+    List<AlertViews.AlertEventItem> out = new ArrayList<>();
+    for (var a : alerts.activeOfApp(appId)) {
+      out.add(AlertViews.AlertEventItem.of(a, now == null ? queries.now() : now));
+    }
+    return out;
+  }
+
+  /** An instance id no instance has (ids start at 1): a filter that keeps nothing. */
+  static final int NO_INSTANCE = 0;
+
+  /**
+   * The instances of the live values: the filter, or with an exclusion the live sessions of the
+   * application without the excluded ones ({@link #NO_INSTANCE} when none is left, so that the live
+   * values are those of no instance rather than of all).
+   */
+  private Set<Integer> liveInstances(int appId, Request r) {
+    if (r.excluded().isEmpty()) {
+      return r.instances();
+    }
+    Set<Integer> out = new LinkedHashSet<>();
+    for (AgentSession session : states.sessions(appId)) {
+      if (!r.excluded().contains(session.instanceId())) {
+        out.add(session.instanceId());
+      }
+    }
+    return out.isEmpty() ? Set.of(NO_INSTANCE) : out;
+  }
+
+  /**
+   * The basis of {@code tiles.delta.active} (ADR-0010 C-212 (1)) over {@code [from, to)}: {@link
+   * #activeMean} of {@code series.active} on the automatic step of the metric family, with the
+   * request's instance filter and exclusion.
+   */
+  private Double basisActiveMean(int appId, Request r, Instant from, Instant to) {
+    QuerySources sources = queries.sources();
+    SourcePlan plan =
+        sources.plan(from, to, null, QueryLimits.SERIES_RANGE_MAX, sources.metrics(), r.request());
+    return activeMean(
+        metrics.series(appId, r.instances(), r.excluded(), plan, List.of(MetricKeys.ACTIVE)));
+  }
+
+  /**
+   * The mean over the buckets with a sample of the {@link MetricKeys#ACTIVE} totals (per bucket the
+   * sum over the instances of each instance's average {@code argos_active_transactions}, not
+   * rounded); null without a bucket.
+   */
+  static Double activeMean(List<MetricKeys.BucketValue> values) {
+    double sum = 0;
+    int n = 0;
+    for (MetricKeys.BucketValue v : values) {
+      if (MetricKeys.ACTIVE.equals(v.key()) && v.total() != null) {
+        sum += v.total();
+        n++;
+      }
+    }
+    return n == 0 ? null : sum / n;
   }
 
   private DashboardViews.Series series(
@@ -262,7 +354,9 @@ public class DashboardService {
     List<Double> heapMax = SeriesGrid.nulls(n);
     List<Double> gc = SeriesGrid.nulls(n);
     List<Double> cpu = SeriesGrid.nulls(n);
+    List<Double> systemCpu = SeriesGrid.nulls(n);
     List<Double> tomcat = SeriesGrid.nulls(n);
+    List<Long> active = SeriesGrid.nulls(n);
     Map<String, List<Double>> pools = new TreeMap<>();
     for (String pool : byKey.getOrDefault(MetricKeys.POOL_ACTIVE, Map.of()).keySet()) {
       pools.put(UntrustedStrings.clean(pool), SeriesGrid.nulls(n));
@@ -277,15 +371,18 @@ public class DashboardService {
         gc.set(i, pause == null ? null : Values.round(pause * 1000, 3));
         MetricKeys.BucketValue c = value(byKey, MetricKeys.CPU, "", mi);
         cpu.set(i, c == null ? null : Values.round(c.mean(), 4));
+        MetricKeys.BucketValue sc = value(byKey, MetricKeys.SYSTEM_CPU, "", mi);
+        systemCpu.set(i, sc == null ? null : Values.round(sc.mean(), 4));
         Double busy = total(byKey, MetricKeys.TOMCAT_BUSY, "", mi);
         Double max = total(byKey, MetricKeys.TOMCAT_MAX, "", mi);
         tomcat.set(i, busy == null || max == null ? null : Values.ratio(busy, max, 4));
+        active.set(i, activeSum(total(byKey, MetricKeys.ACTIVE, "", mi)));
         for (String pool : byKey.getOrDefault(MetricKeys.POOL_ACTIVE, Map.of()).keySet()) {
-          Double active = total(byKey, MetricKeys.POOL_ACTIVE, pool, mi);
+          Double inUse = total(byKey, MetricKeys.POOL_ACTIVE, pool, mi);
           Double pmax = total(byKey, MetricKeys.POOL_MAX, pool, mi);
           pools
               .get(UntrustedStrings.clean(pool))
-              .set(i, active == null || pmax == null ? null : Values.ratio(active, pmax, 4));
+              .set(i, inUse == null || pmax == null ? null : Values.ratio(inUse, pmax, 4));
         }
       }
       if (extErrors != null && !grid.future(i)) {
@@ -294,22 +391,8 @@ public class DashboardService {
       }
     }
     return new DashboardViews.Series(
-        grid.ts(),
-        count,
-        tps,
-        avg,
-        p95,
-        p99,
-        err,
-        SeriesGrid.nulls(n),
-        heapUsed,
-        heapMax,
-        gc,
-        cpu,
-        tomcat,
-        pools,
-        ext,
-        extErr);
+        grid.ts(), count, tps, avg, p95, p99, err, active, heapUsed, heapMax, gc, cpu, systemCpu,
+        tomcat, pools, ext, extErr);
   }
 
   /** Fills the transaction series of a grid (0 transactions in a covered bucket, null ahead). */
@@ -352,16 +435,17 @@ public class DashboardService {
   }
 
   private Map<Integer, Long> extErrors(
-      int appId, QueryLimits.TxKind kind, Set<Integer> instances, SourcePlan extPlan) {
+      int appId,
+      QueryLimits.TxKind kind,
+      Set<Integer> instances,
+      Set<Integer> excluded,
+      SourcePlan extPlan) {
     boolean rawOnly = extPlan.segments().stream().allMatch(s -> s.level() == TableLevel.RAW);
-    if (!instances.isEmpty() && !rawOnly) {
+    if ((!instances.isEmpty() || !excluded.isEmpty()) && !rawOnly) {
       return null; // the rollups have no instance dimension
     }
     QueryParams params =
-        QueryParams.create()
-            .uint32("app", appId)
-            .int64("all", instances.isEmpty() ? 1 : 0)
-            .int64Array("instances", instances.stream().mapToLong(Integer::longValue).toArray());
+        TimeQueries.instanceFilter(QueryParams.create().uint32("app", appId), instances, excluded);
     TimeQueries.kinds(params, kind);
     Map<Integer, Long> out = new HashMap<>();
     for (QueryRow row :
@@ -383,14 +467,15 @@ public class DashboardService {
             r.to(),
             null,
             QueryLimits.SERIES_RANGE_MAX,
-            sources.transactionsMinuteOnly(),
+            sources.instanceTransactions(),
             r.request());
     Map<Integer, TxSeries.Aggregate> rows =
-        perInstance(r.app().id(), r.kind(), r.instances(), plan);
+        perInstance(r.app().id(), r.kind(), r.instances(), r.excluded(), plan);
     Map<Integer, String> names = new HashMap<>();
     Set<Integer> ids = new LinkedHashSet<>();
     for (InstanceRecord i : catalog.instances(r.app().id(), false, 1_000)) {
-      if (r.instances().isEmpty() || r.instances().contains(i.id())) {
+      if ((r.instances().isEmpty() || r.instances().contains(i.id()))
+          && !r.excluded().contains(i.id())) {
         names.put(i.id(), i.name());
         ids.add(i.id());
       }
@@ -410,19 +495,25 @@ public class DashboardService {
               a.avgMs(),
               a.p95(),
               a.errorRate(),
-              live.activeByInstance().get(id)));
+              live.activeByInstance().get(id),
+              states.warnReasons(id)));
     }
     return out;
   }
 
-  /** Per-instance transaction aggregates of a plan (templates {@code dashboard/instances.*}). */
+  /**
+   * Per-instance transaction aggregates of a plan of {@code QuerySources#instanceTransactions()}
+   * (templates {@code dashboard/instances.*}): the {@code instances} (all when empty) without the
+   * {@code excluded} ones.
+   */
   Map<Integer, TxSeries.Aggregate> perInstance(
-      int appId, QueryLimits.TxKind kind, Set<Integer> instances, SourcePlan plan) {
+      int appId,
+      QueryLimits.TxKind kind,
+      Set<Integer> instances,
+      Set<Integer> excluded,
+      SourcePlan plan) {
     QueryParams params =
-        QueryParams.create()
-            .uint32("app", appId)
-            .int64("all", instances.isEmpty() ? 1 : 0)
-            .int64Array("instances", instances.stream().mapToLong(Integer::longValue).toArray());
+        TimeQueries.instanceFilter(QueryParams.create().uint32("app", appId), instances, excluded);
     TimeQueries.kinds(params, kind);
     Map<Integer, TxSeries.Aggregate> out = new HashMap<>();
     for (QueryRow row :
@@ -474,15 +565,12 @@ public class DashboardService {
     Long late = null;
     if (Duration.between(r.from(), r.to()).compareTo(QueryLimits.RAW_RANGE_MAX) <= 0) {
       QueryParams params =
-          QueryParams.create()
-              .uint32("app", r.app().id())
-              .int64("all", r.instances().isEmpty() ? 1 : 0)
-              .int64Array(
-                  "instances", r.instances().stream().mapToLong(Integer::longValue).toArray())
+          TimeQueries.instanceFilter(
+                  QueryParams.create().uint32("app", r.app().id()), r.instances(), r.excluded())
               .dateTime64("from", r.from())
               .dateTime64("to", r.to());
       TimeQueries.kinds(params, r.kind());
-      late = queries.run("dashboard/late_count", params).single().getLong("late");
+      late = queries.run("dashboard/late_count_instances", params).single().getLong("late");
     }
     return new DashboardViews.CollectionBlock(
         agentDrops,
@@ -493,6 +581,15 @@ public class DashboardService {
         excluded,
         late,
         live.batchRunning());
+  }
+
+  /**
+   * {@code series.active} of one bucket (ADR-0010 C-178 (1)): the sum over the instances of each
+   * instance's average {@code argos_active_transactions} in the bucket, rounded; null for a bucket
+   * without a sample (D-23).
+   */
+  static Long activeSum(Double total) {
+    return total == null ? null : Math.round(total);
   }
 
   /** The summed counter increase of a key over all buckets and labels; null without rows. */

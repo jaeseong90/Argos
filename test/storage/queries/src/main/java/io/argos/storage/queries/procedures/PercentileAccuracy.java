@@ -35,14 +35,19 @@ import java.util.Map;
  * value error of p50 and p95 at most 2 % ({@code p50_err_1m_p95}, {@code p95_err_1m_p95}), the
  * maximum value error of p99 at 1h and above at most 5 % ({@code p99_err_1h_max}) and the maximum
  * rank error of the 1m p99 at most 0.5 percentage points ({@code p99_rank_err_minute}); the stored
- * states ({@code Q14/dd_stored}, 1h and 1d only) on {@code p99_err_1h_max}. Groups with fewer than
- * {@code minCount} values are not judged. {@code Q14} holds the tables (recorded): the error per
- * level, the 1m maximum per day, and the D-14 rebuild determinism (the 1m and 1h states of one day
- * rebuilt twice, single-threaded and with 8 threads and small blocks, compared byte for byte and by
- * their finalized values). On the loaded data {@code Q14/d14_rebuild} also rebuilds the rollup
- * tables of the last full day with the procedure of C-59 ({@link RollupRebuild}: staging table,
- * REPLACE PARTITION, 1m day then 1h month) twice and compares the stored DD states of the
- * transaction rollups byte for byte: view-filled against rebuild 1, rebuild 1 against rebuild 2.
+ * states ({@code Q14/dd_stored}, 1h and 1d only) per bucket on ADR-0010 C-219: p99 by the rank
+ * error (at most 0.5 percentage points) when the bucket has fewer than 100 tail values (n x 0.01),
+ * otherwise by the value error (at most 5 %), with at least one value-judged bucket ({@code
+ * p99_err_1h_max} over all stored buckets stays recorded); on the generator's 1/100 profile ({@link
+ * Options#profile()} {@code ci}) ADR-0010 C-221 judges every stored bucket by the rank error and
+ * records the value error only. Groups with fewer than {@code minCount} values are not judged.
+ * {@code Q14} holds the tables (recorded): the error per level, the 1m maximum per day, and the
+ * D-14 rebuild determinism (the 1m and 1h states of one day rebuilt twice, single-threaded and with
+ * 8 threads and small blocks, compared byte for byte and by their finalized values). On the loaded
+ * data {@code Q14/d14_rebuild} also rebuilds the rollup tables of the last full day with the
+ * procedure of C-59 ({@link RollupRebuild}: staging table, REPLACE PARTITION, 1m day then 1h month)
+ * twice and compares the stored DD states of the transaction rollups byte for byte: view-filled
+ * against rebuild 1, rebuild 1 against rebuild 2.
  */
 public final class PercentileAccuracy {
 
@@ -57,8 +62,31 @@ public final class PercentileAccuracy {
   /** Stored states of the loaded data (production path: app_stat_1m to 1h to 1d). */
   public static final String STORED = "dd_stored";
 
-  /** C-53 criterion of the stored states (they exist at 1h and 1d only). */
-  private static final Criterion STORED_CRITERION = Criterion.parse("p99_err_1h_max <= 0.05");
+  /**
+   * C-53 criterion of the stored states (they exist at 1h and 1d only) as applied per bucket by
+   * ADR-0010 C-219 (default, local and full profiles): a bucket with fewer than {@link
+   * #STORED_TAIL_MIN} tail values (n x 0.01) judges its p99 by the rank error (at most 0.5
+   * percentage points), a bucket with more by the value error (at most 5 %), and at least one
+   * bucket must be value-judged.
+   */
+  static final Criterion STORED_CRITERION =
+      Criterion.parse(
+          "p99_value_err_judged_max <= 0.05, p99_rank_err_judged_max <= 0.005,"
+              + " p99_value_judged_buckets >= 1");
+
+  /**
+   * ADR-0010 C-221 criterion of the stored states on the generator's 1/100 profile ({@code ci}):
+   * every bucket's p99 by the rank error (at most 0.5 percentage points); the value error is
+   * recorded ({@code p99_value_err_recorded_max}) but not judged, and no value-judged bucket is
+   * required.
+   */
+  static final Criterion STORED_CRITERION_CI = Criterion.parse("p99_rank_err_judged_max <= 0.005");
+
+  /** Dataset profile on which C-221 judges every stored bucket by its rank error. */
+  public static final String PROFILE_CI = "ci";
+
+  /** Tail values (n x 0.01) from which a stored bucket's p99 is judged by its value (C-219). */
+  public static final double STORED_TAIL_MIN = 100;
 
   /** Key columns of the transaction rollups whose q_elapsed DD states the C-59 check compares. */
   private static final Map<String, String> TRANSACTION_ROLLUP_KEYS = new LinkedHashMap<>();
@@ -95,6 +123,9 @@ public final class PercentileAccuracy {
    * @param hourDays days compared at 1h
    * @param dayDays days compared at 1d
    * @param minCount smallest group judged (smaller groups are counted as excluded)
+   * @param profile generator profile of the loaded data ({@code ""} for the default dataset, {@code
+   *     ci}, {@code local}, {@code full}); {@code ci} selects the C-221 judgment of the stored
+   *     states, every other value C-219
    */
   public record Options(
       Source source,
@@ -104,14 +135,24 @@ public final class PercentileAccuracy {
       int minuteDays,
       int hourDays,
       int dayDays,
-      long minCount) {
+      long minCount,
+      String profile) {
+
+    public Options {
+      profile = profile == null ? "" : profile;
+    }
 
     /**
      * Bench defaults: synthetic, 2 applications x 3,000 per minute, 3 days, every level judged on
      * all 3 days (1m: 8,640 groups, 1h: 144, 1d: 6).
      */
     public static Options bench() {
-      return new Options(Source.SYNTHETIC, 2, 3000, 3, 3, 3, 3, 1000);
+      return new Options(Source.SYNTHETIC, 2, 3000, 3, 3, 3, 3, 1000, "");
+    }
+
+    /** True when C-221 judges every stored bucket by its rank error (the {@code ci} profile). */
+    public boolean storedRankOnly() {
+      return PROFILE_CI.equals(profile);
     }
   }
 
@@ -189,6 +230,7 @@ public final class PercentileAccuracy {
       }
     }
     List<String> functions = new ArrayList<>(FUNCTIONS);
+    List<StoredBucket> storedBuckets = new ArrayList<>();
     if (o.source() == Source.DATASET) {
       functions.add(STORED);
       String[][] stored = {{"stored_hour", "hour"}, {"stored_day", "day"}};
@@ -197,14 +239,34 @@ public final class PercentileAccuracy {
         for (LocalDate d : window(first, last, storedDays[s])) {
           Measurement m = ctx.runner().stepOk(f, stored[s][0], range(d), Map.of());
           for (List<String> row : Tsv.rows(m.body())) {
-            if (Long.parseLong(row.get(3)) < o.minCount()) {
+            long n = Long.parseLong(row.get(3));
+            if (n < o.minCount()) {
               continue;
             }
             double[] exact = array(row.get(4));
             double[] est = array(row.get(5));
+            double[] rank2 = array(row.get(6));
             for (int q = 0; q < 3; q++) {
               add(errors, STORED, stored[s][1], q, Stats.relativeError(est[q], exact[q]));
+              add(
+                  errors,
+                  "rank:" + STORED,
+                  stored[s][1],
+                  q,
+                  Math.abs(rank2[q] / (2.0 * n) - LEVEL_Q[q]));
             }
+            storedBuckets.add(
+                new StoredBucket(
+                    stored[s][1],
+                    row.get(0),
+                    row.get(1),
+                    row.get(2),
+                    n,
+                    exact[2],
+                    est[2],
+                    Stats.relativeError(est[2], exact[2]),
+                    Math.abs(rank2[2] / (2.0 * n) - LEVEL_Q[2]),
+                    o.storedRankOnly()));
           }
         }
       }
@@ -216,7 +278,9 @@ public final class PercentileAccuracy {
     for (String fn : functions) {
       ProcedureResult r =
           new ProcedureResult(
-              "Q14/" + fn, "Q14 " + fn, fn.equals(STORED) ? STORED_CRITERION : file.criterion());
+              "Q14/" + fn,
+              "Q14 " + fn,
+              fn.equals(STORED) ? storedCriterion(o.storedRankOnly()) : file.criterion());
       for (int q = 0; q < 3; q++) {
         double worst = Double.NaN;
         for (String level : LEVELS) {
@@ -256,6 +320,9 @@ public final class PercentileAccuracy {
             r.metric("p99_err_1h_max", Stats.max(coarse));
           }
         }
+      }
+      if (fn.equals(STORED)) {
+        judgeStoredBuckets(r, storedBuckets, o.minCount(), o.storedRankOnly());
       }
       results.add(r.judge());
     }
@@ -350,6 +417,136 @@ public final class PercentileAccuracy {
     }
     results.add(summary.judge());
     return results;
+  }
+
+  /** The stored-state criterion: C-221 on the {@code ci} profile, otherwise C-219. */
+  static Criterion storedCriterion(boolean rankOnly) {
+    return rankOnly ? STORED_CRITERION_CI : STORED_CRITERION;
+  }
+
+  /**
+   * One 1h or 1d bucket of the stored states: its p99 against quantileExact as a value error and as
+   * the rank error |mid-rank(estimate) - 0.99|, and how C-219 (or, on the {@code ci} profile,
+   * C-221) judges it.
+   *
+   * @param level hour or day
+   * @param app application id
+   * @param kind transaction kind
+   * @param start bucket start
+   * @param n values in the bucket
+   * @param exactP99 quantileExact p99
+   * @param storedP99 p99 of the merged stored DD states
+   * @param valueErr relative value error of the stored p99
+   * @param rankErr rank error of the stored p99 (fraction, 0.005 = 0.5 pp)
+   * @param rankOnly C-221 ({@code ci} profile): judged by the rank error whatever its tail size,
+   *     the value error is recorded only
+   */
+  public record StoredBucket(
+      String level,
+      String app,
+      String kind,
+      String start,
+      long n,
+      double exactP99,
+      double storedP99,
+      double valueErr,
+      double rankErr,
+      boolean rankOnly) {
+
+    /**
+     * True when the p99 of this bucket is judged by its value error: C-219 with n x 0.01 >= 100,
+     * never under C-221 ({@code ci} profile).
+     */
+    public boolean valueJudged() {
+      return !rankOnly && n * 0.01 >= STORED_TAIL_MIN;
+    }
+
+    /** True when the bucket meets its C-219 (or C-221) criterion. */
+    public boolean pass() {
+      return valueJudged() ? valueErr <= 0.05 : rankErr <= 0.005;
+    }
+  }
+
+  /**
+   * ADR-0010 C-219 on the stored states: the per-bucket table (n, tail values, judgment mode, value
+   * and rank error, outcome) and the judged metrics. A category without buckets reports 0 for its
+   * maximum; the bucket counts make an empty value category visible and fail the criterion. With
+   * {@code rankOnly} (C-221, {@code ci} profile) every bucket is rank-judged, the value error stays
+   * in the table and in {@code p99_value_err_recorded_max}, and no value-judged bucket is required.
+   */
+  static void judgeStoredBuckets(
+      ProcedureResult r, List<StoredBucket> buckets, long minCount, boolean rankOnly) {
+    List<Double> valueErr = new ArrayList<>();
+    List<Double> rankErr = new ArrayList<>();
+    List<Double> recordedValueErr = new ArrayList<>();
+    List<List<String>> rows = new ArrayList<>();
+    for (StoredBucket b : buckets) {
+      recordedValueErr.add(b.valueErr());
+      if (b.valueJudged()) {
+        valueErr.add(b.valueErr());
+      } else {
+        rankErr.add(b.rankErr());
+      }
+      rows.add(
+          List.of(
+              b.level(),
+              b.app(),
+              b.kind(),
+              b.start(),
+              Long.toString(b.n()),
+              String.format(Locale.ROOT, "%.2f", b.n() * 0.01),
+              b.valueJudged() ? "value" : "rank",
+              String.format(Locale.ROOT, "%.3f", b.exactP99()),
+              String.format(Locale.ROOT, "%.3f", b.storedP99()),
+              pct(b.valueErr()),
+              points(b.rankErr()),
+              b.pass() ? "pass" : "FAIL"));
+    }
+    r.metric("p99_value_judged_buckets", (long) valueErr.size());
+    r.metric("p99_rank_judged_buckets", (long) rankErr.size());
+    r.metric("p99_value_err_judged_max", valueErr.isEmpty() ? 0.0 : Stats.max(valueErr));
+    r.metric("p99_rank_err_judged_max", rankErr.isEmpty() ? 0.0 : Stats.max(rankErr));
+    r.metric(
+        "p99_value_err_recorded_max",
+        recordedValueErr.isEmpty() ? 0.0 : Stats.max(recordedValueErr));
+    r.table(
+        new Table(
+            (rankOnly
+                    ? "C-221 per-bucket p99 judgment of the stored states (ci profile: every bucket"
+                        + " by rank error <= 0.5 pp, value error recorded only"
+                    : "C-219 per-bucket p99 judgment of the stored states (n x 0.01 < "
+                        + (long) STORED_TAIL_MIN
+                        + ": rank error <= 0.5 pp, otherwise value error <= 5 %")
+                + "; buckets with n >= "
+                + minCount
+                + ")",
+            List.of(
+                "level",
+                "app",
+                "kind",
+                "bucket",
+                "n",
+                "tail values",
+                "judged by",
+                "exact p99",
+                "stored p99",
+                "value err",
+                "rank err",
+                "outcome"),
+            rows));
+    if (rankOnly) {
+      r.note(
+          "ci profile (C-221): every stored bucket's p99 is judged by the rank error <= 0.5 pp;"
+              + " the value error is recorded (max "
+              + pct(recordedValueErr.isEmpty() ? Double.NaN : Stats.max(recordedValueErr))
+              + "), not judged, and no value-judged bucket is required");
+    } else if (valueErr.isEmpty()) {
+      r.note(
+          "C-219: no stored bucket has "
+              + (long) STORED_TAIL_MIN
+              + " or more tail values, so no p99 was value-judged; the criterion fails"
+              + " (p99_value_judged_buckets >= 1)");
+    }
   }
 
   private static Table stateSizes(BenchContext ctx, QueryFile f, String src, LocalDate day) {

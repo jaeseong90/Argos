@@ -62,8 +62,9 @@ test.describe('signed in', () => {
     'T-E2E-056d axe: the overview (application selector without a value, empty search) has no critical or contrast violation',
     { annotation: A11Y },
     async ({ page }, testInfo) => {
-      // On a global route the application selector has no value and shows its placeholder
-      // (Ant Design colorTextPlaceholder); the global search is empty and shows its own.
+      // On a global route the application selector is disabled without a value (docs/15 §3.2,
+      // ADR-0010 C-189 (2)) and shows its placeholder (Ant Design colorTextPlaceholder); the
+      // global search is empty and shows its own.
       const apps = page.waitForResponse(
         (response) => new URL(response.url()).pathname === '/api/v1/apps' && response.ok(),
       );

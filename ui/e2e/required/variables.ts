@@ -59,6 +59,10 @@ export function manifestVariables(seed: SeedManifest): Record<string, string> {
       vars[`tx.${category}.tx_id`] = tx.tx_id;
       vars[`tx.${category}.ts`] = tx.ts;
       vars[`tx.${category}.app_id`] = String(tx.app_id);
+      // The trace categories (trace_root_two_apps) also name their trace (required/trace.yaml).
+      if ('trace_id' in tx && typeof tx.trace_id === 'string') {
+        vars[`tx.${category}.trace_id`] = tx.trace_id;
+      }
     }
   }
   for (const window of seed.windows) {

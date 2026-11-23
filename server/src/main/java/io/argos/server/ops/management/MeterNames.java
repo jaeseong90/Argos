@@ -19,6 +19,13 @@ public final class MeterNames {
   /** Prefix of every Argos meter (Micrometer form). */
   public static final String PREFIX = "argos.";
 
+  /**
+   * Gauge of the nightly consistency check, per application ({@code
+   * argos_reconcile_mismatch_minutes{app}}, 12 §9.1; {@code
+   * io.argos.server.ops.rollup.ReconcileJob}).
+   */
+  public static final String RECONCILE_MISMATCH_MINUTES = "argos.reconcile.mismatch.minutes";
+
   private static final Pattern NAME = Pattern.compile("argos(?:[._][a-z0-9]+)+");
 
   private MeterNames() {}

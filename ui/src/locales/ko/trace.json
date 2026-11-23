@@ -1,0 +1,147 @@
+{
+  "page": {
+    "title": "분산 트레이스",
+    "id": "트레이스 ID",
+    "refreshing": "갱신 중…"
+  },
+  "notFound": {
+    "title": "트레이스를 찾을 수 없습니다",
+    "notInWindow": "조회한 범위에서 이 트레이스의 트랜잭션을 찾지 못했습니다. 더 긴 기간으로 조회하거나 트레이스에 속한 트랜잭션에서 여세요.",
+    "other": "트레이스를 찾을 수 없습니다. 보존 기간이 지났거나 링크가 잘못되었을 수 있습니다.",
+    "invalidId": "트레이스 ID가 아닙니다. 트레이스 ID는 16진수 32자리입니다.",
+    "searchWeek": "최근 7일 조회",
+    "searchMonth": "최근 30일 조회…"
+  },
+  "actions": {
+    "label": "트레이스 동작",
+    "copyId": "트레이스 ID 복사",
+    "copied": "트레이스 ID를 복사했습니다",
+    "copyFailed": "복사하지 못했습니다. 트레이스 ID를 선택해 직접 복사하세요.",
+    "openLogs": "로그 열기",
+    "openLogsUnavailable": "루트 트랜잭션을 먼저 열어야 합니다. 로그 링크 템플릿이 설정되지 않았을 수도 있습니다.",
+    "exportJson": "JSON 내보내기(불러온 데이터)",
+    "exportJsonHint": "이 화면이 불러온 트레이스를 그대로 저장합니다.",
+    "exported": "{{file}} 저장함",
+    "queryAgain": "다시 조회"
+  },
+  "window": {
+    "label": "조회 범위",
+    "basis": {
+      "tsHint": "시각 힌트 ±1시간",
+      "idHint": "트레이스 ID에 든 시각 ±1시간",
+      "window1h": "최근 1시간",
+      "window24h": "최근 24시간",
+      "window7d": "최근 7일",
+      "window30d": "최근 30일",
+      "default": "최근 24시간(기본)",
+      "idHintThenDefault": "최근 24시간(트레이스 ID의 시각 근처에서 찾지 못함)",
+      "unknown": "서버가 알린 범위"
+    },
+    "hint": "시각 힌트",
+    "search7d": "최근 7일 조회",
+    "search30d": "최근 30일 조회…",
+    "confirmTitle": "최근 30일을 조회할까요?",
+    "confirmBody": "30일 조회는 무거운 조회입니다. 무거운 조회끼리 나눠 쓰는 요청 한도에 포함되므로 한동안 거부될 수 있습니다.",
+    "confirm": "30일 조회",
+    "cancel": "취소"
+  },
+  "summary": {
+    "root": "루트 트랜잭션",
+    "noRoot": "응답에 루트 트랜잭션이 없습니다",
+    "start": "시작",
+    "duration": "소요 시간",
+    "transactions": "트랜잭션",
+    "apps": "애플리케이션",
+    "external": "외부 호출",
+    "missing": "누락 트랜잭션",
+    "criticalPath": "임계 경로",
+    "criticalServer": "서버 제공",
+    "criticalClient": "브라우저에서 계산(서버가 보내지 않음)",
+    "criticalNone": "없음"
+  },
+  "partial": {
+    "truncated": "이 트레이스는 트랜잭션이 {{limit, number}}건을 넘습니다. 처음 {{limit, number}}건만 표시합니다.",
+    "notYetCollected_other": "이 트레이스의 트랜잭션 {{count, number}}건이 아직 수집되지 않았습니다. 잠시 뒤 다시 조회하세요.",
+    "clockOffset_other": "호출자 step {{count, number}}건이 피호출 트랜잭션보다 짧습니다. 호스트 시계나 측정이 서로 맞지 않습니다. 두 값을 모두 표시하고 네트워크·대기 시간은 계산하지 않습니다."
+  },
+  "legend": {
+    "label": "범례",
+    "transaction": "트랜잭션",
+    "call": "호출자 HTTP step",
+    "wait": "네트워크·대기",
+    "external": "외부 호출(미계측)",
+    "critical": "임계 경로",
+    "failed": "실패",
+    "estimated": "호출자 step과 외부 호출은 소요 시간으로 배치합니다. 트레이스 응답에 시작 시각이 없습니다."
+  },
+  "list": {
+    "label": "트레이스 트리와 타임라인",
+    "column": {
+      "node": "노드",
+      "instance": "인스턴스",
+      "version": "버전",
+      "status": "상태",
+      "elapsed": "시간"
+    }
+  },
+  "row": {
+    "expand": "펼치기",
+    "collapse": "접기",
+    "call": "HTTP 호출 →",
+    "wait": "네트워크·대기 {{value}}",
+    "clockOffset": "호출자 step({{caller}})이 피호출({{callee}})보다 짧음(측정값 불일치)",
+    "external": "외부",
+    "noResponse": "응답 없음",
+    "missingCallerNotYet": "호출자가 아직 수집되지 않음",
+    "missingCallerNotInstrumented": "호출자가 트레이스에 없음(미계측 또는 미수집)",
+    "missingCalleeNotYet": "트랜잭션이 아직 수집되지 않음",
+    "missingCalleeNotInstrumented": "트랜잭션 미계측",
+    "queryAgain": "다시 조회",
+    "error": "에러",
+    "critical": "임계 경로에 있음",
+    "root": "루트",
+    "callerAbsent": "응답에 호출자 없음",
+    "profileSampledOut": "프로파일 없음",
+    "profileLost": "프로파일 유실",
+    "noTime": "시간 정보 없음"
+  },
+  "tip": {
+    "timing": "{{elapsed}}(트레이스의 {{share}}), 시작 +{{offset}}",
+    "status": "상태 {{status}}",
+    "profile": "프로파일: {{value}}",
+    "call": "호출자 HTTP step {{caller}}, 피호출 트랜잭션 {{callee}}",
+    "wait": "네트워크·대기 {{value}}({{source}})"
+  },
+  "node": {
+    "label": "선택한 노드",
+    "app": "애플리케이션",
+    "env": "환경",
+    "service": "서비스",
+    "instance": "인스턴스",
+    "version": "버전",
+    "status": "상태",
+    "error": "에러",
+    "elapsed": "소요 시간",
+    "start": "시작",
+    "offset": "트레이스 시작부터",
+    "profile": "프로파일",
+    "profileCaptured": "수집됨",
+    "profileUnknown": "알 수 없음",
+    "txId": "트랜잭션 ID",
+    "yes": "예",
+    "no": "아니요",
+    "openDetail": "트랜잭션 열기",
+    "openDashboard": "애플리케이션 대시보드 열기",
+    "callerStep": "호출자 HTTP step",
+    "callee": "피호출 트랜잭션",
+    "wait": "네트워크·대기",
+    "waitServer": "서버 제공",
+    "waitComputed": "두 값의 차이",
+    "clockOffset": "호출자 step이 피호출 트랜잭션보다 짧습니다. 호스트 시계나 측정이 서로 맞지 않아 네트워크·대기를 표시하지 않습니다.",
+    "host": "호스트",
+    "path": "경로 패턴",
+    "caller": "호출자 트랜잭션",
+    "reason": "사유",
+    "estimated": "소요 시간으로 추정한 위치"
+  }
+}

@@ -2,8 +2,9 @@
 //
 // The required-elements engine (docs/18 §13, DSN-18-10): turns ui/e2e/required/<screen>.yaml into
 // Playwright tests named T-E2E-<screen>-<n> (n = position in the file), annotated req:<docs/05 id>
-// and req:<F-/SEC- id>. An item owned by another work order becomes a test.fixme whose reason
-// names that work order and where the item is covered until then. A file is validated when the spec
+// and req:<F-/SEC- id>. An item whose owner is not in RUNNING_OWNERS (schema.ts) becomes a
+// test.fixme whose reason names that work order and where the item is covered until then. A file
+// is validated when the spec
 // is collected, so a broken file fails the run before any test starts.
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -14,7 +15,13 @@ import { expect, test } from '../fixtures/stack';
 import type { Role } from '../stack/manifest';
 
 import { CHECKS } from './checks';
-import { fillTemplate, parseRequiredFile, testTitle, type RequiredItem } from './schema';
+import {
+  fillTemplate,
+  parseRequiredFile,
+  RUNNING_OWNERS,
+  testTitle,
+  type RequiredItem,
+} from './schema';
 import { manifestVariables } from './variables';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
@@ -44,7 +51,7 @@ export function defineRequiredTests(screen: string): void {
         ...item.req.map((r) => ({ type: 'req', description: r })),
         ...(item.coverage === undefined ? [] : [{ type: 'coverage', description: item.coverage }]),
       ];
-      if (item.owner !== 'WO-30') {
+      if (!RUNNING_OWNERS.has(item.owner)) {
         annotation.push({
           type: 'fixme',
           description: `owned by ${item.owner}; until then: ${item.coverage ?? ''}`,
@@ -56,8 +63,12 @@ export function defineRequiredTests(screen: string): void {
       }
       test.describe(() => {
         const role: Role | null = item.role === 'anonymous' ? null : item.role;
-        test.use(item.timezone === undefined ? { role } : { role, timezoneId: item.timezone });
-        test(title, { annotation }, async ({ page, seed, apiAs }, testInfo) => {
+        test.use({
+          role,
+          ...(item.timezone === undefined ? {} : { timezoneId: item.timezone }),
+          ...(item.ws === undefined ? {} : { wsMode: item.ws }),
+        });
+        test(title, { annotation }, async ({ page, seed, apiAs, ws }, testInfo) => {
           const vars = manifestVariables(seed);
           if (item.route !== undefined) {
             await page.goto(fillTemplate(item.route, vars));
@@ -98,7 +109,7 @@ export function defineRequiredTests(screen: string): void {
               if (check === undefined) {
                 throw new Error(`unknown check ${assertion.check}`);
               }
-              await check({ page, seed, testInfo, apiAs, role });
+              await check({ page, seed, testInfo, apiAs, role, ws });
             }
           }
         });

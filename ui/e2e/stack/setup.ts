@@ -5,9 +5,14 @@
 //   1. stack: PostgreSQL + roles, ClickHouse, server (e2e/stack/stack.ts)
 //   2. seed (a) generator data + PostgreSQL metadata (:server:loadQueryTestData, tiny, recent)
 //   3. seed (c) users admin / operator / viewer through the API
-//   4. seed (b) shop-boot3 + agent + test/seed/seed-traffic.sh through gRPC
-//   5. seed (d) the manifest, resolved through the API
-//   6. the server's CSP violation counter at the start (one-sided run-level check,
+//   4. seed (b) shop-boot3 + agent + test/seed/seed-traffic.sh through gRPC (via a TCP proxy)
+//   5. seed (d) the manifest, resolved through the API, and at the same time seed (b2) the
+//      collection outage of WO-22 (e2e/stack/seed/outage.ts: the agent's gRPC path frozen until
+//      the instance is STALE, then restored; recorded in the manifest as `outage`)
+//   6. seed (e) a real FIRING alert of the alert engine on the primary app (e2e/stack/seed/alerts.ts,
+//      WO-25: a rule made by the operator, its FIRING event and the template rules of the app;
+//      recorded in the manifest as `alert`)
+//   7. the server's CSP violation counter at the start (one-sided run-level check,
 //      e2e/stack/cspCounter.ts: a growth beyond the positive controls' reports fails the run; no
 //      growth makes no claim, ADR-0010 C-188)
 // Environment:
@@ -28,9 +33,17 @@ import {
   type CspVerdict,
 } from './cspCounter.ts';
 import { removeRun } from './docker.ts';
-import { readManifest, type SeedManifest } from './manifest.ts';
+import {
+  manifestApp,
+  readManifest,
+  recordAlert,
+  recordOutage,
+  type SeedManifest,
+} from './manifest.ts';
 import { runDir, secretsDir } from './paths.ts';
 import { newRunId, readRunState, writeRunState, type RunState } from './runState.ts';
+import { seedAlert, type SeedAlert } from './seed/alerts.ts';
+import { runOutage, type SeedOutage } from './seed/outage.ts';
 import { loadQueryData } from './seed/querydata.ts';
 import { resolveManifest } from './seed/resolve.ts';
 import { seedTraffic } from './seed/traffic.ts';
@@ -132,23 +145,87 @@ export async function setUpStack(
     phase = Date.now();
     const api = new ApiSession(state.stack_url);
     await api.login(USERNAMES.admin, rolePassword(runId, 'admin'));
-    const traffic = await seedTraffic(
+    // The collection outage (WO-22, 05 §2.1-10) watches the instance with its own session, so its
+    // polling never shares the administrator's rate limit buckets with the resolution.
+    const watcher = new ApiSession(state.stack_url);
+    await watcher.login(USERNAMES.operator, rolePassword(runId, 'operator'));
+    const postgresContainer = state.containers.postgres;
+    const stackUrl = state.stack_url;
+    let outage: SeedOutage | null = null;
+    let outageProblem: string | null = null;
+    await seedTraffic(
       {
         runId,
         baseUrl: state.stack_url,
         grpcPort: state.grpc_port,
-        postgresContainer: state.containers.postgres,
+        postgresContainer,
         api,
+        // While shop-boot3 still runs: the outage and the manifest resolution side by side.
+        whileRunning: async (traffic, live) => {
+          timings.seed_traffic_s = (Date.now() - phase) / 1000;
+          const overlap = Date.now();
+          const cut = (async () => {
+            try {
+              outage = await runOutage({
+                api: watcher,
+                appId: traffic.appId,
+                instanceName: live.instanceName,
+                proxy: live.proxy,
+                log,
+              });
+            } catch (error) {
+              outageProblem = error instanceof Error ? error.message : String(error);
+              log(`collection outage not made (the 05 §2.1-10 check fails): ${outageProblem}`);
+            } finally {
+              timings.seed_outage_s = (Date.now() - overlap) / 1000;
+            }
+          })();
+          const resolve = (async () => {
+            await resolveManifest({
+              runId,
+              baseUrl: stackUrl,
+              api,
+              querydata,
+              traffic,
+              users,
+              postgresContainer,
+              log,
+            });
+            timings.seed_manifest_s = (Date.now() - overlap) / 1000;
+          })();
+          const [, resolved] = await Promise.allSettled([cut, resolve]);
+          if (resolved.status === 'rejected') {
+            throw resolved.reason;
+          }
+          // What the outage added to the setup beyond the resolution it overlapped.
+          timings.seed_outage_extra_s =
+            (Date.now() - overlap) / 1000 - (timings.seed_manifest_s ?? 0);
+        },
       },
       jars,
       log,
     );
-    timings.seed_traffic_s = (Date.now() - phase) / 1000;
+    const resolved = recordOutage(outage, outageProblem);
 
+    // Seed (e): a real FIRING alert of the alert engine on the primary app (WO-25), made by the
+    // operator after the traffic seed; recorded in the manifest as `alert`.
     phase = Date.now();
-    await resolveManifest({ runId, baseUrl: state.stack_url, api, querydata, traffic, users, log });
+    const primary = manifestApp(resolved, resolved.primary_app_id);
+    let alert: SeedAlert | null = null;
+    let alertProblem: string | null = null;
+    try {
+      alert = await seedAlert({ api: watcher, appId: primary.app_id, env: primary.env, log });
+    } catch (error) {
+      alertProblem = error instanceof Error ? error.message : String(error);
+      log(`alert not made (the 05 §2.3-5 and §2.10-4 alert checks fail): ${alertProblem}`);
+    }
+    recordAlert(
+      alert === null ? null : { ...alert, template_rules: [...alert.template_rules] },
+      alertProblem,
+    );
+    timings.seed_alert_s = (Date.now() - phase) / 1000;
+    await watcher.logout();
     await api.logout();
-    timings.seed_manifest_s = (Date.now() - phase) / 1000;
 
     const csp = await readStackCspCounter(state.management_url, runId);
     state = { ...state, csp_violations_at_start: csp.value, timings };

@@ -6,6 +6,8 @@
 //            docs/15 §4.2: range=<preset> or from/to epoch milliseconds
 //   kind     HTTP | BATCH | MESSAGE | ALL, read case-insensitively (15: http | batch | message)
 //   filters  docs/14 §6: f.<field>=<value> or f.<field>=!<value> (exclude)
+//            suffix form f.<field>.<op>=<value> (op gt, gte, lt, lte, contains; src/state/urlState.ts,
+//            ADR-0010 C-222 (5))
 //            docs/15 §4.2: f=<field>:<op>:<value> (encodeURIComponent value)
 //   live, env, kiosk, sel, tab
 // The specs assert the meaning ("absolute 10:00-10:15, live off, one filter service=17"), not the
@@ -109,12 +111,23 @@ export function canonicalFilterValue(raw: string): { op: string; value: string }
   return { op: 'eq', value: raw };
 }
 
+/** Operators of the suffix form `f.<field>.<op>=<value>` (src/state/urlState.ts SUFFIX_OPS). */
+const SUFFIX_OPS: ReadonlySet<string> = new Set(['gt', 'gte', 'lt', 'lte', 'contains']);
+
 /** Filters in either grammar, in URL order. */
 export function filters(params: URLSearchParams): FilterState[] {
   const out: FilterState[] = [];
   for (const [key, value] of params.entries()) {
     if (key.startsWith('f.') && key.length > 2) {
-      out.push({ field: key.slice(2), ...canonicalFilterValue(value) });
+      const rest = key.slice(2);
+      const dot = rest.indexOf('.');
+      const suffix = dot > 0 ? rest.slice(dot + 1) : '';
+      if (SUFFIX_OPS.has(suffix)) {
+        // The value of the suffix form is literal (no operator prefix, no escape), as in the UI.
+        out.push({ field: rest.slice(0, dot), op: suffix, value });
+      } else {
+        out.push({ field: rest, ...canonicalFilterValue(value) });
+      }
     } else if (key === 'f') {
       const first = value.indexOf(':');
       const second = first < 0 ? -1 : value.indexOf(':', first + 1);

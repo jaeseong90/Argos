@@ -81,7 +81,8 @@ The `sampleSmoke` tasks below do all of this (port, CATALINA_BASE, ext-stub) aut
 | `SAMPLE_CUSTOM_EXECUTOR` | `true`/`false` | `false` | `ThreadPoolExecutor` subclass with thread names `seed-ARGOS_SEED-N`. |
 | `SAMPLE_EXT_URL` | URL | `http://127.0.0.1:18080` | ext-stub. |
 | `SAMPLE_EXT_REFUSED_PORT` | port | `1` | Port of the ext-stub host where nothing listens (`refuse=1`). |
-| `SAMPLE_EXT_TIMEOUT_MS`, `SAMPLE_EXT_CONNECT_TIMEOUT_MS` | ms | 1000, 5000 | Read and connect timeout of outgoing calls. |
+| `SAMPLE_EXT_TIMEOUT_MS`, `SAMPLE_EXT_CONNECT_TIMEOUT_MS` | ms | 1000, 5000 | Read and connect timeout of outgoing calls. Calls to the next hop of `GET /api/hop/{id}` use the read timeout + 10 s (at most 70 s). |
+| `SAMPLE_HOP_URL` | http(s) base URL without query | the app itself (`http://127.0.0.1:<local port><context path>`) | Next hop of `GET /api/hop/{id}` (another sample app for a 2-hop or 3-hop distributed trace). Read by `HopService` (common). |
 | `-Dsample.fixed-clock` (or `SAMPLE_FIXED_CLOCK`) | ISO instant, e.g. `2026-01-15T00:00:00Z` | system clock | Fixed business time (E2E data). |
 | `SAMPLE_APP_NAME`, `SAMPLE_APP_VERSION` | text | build info | Name and version reported by `/api/version`. |
 | `SERVER_PORT` | port | 8080 | HTTP port of the Spring Boot apps. |
@@ -114,6 +115,29 @@ result. Highlights:
   clients of its stack and reports them in `GET /api/runtime` (`clients`, `capabilities`). The
   build declares the stack (`smoke { expectClients(...) }`, docs/18 §4.1): every smoke variant fails
   when the reported set differs, so a lost client is a failure, not a skipped pay entry.
+  `mode=` picks the client call style: `sync` (default, every client), `async` (OkHttp `enqueue`,
+  java.net.http `sendAsync`; docs/10 U-10, U-11), `block|future|subscribe` (WebClient `block()`,
+  `toFuture().get()`, `subscribe(...)`); in the asynchronous modes the request thread waits for the
+  result. An unsupported mode answers 400. `preset=1` makes the app set its own `traceparent` (random,
+  reported as `presetTraceparent`) and `tracestate: shop=preset1` on the request (the agent keeps
+  them, docs/10 §8).
+- `GET /api/hop/{id}?depth=N&client=X[&fail=timeout|refuse|status500][&mode=M][&preset=1]` (WO-14,
+  `common/.../http/HopService.java`): `depth` > 0 calls `SAMPLE_HOP_URL` (default: the app itself)
+  `/api/hop/{id}?depth=N-1` with the same client, `fail` and `mode`; `depth` 0 is the `/api/pay/{id}`
+  call to ext-stub with `fail` selecting `timeout=1`, `refuse=1` or `status=500`. `depth` ≤ 5
+  (default 1). The answer follows `/api/pay`: 200 when the next hop answered 2xx, 502 with
+  `upstreamStatus` when it answered an error (a failure at the end of the chain reaches the first app
+  this way), 503/504 when the call itself failed. Two apps (A with `SAMPLE_HOP_URL` = B) give the
+  2-hop traces of T-ACC-05; `depth=2` on one app gives a 3-hop trace through itself. For the agent's
+  `caller_app_id` the internal host must be in `propagation.argos-state.hosts` (SEC-38 default: no
+  Argos `tracestate` entry).
+- WebFlux fixture (shop-boot3 jar, `io.argos.sample.boot3.http.webflux.WebFluxFixture`): a
+  functional Spring WebFlux server on Reactor Netty without servlets and without Spring Boot
+  (`GET /`, `GET /api/flux/hello`, `GET /api/flux/call/{id}` = a WebClient call to
+  `<SAMPLE_EXT_URL>/flux/{id}`; `SERVER_PORT`, `SERVER_ADDRESS`). It is not part of the shop app's
+  context; the agent harness starts it from the unpacked jar (T-AG-055). By hand:
+  `java -Dloader.main=io.argos.sample.boot3.http.webflux.WebFluxFixture -cp shop-boot3.jar
+  org.springframework.boot.loader.launch.PropertiesLauncher`.
 - `GET /api/pool/exhaust?hold=5000`: the pool size + 1 connections, the last one waits for a holder.
   The answer counts the holders that really took a connection (`held`, `failedHolders`); `allHeld`
   is true only when all of them did.

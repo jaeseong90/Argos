@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:argos:schema:alert-rule:v1",
+  "title": "Argos alert rule",
+  "description": "An alert rule of the Argos REST API (docs/14 section 4.13, docs/12 section 5.1). The server validates every rule with the same rules (RuleCodec); a message template that references a variable outside the allowed set is refused with 422 template_variable_forbidden. Response-only fields (rule_id, version, created_at, updated_at, created_by, history, template_diff, deleted_at) are accepted and ignored on input.",
+  "type": "object",
+  "required": ["name", "target", "metric", "condition"],
+  "additionalProperties": false,
+  "properties": {
+    "rule_id": { "type": "string", "format": "uuid", "readOnly": true },
+    "version": { "type": "integer", "readOnly": true },
+    "created_at": { "type": "string", "format": "date-time", "readOnly": true },
+    "updated_at": { "type": "string", "format": "date-time", "readOnly": true },
+    "created_by": { "type": ["string", "null"], "readOnly": true },
+    "history": { "type": "array", "readOnly": true },
+    "template_diff": { "type": ["object", "null"], "readOnly": true },
+    "deleted_at": { "type": ["string", "null"], "readOnly": true },
+    "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "enabled": { "type": "boolean", "default": true },
+    "template_key": { "type": ["string", "null"], "pattern": "^[a-z0-9_]{1,64}$" },
+    "template_version": { "type": ["integer", "null"], "minimum": 1 },
+    "target": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "app_id": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Required unless type is server; null for server rules."
+        },
+        "env": {
+          "type": ["string", "null"],
+          "pattern": "^[A-Za-z0-9._-]{1,32}$",
+          "description": "null: every environment of the application."
+        },
+        "type": { "enum": ["app", "instance", "service", "ext_host", "server"] },
+        "ids": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "type": ["string", "integer"], "pattern": "^[0-9]{1,20}$" },
+          "description": "Instance, service or host ids (decimal; empty: all). Not for app and server targets."
+        }
+      }
+    },
+    "kind": { "enum": ["HTTP", "BATCH", "http", "batch"], "default": "HTTP" },
+    "metric": {
+      "enum": [
+        "response_time_p50",
+        "response_time_p95",
+        "response_time_p99",
+        "tps",
+        "error_rate",
+        "apdex",
+        "active_transactions",
+        "active_ratio_to_max_threads",
+        "jvm_heap_used_ratio",
+        "jvm_old_gen_after_gc_ratio",
+        "jvm_gc_pause_ratio",
+        "jvm_threads_live",
+        "tomcat_threads_usage_ratio",
+        "jdbc_pool_waiting",
+        "jdbc_pool_usage_ratio",
+        "ext_call_p95",
+        "ext_call_error_ratio",
+        "ext_call_timeout_ratio",
+        "batch_elapsed_seconds",
+        "system_cpu_ratio",
+        "system_memory_ratio",
+        "system_disk_usage_ratio",
+        "argos_agent_dropped_total",
+        "argos_server_dropped_total",
+        "argos_server_ingest_lag_seconds",
+        "argos_server_disk_usage_ratio",
+        "argos_notification_failures_total",
+        "argos_server_tls_cert_expiry_days",
+        "agent_token_expiry_days",
+        "instance_state",
+        "error_group_new"
+      ]
+    },
+    "window": { "$ref": "#/$defs/duration", "default": "1m", "description": "5s to 24h; longer than 15m reads the minute rollups." },
+    "for": { "$ref": "#/$defs/duration", "default": "0s", "description": "At most 24h." },
+    "evaluation_unit": { "enum": ["app", "instance"], "default": "app" },
+    "condition": {
+      "type": "object",
+      "required": ["operator"],
+      "additionalProperties": false,
+      "properties": {
+        "operator": { "enum": [">", ">=", "<", "<=", "==", "!="] },
+        "warn": { "type": ["number", "null"] },
+        "critical": { "type": ["number", "null"] }
+      },
+      "anyOf": [
+        { "required": ["warn"], "properties": { "warn": { "type": "number" } } },
+        { "required": ["critical"], "properties": { "critical": { "type": "number" } } }
+      ]
+    },
+    "recover": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "threshold": { "type": ["number", "null"] },
+        "for": { "oneOf": [{ "$ref": "#/$defs/duration" }, { "type": "null" }] }
+      }
+    },
+    "min_samples": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000,
+      "description": "Default 20 for request metrics, 0 otherwise."
+    },
+    "no_data": { "enum": ["ignore", "warn", "critical"], "default": "ignore" },
+    "warmup_grace": { "$ref": "#/$defs/duration", "default": "3m" },
+    "active_time": {
+      "type": "array",
+      "maxItems": 14,
+      "items": {
+        "type": "object",
+        "required": ["days", "from", "to"],
+        "properties": {
+          "days": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "enum": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] }
+          },
+          "from": { "type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+          "to": { "type": "string", "pattern": "^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$" }
+        }
+      }
+    },
+    "mute_schedules": {
+      "type": "array",
+      "maxItems": 14,
+      "items": {
+        "type": "object",
+        "required": ["cron", "duration"],
+        "properties": {
+          "cron": { "type": "string", "description": "5 fields: minute hour day month weekday, in argos.server.timezone." },
+          "duration": { "$ref": "#/$defs/duration", "description": "Up to 7d." },
+          "reason": { "type": ["string", "null"], "maxLength": 256 }
+        }
+      }
+    },
+    "channels": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "warn": { "type": "array", "maxItems": 10, "items": { "type": "string", "format": "uuid" } },
+        "critical": { "type": "array", "maxItems": 10, "items": { "type": "string", "format": "uuid" } }
+      }
+    },
+    "renotify_interval": { "$ref": "#/$defs/duration", "default": "30m", "description": "0s (off) or at least 5m." },
+    "runbook_url": { "type": ["string", "null"], "maxLength": 1024, "format": "uri" },
+    "message_template": {
+      "type": ["string", "null"],
+      "maxLength": 2048,
+      "description": "{{variable}} placeholders; allowed variables: app, env, instance, service, host, metric, value, threshold, severity, duration, started_at, link, runbook, rule."
+    }
+  },
+  "$defs": {
+    "duration": {
+      "type": "string",
+      "pattern": "^(0|([0-9]{1,6}[dhms])+)$",
+      "description": "Parts of days, hours, minutes and seconds: 30s, 1m, 1h30m, 7d."
+    }
+  }
+}

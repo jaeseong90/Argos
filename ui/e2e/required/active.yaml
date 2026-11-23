@@ -1,0 +1,139 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# docs/05 §2.6 "액티브 트랜잭션" as data-driven E2E tests (docs/18 §13, DSN-18-10): one entry per part
+# of each bullet of the checklist (2.6-1 .. 2.6-6, docs/04 WO-35), in checklist order. Each item
+# opens the screen and runs a named check of e2e/required/activeChecks.ts that compares the page
+# with the last `active` push the page received from the real WebSocket server (ws: server) and
+# with GET /apps/{appId}/active asked the same question inside the test (no fixed values).
+# Running transactions come from the dev-only active feed of the server test fixtures (app
+# e2e-active, two instances through the real collector; e2e/stack/seed/activeFeed.ts), started by
+# the check: the feed covers every state and band on two instances; that the real agent reports
+# running transactions (WO-16) is specs/active.spec.ts T-E2E-active-31 (shop-boot3 with the agent of
+# the stack, e2e/stack/liveShop.ts). The route opens the screen of the seed's primary application
+# first (the screen itself, no running transaction); the check then opens the feed's application.
+# Inside the Playwright image of e2e:docker there is no JVM for the feed: those checks skip with
+# the reason; 2.6-6 drives the WebSocket stub and runs everywhere.
+# This thread's stack and the instance thread dump need the remote command API (server WO-26,
+# agent WO-17; dump viewer WO-37): until then the screen shows both disabled with the reason
+# (T-E2E-active-27) and these entries are test.fixme naming WO-26.
+screen: active
+title: Active transactions
+source: docs/05 §2.6
+items:
+  - id: 2.6-1
+    title: per-instance bars with the running count and the four elapsed bands equal the last real push and REST
+    req: [F-U04]
+    owner: WO-35
+    coverage: E2E (T-E2E-active-1, T-E2E-active-20); component ActivePage.test.tsx, model.test.ts
+    ws: server
+    route: /apps/{primary_app_id}/active?kind=ALL
+    assert:
+      - visible: active-page
+      - check: activeBars
+
+  - id: 2.6-1
+    title: the elapsed colour thresholds (default 1/3/8 s) are configurable, recolour bars and rows, survive a reload, refuse a bad order
+    req: [F-U04]
+    owner: WO-35
+    coverage: E2E (T-E2E-active-2, T-E2E-active-26); component model.test.ts, ActivePage.test.tsx
+    route: /apps/{primary_app_id}/active?kind=ALL
+    assert:
+      - visible: active-page
+      - check: activeThresholds
+
+  - id: 2.6-1
+    title: a bar click filters the list to that instance (f.instance), the bars and the summary stay
+    req: [F-U04, F-U16]
+    owner: WO-35
+    coverage: E2E (T-E2E-active-3, T-E2E-active-23); component ActivePage.test.tsx
+    route: /apps/{primary_app_id}/active?kind=ALL
+    assert:
+      - visible: active-page
+      - check: activeBarFilter
+
+  - id: 2.6-2
+    title: the list shows instance, service, elapsed, state with its detail, thread, user id and IP (not collected by mode), kind and start of the push and REST
+    req: [F-U04, D-23, SEC-60]
+    owner: WO-35
+    coverage: E2E (T-E2E-active-4, T-E2E-active-20); component ActivePage.test.tsx T-UI-007
+    ws: server
+    route: /apps/{primary_app_id}/active?kind=ALL
+    assert:
+      - visible: active-page
+      - check: activeColumns
+
+  - id: 2.6-3
+    title: sorted by elapsed (longest first), refreshed by the real pushes every 5 s with "as of N s ago" on the server clock
+    req: [F-U04]
+    owner: WO-35
+    coverage: E2E (T-E2E-active-5, T-E2E-active-21); component model.test.ts (clock skew)
+    ws: server
+    route: /apps/{primary_app_id}/active?kind=ALL
+    assert:
+      - visible: active-page
+      - check: activeRefresh
+
+  - id: 2.6-3
+    title: pause freezes the screen while pushes arrive, resume shows the newest snapshot
+    req: [F-U04]
+    owner: WO-35
+    coverage: E2E (T-E2E-active-6, T-E2E-active-22); component ActivePage.test.tsx
+    ws: server
+    route: /apps/{primary_app_id}/active?kind=ALL
+    assert:
+      - visible: active-page
+      - check: activePause
+
+  - id: 2.6-3
+    title: instance, state, service and kind filters are URL keys and the rows equal the API's answer
+    req: [F-U04, F-U16]
+    owner: WO-35
+    coverage: E2E (T-E2E-active-7, T-E2E-active-23); component ActivePage.test.tsx T-UI-004
+    route: /apps/{primary_app_id}/active?kind=ALL
+    assert:
+      - visible: active-page
+      - check: activeFilters
+
+  - id: 2.6-4
+    title: a selected row shows this thread's stack (single-thread stack command)
+    req: [F-U04]
+    owner: WO-26
+    coverage: disabled with the reason "remote commands not available" until the command API (server WO-26, agent WO-17), E2E T-E2E-active-27 and component ActivePage.test.tsx; the stack within 30 s (T-ACPT-02) is specs/active.spec.ts fixme T-E2E-active-30
+
+  - id: 2.6-4
+    title: a selected row offers the thread dump of its instance
+    req: [F-U04]
+    owner: WO-26
+    coverage: disabled with the reason "remote commands not available" until the command API and the dump viewer (WO-26, WO-17, WO-37), E2E T-E2E-active-27 and component ActivePage.test.tsx
+
+  - id: 2.6-4
+    title: a selected row opens the recent completed transactions of the same service in the XLog (service key, last 15 minutes, its kind)
+    req: [F-U04]
+    owner: WO-35
+    coverage: E2E (T-E2E-active-10, T-E2E-active-27); component ActivePage.test.tsx
+    route: /apps/{primary_app_id}/active?kind=ALL
+    assert:
+      - visible: active-page
+      - check: activeRecentCompletions
+
+  - id: 2.6-5
+    title: the summary shows every running transaction, those of 8 s and more and the busiest instance of the push, with the link to the active transactions alert rules
+    req: [F-U04]
+    owner: WO-35
+    coverage: E2E (T-E2E-active-11, T-E2E-active-20); component ActivePage.test.tsx (rule link, viewer disabled)
+    role: operator
+    ws: server
+    route: /apps/{primary_app_id}/active?kind=ALL
+    assert:
+      - visible: active-page
+      - check: activeSummaryAndRuleLink
+
+  - id: 2.6-6
+    title: a silent socket shows "updates stopped N s"; after a server drop the screen reconnects, subscribes again and the next snapshot clears the badge
+    req: [F-U04]
+    owner: WO-35
+    coverage: E2E (T-E2E-active-12, T-E2E-active-24); component ActivePage.test.tsx
+    route: /apps/{primary_app_id}/active?kind=ALL
+    assert:
+      - visible: active-page
+      - check: activeDisconnect

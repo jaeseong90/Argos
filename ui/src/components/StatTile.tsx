@@ -20,6 +20,12 @@ export interface StatTileDelta {
   /** Comparison basis (docs/14 dashboard `delta.basis`, global tileRef). */
   readonly basis: 'prev' | '7d';
   readonly mode?: 'relative' | 'absolute';
+  /** Without a value, say "No comparison data" instead of the dash (ADR-0010 C-211 (3)). */
+  readonly noBasisText?: boolean;
+  /** The change as formatted text (a clamped ">+999%"). */
+  readonly text?: string;
+  /** Tooltip of the change (both raw values of a clamped change). */
+  readonly detail?: string;
 }
 
 export interface StatTileProps {
@@ -95,8 +101,16 @@ export function StatTile({
       <span className="stat-tile__footer">
         {delta === undefined ? null : (
           <>
-            <DeltaValue value={delta.value} goodWhen={goodWhen} mode={delta.mode} unit={unit} />
-            <span>
+            <DeltaValue
+              value={delta.value}
+              goodWhen={goodWhen}
+              mode={delta.mode}
+              unit={unit}
+              noBasisText={delta.noBasisText}
+              text={delta.text}
+              detail={delta.detail}
+            />
+            <span className="stat-tile__basis">
               {delta.basis === '7d'
                 ? t('component.statTile.basis.sevenDays')
                 : t('component.statTile.basis.prev')}

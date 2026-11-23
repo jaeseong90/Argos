@@ -28,7 +28,8 @@ import java.util.UUID;
  *   <li>the collector is shutting down: {@code UNAVAILABLE} (12 §3.9).
  * </ul>
  *
- * The session goes into the {@code Context} ({@link CollectorCalls#SESSION}).
+ * The session goes into the {@code Context} ({@link CollectorCalls#SESSION}); an accepted call
+ * counts as agent activity of the session for its idle timeout ({@link AgentSession#markActive}).
  */
 public final class SessionInterceptor implements ServerInterceptor {
 
@@ -74,6 +75,8 @@ public final class SessionInterceptor implements ServerInterceptor {
           Status.PERMISSION_DENIED.withDescription("The session belongs to another agent token"),
           new Metadata());
     }
+    // An agent that sends data is not idle (the session idle timeout, ADR-0002 C-19).
+    session.get().markActive(System.nanoTime());
     Context context = Context.current().withValue(CollectorCalls.SESSION, session.get());
     return Contexts.interceptCall(context, call, headers, next);
   }

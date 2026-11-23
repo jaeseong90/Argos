@@ -13,6 +13,8 @@ import { useUiStore } from '../state/uiStore';
 import type { Filter } from '../state/urlState';
 import { useUrlState } from '../state/useUrlState';
 
+import { useFilterValueLabel } from './filterLabels';
+
 export function UrlNotices() {
   const { t } = useTranslation(['common', 'shell']);
   const { pathname } = useLocation();
@@ -64,9 +66,13 @@ export function UrlNotices() {
   );
 }
 
-/** Applied `f.*` filters as chips (FilterChipBar); removing one rewrites the URL (push). */
+/**
+ * Applied `f.*` filters as chips (FilterChipBar); removing one rewrites the URL (push). Keys are
+ * named when the screen registered a resolver (filterLabels.tsx).
+ */
 export function UrlFilterChips() {
   const { state, set } = useUrlState();
+  const valueLabel = useFilterValueLabel();
   const filters = state.filters;
   if (filters.length === 0) {
     return null;
@@ -77,6 +83,7 @@ export function UrlFilterChips() {
   return (
     <FilterChipBar
       filters={filters}
+      valueLabel={valueLabel ?? undefined}
       onRemove={(index) => {
         write(filters.filter((_, i) => i !== index));
       }}

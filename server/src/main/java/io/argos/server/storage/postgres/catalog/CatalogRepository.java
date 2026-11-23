@@ -37,9 +37,10 @@ import org.springframework.stereotype.Component;
  *       kind and the exception class, never a value.
  * </ul>
  *
- * Instances have no state column here (ADR-0010 C-128, C-160): the state comes from the session
- * registry. {@code events} rows are written by other work orders (state transitions WO-22, deploy
- * markers WO-26); this class only reads them.
+ * The instance state is not read here (ADR-0010 C-128): the query API takes it from the server's
+ * instance state machine ({@code api.apps.InstanceStates}). {@code events} rows are written by
+ * others (state transitions by the instance state machine, deploy markers WO-26); this class only
+ * reads them.
  */
 @Component
 public class CatalogRepository {
@@ -329,6 +330,28 @@ public class CatalogRepository {
           ps.setInt(2, limit);
         },
         CatalogRepository::instance);
+  }
+
+  /**
+   * The ids of the instances that are not archived of each of {@code appIds} (an application
+   * without one is absent), ascending, at most {@code limit} ids in all.
+   */
+  public Map<Integer, List<Integer>> instanceIdsByApp(Collection<Integer> appIds, int limit) {
+    Map<Integer, List<Integer>> out = new LinkedHashMap<>();
+    if (appIds.isEmpty()) {
+      return out;
+    }
+    query(
+            "instance-ids",
+            "SELECT app_id, id FROM argos.instances WHERE app_id = ANY(?)"
+                + " AND archived_at IS NULL ORDER BY app_id, id LIMIT ?",
+            ps -> {
+              ps.setArray(1, ps.getConnection().createArrayOf("int4", appIds.toArray()));
+              ps.setInt(2, limit);
+            },
+            (rs, n) -> new int[] {rs.getInt(1), rs.getInt(2)})
+        .forEach(r -> out.computeIfAbsent(r[0], a -> new ArrayList<>()).add(r[1]));
+    return out;
   }
 
   /** The instance {@code id}. */

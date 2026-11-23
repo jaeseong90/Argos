@@ -16,8 +16,8 @@ import java.util.TreeMap;
  * Collection outages from state events (D-18, C-5; 14 §4.4 {@code outages}, §4.15): the time spans
  * in which data could not be collected, so that the UI shades them and does not read them as 0.
  *
- * <p>The input contract (the writers are WO-22 for instance states and the server's start and stop
- * events; ADR-0010 C-160 leaves them unwritten before WO-22):
+ * <p>The input contract (the writer is the server's instance state machine, {@code
+ * session.InstanceStateTracker}, for instance states and the server's start and stop events):
  *
  * <ul>
  *   <li>an instance state transition is an {@code events} row {@code type = 'state'} with its
@@ -25,7 +25,10 @@ import java.util.TreeMap;
  *       ...}}; a transition to {@code STALE} or {@code DOWN} starts an outage of that instance, a
  *       transition to {@code UP} or {@code WARN} ends it; its reason is {@code detail.reason} when
  *       it is one of {@value #SESSION_LOST}, {@value #SERVER_DOWN}, {@value #QUEUE_OVERFLOW},
- *       otherwise {@value #SESSION_LOST};
+ *       otherwise {@value #SESSION_LOST}; a transition to {@code DOWN} with reason {@value
+ *       #AGENT_BYE} (the 5 minute grace after an {@code AgentBye} ended) is a planned stop and
+ *       starts no outage (ADR-0010 C-214: no shading after every deploy or restart; the instance
+ *       stays {@code DOWN});
  *   <li>a server {@code stop} event ({@code app_id} and {@code instance_id} null) starts a {@value
  *       #SERVER_DOWN} outage of every application, the next {@code start} ends it.
  * </ul>
@@ -42,8 +45,14 @@ public final class Outages {
   /** The Argos server was down. */
   public static final String SERVER_DOWN = "server_down";
 
-  /** The agent dropped data (queue overflow). */
+  /** The agent dropped data (queue overflow). Reserved: no producer in Phase 1 (ADR-0010 C-214). */
   public static final String QUEUE_OVERFLOW = "queue_overflow";
+
+  /**
+   * The state reason of a planned stop ({@code DOWN} after the {@code AgentBye} grace): not an
+   * outage (ADR-0010 C-214).
+   */
+  public static final String AGENT_BYE = "agent_bye";
 
   private static final Set<String> REASONS = Set.of(SESSION_LOST, SERVER_DOWN, QUEUE_OVERFLOW);
   private static final Set<String> DOWN_STATES = Set.of("STALE", "DOWN");
@@ -140,7 +149,9 @@ public final class Outages {
     if (key == SERVER) {
       return e.type().equals("stop");
     }
-    return e.toState() != null && DOWN_STATES.contains(e.toState().toUpperCase(Locale.ROOT));
+    return e.toState() != null
+        && DOWN_STATES.contains(e.toState().toUpperCase(Locale.ROOT))
+        && !AGENT_BYE.equalsIgnoreCase(Objects.requireNonNullElse(e.reason(), ""));
   }
 
   private static boolean ends(StateEventRecord e, int key) {

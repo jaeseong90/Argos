@@ -32,9 +32,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The 11 §5 checks of a session start, in order, each failing before the next is looked at (the
- * minimal session of ADR-0010 C-128: automatic registration only, no approval queue, no instance
- * state):
+ * The 11 §5 checks of a session start, in order, each failing before the next is looked at:
  *
  * <table>
  *   <caption>11 §5 checks, codes and retry advice (ADR-0010 C-140 for TOKEN_*)</caption>
@@ -82,6 +80,13 @@ import org.slf4j.LoggerFactory;
  * app_variant_limit}. The environment is never cut: one above 32 bytes is refused by the Hello caps
  * like any string above its cap. Token rotation keeps the home app, so the new token reaches the
  * same variants.
+ *
+ * <p>Approval queue (12 §4.4, F-S30, WO-22): a Hello refused {@code APP_NOT_REGISTERED} by check 5
+ * (automatic registration off for the environment, or the home app at its variant cap) is queued in
+ * {@code pending_registrations} ({@link SessionStore#recordPendingRegistration}: name, env, host,
+ * attempts, last attempt, the token's home app); an administrator's approval (WO-26's API over
+ * {@code PendingRegistrationRepository.approve}) creates the variant of the home app, and the same
+ * token's next retry is accepted.
  *
  * <p>An accepted Hello reuses or creates the {@code instances} row of (app, instance name) with the
  * Hello metadata, registers the session (check 7) and answers with the ids, the server and protocol
@@ -142,6 +147,7 @@ public final class HelloService {
 
   private final AtomicLong lastMetadataWarn = new AtomicLong(Long.MIN_VALUE);
   private final AtomicLong lastVariantWarn = new AtomicLong(Long.MIN_VALUE);
+  private final AtomicLong lastPendingWarn = new AtomicLong(Long.MIN_VALUE);
   private final SessionStore store;
   private final SessionRegistry registry;
   private final SessionSettings settings;
@@ -290,6 +296,7 @@ public final class HelloService {
         Optional<AppRef> created =
             store.createVariantApp(hello.getAppName(), env, token.appId(), MAX_APP_VARIANTS);
         if (created.isEmpty()) {
+          queue(hello, env, token.appId());
           return variantLimit(base, token.appId());
         }
         app = created.get();
@@ -301,12 +308,14 @@ public final class HelloService {
               token.appId());
         }
       } else {
+        queue(hello, env, token.appId());
         return reject(
             base,
             RejectReason.APP_NOT_REGISTERED,
             Status.Code.OK,
             APP_NOT_REGISTERED_RETRY_AFTER_S,
-            "The app is not registered and automatic registration is off for its environment",
+            "The app is not registered and automatic registration is off for its environment;"
+                + " an administrator can approve it",
             true);
       }
       if (!app.usableWith(token.appId())) {
@@ -430,6 +439,29 @@ public final class HelloService {
   }
 
   /**
+   * Queues the refused (name, env) of {@code hello} for approval (12 §4.4, F-S30, ADR-0010 C-155
+   * (3)). A failure does not change the answer ({@code APP_NOT_REGISTERED}, 300 s: the agent
+   * retries and is queued then), logged at most once a minute.
+   */
+  private void queue(AgentHello hello, String env, int homeAppId) {
+    try {
+      store.recordPendingRegistration(
+          hello.getAppName(), env, hello.getHost(), homeAppId, clock.instant());
+    } catch (RuntimeException e) {
+      long now = System.nanoTime();
+      long last = lastPendingWarn.get();
+      if ((last == Long.MIN_VALUE || now - last >= METADATA_WARN_INTERVAL_NANOS)
+          && lastPendingWarn.compareAndSet(last, now)) {
+        LOG.warn(
+            "A refused registration of app {} was not queued for approval; the agent's next retry"
+                + " queues it (12 §4.4); further failures are not logged for a minute: {}",
+            homeAppId,
+            e.toString());
+      }
+    }
+  }
+
+  /**
    * The stored instance name of {@code hello}: {@code instance_name}, or {@code host:pid} when it
    * is empty (12 §4.3), in its stored form of at most {@value SessionStore#MAX_INSTANCE_NAME_CHARS}
    * characters ({@link SessionStore#storedInstanceName}, ADR-0010 C-157 (4)).
@@ -444,8 +476,20 @@ public final class HelloService {
   }
 
   /**
+   * Whether the stored instance name of {@code hello} is its temporary {@code host:pid} name (12
+   * §4.3: the name before the connector port is known), which an {@code InstanceUpdate} may merge
+   * into an existing instance of the new name ({@code SessionHandler}, ADR-0010 C-158 (2)).
+   */
+  static boolean temporaryName(AgentHello hello) {
+    String host = hello.getHost().isBlank() ? "unknown" : hello.getHost().strip();
+    return instanceName(hello)
+        .equals(
+            SessionStore.storedInstanceName(host + ":" + Integer.toUnsignedString(hello.getPid())));
+  }
+
+  /**
    * C-155 (3): the home app has {@value #MAX_APP_VARIANTS} environment variants already. Answered
-   * like an app that is not registered (an administrator may still create or approve it, WO-22),
+   * like an app that is not registered and queued for approval (an administrator may approve it),
    * counted as {@code app_variant_limit}, with a WARN at most once a minute.
    */
   private HelloOutcome variantLimit(ServerHello.Builder base, int homeAppId) {
@@ -469,7 +513,7 @@ public final class HelloService {
         APP_NOT_REGISTERED_RETRY_AFTER_S,
         "The agent token's app has its maximum of "
             + MAX_APP_VARIANTS
-            + " automatically registered environments; an administrator must register this one",
+            + " automatically registered environments; an administrator can approve this one",
         false);
   }
 

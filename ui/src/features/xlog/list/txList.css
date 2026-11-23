@@ -1,0 +1,94 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* XLog transaction list and the "not applied" notice it shares with the selection summary
+   (docs/15 §9.3, §13 tokens). The table scrolls inside its own box; the page never scrolls
+   horizontally at 1366 px. */
+.xlog-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.xlog-list__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-4);
+}
+
+.xlog-list__title {
+  margin: 0;
+  font-size: var(--fs-lg);
+}
+
+.xlog-list__count {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}
+
+/* A column the preview rows (chart points) do not carry, until the server rows arrive (C-204):
+   a muted ellipsis, distinct from the missing-value dash (T-UI-007). */
+.xlog-list__pending::before {
+  content: '\2026';
+  color: var(--color-text-muted);
+}
+
+.xlog-list__note,
+.xlog-list__idle {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}
+
+.xlog-list__error {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius);
+  background: var(--color-error-bg);
+  color: var(--color-error-text);
+  font-size: var(--fs-sm);
+}
+
+.xlog-unapplied {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  font-size: var(--fs-sm);
+  min-width: 0;
+}
+
+.xlog-unapplied__title {
+  font-weight: 600;
+}
+
+.xlog-unapplied__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.xlog-unapplied__item {
+  display: inline-flex;
+  align-items: baseline;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.xlog-unapplied__value {
+  max-width: 24ch;
+}
+
+.xlog-unapplied__reason {
+  font-style: italic;
+}

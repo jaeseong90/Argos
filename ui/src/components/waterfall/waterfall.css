@@ -1,0 +1,265 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* Waterfall lists (docs/15 §8.4, DSN-15-11): DOM rows of 24 px, two columns (label | track) that
+   the time scale shares through --waterfall-label-w. Bar colours come from the step tokens of
+   styles/tokens.css (docs/15 §13). Positions are set as React style properties (CSSOM, allowed by
+   CSP style-src); nothing here depends on inline style attributes. */
+
+.virtual-rows {
+  --waterfall-label-w: 360px;
+  position: relative;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+}
+
+.virtual-rows__body {
+  position: relative;
+}
+
+.virtual-rows__viewport {
+  position: relative;
+  overflow-x: hidden;
+  overflow-y: auto;
+  contain: layout paint;
+}
+
+.virtual-rows__list {
+  position: relative;
+  width: 100%;
+}
+
+.virtual-rows__row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  display: block;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--color-surface);
+  cursor: default;
+}
+
+.virtual-rows__row:hover {
+  background: var(--color-hover);
+}
+
+.virtual-rows__row--selected {
+  background: var(--color-selected);
+}
+
+.virtual-rows__row:focus-visible,
+.virtual-rows__row--focused:focus {
+  outline: var(--focus-ring-w) solid var(--color-focus);
+  outline-offset: calc(-1 * var(--focus-ring-w));
+}
+
+.virtual-rows__tooltip {
+  position: absolute;
+  z-index: 20;
+  left: calc(var(--waterfall-label-w) + var(--space-2));
+  max-width: min(480px, calc(100% - var(--waterfall-label-w) - var(--space-4)));
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--fs-sm);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
+  pointer-events: none;
+}
+
+/* One row: label column | track column. */
+.waterfall-row,
+.waterfall-scale {
+  display: grid;
+  grid-template-columns: var(--waterfall-label-w) minmax(0, 1fr);
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+}
+
+.waterfall-row__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  height: 100%;
+  padding-right: var(--space-2);
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  border-right: 1px solid var(--color-border);
+}
+
+.waterfall-row__type {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+}
+
+.waterfall-row__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.waterfall-row__trailing {
+  flex: none;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The track keeps 2 px on the right so that a minimum-width bar at 100 % stays visible. */
+.waterfall-row__track,
+.waterfall-scale__track {
+  position: relative;
+  height: 100%;
+  margin-right: calc(var(--space-2) + 2px);
+  margin-left: var(--space-2);
+}
+
+.waterfall-bar,
+.waterfall-segment {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  box-sizing: border-box;
+  border-radius: 2px;
+}
+
+.waterfall-bar--sql {
+  background: var(--step-sql);
+}
+
+.waterfall-bar--dbc {
+  background: var(--step-dbc);
+}
+
+.waterfall-bar--http,
+.waterfall-bar--external {
+  background: var(--step-http);
+}
+
+.waterfall-bar--method {
+  background: var(--step-method);
+}
+
+.waterfall-bar--async {
+  background: transparent;
+  border: 1px dashed var(--step-async);
+}
+
+.waterfall-bar--error {
+  background: var(--step-error);
+}
+
+.waterfall-bar--tx {
+  background: var(--color-primary);
+}
+
+/* A failed step or node: a red outline on top of its type colour. */
+.waterfall-bar--failed {
+  box-shadow: 0 0 0 2px var(--step-error);
+}
+
+/* A dashed tone keeps its colour as the outline. */
+.waterfall-bar--dashed:not(.waterfall-bar--async) {
+  border: 1px dashed var(--color-text);
+}
+
+/* Bold outline: the trace's critical path (docs/15 §9.5). */
+.waterfall-bar--critical {
+  top: 4px;
+  bottom: 4px;
+  outline: 2px solid var(--color-text);
+  outline-offset: 0;
+}
+
+/* Cut to the scale (inconsistent data): the cut edge is a solid dark line, never hidden. */
+.waterfall-bar--clipped {
+  border-right: 2px solid var(--color-text);
+}
+
+/* Grey parts: self time (docs/15 §8.3) and network/wait (D-05), drawn over the bar. */
+.waterfall-segment {
+  z-index: 1;
+  top: 9px;
+  bottom: 9px;
+  border-radius: 0;
+}
+
+.waterfall-segment--self {
+  background: var(--color-border-strong);
+}
+
+.waterfall-segment--wait {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--color-border-strong) 0 3px,
+    var(--color-border) 3px 6px
+  );
+}
+
+.waterfall-marker {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  color: var(--color-text);
+  font-size: var(--fs-sm);
+  line-height: 1;
+}
+
+.waterfall-icon {
+  display: inline-flex;
+}
+
+/* An ERROR record marker takes the error step colour (docs/15 §13). */
+.waterfall-icon--error {
+  color: var(--step-error);
+}
+
+/* Time scale */
+.waterfall-scale {
+  height: var(--row-h);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+}
+
+.waterfall-scale__label {
+  height: 100%;
+  border-right: 1px solid var(--color-border);
+}
+
+.waterfall-scale__tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 3px;
+  border-left: 1px solid var(--color-border-strong);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The last tick near the right edge puts its label on the left of the line. */
+.waterfall-scale__tick--end {
+  padding-right: 3px;
+  padding-left: 0;
+  border-right: 1px solid var(--color-border-strong);
+  border-left: 0;
+  transform: translateX(-100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .virtual-rows__viewport {
+    scroll-behavior: auto;
+  }
+}

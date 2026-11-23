@@ -12,6 +12,8 @@ com.zaxxer.hikari.pool.ProxyStatement jdbc org.springframework.boot.loader.launc
 com.zaxxer.hikari.util.DriverDataSource jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
 jakarta.servlet.http.HttpServlet servlet org.springframework.boot.loader.launch.LaunchedClassLoader
 java.util.concurrent.ThreadPoolExecutor executor bootstrap
+jdk.internal.net.http.HttpClientImpl httpclient-jdk11 platform
+okhttp3.OkHttpClient$Builder httpclient-okhttp org.springframework.boot.loader.launch.LaunchedClassLoader
 oracle.jdbc.OracleConnectionWrapper jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
 oracle.jdbc.driver.PhysicalConnection jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
 org.apache.catalina.connector.CoyoteOutputStream servlet org.springframework.boot.loader.launch.LaunchedClassLoader
@@ -19,6 +21,7 @@ org.apache.catalina.connector.CoyoteWriter servlet org.springframework.boot.load
 org.apache.catalina.connector.Request servlet-async org.springframework.boot.loader.launch.LaunchedClassLoader
 org.apache.catalina.connector.ResponseFacade servlet org.springframework.boot.loader.launch.LaunchedClassLoader
 org.apache.commons.dbcp2.BasicDataSource jdbc,pool org.springframework.boot.loader.launch.LaunchedClassLoader
+org.apache.hc.client5.http.impl.classic.InternalHttpClient httpclient-apache5 org.springframework.boot.loader.launch.LaunchedClassLoader
 org.apache.tomcat.jdbc.pool.DataSourceProxy jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
 org.apache.tomcat.util.net.AbstractEndpoint tomcat org.springframework.boot.loader.launch.LaunchedClassLoader
 org.apache.tomcat.websocket.server.WsFilter servlet org.springframework.boot.loader.launch.LaunchedClassLoader

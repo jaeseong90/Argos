@@ -82,8 +82,8 @@ public class XlogController {
               + " (sampled points first) were left out: narrow the range or raise limit."
               + " 64-bit ids are decimal strings. The"
               + " body is gzip-compressed for clients that accept it (above 2 KB). meta.outages"
-              + " lists the collection outages of the range (the dashboard's spans; instance state"
-              + " events are recorded from WO-22 on, so before it only server outages appear).",
+              + " lists the collection outages of the range (the dashboard's spans, from the"
+              + " instance state events and the server's stop and start events).",
       responses =
           @ApiResponse(
               responseCode = "200",

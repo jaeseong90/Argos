@@ -18,6 +18,7 @@ import {
   INITIAL_LAZY_MODULES,
   measureBundle,
   parseGraph,
+  pocModulesInChunks,
   sentSize,
   SERVER_GZIP_MIN_BYTES,
 } from './bundle-size.mjs';
@@ -53,9 +54,9 @@ function chunk(fileName, rest = {}) {
 }
 
 /**
- * A build shaped like the real one: index entry with a vendor chunk, the four lazy routes of the
- * initial path (AuthGate bundled into a shared chunk, not a chunk of its own), the login page and
- * the XLog PoC outside it.
+ * A build shaped like the real one: index entry with a vendor chunk, the lazy routes of the
+ * initial path (AuthGate bundled into a shared chunk, not a chunk of its own; the XLog screen),
+ * and the login page outside it. No XLog PoC (production build, ADR-0010 C-203).
  */
 const GRAPH = {
   version: 1,
@@ -72,7 +73,8 @@ const GRAPH = {
         'assets/Shell-e.js',
         'assets/ScreenRoute-f.js',
         'assets/LoginPage-g.js',
-        'assets/XLogPocPage-h.js',
+        'assets/overview-m.js',
+        'assets/xlog-h.js',
       ],
       importedCss: ['assets/index-a.css'],
     }),
@@ -110,10 +112,17 @@ const GRAPH = {
       imports: ['assets/states-j.js'],
       importedCss: ['assets/auth-k.css'],
     }),
-    chunk('assets/XLogPocPage-h.js', {
+    chunk('assets/xlog-h.js', {
       isDynamicEntry: true,
-      facadeModule: 'src/features/xlog-poc/XLogPocPage.tsx',
-      modules: ['src/features/xlog-poc/XLogPocPage.tsx'],
+      facadeModule: 'src/features/xlog/index.ts',
+      modules: ['src/features/xlog/index.ts', 'src/features/xlog/XLogPage.tsx'],
+      imports: ['assets/states-j.js'],
+    }),
+    chunk('assets/overview-m.js', {
+      isDynamicEntry: true,
+      facadeModule: 'src/features/overview/index.ts',
+      modules: ['src/features/overview/index.ts', 'src/features/overview/OverviewPage.tsx'],
+      imports: ['assets/states-j.js'],
     }),
   ],
   assets: [
@@ -133,11 +142,28 @@ const INITIAL_JS = [
   'assets/config-i.js',
   'assets/gate-d.js',
   'assets/index-a.js',
+  'assets/overview-m.js',
   'assets/states-j.js',
   'assets/vendor-b.js',
+  'assets/xlog-h.js',
 ];
 const INITIAL_CSS = ['assets/Shell-e.css', 'assets/index-a.css', 'assets/states-j.css'];
-const OTHER_FILES = ['assets/LoginPage-g.js', 'assets/XLogPocPage-h.js', 'assets/auth-k.css'];
+const OTHER_FILES = ['assets/LoginPage-g.js', 'assets/auth-k.css'];
+
+/** The same build with the XLog PoC route in it (what C-203 forbids in production). */
+const GRAPH_WITH_POC = {
+  ...GRAPH,
+  chunks: [
+    ...GRAPH.chunks.map((c) =>
+      c.isEntry ? { ...c, dynamicImports: [...c.dynamicImports, 'assets/XLogPocPage-p.js'] } : c,
+    ),
+    chunk('assets/XLogPocPage-p.js', {
+      isDynamicEntry: true,
+      facadeModule: 'src/features/xlog-poc/XLogPocPage.tsx',
+      modules: ['src/features/xlog-poc/XLogPocPage.tsx', 'src/features/xlog-poc/dummyData.ts'],
+    }),
+  ],
+};
 
 /**
  * Deterministic 32-bit pseudo-random numbers (xorshift32).
@@ -227,12 +253,14 @@ function run(args) {
 }
 
 describe('bundle-size: initial path (docs/15 §14)', () => {
-  it('defines the initial path by the four lazy routes of the first screen after login', () => {
+  it('defines the initial path by the lazy routes of the first screen after login and the XLog screen', () => {
     expect(INITIAL_LAZY_MODULES).toEqual([
       'src/app/AntdRoot.tsx',
       'src/routes/AuthGate.tsx',
       'src/routes/Shell.tsx',
       'src/routes/ScreenRoute.tsx',
+      'src/features/overview/index.ts',
+      'src/features/xlog/index.ts',
     ]);
     expect(BUDGET).toEqual({ initialBytes: 350 * 1024, totalBytes: 2560 * 1024 });
   });
@@ -245,9 +273,9 @@ describe('bundle-size: initial path (docs/15 §14)', () => {
   it('reports lazy modules that are in no chunk', () => {
     const path = initialPath(parseGraph(GRAPH), [
       ...INITIAL_LAZY_MODULES,
-      'src/features/overview/OverviewPage.tsx',
+      'src/features/active/ActivePage.tsx',
     ]);
-    expect(path.missingModules).toEqual(['src/features/overview/OverviewPage.tsx']);
+    expect(path.missingModules).toEqual(['src/features/active/ActivePage.tsx']);
   });
 
   it('sums the gzip sizes of the initial path and of every JS/CSS file of dist/', () => {
@@ -270,9 +298,11 @@ describe('bundle-size: initial path (docs/15 §14)', () => {
       remainingBytes: 2560 * 1024 - totalGzip,
     });
     expect(report.warnings).toEqual([]);
+    expect(report.pocModules).toBe(0);
     const text = formatReport(report).join('\n');
     expect(text).toContain('budget 350.0 KiB gzip, remaining');
     expect(text).toContain('budget 2560.0 KiB gzip, remaining');
+    expect(text).toContain('PoC modules in production chunks: 0 (ADR-0010 C-203)');
     expect(text).not.toContain('WARN');
   });
 
@@ -434,6 +464,33 @@ describe('bundle-size: command line', () => {
     const result = run(['--dist', distDir, '--graph', graphFile, '--out', outFile]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('dist/assets/other-z.js is not a chunk of the graph');
+  });
+
+  it('exits 1 when a production chunk holds the XLog PoC or its synthetic data generator (C-203)', () => {
+    expect(pocModulesInChunks(parseGraph(GRAPH))).toEqual([]);
+    expect(pocModulesInChunks(parseGraph(GRAPH_WITH_POC))).toEqual([
+      'assets/XLogPocPage-p.js: src/features/xlog-poc/XLogPocPage.tsx',
+      'assets/XLogPocPage-p.js: src/features/xlog-poc/dummyData.ts',
+    ]);
+    const { distDir, graphFile, outFile } = fixture({
+      graph: GRAPH_WITH_POC,
+      extra: { 'assets/XLogPocPage-p.js': content(77, 3000) },
+    });
+    expect(() => measureBundle({ distDir, graph: parseGraph(GRAPH_WITH_POC) })).toThrow(
+      /PoC modules in production chunks: 2/,
+    );
+    const result = run(['--dist', distDir, '--graph', graphFile, '--out', outFile]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('ERROR bundle-size: PoC modules in production chunks: 2');
+    expect(result.stderr).toContain('assets/XLogPocPage-p.js: src/features/xlog-poc/dummyData.ts');
+  });
+
+  it('prints the PoC line of a production build', () => {
+    const { distDir, graphFile, outFile } = fixture();
+    const result = run(['--dist', distDir, '--graph', graphFile, '--out', outFile]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('PoC modules in production chunks: 0 (ADR-0010 C-203)');
+    expect(JSON.parse(readFileSync(outFile, 'utf8')).pocModules).toBe(0);
   });
 
   it('exits 1 when an initial-path module is in no chunk', () => {

@@ -216,7 +216,15 @@ export type TimeAction =
   | { readonly type: 'setLive'; readonly live: boolean }
   | { readonly type: 'toggleLive' }
   | { readonly type: 'chartDrag'; readonly from: number; readonly to: number }
-  | { readonly type: 'xlogDrag'; readonly sel: Selection }
+  | {
+      readonly type: 'xlogDrag';
+      readonly sel: Selection;
+      /**
+       * The window the chart showed while live, when it differs from the URL range (XLog: the
+       * 5-minute live window, docs/15 §7.5): frozen as the absolute range instead of the URL's.
+       */
+      readonly frozen?: ResolvedRange;
+    }
   | { readonly type: 'clearSelection' }
   | { readonly type: 'resume' };
 
@@ -345,7 +353,17 @@ export function reduceTimeRange(state: TimeState, action: TimeAction, ctx: TimeC
       if (!state.live) {
         return { ...state, sel: action.sel };
       }
-      // While live, freeze the window that was on screen so the selection stays inside it.
+      // While live, freeze the window that was on screen so the selection stays inside it: the
+      // chart's own window when the caller gives one (frozen), else the URL range resolved now.
+      if (action.frozen !== undefined && action.frozen.from < action.frozen.to) {
+        return {
+          ...state,
+          range: absolute(action.frozen.from, action.frozen.to),
+          live: false,
+          sel: action.sel,
+          resumeAvailable: true,
+        };
+      }
       return {
         ...state,
         range: absolute(current.from, current.to),

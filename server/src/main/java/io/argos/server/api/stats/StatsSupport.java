@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.server.api.stats;
 
+import io.argos.proto.LatencyBuckets;
 import io.argos.server.api.dashboard.SeriesGrid;
 import io.argos.server.api.dashboard.TimeQueries;
 import io.argos.server.api.error.ApiException;
@@ -144,6 +145,19 @@ public class StatsSupport {
    * @param dir 1 descending, -1 ascending
    */
   public record Sort(String field, String column, int dir) {}
+
+  /**
+   * The finite upper bounds of the 15 latency buckets in ms ({@link LatencyBuckets}, 14 values; the
+   * last bucket is open): the {@code {bounds}} parameter of the templates that order by the bucket
+   * p95 ({@code sort=p95_ms}, the {@link LatencyEstimate} interpolation repeated in SQL).
+   */
+  static long[] latencyBounds() {
+    long[] out = new long[LatencyBuckets.COUNT - 1];
+    for (int i = 0; i < out.length; i++) {
+      out[i] = LatencyBuckets.upperBoundMs(i);
+    }
+    return out;
+  }
 
   /** Bucket values (null for a bucket ahead of now, 0 for a covered bucket without rows). */
   static List<Long> counts(SeriesGrid grid, Map<Integer, Long> values) {

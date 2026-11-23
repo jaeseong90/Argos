@@ -16,6 +16,7 @@ import io.argos.server.testing.querydata.Samples;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
@@ -135,6 +136,95 @@ class TraceIT {
     assertThat(d.path("critical_path").toString())
         .isEqualTo("[\"" + rootId + "\",\"" + childId + "\"]");
     assertThat(r.json().path("meta").path("truncated").asBoolean(true)).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "T-ACC-05 C-223 (1) without caller_app_id (default agent configuration) the callee is linked"
+          + " by parent_span_id = the caller transaction's span_id; a 3-hop trace mixing that link"
+          + " with the caller_app_id one is one tree with both caller steps; an unknown parent"
+          + " span is reported missing")
+  void spanIdFallback() {
+    String trace = traceId(4);
+    Instant t = Anchors.hoursAgo(3);
+    long rootSpan = RANDOM.nextLong() | 1;
+    long midSpan = RANDOM.nextLong() | 1;
+    XlogRow root =
+        XlogRow.at(ROOT_APP, 9700, t)
+            .traceIdHex(trace)
+            .elapsedMs(1_000)
+            .set("span_id", Long.toUnsignedString(rootSpan));
+    // Hop 1 -> 2: caller_app_id 0 (no Argos tracestate entry), linked by the span id only.
+    XlogRow mid =
+        XlogRow.at(CHILD_APP, 9710, t.plusMillis(120))
+            .traceIdHex(trace)
+            .elapsedMs(600)
+            .set("span_id", Long.toUnsignedString(midSpan))
+            .set("caller_app_id", 0)
+            .set("parent_span_id", Long.toUnsignedString(rootSpan))
+            .set("incoming_trace", 1);
+    // Hop 2 -> 3: the existing caller_app_id path (time cover), its parent span deliberately not
+    // the caller's so that only caller_app_id can link it.
+    XlogRow leaf =
+        XlogRow.at(ORPHAN_APP, 9720, t.plusMillis(300))
+            .traceIdHex(trace)
+            .elapsedMs(200)
+            .set("caller_app_id", CHILD_APP)
+            .set("parent_span_id", Long.toUnsignedString(RANDOM.nextLong() | 1))
+            .set("incoming_trace", 1);
+    // A callee whose parent span is in no transaction of the trace (an uninstrumented caller).
+    XlogRow stray =
+        XlogRow.at(ORPHAN_APP, 9720, t.plusMillis(900))
+            .traceIdHex(trace)
+            .elapsedMs(50)
+            .set("caller_app_id", 0)
+            .set("parent_span_id", Long.toUnsignedString(RANDOM.nextLong() | 1))
+            .set("incoming_trace", 1);
+    rows.xlog(List.of(root, mid, leaf, stray));
+    rows.steps(
+        List.of(
+            StepRow.of(root, 1, "HTTP")
+                .set("start_offset_ms", 100)
+                .elapsedMs(700)
+                .nameId(HOST_CHILD)
+                .set("target_id", Long.toUnsignedString(HOST_CHILD))
+                .set("status", 200)
+                .set("detail", "GET child:8080/api/hop"),
+            StepRow.of(mid, 1, "HTTP")
+                .set("start_offset_ms", 150)
+                .elapsedMs(300)
+                .nameId(HOST_CHILD)
+                .set("target_id", Long.toUnsignedString(HOST_CHILD))
+                .set("status", 200)
+                .set("detail", "GET orphan:8080/api/leaf")));
+
+    ApiResponse r = viewer.get("/api/v1/traces/" + trace);
+    assertThat(r.status()).as(r.toString()).isEqualTo(200);
+    JsonNode d = r.json().path("data");
+    String rootId = Long.toUnsignedString(root.txId());
+    String midId = Long.toUnsignedString(mid.txId());
+    String leafId = Long.toUnsignedString(leaf.txId());
+    String strayId = Long.toUnsignedString(stray.txId());
+    assertThat(d.path("nodes")).hasSize(4);
+    assertThat(d.path("root_tx_id").asString()).isEqualTo(rootId);
+    Map<String, JsonNode> byId = new HashMap<>();
+    d.path("nodes").forEach(n -> byId.put(n.path("tx_id").asString(), n));
+    assertThat(byId.get(rootId).path("parent_tx_id").isNull()).isTrue();
+    assertThat(byId.get(midId).path("parent_tx_id").asString())
+        .as("caller_app_id 0: linked by parent_span_id = root span_id")
+        .isEqualTo(rootId);
+    assertThat(byId.get(midId).path("caller_step").path("elapsed_ms").asLong()).isEqualTo(700);
+    assertThat(byId.get(midId).path("caller_step").path("network_wait_ms").asLong()).isEqualTo(100);
+    assertThat(byId.get(leafId).path("parent_tx_id").asString())
+        .as("the caller_app_id path still links its callee")
+        .isEqualTo(midId);
+    assertThat(byId.get(leafId).path("caller_step").path("elapsed_ms").asLong()).isEqualTo(300);
+    assertThat(byId.get(strayId).path("parent_tx_id").isNull()).isTrue();
+    assertThat(d.path("missing")).hasSize(1);
+    assertThat(d.path("missing").path(0).path("tx_id").asString()).isEqualTo(strayId);
+    assertThat(d.path("external_nodes")).as("both calls reached a traced callee").isEmpty();
+    assertThat(d.path("critical_path").toString())
+        .isEqualTo("[\"" + rootId + "\",\"" + midId + "\",\"" + leafId + "\"]");
   }
 
   @Test

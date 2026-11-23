@@ -32,6 +32,7 @@ class SchemaRendererTest {
           "service_stat_1m",
           "service_stat_1h",
           "instance_stat_1m",
+          "instance_stat_1h",
           "error_stat_1m",
           "sql_stat_1m",
           "sql_stat_1h",
@@ -41,27 +42,40 @@ class SchemaRendererTest {
           "metric_1h");
   private static final List<String> TRANSACTION_ROLLUPS =
       List.of(
-          "app_stat_1m", "app_stat_1h", "service_stat_1m", "service_stat_1h", "instance_stat_1m");
+          "app_stat_1m",
+          "app_stat_1h",
+          "service_stat_1m",
+          "service_stat_1h",
+          "instance_stat_1m",
+          "instance_stat_1h");
 
   private final SchemaRenderer renderer = SchemaRenderer.fromRepository();
 
   @Test
   @DisplayName(
       "V001 renders to 1 database + 17 tables + 12 views, V002 to 2 ADD COLUMN statements (C-144),"
-          + " every placeholder resolved")
+          + " V003 to instance_stat_1h and its view (C-212), every placeholder resolved")
   void rendersEveryObject() {
     List<String> statements = renderer.renderAll(SchemaParameters.defaults());
 
     assertThat(renderer.render(renderer.migrations().get(0), SchemaParameters.defaults()))
         .hasSize(30);
     // V002 (ADR-0010 C-144, WO-21) only appends columns: one ALTER TABLE per table it changes.
-    assertThat(statements).hasSize(32);
+    assertThat(statements).hasSize(34);
     assertThat(statements.subList(30, 32))
         .allMatch(s -> s.contains("ADD COLUMN IF NOT EXISTS"))
         .anyMatch(s -> s.startsWith("ALTER TABLE argos.xlog ADD COLUMN IF NOT EXISTS url_path "))
         .anyMatch(
             s ->
                 s.startsWith("ALTER TABLE argos.profile_step ADD COLUMN IF NOT EXISTS truncated "));
+    // V003 (ADR-0010 C-212 (1), WO-27): the hourly instance rollup, table before its view.
+    assertThat(statements.get(32))
+        .startsWith("CREATE TABLE IF NOT EXISTS argos.instance_stat_1h\n");
+    assertThat(statements.get(33))
+        .startsWith(
+            "CREATE MATERIALIZED VIEW IF NOT EXISTS argos.instance_stat_1h_mv TO"
+                + " argos.instance_stat_1h\n")
+        .contains("FROM argos.instance_stat_1m\n");
     assertThat(statements.get(0)).isEqualTo("CREATE DATABASE IF NOT EXISTS argos ENGINE = Atomic");
     for (String table : RAW_TABLES) {
       assertThat(statements)
@@ -86,11 +100,25 @@ class SchemaRendererTest {
     assertThat(renderer.rollupTables()).containsExactlyInAnyOrderElementsOf(ROLLUP_TABLES);
   }
 
+  /**
+   * Within one script, a 1h view is created before the 1m views it cascades from, so no row reaches
+   * a 1m table of that script without its 1h view. A 1h view added by a later script on an existing
+   * 1m table (V003 instance_stat_1h_mv, ADR-0010 C-212 (1)) necessarily follows the 1m view of
+   * V001: the server applies every script before any ingestion (CLICKHOUSE_MIGRATION phase before
+   * WAL recovery and the listeners, DSN-12-15), and the rows of an upgraded installation that
+   * predate the script are filled by the rollup rebuild (deploy/clickhouse/README.md).
+   */
   @Test
   @DisplayName(
-      "1h views come before the 1m views they cascade from (no row can bypass the 1h view)")
+      "1h views come before the 1m views they cascade from within each script (no row can bypass"
+          + " the 1h view)")
   void viewOrder() {
-    List<String> statements = renderer.renderAll(SchemaParameters.defaults());
+    for (Path migration : renderer.migrations()) {
+      assertHourlyViewsFirst(renderer.render(migration, SchemaParameters.defaults()));
+    }
+  }
+
+  private static void assertHourlyViewsFirst(List<String> statements) {
     int lastHourly = -1;
     int firstMinutely = Integer.MAX_VALUE;
     for (int i = 0; i < statements.size(); i++) {
@@ -391,7 +419,7 @@ class SchemaRendererTest {
     LocalDate day = LocalDate.parse("2026-10-24");
     List<String> statements = RollupRebuild.dayStatements(renderer, params, day);
 
-    assertThat(statements).hasSize(12 * 5);
+    assertThat(statements).hasSize(13 * 5);
     assertThat(statements.subList(0, 5))
         .containsExactly(
             "DROP TABLE IF EXISTS argos.r_app_stat_1m_rebuild SYNC",
@@ -418,7 +446,7 @@ class SchemaRendererTest {
       }
     }
     assertThat(lastMinute).isLessThan(firstHour);
-    assertThat(statements.stream().filter(s -> s.startsWith("ALTER TABLE")).count()).isEqualTo(12);
+    assertThat(statements.stream().filter(s -> s.startsWith("ALTER TABLE")).count()).isEqualTo(13);
     assertThat(statements).noneMatch(s -> s.contains("app_id ="));
     assertThat(statements)
         .contains(

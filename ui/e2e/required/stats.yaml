@@ -1,0 +1,94 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# docs/05 §2.5 "서비스·SQL·외부 호출·에러 통계" as data-driven E2E tests (docs/18 §13, DSN-18-10): one
+# entry per bullet of the checklist (2.5-1 .. 2.5-5), in checklist order; 2.5-1 ("모든 표") once per
+# list. Each item opens a statistics screen of the primary app over the generator's range and runs a
+# named check of e2e/required/statsChecks.ts that asserts exact values from the URL, the seed
+# manifest or the API asked the same question (docs/14 §4.8 services, sql, external, errors and
+# GET /events). Ids of services, statements, hosts and groups are resolved through the API inside
+# the checks. Parts without data or screen yet are test.fixme entries naming the owning work order:
+# the application map's external node (F-U11, WO-70) and the application frames of the
+# representative stack (app-packages, WO-26, ADR-0010 C-207 (3)).
+screen: stats
+title: Service, SQL, external call and error statistics
+source: docs/05 §2.5
+items:
+  - id: 2.5-1
+    title: services table - Top N, sort switch, value click filter, change columns, kind and environment, column filter, CSV
+    req: [F-U05, F-U16]
+    owner: WO-36
+    route: /apps/{primary_app_id}/stats/services?from={range_from}&to={range_to}
+    assert:
+      - visible: stats-services
+      - check: statsServicesTable
+
+  - id: 2.5-1
+    title: SQL table - Top N, sort switch, value click filter (DB to the server), change columns, estimated percentiles, kind and environment, column filter, CSV
+    req: [F-U06, F-U16]
+    owner: WO-36
+    route: /apps/{primary_app_id}/stats/sql?from={range_from}&to={range_to}
+    assert:
+      - visible: stats-sql
+      - check: statsSqlTable
+
+  - id: 2.5-1
+    title: external call table - Top N, sort switch, value click filter, change columns, estimated percentiles, kind and environment, column filter, CSV
+    req: [F-U05, F-U16]
+    owner: WO-36
+    route: /apps/{primary_app_id}/stats/external?from={range_from}&to={range_to}
+    assert:
+      - visible: stats-external
+      - check: statsExternalTable
+
+  - id: 2.5-1
+    title: error group table - Top N, sort switch, value click filter, change column, kind and environment, column filter, CSV
+    req: [F-U07, F-U16]
+    owner: WO-36
+    route: /apps/{primary_app_id}/stats/errors?from={range_from}&to={range_to}
+    assert:
+      - visible: stats-errors
+      - check: statsErrorsTable
+
+  - id: 2.5-2
+    title: service detail - trend with deploy markers, per version split, instance distribution, cross view of SQL, external call and error group Top N, related transactions as a filtered XLog
+    req: [F-U05]
+    owner: WO-36
+    route: /apps/{primary_app_id}/stats/services?from={range_from}&to={range_to}
+    assert:
+      - check: statsServiceDetail
+
+  - id: 2.5-3
+    title: SQL detail - trend (estimated), calling services with count and share, instances, per DB, connection wait not measured, normalized and original text as text, related transactions of profiled transactions only
+    req: [F-U06, SEC-60]
+    owner: WO-36
+    route: /apps/{primary_app_id}/stats/sql?from={range_from}&to={range_to}
+    assert:
+      - check: statsSqlDetail
+
+  - id: 2.5-4
+    title: external calls per host - count, p50 and p95 (estimated), errors, timeouts and connection failures, trend, calling services, related transactions
+    req: [F-U05]
+    owner: WO-36
+    route: /apps/{primary_app_id}/stats/external?from={range_from}&to={range_to}
+    assert:
+      - check: statsExternalDetail
+
+  - id: 2.5-4
+    title: external call statistics link to the external node of the application map
+    req: [F-U11]
+    owner: WO-70
+    coverage: no screen yet - the application map is F-U11 (S) and has no route content in Phase 1 (WO-70); the external detail has no map link until then (사람 확인 필요 after WO-70); specs/stats.spec.ts T-E2E-stats-39 is the same fixme
+
+  - id: 2.5-5
+    title: error analysis - new filter, representative stack, masked message pattern, affected services, version and instance distribution, last 10 transactions
+    req: [F-U07, SEC-60]
+    owner: WO-36
+    route: /apps/{primary_app_id}/stats/errors?from={range_from}&to={range_to}
+    assert:
+      - check: statsErrorDetail
+
+  - id: 2.5-5
+    title: application package frames in bold in the representative stack (app-packages)
+    req: [F-U07]
+    owner: WO-26
+    coverage: component test of src/features/transaction FrameList with an appPackages fixture (bold application frames); the server has no app_packages source until WO-26 (ADR-0010 C-207 (3)), so the real stack shows no emphasis and the 2.5-5 check asserts none; specs/stats.spec.ts T-E2E-stats-38 is the same fixme

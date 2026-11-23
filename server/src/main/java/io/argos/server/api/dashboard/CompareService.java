@@ -24,9 +24,9 @@ import org.springframework.stereotype.Service;
 
 /**
  * The instance comparison of an application (14 §4.4 {@code instances/compare}, F-U20): per
- * instance the transactions of {@code instance_stat_1m} (14 §12 open item 1; raw rows for the live
- * tail and unaligned edges) and the JVM averages of {@code metric*}, with outlier instances flagged
- * by the leave-one-out rule of ADR-0010 C-177 ({@link #withOutliers}).
+ * instance the transactions of {@code instance_stat_1m/1h} (14 §12 open item 1, ADR-0010 C-212 (1);
+ * raw rows for the live tail and unaligned edges) and the JVM averages of {@code metric*}, with
+ * outlier instances flagged by the leave-one-out rule of ADR-0010 C-177 ({@link #withOutliers}).
  */
 @Service
 public class CompareService {
@@ -77,16 +77,27 @@ public class CompareService {
       Instant to,
       QueryLimits.TxKind kind,
       HttpServletRequest request) {
+    return compare(app, from, to, kind, Set.of(), request);
+  }
+
+  /**
+   * Compares the instances of {@code app} in {@code [from, to)} without the {@code excluded} ones
+   * ({@code exclude_instance}, ADR-0010 C-212 (1)): they have no row and do not take part in the
+   * outlier statistics.
+   */
+  public Answer compare(
+      AppRecord app,
+      Instant from,
+      Instant to,
+      QueryLimits.TxKind kind,
+      Set<Integer> excluded,
+      HttpServletRequest request) {
     QuerySources sources = queries.sources();
     SourcePlan plan =
         sources.plan(
-            from,
-            to,
-            null,
-            QueryLimits.SERIES_RANGE_MAX,
-            sources.transactionsMinuteOnly(),
-            request);
-    Map<Integer, TxSeries.Aggregate> tx = dashboard.perInstance(app.id(), kind, Set.of(), plan);
+            from, to, null, QueryLimits.SERIES_RANGE_MAX, sources.instanceTransactions(), request);
+    Map<Integer, TxSeries.Aggregate> tx =
+        dashboard.perInstance(app.id(), kind, Set.of(), excluded, plan);
     SourcePlan metricPlan =
         sources.plan(from, to, null, QueryLimits.SERIES_RANGE_MAX, sources.metrics(), request);
     Map<Integer, Map<String, Double>> sums = new HashMap<>();
@@ -94,6 +105,7 @@ public class CompareService {
         metrics.perInstance(
             app.id(),
             List.of(),
+            excluded,
             metricPlan,
             List.of(
                 MetricKeys.HEAP_USED,
@@ -108,7 +120,9 @@ public class CompareService {
     }
     Map<Integer, String> names = new TreeMap<>();
     for (InstanceRecord i : catalog.instances(app.id(), false, 1_000)) {
-      names.put(i.id(), i.name());
+      if (!excluded.contains(i.id())) {
+        names.put(i.id(), i.name());
+      }
     }
     for (Integer id : tx.keySet()) {
       names.putIfAbsent(id, null);
@@ -126,7 +140,7 @@ public class CompareService {
           new DashboardViews.Comparison(
               id,
               e.getValue(),
-              session.isPresent() ? InstanceStates.UP : InstanceStates.DOWN,
+              states.state(id),
               a.count(),
               Values.tps(a.count(), seconds),
               a.avgMs(),

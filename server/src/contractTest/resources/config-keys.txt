@@ -11,6 +11,7 @@ argos.alert.group-window	duration	30s
 argos.alert.recommended-rules.enabled	boolean	true
 argos.alert.smtp.allowed-recipient-domains	list<string>	[]
 argos.alert.smtp.check-server-identity	boolean	true
+argos.alert.smtp.from	string	(none)
 argos.alert.smtp.host	string	(none)
 argos.alert.smtp.insecure	boolean	false
 argos.alert.smtp.password	string	(none)
@@ -120,10 +121,15 @@ argos.security.cookie.secure	boolean	true
 argos.security.kiosk.enabled	boolean	false
 argos.security.kiosk.idle-ttl	duration	1d
 argos.security.kiosk.max-ttl	duration	30d
+argos.security.master-key.permissive	boolean	false
+argos.security.master-key.previous	string	(none)
+argos.security.master-key.previous-file	string	(none)
 argos.server.timezone	time-zone	UTC
+argos.testing.alert-ca-file	string	(none)
 argos.testing.hold-before-phase	enum(config|keys|postgres-migration|clickhouse-migration|wal-recovery|listeners)	(none)
 argos.testing.hold-file	string	(none)
 argos.testing.hold-timeout	duration	5m
+argos.testing.notify-retry-delays	list<duration>	[]
 argos.ui.log-link-template	string	(none)
 argos.wal.dir	string	data/wal
 argos.wal.fsync-interval-ms	int	10

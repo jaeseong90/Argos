@@ -41,6 +41,7 @@ public final class AgentSession {
   private volatile Boolean virtualThreads;
   private volatile String configHash;
   private volatile long lastHeartbeatMs;
+  private volatile long lastActivityNanos;
 
   /**
    * A session in {@code SQL_PARAM_MASKED} mode (test convenience; the Hello path passes the mode).
@@ -291,6 +292,19 @@ public final class AgentSession {
   /** Replaces the latest snapshot (12 §3.2: not written to the WAL). */
   public void replaceSnapshot(ActiveSnapshot snapshot) {
     latestSnapshot.set(snapshot);
+  }
+
+  /**
+   * Records an agent message of this session (a session stream message or a data call) at the
+   * monotonic time {@code nanos} (the idle timeout of ADR-0002 C-19, {@code SessionHandler}).
+   */
+  public void markActive(long nanos) {
+    this.lastActivityNanos = nanos;
+  }
+
+  /** The monotonic time of the last agent message ({@link #markActive}), 0 before the first. */
+  public long lastActivityNanos() {
+    return lastActivityNanos;
   }
 
   /** Records a heartbeat received at {@code receivedAtMs}. */

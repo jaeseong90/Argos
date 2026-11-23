@@ -87,11 +87,20 @@ class TransactionDetailIT {
       "T-API-005 a generated transaction is found by the time restored from its id (+-2 s), as"
           + " argos_reader, every lookup statement bounded by ts")
   void restored() throws Exception {
+    // The generator writes profile_step rows only for profileFrom..end (RunRange); the samples are
+    // the first hashed transactions of the span, mostly before it. A captured transaction without
+    // steps is "lost" once the ingest allowance (2 min) passed (14 §4.6), so the expected state
+    // follows the profile span (C-226 (11): it used to depend on whether this run's first sample
+    // was captured). Samples within 60 s of profileFrom are skipped (clock correction).
+    Instant profileFrom = TxApiFixture.shared().dataset().profileFrom();
     Samples.Transaction tx =
         TxApiFixture.shared().dataset().samples().transactions().stream()
             .filter(t -> !t.clamped() && !t.late())
+            .filter(t -> Duration.between(t.ts(), profileFrom).abs().toSeconds() > 60)
             .findFirst()
             .orElseThrow();
+    String expectedProfile =
+        !tx.profileCaptured() ? "sampled_out" : tx.ts().isAfter(profileFrom) ? "captured" : "lost";
     ApiResponse r = viewer.get("/api/v1/transactions/" + tx.txIdText());
     assertThat(r.status()).as(r.toString()).isEqualTo(200);
     JsonNode d = r.json().path("data");
@@ -100,8 +109,7 @@ class TransactionDetailIT {
     assertThat(d.path("app").path("app_id").asInt()).isEqualTo(tx.appId());
     assertThat(d.path("instance").path("instance_id").asInt()).isEqualTo(tx.instanceId());
     assertThat(Instant.parse(d.path("ts").asString())).isEqualTo(tx.ts());
-    assertThat(d.path("profile").path("state").asString())
-        .isEqualTo(tx.profileCaptured() ? "captured" : "sampled_out");
+    assertThat(d.path("profile").path("state").asString()).isEqualTo(expectedProfile);
     // F-U18: no argos.ui.log-link-template on the shared server, so no log link.
     assertThat(d.path("links").has("logs")).isTrue();
     assertThat(d.path("links").path("logs").isNull()).isTrue();

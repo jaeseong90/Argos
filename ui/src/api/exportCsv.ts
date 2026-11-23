@@ -14,7 +14,9 @@
 //
 // saveFile() is the one approved place that turns data into a download link (an object URL, an
 // <a download> and revokeObjectURL): the lint rule argos/no-object-url forbids object URLs
-// everywhere else in src/ (exception for this file in eslint-allow.json).
+// everywhere else in src/ (exception for this file in eslint-allow.json). It also saves the two
+// JSON downloads of the detail screens (WO-34): the transaction export's server bytes and the
+// received trace response (ADR-0010 C-207 (1)), under a sanitised `.json` name.
 import { api } from './client';
 import { ApiError, networkError, toApiError } from './errors';
 import type { paths } from './generated/schema';
@@ -74,8 +76,22 @@ export interface CsvFile {
 
 /** File name when the server sends none or one that is empty after sanitising. */
 export const DEFAULT_CSV_FILE_NAME = 'argos-export.csv';
+/**
+ * File name of a JSON download without a usable name (the transaction export of docs/14 §4.6 and
+ * the trace JSON of ADR-0010 C-207 (1)).
+ */
+export const DEFAULT_JSON_FILE_NAME = 'argos-export.json';
 /** Longest file name kept (the server's names are about 60 characters). */
 export const MAX_CSV_FILE_NAME_LENGTH = 128;
+
+/** The extension a saved file always ends in and the name used when nothing usable is left. */
+interface FileKind {
+  readonly extension: '.csv' | '.json';
+  readonly fallback: string;
+}
+
+const CSV_FILE: FileKind = { extension: '.csv', fallback: DEFAULT_CSV_FILE_NAME };
+const JSON_FILE: FileKind = { extension: '.json', fallback: DEFAULT_JSON_FILE_NAME };
 /** The object URL lives this long after the click, so that the browser can start the download. */
 export const REVOKE_DELAY_MS = 10_000;
 
@@ -96,11 +112,11 @@ function isUnsafeCodePoint(code: number): boolean {
 /**
  * A safe download name: the last path segment only, without control, bidi and reserved characters,
  * without leading or trailing dots and spaces, at most MAX_CSV_FILE_NAME_LENGTH characters and
- * always ending in `.csv`. Null or empty → DEFAULT_CSV_FILE_NAME.
+ * always ending in the kind's extension. Null or empty → the kind's fallback name.
  */
-export function sanitizeCsvFileName(raw: string | null): string {
+function sanitizeFileName(raw: string | null, kind: FileKind): string {
   if (raw === null) {
-    return DEFAULT_CSV_FILE_NAME;
+    return kind.fallback;
   }
   const segment = raw.split(/[/\\]/).pop() ?? '';
   let name = Array.from(segment)
@@ -108,15 +124,26 @@ export function sanitizeCsvFileName(raw: string | null): string {
     .join('')
     .replace(/^[.\s]+|[.\s]+$/g, '');
   if (name === '') {
-    return DEFAULT_CSV_FILE_NAME;
+    return kind.fallback;
   }
-  if (!/\.csv$/i.test(name)) {
-    name = `${name}.csv`;
+  if (!name.toLowerCase().endsWith(kind.extension)) {
+    name = `${name}${kind.extension}`;
   }
   if (name.length > MAX_CSV_FILE_NAME_LENGTH) {
-    name = `${name.slice(0, MAX_CSV_FILE_NAME_LENGTH - 4).replace(/[.\s]+$/, '')}.csv`;
+    const stem = name.slice(0, MAX_CSV_FILE_NAME_LENGTH - kind.extension.length);
+    name = `${stem.replace(/[.\s]+$/, '')}${kind.extension}`;
   }
   return name;
+}
+
+/** sanitizeFileName for CSV exports: always ends in `.csv`, else DEFAULT_CSV_FILE_NAME. */
+export function sanitizeCsvFileName(raw: string | null): string {
+  return sanitizeFileName(raw, CSV_FILE);
+}
+
+/** sanitizeFileName for JSON downloads: always ends in `.json`, else DEFAULT_JSON_FILE_NAME. */
+export function sanitizeJsonFileName(raw: string | null): string {
+  return sanitizeFileName(raw, JSON_FILE);
 }
 
 /**
@@ -124,8 +151,18 @@ export function sanitizeCsvFileName(raw: string | null): string {
  * over `filename="…"`; the result is sanitised (sanitizeCsvFileName).
  */
 export function csvFileName(contentDisposition: string | null): string {
+  return sanitizeCsvFileName(contentDispositionName(contentDisposition));
+}
+
+/** As csvFileName, for a JSON download (sanitizeJsonFileName). */
+export function jsonFileName(contentDisposition: string | null): string {
+  return sanitizeJsonFileName(contentDispositionName(contentDisposition));
+}
+
+/** The raw (unsanitised) file name of a `Content-Disposition` header, or null. */
+function contentDispositionName(contentDisposition: string | null): string | null {
   if (contentDisposition === null) {
-    return DEFAULT_CSV_FILE_NAME;
+    return null;
   }
   let raw: string | null = null;
   const extended = /(?:^|;)\s*filename\*\s*=\s*([^;]*)/i.exec(contentDisposition)?.[1];
@@ -151,7 +188,7 @@ export function csvFileName(contentDisposition: string | null): string {
           : value;
     }
   }
-  return sanitizeCsvFileName(raw);
+  return raw;
 }
 
 /** The browser's IANA time zone: CSV times are written in it (docs/15 §12). */
@@ -232,6 +269,9 @@ export async function requestCsv<M extends CsvMethod, P extends CsvPath<M>>(
   };
 }
 
+/** Media type of the blobs saveFile() names `.json`. */
+const JSON_BLOB_TYPE = /^application\/json\s*(;|$)/i;
+
 /** Timer and document seams of saveFile (tests replace them). */
 export interface SaveFileEnvironment {
   readonly document?: Document;
@@ -241,7 +281,9 @@ export interface SaveFileEnvironment {
 /**
  * Saves a blob as a download: an object URL on a temporary <a download>, clicked once and removed;
  * the URL is revoked after REVOKE_DELAY_MS. The only place in src/ that creates object URLs
- * (argos/no-object-url; eslint-allow.json).
+ * (argos/no-object-url; eslint-allow.json). A blob typed `application/json` (the transaction
+ * export's server bytes, the received trace response of ADR-0010 C-207 (1)) is saved under a
+ * `.json` name (sanitizeJsonFileName); every other blob under a `.csv` name (sanitizeCsvFileName).
  */
 export function saveFile(blob: Blob, fileName: string, env: SaveFileEnvironment = {}): void {
   const doc = env.document ?? document;
@@ -250,7 +292,9 @@ export function saveFile(blob: Blob, fileName: string, env: SaveFileEnvironment 
   try {
     const link = doc.createElement('a');
     link.href = url;
-    link.download = sanitizeCsvFileName(fileName);
+    link.download = JSON_BLOB_TYPE.test(blob.type)
+      ? sanitizeJsonFileName(fileName)
+      : sanitizeCsvFileName(fileName);
     link.rel = 'noopener';
     link.hidden = true;
     doc.body.append(link);

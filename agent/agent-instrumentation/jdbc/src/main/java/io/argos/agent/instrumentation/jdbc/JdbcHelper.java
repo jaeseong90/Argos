@@ -62,10 +62,18 @@ public final class JdbcHelper {
 
   /**
    * Enter of the outermost {@code getConnection} of a transaction: clears the pool name a nested
-   * call may hand up ({@code CallDepth} value slot) and returns the start time.
+   * call may hand up ({@code CallDepth} value slot), marks the transaction as waiting for a
+   * connection for the active snapshot ({@code Tracer.connectionWait}, C-225 (1)) and returns the
+   * start time.
    */
   public static long connectionStart() {
     CallDepth.setValue(CallDepth.JDBC_DATASOURCE, 0L);
+    try {
+      Tracer tracer = Argos.tracer();
+      tracer.connectionWait(tracer.current(), true);
+    } catch (Throwable t) {
+      Argos.tracer().moduleError(JdbcModule.MODULE_ID, t);
+    }
     return System.nanoTime();
   }
 
@@ -106,6 +114,7 @@ public final class JdbcHelper {
         return;
       }
       long end = System.nanoTime();
+      tracer.connectionWait(context, false);
       long nameId = CallDepth.value(CallDepth.JDBC_DATASOURCE);
       CallDepth.setValue(CallDepth.JDBC_DATASOURCE, 0L);
       if (context.isEnded()) {
@@ -282,6 +291,8 @@ public final class JdbcHelper {
       }
       if (!failed && seq >= 0 && result instanceof ResultSet) {
         FetchState fetch = new FetchState(seq, state.txId);
+        fetch.sqlId = state.execSqlId;
+        fetch.dbId = state.dbId;
         results().put((ResultSet) result, fetch);
         state.fetch = fetch;
       }
@@ -396,6 +407,8 @@ public final class JdbcHelper {
         return;
       }
       FetchState fetch = new FetchState(state.seq, state.txId);
+      fetch.sqlId = state.execSqlId;
+      fetch.dbId = state.dbId;
       store.put((ResultSet) resultSet, fetch);
       state.fetch = fetch;
     } catch (Throwable t) {
@@ -442,7 +455,8 @@ public final class JdbcHelper {
   /**
    * Adds the rows and the fetch time of {@code fetch} to its SQL step ({@code Tracer.stepFetch})
    * and the fetch time to the transaction's SQL time, once, and only in the transaction that
-   * recorded the step.
+   * recorded the step; the same rows and time go to the key's full statistics ({@code
+   * Tracer.recordSqlFetch}, C-185 (2)).
    */
   private static void report(Tracer tracer, TraceContext context, FetchState fetch, long now) {
     if (context == null || context.txId != fetch.txId || !fetch.markReported()) {
@@ -453,6 +467,7 @@ public final class JdbcHelper {
       return;
     }
     tracer.stepFetch(context, fetch.seq, fetch.rows, nanos);
+    tracer.recordSqlFetch(context, fetch.sqlId, fetch.dbId, nanos, fetch.rows);
     if (!context.isEnded()) {
       context.sqlNanos += nanos;
     }

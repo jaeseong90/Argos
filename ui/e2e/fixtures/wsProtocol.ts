@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Server side of the WebSocket protocol of docs/14 §5 (normative per ADR-0010 C-167 (1)) for the E2E
-// stub: validates every client frame (§5.2), answers subscribe with ack (or error), ping with pong,
-// keeps the subscriptions of a connection (at most 20, §5.1) and builds push, notice, error and the
+// stub: validates every client frame (§5.2), answers subscribe with ack (or error: unknown topic,
+// invalid parameters as the WO-22 server parses them, a 21st subscription), ping with pong, keeps
+// the subscriptions of a connection (at most 20, §5.1) and builds push, notice, error and the
 // reauth frame of C-167 (2). Pure logic, no Playwright: the fixture (e2e/fixtures/ws.ts) sends what
-// `receive` returns. The real server is WO-22; this stub never ships (ui/e2e only).
+// `receive` returns, and in its server mode uses `receive` only to validate the client frames that
+// it forwards to the real /ws of WO-22. This stub never ships (ui/e2e only).
 import { z } from 'zod';
 
 /** Topics of docs/14 §5.3. */
@@ -100,6 +102,10 @@ export class WsConnectionState {
             errorFrame(frame.id, 'limit_exceeded', 'at most 20 subscriptions per connection'),
           ];
         }
+        const invalid = invalidParams(frame.topic as Topic, frame.params);
+        if (invalid !== null) {
+          return [errorFrame(frame.id, 'invalid_params', invalid)];
+        }
         this.subscriptions.set(frame.id, {
           id: frame.id,
           topic: frame.topic as Topic,
@@ -118,19 +124,86 @@ export class WsConnectionState {
   }
 }
 
+/**
+ * The parameters each topic accepts, as the WO-22 server parses them (TopicRequest, strict: an
+ * unknown parameter is `invalid_params`). `app` is required where the topic is per application.
+ */
+export const TOPIC_PARAMS: Readonly<
+  Record<
+    Topic,
+    { readonly keys: readonly string[]; readonly app: 'required' | 'optional' | 'none' }
+  >
+> = {
+  xlog: { keys: ['app', 'env', 'kind', 'service', 'instance'], app: 'required' },
+  counter: { keys: ['app', 'env', 'kind'], app: 'required' },
+  active: { keys: ['app', 'env', 'kind', 'instance'], app: 'required' },
+  overview: { keys: ['env', 'kind'], app: 'none' },
+  alert: { keys: ['env', 'app'], app: 'optional' },
+  admin: { keys: ['change_id', 'command_id'], app: 'none' },
+};
+
+/** Kinds of a subscription (the REST `kind` values, HTTP by default). */
+export const TOPIC_KINDS = ['HTTP', 'BATCH', 'MESSAGE', 'ALL'] as const;
+
+/**
+ * Why the parameters of a subscription are invalid (the `error invalid_params` message of the
+ * server), or null when they are valid: an unknown parameter, a missing or non-positive-integer
+ * `app`, an unknown `kind`, a non-string `env`, or a filter that is not an array.
+ */
+export function invalidParams(
+  topic: Topic,
+  params: Readonly<Record<string, unknown>>,
+): string | null {
+  const rule = TOPIC_PARAMS[topic];
+  const unknown = Object.keys(params).filter((key) => !rule.keys.includes(key));
+  if (unknown.length > 0) {
+    return `unknown parameter ${unknown[0] ?? ''}`;
+  }
+  const app = params.app;
+  if (app === undefined) {
+    if (rule.app === 'required') {
+      return 'app: required';
+    }
+  } else if (typeof app !== 'number' || !Number.isInteger(app) || app <= 0) {
+    return 'app: invalid_value';
+  }
+  const kind = params.kind;
+  if (
+    kind !== undefined &&
+    (typeof kind !== 'string' ||
+      !(TOPIC_KINDS as readonly string[]).includes(kind.trim().toUpperCase()))
+  ) {
+    return 'kind: invalid_value';
+  }
+  const env = params.env;
+  if (env !== undefined && (typeof env !== 'string' || env.trim() === '' || env.length > 32)) {
+    return 'env: invalid_value';
+  }
+  for (const key of ['service', 'instance']) {
+    if (params[key] !== undefined && !Array.isArray(params[key])) {
+      return `${key}: invalid_value`;
+    }
+  }
+  return null;
+}
+
 export function errorFrame(id: string, code: string, message: string): ServerFrame {
   return JSON.stringify({ op: 'error', id, code, message });
 }
 
-/** One XLog point of a push (docs/14 §4.5 columns). */
+/**
+ * One XLog point of a push (docs/14 §4.5 columns, the same types as the REST response): tx_id and
+ * service_id unsigned 64-bit decimal strings (C-175), ts epoch ms, status 0 normal / 1 slow /
+ * 2 error, kind 1 HTTP / 2 BATCH / 3 MESSAGE.
+ */
 export interface XlogPoint {
   readonly tx_id: string;
-  readonly ts: string;
+  readonly ts: number;
   readonly elapsed_ms: number;
-  readonly status: string;
+  readonly status: number;
   readonly instance_id: number;
   readonly service_id: string;
-  readonly kind: string;
+  readonly kind: number;
 }
 
 /** A push frame of the xlog topic for `subscription` (columnar, docs/14 §5.2). */
