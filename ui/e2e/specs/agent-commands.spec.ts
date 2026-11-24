@@ -38,6 +38,7 @@ import { run } from '../stack/docker';
 import { shopProblem, startShop, type RunningShop } from '../stack/liveShop';
 import type { SeedManifest } from '../stack/manifest';
 import { logsDir, secretsDir } from '../stack/paths';
+import { retireInstances } from '../stack/retire';
 import { readRunState } from '../stack/runState';
 import { newAgentToken, readSecret, sha256Hex, writeSecret } from '../stack/secrets';
 import { stopProcess, tokenSql } from '../stack/seed/traffic';
@@ -131,6 +132,7 @@ interface ActiveItem {
   service: string | null;
   state: string;
   virtual_thread: boolean;
+  started_at: string;
 }
 
 interface ConfigChangeResult {
@@ -397,13 +399,25 @@ function effective(diag: SelfDiagnosis, key: string): { value: string | null; so
 }
 
 /** The running SLOW_PATH request of the shop in GET /apps/{appId}/active, or undefined. */
-async function runningSlow(api: ApiSession): Promise<ActiveItem | undefined> {
+/**
+ * Slack of `started_at` against the time the request was sent: the agent stamps the transaction
+ * start in milliseconds on the same host, after the request left this process.
+ */
+const STARTED_SLACK_MS = 1000;
+
+async function runningSlow(api: ApiSession, sentAtMs: number): Promise<ActiveItem | undefined> {
   const c = context();
   const active = await api.data<{ items: ActiveItem[] }>(`/apps/${String(c.appId)}/active`, {
     kind: 'ALL',
   });
+  // The server answers with the agent's last snapshot (every 5 s, C-225): right after an earlier
+  // slow request ended, that snapshot still lists it although the agent no longer runs it. Only a
+  // transaction that started after this request was sent is this request's.
   return active.items.find(
-    (i) => i.instance_id === c.instanceId && (i.service ?? '').includes('/api/slow'),
+    (i) =>
+      i.instance_id === c.instanceId &&
+      (i.service ?? '').includes('/api/slow') &&
+      Date.parse(i.started_at) >= sentAtMs - STARTED_SLACK_MS,
   );
 }
 
@@ -411,11 +425,12 @@ async function runningSlow(api: ApiSession): Promise<ActiveItem | undefined> {
 async function startSlowRequest(
   api: ApiSession,
 ): Promise<{ item: ActiveItem; done: Promise<unknown> }> {
+  const sentAtMs = Date.now();
   const done = httpGet(`${context().shop.url}${SLOW_PATH}`, {}, 60_000).catch(
     (error: unknown) => error,
   );
   // The agent snapshots every 5 s and the server keeps the last snapshot (C-225).
-  const item = await waitFor(() => runningSlow(api), {
+  const item = await waitFor(() => runningSlow(api, sentAtMs), {
     timeoutMs: 60_000,
     intervalMs: 1000,
     what: `GET /active shows ${SLOW_PATH} of ${WO17_INSTANCE}`,
@@ -533,9 +548,8 @@ test.describe('agent commands (WO-17)', () => {
     await openShell(page, `/apps/${String(context().appId)}/dashboard`);
   });
 
-  // eslint-disable-next-line no-empty-pattern -- Playwright passes fixtures first; the hook uses none
-  test.afterAll(async ({}, testInfo) => {
-    testInfo.setTimeout(2 * 60_000);
+  test.afterAll(async ({ session, seed }, testInfo) => {
+    testInfo.setTimeout(3 * 60_000);
     const c = ctx;
     ctx = null;
     if (c === null) {
@@ -552,6 +566,8 @@ test.describe('agent commands (WO-17)', () => {
     } finally {
       await stopProcess(c.shop.child);
       testInfo.annotations.push({ type: 'wo17-shop-log', description: c.shopLog });
+      // C-241 (7): the stopped shop's instance never stays FIRING as instance_down.
+      await retireInstances(await apiAs(session, seed, 'operator'), [c.instanceId]);
     }
   });
 

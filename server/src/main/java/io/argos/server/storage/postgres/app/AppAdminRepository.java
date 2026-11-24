@@ -109,11 +109,12 @@ public class AppAdminRepository {
    *
    * @param group {@code app_group}, or null
    * @param apdexTMs Apdex T
-   * @param autoRegister {@code auto_register} (registration policy {@code auto})
+   * @param autoRegister {@code auto_register}: true {@code auto}, false {@code approval}, null none
+   *     (the environment default applies, ADR-0010 C-231 (7))
    * @return the new id, empty when a live application (name, env) exists already
    */
   public Optional<Integer> create(
-      String name, String env, String group, int apdexTMs, boolean autoRegister) {
+      String name, String env, String group, int apdexTMs, Boolean autoRegister) {
     if (name.length() > AppRepository.MAX_NAME_CHARS
         || env.length() > AppRepository.MAX_ENV_CHARS
         || (group != null && group.length() > MAX_GROUP_CHARS)) {

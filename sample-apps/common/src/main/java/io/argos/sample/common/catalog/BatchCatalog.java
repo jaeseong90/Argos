@@ -10,10 +10,11 @@ import java.util.List;
 /**
  * The shop-batch catalog (18 §4.1, §4.2 last row; F-A24, D-20, S-09): the Spring Batch job started
  * by hand ({@code POST /batch/run/{job}}: one Tasklet step and one chunk step of {@value
- * #CHUNK_SIZE} items), the two Quartz jobs fired now, the counters of the three {@code @Scheduled}
- * methods (fixed rate, cron, long running), HTTP endpoints that share the batch DataSource (the
- * S-09 situation: HTTP and batch work on one database), and the batch job name XSS seed (18 §4.3).
- * Owned by the shop-batch lane.
+ * #CHUNK_SIZE} items; synchronously in the request, or with {@code ?detached=true} on a plain
+ * thread of the app and {@code GET /batch/executions/{id}}), the two Quartz jobs fired now, the
+ * counters of the three {@code @Scheduled} methods (fixed rate, cron, long running), HTTP endpoints
+ * that share the batch DataSource (the S-09 situation: HTTP and batch work on one database), and
+ * the batch job name XSS seed (18 §4.3). Owned by the shop-batch lane.
  */
 public final class BatchCatalog {
 
@@ -97,6 +98,35 @@ public final class BatchCatalog {
                     + " commits 20,000 / 5,000 + 1 = 5 times (4 full chunks + the commit of the"
                     + " final empty chunk); an interval of 1,000 would give 21 commits, 10,000 would"
                     + " give 3")
+            .build());
+    e.add(
+        CatalogEntry.post(
+                "batch.settlement.detached", "/batch/run/" + SETTLEMENT_JOB + "?detached=true")
+            .route("/batch/run/{job}")
+            .status(202)
+            .check(Check.jsonEquals("detached", true))
+            .check(Check.jsonEquals("state", "RUNNING"))
+            .check(Check.jsonAtLeast("runId", 1))
+            .purpose(
+                "Spring Batch job on a plain thread the app starts (10 §8: not propagated): each"
+                    + " step is a BATCH transaction of its own (10 §6.8), not a step of this"
+                    + " request; state at /batch/executions/{id}")
+            .build());
+    e.add(
+        CatalogEntry.get("batch.executions.last", "/batch/executions/last?awaitMs=60000")
+            .route("/batch/executions/{id}")
+            .check(Check.jsonEquals("state", "DONE"))
+            .check(Check.jsonEquals("detached", true))
+            .check(Check.jsonEquals("status", "COMPLETED"))
+            .check(Check.jsonEquals("readCount", SETTLEMENT_ITEMS))
+            .check(Check.jsonEquals("chunkStepReadCount", SETTLEMENT_ITEMS))
+            .purpose("Waits for the newest detached run and reports its execution summary")
+            .build());
+    e.add(
+        CatalogEntry.get("batch.executions.unknown", "/batch/executions/999999")
+            .route("/batch/executions/{id}")
+            .status(404)
+            .purpose("Unknown detached run: 404")
             .build());
     e.add(
         CatalogEntry.post("batch.unknown", "/batch/run/noSuchJob")

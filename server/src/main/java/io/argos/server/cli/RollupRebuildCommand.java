@@ -1,12 +1,14 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.server.cli;
 
+import io.argos.server.audit.AuditEvent;
 import io.argos.server.config.ArgosProperties;
 import io.argos.server.ops.migration.MigrationSource;
 import io.argos.server.ops.migration.RollupSelects;
 import io.argos.server.ops.migration.SchemaParameters;
 import io.argos.server.ops.rollup.RebuildResult;
 import io.argos.server.ops.rollup.RebuildResult.TableResult;
+import io.argos.server.ops.rollup.RollupAudit;
 import io.argos.server.ops.rollup.RollupRebuildException;
 import io.argos.server.ops.rollup.RollupRebuilder;
 import io.argos.server.storage.clickhouse.RollupPartitions;
@@ -43,6 +45,10 @@ import tools.jackson.databind.node.ObjectNode;
  * before} and {@code after} ({@code keys}, {@code hash}), {@code excluded_columns}, {@code
  * duration_ms}); a failure with {@code --json} prints {@code {"command", "error"}}. No secret value
  * is ever printed.
+ *
+ * <p>Audit (ADR-0010 C-220 (3)): one {@code ROLLUP_REBUILT} row per run that got past the argument
+ * check, with the tables and the changed ones, or with result {@code failure} and the reason
+ * ({@code busy}, {@code usage}, {@code failure}) when it did not rebuild ({@link RollupAudit}).
  */
 final class RollupRebuildCommand {
 
@@ -156,7 +162,14 @@ final class RollupRebuildCommand {
     try {
       params = SchemaParameters.from(properties);
     } catch (IllegalArgumentException e) {
-      return fail(options, "Configuration: " + e.getMessage(), out, err, AdminCli.EXIT_FAILURE);
+      return fail(
+          options,
+          properties,
+          "failure",
+          "Configuration: " + e.getMessage(),
+          out,
+          err,
+          AdminCli.EXIT_FAILURE);
     }
     RollupSelects selects =
         RollupSelects.of(
@@ -165,6 +178,8 @@ final class RollupRebuildCommand {
       if (!db.tryRollupLock()) {
         return fail(
             options,
+            properties,
+            "busy",
             "Another rollup rebuild or consistency check is running (PostgreSQL advisory lock "
                 + "held); try again when it has finished",
             out,
@@ -181,6 +196,8 @@ final class RollupRebuildCommand {
       if (!pending.isEmpty()) {
         return fail(
             options,
+            properties,
+            "failure",
             "The ClickHouse schema is behind this server version (not applied: "
                 + String.join(", ", pending)
                 + "); start the server of this version once to migrate, then rebuild",
@@ -201,19 +218,37 @@ final class RollupRebuildCommand {
           out.print(table(result));
         }
         out.flush();
+        try (CliAudit audit = CliAudit.open(properties)) {
+          RollupAudit.rebuilt(audit.service(), CliAudit.actor(), result);
+        }
         return AdminCli.EXIT_OK;
       }
     } catch (IllegalArgumentException e) {
-      return fail(options, e.getMessage(), out, err, AdminCli.EXIT_USAGE);
+      return fail(options, properties, "usage", e.getMessage(), out, err, AdminCli.EXIT_USAGE);
     } catch (AdminDatabase.AdminDatabaseException
         | RollupRebuildException
         | IllegalStateException e) {
-      return fail(options, e.getMessage(), out, err, AdminCli.EXIT_FAILURE);
+      return fail(options, properties, "failure", e.getMessage(), out, err, AdminCli.EXIT_FAILURE);
     }
   }
 
   private static int fail(
-      Options options, String message, PrintStream out, PrintStream err, int code) {
+      Options options,
+      ArgosProperties properties,
+      String reason,
+      String message,
+      PrintStream out,
+      PrintStream err,
+      int code) {
+    try (CliAudit audit = CliAudit.open(properties)) {
+      RollupAudit.refused(
+          audit.service(),
+          CliAudit.actor(),
+          AuditEvent.ROLLUP_REBUILT,
+          RollupAudit.day(options.day()),
+          reason,
+          RollupAudit.dayDetail(options.day(), options.tables().stream().sorted().toList()));
+    }
     if (options.json()) {
       ObjectNode node = JSON.createObjectNode();
       node.put("command", COMMAND);

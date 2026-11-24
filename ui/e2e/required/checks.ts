@@ -29,11 +29,13 @@ import type { Role, SeedManifest } from '../stack/manifest';
 import { credentialFile } from '../stack/paths';
 
 import { ACTIVE_CHECKS } from './activeChecks';
+import { ADMIN_CHECKS } from './adminChecks';
 import { ALERTS_CHECKS } from './alertsChecks';
 import { DASHBOARD_CHECKS } from './dashboardChecks';
 import { DUMPS_CHECKS } from './dumpsChecks';
 import { INSTANCE_CHECKS } from './instanceChecks';
 import { OVERVIEW_CHECKS } from './overviewChecks';
+import { SEARCH_CHECKS } from './searchChecks';
 import { STATS_CHECKS } from './statsChecks';
 import { TRACE_CHECKS } from './traceChecks';
 import { TRANSACTION_CHECKS } from './transactionChecks';
@@ -367,4 +369,8 @@ export const CHECKS: Readonly<Record<string, Check>> = {
   // The commands tab, the thread dump viewer and the active screen's stack and dump actions
   // (WO-37): docs/05 §2.7-4, §2.7-5 and 2.6-4.
   ...DUMPS_CHECKS,
+  // The administration screens and the global search (WO-39): docs/05 §2.11, docs/15 §9.10 and
+  // §9.12.
+  ...ADMIN_CHECKS,
+  ...SEARCH_CHECKS,
 };

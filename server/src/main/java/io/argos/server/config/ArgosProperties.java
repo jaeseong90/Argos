@@ -264,6 +264,9 @@ public record ArgosProperties(
    * @param passwordFile password file of the runtime account
    * @param password password of the runtime account (plain value, warned)
    * @param owner schema owner used by the PostgreSQL migration (default user {@code argos})
+   * @param audit the audit retention account (default user {@code argos_audit}, WO-28): the daily
+   *     audit partition job runs {@code audit_logs_maintain_partitions} with it; without a password
+   *     the job is off (one INFO line at the start)
    */
   public record Postgres(
       @NotBlank(message = "is required: the JDBC URL of the Argos PostgreSQL database")
@@ -274,7 +277,8 @@ public record ArgosProperties(
       @DefaultValue("argos_app") String user,
       String passwordFile,
       String password,
-      Credential owner) {
+      Credential owner,
+      Credential audit) {
 
     /** Default runtime account (C-11). */
     public static final String DEFAULT_APP_USER = "argos_app";
@@ -282,12 +286,16 @@ public record ArgosProperties(
     /** Default schema owner: the database owner created with the PostgreSQL instance (17 §3.2). */
     public static final String DEFAULT_OWNER_USER = "argos";
 
+    /** Default audit retention account (V001, 12 §8.1). */
+    public static final String DEFAULT_AUDIT_USER = "argos_audit";
+
     public Postgres {
       url = blankToNull(url);
       user = blankToNull(user) == null ? DEFAULT_APP_USER : user;
       passwordFile = blankToNull(passwordFile);
       password = blankToNull(password);
       owner = Credential.orDefault(owner, DEFAULT_OWNER_USER);
+      audit = Credential.orDefault(audit, DEFAULT_AUDIT_USER);
     }
 
     /** The runtime account as a {@link Credential}. */
@@ -297,7 +305,15 @@ public record ArgosProperties(
 
     @Override
     public String toString() {
-      return "Postgres[url=" + url + ", app=" + app() + ", owner=" + owner + "]";
+      return "Postgres[url="
+          + url
+          + ", app="
+          + app()
+          + ", owner="
+          + owner
+          + ", audit="
+          + audit
+          + "]";
     }
   }
 
@@ -405,6 +421,10 @@ public record ArgosProperties(
    * @param staleAfter instance STALE after this silence (F-S28)
    * @param downAfter instance DOWN after this silence
    * @param byeGrace grace period after AgentBye
+   * @param publicAddress the collector address agents use ({@code host:port}) when it differs from
+   *     the host the browser reaches the UI on (a reverse proxy, NAT): returned with an issued
+   *     agent token for the setup snippet (ADR-0010 C-231 (9)); none by default (the UI then uses
+   *     its own host and port 9100)
    */
   public record Collector(
       @Min(1) @Max(65535) @DefaultValue("9100") int port,
@@ -420,7 +440,8 @@ public record ArgosProperties(
       @DefaultValue("30s") Duration heartbeatInterval,
       @DefaultValue("60s") Duration staleAfter,
       @DefaultValue("180s") Duration downAfter,
-      @DefaultValue("5m") Duration byeGrace) {
+      @DefaultValue("5m") Duration byeGrace,
+      @Pattern(regexp = "[A-Za-z0-9.:\\[\\]-]{1,255}") String publicAddress) {
 
     /**
      * Largest {@code argos.collector.max-message-bytes} (63 MiB): every accepted batch is one WAL
@@ -433,6 +454,7 @@ public record ArgosProperties(
 
     public Collector {
       bind = blankToNull(bind) == null ? "0.0.0.0" : bind.strip();
+      publicAddress = blankToNull(publicAddress) == null ? null : publicAddress.strip();
     }
 
     /**
@@ -440,17 +462,34 @@ public record ArgosProperties(
      *
      * @param enabled TLS on
      * @param certFile certificate chain (PEM)
-     * @param keyFile private key (PEM)
+     * @param keyFile private key (PEM): unencrypted PKCS#8, or encrypted PKCS#8 with {@code
+     *     key-password-file}
+     * @param keyPasswordFile file holding the password of an encrypted PKCS#8 key (first line; 16
+     *     §3.1, ADR-0010 C-158 (5)), none by default
+     * @param reload certificate reload (16 §3.1 {@code reload.watch}; WO-28)
      */
     public record Tls(
         @DefaultValue("true") boolean enabled,
         @DefaultValue("conf/tls/server.crt") String certFile,
-        @DefaultValue("conf/tls/server.key") String keyFile) {
+        @DefaultValue("conf/tls/server.key") String keyFile,
+        String keyPasswordFile,
+        @Valid @DefaultValue Reload reload) {
 
       public Tls {
         certFile = blankToNull(certFile) == null ? "conf/tls/server.crt" : certFile;
         keyFile = blankToNull(keyFile) == null ? "conf/tls/server.key" : keyFile;
+        keyPasswordFile = blankToNull(keyPasswordFile);
+        reload = reload == null ? new Reload(true) : reload;
       }
+
+      /**
+       * Certificate reload (16 §3.1).
+       *
+       * @param watch watch the certificate and key files ({@code WatchService}, 5 s debounce) and
+       *     swap the TLS context of new handshakes when they change; false: manual reload only
+       *     ({@code POST /api/v1/admin/tls/reload}, {@code argos-admin tls reload})
+       */
+      public record Reload(@DefaultValue("true") boolean watch) {}
     }
 
     /**
@@ -546,11 +585,28 @@ public record ArgosProperties(
    * @param flushIntervalMs flush interval per table
    * @param flushRows flush size per table
    * @param queueRows queue bound per table
+   * @param deadLetter where blocks that ClickHouse refuses deterministically go (ADR-0010 C-158
+   *     (3); WO-28)
    */
   public record Writer(
       @Positive @DefaultValue("2000") int flushIntervalMs,
       @Positive @DefaultValue("50000") int flushRows,
-      @Positive @DefaultValue("200000") int queueRows) {}
+      @Positive @DefaultValue("200000") int queueRows,
+      @Valid @DefaultValue DeadLetter deadLetter) {
+
+    /**
+     * The dead-letter area of the writer (ADR-0010 C-158 (3)): a block that ClickHouse refuses with
+     * a schema, type or parse error code three times is written here (directory 0700, files 0600 on
+     * POSIX) and its WAL range is committed; nothing here is deleted automatically.
+     *
+     * @param dir directory of the block files
+     * @param maxBytes upper bound of all block files; a block that does not fit is discarded and
+     *     counted like a stored one
+     */
+    public record DeadLetter(
+        @NotBlank @DefaultValue("data/dead-letter") String dir,
+        @NotNull @DefaultValue("1GB") DataSize maxBytes) {}
+  }
 
   /**
    * Web UI and REST API.
@@ -657,7 +713,7 @@ public record ArgosProperties(
      *     normally from the environment variable {@code ARGOS_SECURITY_MASTER_KEY_PREVIOUS}
      * @param previousFile file holding the previous key
      * @param permissive accept a key file that group or others can read (16 §8.2; warned at every
-     *     start). Without it such a file is ignored with a warning
+     *     start). Without it such a file refuses the start (ADR-0010 C-226 (2), WO-28)
      */
     public record MasterKey(
         String previous, String previousFile, @DefaultValue("false") boolean permissive) {
@@ -895,8 +951,22 @@ public record ArgosProperties(
    *
    * @param defaultIpMode IP collection mode preselected by the setup wizard (12 §15; 17 §3.8 {@code
    *     ARGOS_IP_MODE})
+   * @param deletion the privacy deletion jobs (13 §9, SEC-33; WO-28)
    */
-  public record Privacy(@NotNull @DefaultValue("masked") IpMode defaultIpMode) {
+  public record Privacy(
+      @NotNull @DefaultValue("masked") IpMode defaultIpMode,
+      @Valid @DefaultValue Deletion deletion) {
+
+    /**
+     * Privacy deletion jobs ({@code POST /api/v1/admin/privacy/deletions}, 13 §9).
+     *
+     * @param maxConcurrentMutations deletion mutations of Argos pending in ClickHouse at most (13
+     *     §9: 2); further requests wait in the queue
+     * @param maxRange longest range of one request (14 §4.14: 30 days)
+     */
+    public record Deletion(
+        @Min(1) @Max(16) @DefaultValue("2") int maxConcurrentMutations,
+        @NotNull @DefaultValue("30d") Duration maxRange) {}
 
     /** Client IP collection mode (SEC-31). */
     public enum IpMode {
@@ -915,18 +985,24 @@ public record ArgosProperties(
    * @param reconcile nightly consistency check
    * @param disk disk thresholds (F-S23)
    * @param storageHealthInterval storage health poll interval
+   * @param emergency emergency retention shortening (F-S23, 13 §8; WO-28)
    */
   public record Ops(
       @Valid @DefaultValue Reconcile reconcile,
       @Valid @DefaultValue Disk disk,
-      @DefaultValue("1m") Duration storageHealthInterval) {
+      @DefaultValue("1m") Duration storageHealthInterval,
+      @Valid @DefaultValue Emergency emergency) {
 
     /**
      * Nightly consistency check (12 §9.1).
      *
      * @param cron Spring cron expression (six fields), server time zone
+     * @param enabled false: the nightly job is not scheduled ({@code argos-admin consistency check}
+     *     still works; ADR-0010 C-220 (3))
      */
-    public record Reconcile(@NotBlank @DefaultValue("0 0 3 * * *") String cron) {}
+    public record Reconcile(
+        @NotBlank @DefaultValue("0 0 3 * * *") String cron,
+        @DefaultValue("true") boolean enabled) {}
 
     /**
      * Disk thresholds (F-S23). {@code warn-ratio < emergency-ratio < stop-ratio <= 1}.
@@ -942,29 +1018,75 @@ public record ArgosProperties(
             double emergencyRatio,
         @DecimalMin(value = "0.0", inclusive = false) @DecimalMax("1.0") @DefaultValue("0.95")
             double stopRatio) {}
+
+    /**
+     * Emergency retention shortening (F-S23, 13 §8): from {@code disk.emergency-ratio} the oldest
+     * day partition of the raw tables is dropped, one at a time, until the ClickHouse disk is below
+     * {@code target-ratio} ({@code target-ratio < disk.emergency-ratio}).
+     *
+     * @param targetRatio the shortening stops below this ratio
+     * @param dropsPerMinute partitions dropped per minute at most
+     */
+    public record Emergency(
+        @DecimalMin(value = "0.0", inclusive = false) @DecimalMax("1.0") @DefaultValue("0.85")
+            double targetRatio,
+        @Min(1) @Max(600) @DefaultValue("1") int dropsPerMinute) {}
   }
 
   /**
-   * Audit sinks (12 §8.1; WO-28).
+   * Audit sinks (12 §8.1, 16 §11.3, §11.4; WO-28).
    *
-   * @param sinks {@code postgres}, {@code syslog://host:514}, {@code file:logs/audit.jsonl}
+   * @param sinks {@code postgres} (mandatory), {@code syslog://host[:514]} (UDP), {@code
+   *     syslog+tcp://host[:514]}, {@code syslog+tls://host[:6514]}, {@code
+   *     file:logs/audit/audit.jsonl}; any other form refuses the start
+   * @param file size rolling of the JSON Lines sinks and the fallback file
+   * @param fallbackFile JSON Lines file of the records the PostgreSQL sink could not write
+   * @param agentEventsPerMinute agent audit events ({@code AGENT_AUTH_FAILED}, {@code
+   *     AGENT_AUTH_BLOCKED}, {@code AGENT_SESSION_REJECTED}) recorded per event, client address or
+   *     token prefix and minute; the others are counted into the next record (ADR-0010 C-158 (1))
    */
-  public record Audit(List<String> sinks) {
+  public record Audit(
+      List<String> sinks,
+      @Valid @DefaultValue AuditFile file,
+      @NotBlank @DefaultValue("logs/audit/audit-fallback.jsonl") String fallbackFile,
+      @Min(1) @Max(600) @DefaultValue("1") int agentEventsPerMinute) {
 
     public Audit {
       sinks = sinks == null ? List.of("postgres") : List.copyOf(sinks);
+      file = file == null ? new AuditFile(DataSize.ofMegabytes(100), 10) : file;
+      fallbackFile = fallbackFile == null ? "logs/audit/audit-fallback.jsonl" : fallbackFile;
     }
+
+    /**
+     * Size rolling of an audit JSON Lines file.
+     *
+     * @param maxBytes size of one file before it rolls
+     * @param maxFiles files kept per sink, the current one included
+     */
+    public record AuditFile(
+        @NotNull @DefaultValue("100MB") DataSize maxBytes,
+        @Min(2) @Max(1000) @DefaultValue("10") int maxFiles) {}
   }
 
   /**
    * UI options.
    *
    * @param logLinkTemplate link template to the application's log system (F-U18), none by default
+   * @param activeThresholdsMs the operator-wide default elapsed-colour thresholds of the active
+   *     transactions screen in milliseconds, three positive ascending values (ADR-0010 C-225 (3),
+   *     WO-39); a viewer's own choice in the browser wins. A wrong value does not stop the start:
+   *     the server logs a WARN and uses the default ({@code api.active.ActiveThresholds})
    */
-  public record Ui(String logLinkTemplate) {
+  public record Ui(
+      String logLinkTemplate, @DefaultValue("1000,3000,8000") List<Integer> activeThresholdsMs) {
 
     public Ui {
       logLinkTemplate = blankToNull(logLinkTemplate);
+      activeThresholdsMs =
+          activeThresholdsMs == null
+              ? null
+              : java.util.Collections.unmodifiableList(
+                  new java.util.ArrayList<>(activeThresholdsMs));
     }
   }
 
@@ -1013,18 +1135,23 @@ public record ArgosProperties(
    * @param alertCaFile a PEM file of CA certificates that the notification channels (webhook,
    *     Slack, SMTP) trust in addition to the JDK's trust store (in-process fake receivers of the
    *     tests; WO-25)
+   * @param diskUsageFile a file holding the used ratio (0..1) that the storage health job takes as
+   *     the ClickHouse disk usage instead of {@code system.disks} while the file exists and parses
+   *     (emergency retention tests; WO-28)
    */
   public record Testing(
       PhaseOrder holdBeforePhase,
       String holdFile,
       @DefaultValue("5m") Duration holdTimeout,
       List<Duration> notifyRetryDelays,
-      String alertCaFile) {
+      String alertCaFile,
+      String diskUsageFile) {
 
     public Testing {
       holdFile = blankToNull(holdFile);
       notifyRetryDelays = notifyRetryDelays == null ? List.of() : List.copyOf(notifyRetryDelays);
       alertCaFile = blankToNull(alertCaFile);
+      diskUsageFile = blankToNull(diskUsageFile);
     }
 
     /** Whether any hook is configured. */
@@ -1032,7 +1159,8 @@ public record ArgosProperties(
       return holdBeforePhase != null
           || holdFile != null
           || !notifyRetryDelays.isEmpty()
-          || alertCaFile != null;
+          || alertCaFile != null
+          || diskUsageFile != null;
     }
   }
 }

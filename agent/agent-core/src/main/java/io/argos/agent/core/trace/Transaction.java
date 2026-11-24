@@ -70,6 +70,15 @@ public final class Transaction implements QueueItem {
 
   private volatile long activeNameId;
 
+  /**
+   * Slow-stack samples taken of this transaction and the {@code nanoTime} of the last one (10
+   * §13.1, WO-19). Read and written by {@code argos-watch} only ({@code SlowStackWatcher} through
+   * {@code TracerImpl}), so plain fields.
+   */
+  private int stackCaptures;
+
+  private long lastStackNanos;
+
   /** The DBC step just opened on this transaction (pool wait counters, WO-16); -1: none. */
   private int dbcSeq = -1;
 
@@ -78,6 +87,14 @@ public final class Transaction implements QueueItem {
 
   private String errorClass;
   private String errorMessage;
+
+  /**
+   * {@code error_top_frame_id} (10 §9.1 {@code topAppFrameId}, WO-19): FRAME id of the first
+   * application frame of the error, line-free; 0 when none. Written by the ending thread before the
+   * record is queued.
+   */
+  private long topAppFrameId;
+
   private long endNanos = -1L;
   private long endEpochMs;
   private long cpuNanos = -1L;
@@ -156,6 +173,32 @@ public final class Transaction implements QueueItem {
       truncated = buffer.summarized();
     }
     createdNanos = createdAtNanos;
+  }
+
+  /** Sets {@link #topAppFrameId()} (the ending thread, before {@link #finish}). */
+  void topAppFrame(long frameId) {
+    topAppFrameId = frameId;
+  }
+
+  /** Slow-stack samples taken so far ({@code argos-watch} only). */
+  int stackCaptures() {
+    return stackCaptures;
+  }
+
+  /** {@code nanoTime} of the last slow-stack sample ({@code argos-watch} only). */
+  long lastStackNanos() {
+    return lastStackNanos;
+  }
+
+  /** Counts one slow-stack sample taken at {@code nanos} ({@code argos-watch} only). */
+  void stackCaptured(long nanos) {
+    stackCaptures++;
+    lastStackNanos = nanos;
+  }
+
+  /** No further slow-stack sample of this transaction (summary mode: it could not be kept). */
+  void stackCapturesDone() {
+    stackCaptures = Integer.MAX_VALUE;
   }
 
   /** Records the sampler decision ({@code Sampler.NONE} ... ) of 10 §9.2 step 3. */
@@ -302,6 +345,14 @@ public final class Transaction implements QueueItem {
 
   public String errorMessage() {
     return errorMessage;
+  }
+
+  /**
+   * FRAME dictionary id of {@code class.method(file)} of the error's first application frame
+   * ({@code error_top_frame_id}, ADR-0010 C-131, C-237 (6)); 0 when there is none.
+   */
+  public long topAppFrameId() {
+    return topAppFrameId;
   }
 
   /** {@code System.nanoTime()} at the end, -1 while running. */

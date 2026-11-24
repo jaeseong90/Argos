@@ -14,10 +14,12 @@ import io.argos.server.api.traces.TraceService;
 import io.argos.server.api.traces.TraceView;
 import io.argos.server.api.transactions.Ids;
 import io.argos.server.api.transactions.TransactionLookup;
+import io.argos.server.api.transactions.TransactionSearchService;
 import io.argos.server.auth.AppAccessPolicy;
 import io.argos.server.auth.ArgosPrincipal;
 import io.argos.server.auth.RequiresRole;
 import io.argos.server.auth.Role;
+import io.argos.server.privacy.salt.UserIdHasher;
 import io.argos.server.storage.query.DictionaryNames;
 import io.argos.server.storage.query.DictionaryNames.Kind;
 import io.argos.server.storage.query.QueryExecutor;
@@ -44,6 +46,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
+import org.jspecify.annotations.Nullable;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -84,7 +88,9 @@ public class SearchController {
   private final AppDirectory directory;
   private final AppAccessPolicy access;
   private final QuerySources sources;
+  private final @Nullable UserIdHasher hasher;
 
+  /** Without hashed user id search (tests). */
   public SearchController(
       TransactionLookup transactions,
       TraceService traces,
@@ -94,6 +100,21 @@ public class SearchController {
       AppDirectory directory,
       AppAccessPolicy access,
       QuerySources sources) {
+    this(transactions, traces, executor, names, text, directory, access, sources, null);
+  }
+
+  @Autowired
+  public SearchController(
+      TransactionLookup transactions,
+      TraceService traces,
+      QueryExecutor executor,
+      DictionaryNames names,
+      DictionaryTextSearch text,
+      AppDirectory directory,
+      AppAccessPolicy access,
+      QuerySources sources,
+      @Nullable UserIdHasher hasher) {
+    this.hasher = hasher;
     this.transactions = transactions;
     this.traces = traces;
     this.executor = executor;
@@ -114,8 +135,10 @@ public class SearchController {
               + " counts from 2026-01-01: 18 digits in 2026), 32 hex digits a trace id, anything"
               + " else text (services, SQL, instances; at least 3 characters). type=tx takes any"
               + " unsigned 64-bit decimal. user and request"
-              + " searches need from and to (at most 24 h); user ids match applications in plain"
-              + " mode (an application in hashed mode answers 422 user_id_hash_unavailable). q is"
+              + " searches need from and to (at most 24 h); user ids match plain-mode rows and,"
+              + " with app_id, hashed-mode rows by the application's salted HMAC of the id (16"
+              + " §6.3; 422 user_id_hash_unavailable only when a hashed-only application's salt"
+              + " cannot be read). q is"
               + " at most 1 KB. Heavy bucket: 10 a minute.")
   @RateLimited(RateLimitBucket.HEAVY)
   @ArgosLimits(rangeMax = "24h", rowsMax = MAX_MATCHES, timeoutS = 10)
@@ -300,6 +323,7 @@ public class SearchController {
     Instant t = QueryLimits.time("to", to);
     QueryLimits.range(f, t, QueryLimits.RAW_RANGE_MAX);
     String uid = "";
+    String uidHash = "";
     String rid = "";
     if (type.equals("user")) {
       String normalized = QueryLimits.userIdFilter(query);
@@ -307,14 +331,9 @@ public class SearchController {
         throw new ApiException(ErrorCode.FILTER_INVALID).detail("q", "empty");
       }
       if (appId > 0) {
-        Set<String> modes = directory.userIdModes(appId);
-        if (!modes.contains("plain") && modes.contains("hashed")) {
-          throw new ApiException(
-                  ErrorCode.FILTER_UNPROCESSABLE,
-                  "The application stores hashed user ids; searching them needs the application"
-                      + " salt")
-              .detail("user_id", "user_id_hash_unavailable");
-        }
+        // Hashed-mode rows of one application (16 §6.3); across all applications only plain rows.
+        String hashed = TransactionSearchService.hashedUserId(directory, hasher, appId, normalized);
+        uidHash = hashed == null ? "" : hashed;
       }
       uid = normalized;
     } else {
@@ -330,6 +349,7 @@ public class SearchController {
                     .dateTime64("to", t)
                     .string("env", env)
                     .string("uid", uid)
+                    .string("uid_hash", uidHash)
                     .string("rid", rid)
                     .uint32("limit", MAX_MATCHES),
                 QueryOptions.defaults().withMaxResultRows(MAX_MATCHES))

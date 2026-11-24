@@ -23,6 +23,10 @@ argos.alert.webhook.allow-cidrs	list<string>	[]
 argos.alert.webhook.allow-http	boolean	false
 argos.alert.webhook.timeout	duration	5s
 argos.alert.window-retention	duration	15m
+argos.audit.agent-events-per-minute	int	1
+argos.audit.fallback-file	string	logs/audit/audit-fallback.jsonl
+argos.audit.file.max-bytes	data-size	100MB
+argos.audit.file.max-files	int	10
 argos.audit.sinks	list<string>	[postgres]
 argos.auth.access-ttl	duration	15m
 argos.auth.lockout.base-minutes	int	15
@@ -67,6 +71,7 @@ argos.collector.limits.max-string-bytes	int	2048
 argos.collector.limits.max-transactions-per-batch	int	5000
 argos.collector.max-message-bytes	int	4194304
 argos.collector.port	int	9100
+argos.collector.public-address	string	(none)
 argos.collector.quota.metrics-per-5s	int	1000
 argos.collector.quota.stats-per-10s	int	6000
 argos.collector.quota.steps-per-second	int	20000
@@ -79,6 +84,8 @@ argos.collector.stale-after	duration	1m
 argos.collector.tls.cert-file	string	conf/tls/server.crt
 argos.collector.tls.enabled	boolean	true
 argos.collector.tls.key-file	string	conf/tls/server.key
+argos.collector.tls.key-password-file	string	(none)
+argos.collector.tls.reload.watch	boolean	true
 argos.commands.keep-per-instance	int	100
 argos.commands.max-inflight-per-instance	int	1
 argos.commands.max-per-minute-per-instance	int	10
@@ -98,8 +105,14 @@ argos.metrics.token-file	string	(none)
 argos.ops.disk.emergency-ratio	double	0.9
 argos.ops.disk.stop-ratio	double	0.95
 argos.ops.disk.warn-ratio	double	0.8
+argos.ops.emergency.drops-per-minute	int	1
+argos.ops.emergency.target-ratio	double	0.85
 argos.ops.reconcile.cron	string	0 0 3 * * *
+argos.ops.reconcile.enabled	boolean	true
 argos.ops.storage-health-interval	duration	1m
+argos.postgres.audit.password	string	(none)
+argos.postgres.audit.password-file	string	(none)
+argos.postgres.audit.user	string	argos_audit
 argos.postgres.owner.password	string	(none)
 argos.postgres.owner.password-file	string	(none)
 argos.postgres.owner.user	string	argos
@@ -108,6 +121,8 @@ argos.postgres.password-file	string	(none)
 argos.postgres.url	string	(none)
 argos.postgres.user	string	argos_app
 argos.privacy.default-ip-mode	enum(full|masked|off)	masked
+argos.privacy.deletion.max-concurrent-mutations	int	2
+argos.privacy.deletion.max-range	duration	30d
 argos.ratelimit.api-burst-per-user	int	100
 argos.ratelimit.api-per-user-per-second	int	50
 argos.ratelimit.csp-report-per-ip-per-minute	int	60
@@ -131,10 +146,12 @@ argos.security.master-key.previous	string	(none)
 argos.security.master-key.previous-file	string	(none)
 argos.server.timezone	time-zone	UTC
 argos.testing.alert-ca-file	string	(none)
+argos.testing.disk-usage-file	string	(none)
 argos.testing.hold-before-phase	enum(config|keys|postgres-migration|clickhouse-migration|wal-recovery|listeners)	(none)
 argos.testing.hold-file	string	(none)
 argos.testing.hold-timeout	duration	5m
 argos.testing.notify-retry-delays	list<duration>	[]
+argos.ui.active-thresholds-ms	list<int>	[1000, 3000, 8000]
 argos.ui.log-link-template	string	(none)
 argos.wal.dir	string	data/wal
 argos.wal.fsync-interval-ms	int	10
@@ -143,6 +160,8 @@ argos.wal.segment-bytes	data-size	256MB
 argos.wal.warn-ratio	double	0.8
 argos.web.csp.style-unsafe-inline	boolean	false
 argos.web.public-url	string	(none)
+argos.writer.dead-letter.dir	string	data/dead-letter
+argos.writer.dead-letter.max-bytes	data-size	1GB
 argos.writer.flush-interval-ms	int	2000
 argos.writer.flush-rows	int	50000
 argos.writer.queue-rows	int	200000

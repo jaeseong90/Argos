@@ -15,6 +15,7 @@ import io.argos.server.session.AgentSession;
 import io.argos.server.session.api.InstanceState;
 import io.argos.server.session.api.InstanceStateChange;
 import io.argos.server.session.api.SessionContext;
+import io.argos.server.storage.postgres.catalog.CatalogRepository;
 import io.argos.server.storage.query.DictionaryNames;
 import io.argos.server.storage.query.lookup.AppDirectory;
 import io.micrometer.core.instrument.Counter;
@@ -85,9 +86,14 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p><b>Instance states.</b> {@code counter.per_instance[].state} and {@code
  * overview.apps[].status} replace the {@code instance_state} topic of 12 §3.7: the state of an
- * instance with a session is {@link InstanceStates#state}; an instance without one keeps the state
- * of its last {@link InstanceStateChange} (STALE, then DOWN for {@value #DOWN_KEEP_MINUTES}
- * minutes).
+ * instance with a session is {@link InstanceStates#state}; in {@code counter} an instance without
+ * one keeps the state of its last {@link InstanceStateChange} (STALE, then DOWN for {@value
+ * #DOWN_KEEP_MINUTES} minutes). {@code overview.apps[].status} is computed exactly as {@code GET
+ * /overview} and {@code GET /apps} do (ADR-0010 C-218 (3), WO-39): the worst state of every
+ * instance that is not archived ({@link InstanceStates#summarize}; an instance the state machine
+ * does not track is DOWN, an archived one does not count), read once per push for the shown
+ * applications; only when PostgreSQL cannot answer does the push fall back to the sessions and
+ * remembered state changes.
  *
  * <p><b>Subscriptions.</b> The WebSocket handler validates the frame and the role, queues the
  * {@code ack} in the outbox and then calls {@link #subscribe}; the returned handle is cancelled on
@@ -226,11 +232,12 @@ public class RealtimeBus implements RealtimePublisher, SmartLifecycle {
       InstanceStates states,
       AppDirectory directory,
       DictionaryNames dictionary,
+      ObjectProvider<CatalogRepository> catalog,
       MeterRegistry registry,
       Clock clock,
       ObjectProvider<JsonMapper> jsonMapper) {
     this(
-        new ServerBusSources(states, directory, dictionary),
+        new ServerBusSources(states, directory, dictionary, catalog.getIfAvailable()),
         registry,
         clock,
         jsonMapper.getIfAvailable(
@@ -659,6 +666,12 @@ public class RealtimeBus implements RealtimePublisher, SmartLifecycle {
     for (int app : shown) {
       sessions.put(app, sources.sessions(app));
     }
+    Map<Integer, InstanceStates.Summary> summaries = summaries(shown);
+    Map<Integer, String> status = new HashMap<>();
+    for (int app : shown) {
+      InstanceStates.Summary summary = summaries == null ? null : summaries.get(app);
+      status.put(app, summary != null ? summary.status() : worst(app, sessions.get(app)));
+    }
     Map<TxKind, String> data = new EnumMap<>(TxKind.class);
     for (TxKind k : KINDS) {
       List<TopicPayloads.OverviewApp> rows = new ArrayList<>(shown.size());
@@ -668,7 +681,7 @@ public class RealtimeBus implements RealtimePublisher, SmartLifecycle {
         rows.add(
             new TopicPayloads.OverviewApp(
                 app,
-                worst(app, live),
+                status.get(app),
                 !live.isEmpty() || s.count() > 0 ? s.tps() : null,
                 s.p95Ms(),
                 s.errorRate(),
@@ -732,7 +745,28 @@ public class RealtimeBus implements RealtimePublisher, SmartLifecycle {
     return rows;
   }
 
-  /** The worst instance state of an application (DOWN > STALE > WARN > UP), DOWN with none. */
+  /**
+   * The REST status of the applications ({@link BusSources#summaries}, ADR-0010 C-218 (3)), or null
+   * when it cannot be read (the failure is logged at most once a minute, the push falls back to
+   * {@link #worst}).
+   */
+  private Map<Integer, InstanceStates.Summary> summaries(List<Integer> appIds) {
+    if (appIds.isEmpty()) {
+      return Map.of();
+    }
+    try {
+      return sources.summaries(appIds);
+    } catch (RuntimeException e) {
+      failure("Reading the instance states of the overview push failed", e);
+      return null;
+    }
+  }
+
+  /**
+   * The worst instance state of an application (DOWN > STALE > WARN > UP), DOWN with none, from the
+   * live sessions and the remembered state changes: the fallback of the {@code overview} status
+   * when {@link #summaries} cannot answer.
+   */
   private String worst(int appId, Collection<AgentSession> sessions) {
     InstanceState worst = null;
     Set<Integer> seen = new HashSet<>();

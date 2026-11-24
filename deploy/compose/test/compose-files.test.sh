@@ -118,6 +118,18 @@ mgmt_config() {
 }
 expect_exit 0 "SEC-55: compose.mgmt.yaml adds 127.0.0.1:8081 only" mgmt_config
 
+audit_account() {
+  local out s
+  out=$(config -f compose.yaml) || { echo "$out"; return 1; }
+  s=$(section "$out" server)
+  grep -q 'source: pg_audit_password' <<<"$s" || { echo "the server does not mount pg_audit_password"; return 1; }
+  grep -q 'password-file: /run/secrets/pg_audit_password' config/server/application-compose.yaml \
+    || { echo "application-compose.yaml does not name the audit password file"; return 1; }
+  grep -q 'user: argos_audit' config/server/application-compose.yaml \
+    || { echo "application-compose.yaml does not name argos_audit"; return 1; }
+}
+expect_exit 0 "SEC-82, ADR-0010 C-116: the server mounts pg_audit_password and uses it as argos.postgres.audit (audit partition job)" audit_account
+
 bind_config() {
   local out
   out=$(ARGOS_HTTP_BIND=127.0.0.1 ARGOS_GRPC_BIND=10.0.0.5 config -f compose.yaml) || { echo "$out"; return 1; }

@@ -30,10 +30,12 @@ import java.util.TreeMap;
  *       -Dargos.<key>} → {@code ARGOS_<KEY>} ({@link ConfigKeys#environmentName(String)}). Nested
  *       yml maps are flattened to dot keys; sequences become YAML flow lists so that {@link
  *       KeySpec} parses items that contain commas; a sequence of mappings is accepted for {@code
- *       instrumentation.custom-methods} only ({@code pattern}, {@code step-type}, {@code
- *       as-transaction}). {@code sampling.profile.slow-threshold-ms.default} is the base key,
- *       {@code ...services.<name>} the per-service family. A yml file outside the subset or over a
- *       cap gives one WARN with the line number and is ignored as a whole (no partial application).
+ *       instrumentation.custom-methods} only ({@code pattern}, {@code as-transaction}; an item with
+ *       the {@code step-type} field of the earlier format becomes an item with a step type suffix,
+ *       which {@code CustomMethodPolicy} ignores with a WARN, ADR-0010 C-237 (5)). {@code
+ *       sampling.profile.slow-threshold-ms.default} is the base key, {@code ...services.<name>} the
+ *       per-service family. A yml file outside the subset or over a cap gives one WARN with the
+ *       line number and is ignored as a whole (no partial application).
  *   <li>Unknown keys and unknown {@code ARGOS_*} variables produce one warning each (02 §7), never
  *       a failure (O-R03). {@code argos.config} / {@code ARGOS_CONFIG} are inputs, not unknown
  *       keys. {@code agent.disabled} is honoured from {@code -Dargos.agent.disabled} only.
@@ -93,7 +95,9 @@ public final class ConfigLoader {
   /** Fields of one {@code instrumentation.custom-methods} mapping (10 §6.10). */
   static final String CUSTOM_PATTERN = "pattern";
 
+  /** The removed field of the earlier format: the item is ignored (ADR-0010 C-237 (5)). */
   static final String CUSTOM_STEP_TYPE = "step-type";
+
   static final String CUSTOM_AS_TRANSACTION = "as-transaction";
 
   /** Ignored test settings named in the T-BLD-010 WARN; the rest are counted. */
@@ -366,7 +370,12 @@ public final class ConfigLoader {
       }
     }
 
-    /** {@code - pattern: ... step-type: ... as-transaction: ...} items as list item strings. */
+    /**
+     * {@code - pattern: ... as-transaction: ...} items as list item strings {@code
+     * pattern[|as-transaction]}. An item with a {@code step-type} field keeps it as a step type
+     * suffix ({@code pattern|STEP[|as-transaction]}), so that the policy ignores that item alone
+     * with its WARN (ADR-0010 C-237 (5)).
+     */
     private String customMethods(List<Map<String, String>> maps, String origin) {
       List<String> items = new ArrayList<String>(maps.size());
       for (int i = 0; i < maps.size(); i++) {
@@ -393,11 +402,11 @@ public final class ConfigLoader {
         String stepType = trimmed(fields.get(CUSTOM_STEP_TYPE));
         String asTransaction = trimmed(fields.get(CUSTOM_AS_TRANSACTION));
         StringBuilder item = new StringBuilder(pattern);
-        if (stepType != null || asTransaction != null) {
-          item.append('|').append(stepType == null ? "METHOD" : stepType.toUpperCase(Locale.ROOT));
-          if (asTransaction != null) {
-            item.append('|').append(asTransaction.toLowerCase(Locale.ROOT));
-          }
+        if (stepType != null) {
+          item.append('|').append(stepType.toUpperCase(Locale.ROOT));
+        }
+        if (asTransaction != null) {
+          item.append('|').append(asTransaction.toLowerCase(Locale.ROOT));
         }
         items.add(item.toString());
       }

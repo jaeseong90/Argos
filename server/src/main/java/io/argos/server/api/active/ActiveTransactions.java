@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.server.api.active;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.argos.server.api.openapi.ArgosUntrusted;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
@@ -18,13 +19,36 @@ import org.jspecify.annotations.Nullable;
  * @param snapshotAt the time of the newest snapshot, null without any
  * @param perInstance one entry per instance with a live session
  * @param items the running transactions, longest first (at most 2,000, {@code meta.truncated})
+ * @param defaultThresholdsMs the operator-wide default elapsed-colour thresholds of the screen
+ *     ({@code argos.ui.active-thresholds-ms}, ADR-0010 C-225 (3)); only {@code GET
+ *     /apps/{appId}/active} carries them, the WebSocket {@code active} push leaves them out
  */
 @Schema(name = "ActiveTransactions")
 public record ActiveTransactions(
     @JsonProperty("snapshot_at") @Nullable Instant snapshotAt,
     @JsonProperty("per_instance") @Schema(requiredMode = RequiredMode.REQUIRED)
         List<PerInstance> perInstance,
-    @JsonProperty("items") @Schema(requiredMode = RequiredMode.REQUIRED) List<Item> items) {
+    @JsonProperty("items") @Schema(requiredMode = RequiredMode.REQUIRED) List<Item> items,
+    @JsonProperty("default_thresholds_ms")
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        @ArraySchema(
+            minItems = 3,
+            maxItems = 3,
+            arraySchema =
+                @Schema(
+                    description =
+                        "The operator-wide default elapsed-colour thresholds of the active"
+                            + " transactions screen in ms, ascending"
+                            + " (argos.ui.active-thresholds-ms, default 1000, 3000, 8000). A"
+                            + " viewer's own thresholds win. Only GET /apps/{appId}/active"
+                            + " carries them; the WebSocket active push leaves them out."))
+        @Nullable List<Integer> defaultThresholdsMs) {
+
+  /** The payload without default thresholds (the WebSocket {@code active} push). */
+  public ActiveTransactions(
+      @Nullable Instant snapshotAt, List<PerInstance> perInstance, List<Item> items) {
+    this(snapshotAt, perInstance, items, null);
+  }
 
   /**
    * One instance.

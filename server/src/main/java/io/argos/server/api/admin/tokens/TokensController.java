@@ -12,9 +12,11 @@ import io.argos.server.auth.ArgosPrincipal;
 import io.argos.server.auth.ObjectAccessPolicy;
 import io.argos.server.auth.RequiresRole;
 import io.argos.server.auth.Role;
+import io.argos.server.config.ArgosProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -34,9 +36,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class TokensController {
 
   private final TokenService tokens;
+  private final @Nullable String collectorAddress;
 
-  public TokensController(TokenService tokens) {
+  public TokensController(TokenService tokens, ArgosProperties properties) {
     this.tokens = tokens;
+    this.collectorAddress = properties.collector().publicAddress();
   }
 
   /** The tokens of an app, newest first (every state; no token, no hash). */
@@ -56,8 +60,8 @@ public class TokensController {
       HttpServletRequest request) {
     return Envelope.of(
         TokenDtos.IssuedTokenResponse.of(
-            tokens.issue(
-                actor(request), appId(appId), body == null ? null : body.expiresInDays())));
+            tokens.issue(actor(request), appId(appId), body == null ? null : body.expiresInDays()),
+            collectorAddress));
   }
 
   /**
@@ -77,7 +81,7 @@ public class TokensController {
             : body.graceDays();
     return Envelope.of(
         TokenDtos.IssuedTokenResponse.of(
-            tokens.rotate(actor(request), tokenId(tokenId), graceDays)));
+            tokens.rotate(actor(request), tokenId(tokenId), graceDays), collectorAddress));
   }
 
   /** Revokes a token; its live agent sessions end with {@code UNAUTHENTICATED} at once. */

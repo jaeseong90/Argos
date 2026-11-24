@@ -488,4 +488,56 @@ class AppsAdminIT {
               assertThat(row.targetName()).isEqualTo(name);
             });
   }
+
+  @Test
+  @DisplayName(
+      "T-API-013b GET /apps and GET /apps/{appId} tokens_active (WO-39): active and rotating"
+          + " tokens count, revoked and expired ones do not; an application without tokens has 0;"
+          + " the response carries the count only, no token or prefix")
+  void tokensActive() throws Exception {
+    String name = unique("tok-count");
+    int appId = create(name, "prod");
+    int empty = create(unique("tok-none"), "prod");
+    IssuedToken revoked = issue(appId);
+    IssuedToken rotated = issue(appId);
+    IssuedToken expired = issue(appId);
+    TokenService tokens = server.bean(TokenService.class);
+    tokens.revoke(Actor.system(), revoked.tokenId(), "T-API-013b");
+    IssuedToken successor = tokens.rotate(Actor.system(), rotated.tokenId(), 7);
+    try (Connection c = env.connect(PgAccount.APP);
+        PreparedStatement st =
+            c.prepareStatement(
+                "UPDATE argos.agent_tokens SET expires_at = now() - interval '1 second'"
+                    + " WHERE id = ?")) {
+      st.setObject(1, expired.tokenId());
+      assertThat(st.executeUpdate()).isEqualTo(1);
+    }
+    assertThat(column("SELECT status FROM argos.agent_tokens WHERE id = ?", rotated.tokenId()))
+        .containsExactly("GRACE");
+
+    for (ApiTestClient client : List.of(viewer, admin)) {
+      ApiResponse list = client.get("/api/v1/apps?q=" + enc(name));
+      assertThat(list.status()).as(list.toString()).isEqualTo(200);
+      JsonNode row = find(list.json().path("data"), "app_id", appId);
+      assertThat(row).as("app in GET /apps").isNotNull();
+      // rotating (old, within its grace) + its successor (active)
+      assertThat(row.path("tokens_active").asInt()).as("GET /apps tokens_active").isEqualTo(2);
+      ApiResponse one = client.get("/api/v1/apps/" + appId);
+      assertThat(one.status()).as(one.toString()).isEqualTo(200);
+      assertThat(one.json().path("data").path("tokens_active").asInt()).isEqualTo(2);
+      assertThat(one.body())
+          .doesNotContain(successor.prefix())
+          .doesNotContain(rotated.prefix())
+          .doesNotContain(successor.token());
+    }
+    ApiResponse none = viewer.get("/api/v1/apps/" + empty);
+    assertThat(none.json().path("data").path("tokens_active").isInt()).isTrue();
+    assertThat(none.json().path("data").path("tokens_active").asInt()).isZero();
+
+    tokens.revoke(Actor.system(), successor.tokenId(), "T-API-013b");
+    assertThat(
+            viewer.get("/api/v1/apps/" + appId).json().path("data").path("tokens_active").asInt())
+        .as("after revoking the successor: the rotating token only")
+        .isEqualTo(1);
+  }
 }

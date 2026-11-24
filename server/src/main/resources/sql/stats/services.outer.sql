@@ -3,6 +3,8 @@
 -- Service statistics (14 §4.8): merge per service (and version), sorted by an allowed column
 -- ({sort} is chosen by the server from its allow list; {dir} = 1 descending, -1 ascending) with an
 -- exact LIMIT (C-64; the API asks for one row more than it shows to know whether it truncated).
+-- Apdex counts only non-BATCH transactions (D-20, ADR-0010 C-237 (8)): {ac} is their count, and a
+-- service without any (a BATCH service) has apdex NULL.
 SELECT sv,
        v,
        sum(c) AS cnt,
@@ -13,12 +15,13 @@ SELECT sv,
        sum(x) AS ext_ms,
        sum(sat) AS satisfied,
        sum(tol) AS tolerating,
+       sum(ac) AS apdex_count,
        quantilesDDMerge(0.01, 0.5, 0.95, 0.99)(q) AS q,
        err / cnt AS error_rate,
        sum_ms / cnt AS avg_ms,
        q[2] AS p95_ms,
        q[3] AS p99_ms,
-       (satisfied + tolerating / 2) / cnt AS apdex
+       if(apdex_count = 0, NULL, (satisfied + tolerating / 2) / apdex_count) AS apdex
 FROM ({segments})
 GROUP BY sv, v
 ORDER BY {sort:Identifier} * {dir:Int8} DESC, sv, v

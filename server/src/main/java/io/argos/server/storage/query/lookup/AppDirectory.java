@@ -52,6 +52,10 @@ public class AppDirectory {
   /** The ids that exist. */
   private static final String EXISTING = "SELECT id FROM argos.instances WHERE id = ANY(?)";
 
+  /** Instances of the ids that exist and are archived (ADR-0010 C-236 (2)). */
+  private static final String ARCHIVED =
+      "SELECT id FROM argos.instances WHERE id = ANY(?) AND archived_at IS NOT NULL";
+
   private static final String INSTANCES_OF_APP =
       "SELECT id, app_id, name, ip_mode, user_id_mode, sql_param_mode FROM argos.instances"
           + " WHERE app_id = ? ORDER BY id LIMIT 10000";
@@ -140,6 +144,26 @@ public class AppDirectory {
       Set<Integer> existing = new HashSet<>();
       query(EXISTING, batch, rs -> existing.add(rs.getInt(1)));
       query(DOWN_OR_ARCHIVED, batch, rs -> out.add(rs.getInt(1)));
+      for (Integer id : batch) {
+        if (!existing.contains(id)) {
+          out.add(id);
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * The instances of {@code ids} that are archived or deleted (ADR-0010 C-236 (2), 12 §4.2): unlike
+   * {@link #goneInstances}, a stored {@code DOWN} instance is not gone here (the target of an
+   * {@code instance_down} alert).
+   */
+  public Set<Integer> removedInstances(Collection<Integer> ids) {
+    Set<Integer> out = new LinkedHashSet<>();
+    for (List<Integer> batch : batches(ids)) {
+      Set<Integer> existing = new HashSet<>();
+      query(EXISTING, batch, rs -> existing.add(rs.getInt(1)));
+      query(ARCHIVED, batch, rs -> out.add(rs.getInt(1)));
       for (Integer id : batch) {
         if (!existing.contains(id)) {
           out.add(id);

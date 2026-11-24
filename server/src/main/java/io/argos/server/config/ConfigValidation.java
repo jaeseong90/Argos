@@ -36,9 +36,13 @@ import org.springframework.stereotype.Component;
  * values are whole days; {@code collector.heartbeat-interval < stale-after < down-after}; {@code
  * wal.segment-bytes <= max-bytes}; {@code writer.flush-rows <= queue-rows}; {@code
  * auth.password.min-length <= max-length}; {@code auth.refresh-idle-ttl <= refresh-max-ttl}; {@code
- * ops.disk.warn-ratio < emergency-ratio < stop-ratio}; {@code ops.reconcile.cron} is a Spring cron
- * expression; every entry of {@code metrics.allow-cidrs} and {@code alert.webhook.allow-cidrs} is
- * an IP range ({@link CidrRange}); SMTP {@code starttls: optional} needs {@code insecure: true}.
+ * ops.disk.warn-ratio < emergency-ratio < stop-ratio}; {@code ops.emergency.target-ratio <
+ * ops.disk.emergency-ratio}; {@code ops.reconcile.cron} is a Spring cron expression; every entry of
+ * {@code metrics.allow-cidrs} and {@code alert.webhook.allow-cidrs} is an IP range ({@link
+ * CidrRange}); SMTP {@code starttls: optional} needs {@code insecure: true}; {@code
+ * retention.audit} is at least {@value #MIN_AUDIT_RETENTION_DAYS} days (ADR-0010 C-116, the floor
+ * that PostgreSQL also enforces); {@code privacy.deletion.max-range} is whole days between 1 and
+ * 31.
  */
 @Component
 @Order(ConfigValidation.ORDER)
@@ -46,6 +50,9 @@ public class ConfigValidation implements StartupPhase {
 
   /** Position of this step in the {@code CONFIG} phase; the other config steps are relative. */
   public static final int ORDER = 1000;
+
+  /** Shortest audit retention (ADR-0010 C-116; {@code audit_logs_maintain_partitions}, V014). */
+  public static final int MIN_AUDIT_RETENTION_DAYS = 90;
 
   private final ArgosProperties properties;
   private final Validator validator;
@@ -152,6 +159,22 @@ public class ConfigValidation implements StartupPhase {
         }
       }
     }
+    Duration audit = p.retention().audit();
+    if (audit != null && audit.compareTo(Duration.ofDays(MIN_AUDIT_RETENTION_DAYS)) < 0) {
+      out.add(
+          new Violation(
+              "argos.retention.audit",
+              "must be at least " + MIN_AUDIT_RETENTION_DAYS + "d (C-116, SEC-82)"));
+    }
+    Duration range = p.privacy().deletion().maxRange();
+    if (range != null
+        && (range.toMillis() % Duration.ofDays(1).toMillis() != 0
+            || range.toDays() < 1
+            || range.toDays() > 31)) {
+      out.add(
+          new Violation(
+              "argos.privacy.deletion.max-range", "must be whole days between 1d and 31d"));
+    }
     var c = p.collector();
     if (!(c.heartbeatInterval().compareTo(c.staleAfter()) < 0)) {
       out.add(
@@ -180,6 +203,11 @@ public class ConfigValidation implements StartupPhase {
           new Violation(
               "argos.ops.disk.emergency-ratio",
               "warn-ratio < emergency-ratio < stop-ratio is required"));
+    }
+    if (!(p.ops().emergency().targetRatio() < disk.emergencyRatio())) {
+      out.add(
+          new Violation(
+              "argos.ops.emergency.target-ratio", "must be below argos.ops.disk.emergency-ratio"));
     }
     String cron = p.ops().reconcile().cron();
     if (cron != null && !cron.isBlank() && !CronExpression.isValidExpression(cron)) {

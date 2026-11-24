@@ -606,11 +606,62 @@ loopback and the private Docker address ranges). `/actuator/env` does not exist.
 | `ARGOS_START_PERIOD` | `60s` | how long the server health check waits after a start before failures count |
 | `ARGOS_LOG_LEVEL` | `INFO` | server log level |
 | `ARGOS_TZ_DISPLAY` | `UTC` | time zone of times in alert messages (data is always stored in UTC) |
-| `ARGOS_RETENTION_XLOG_DAYS`, `ARGOS_RETENTION_PROFILE_DAYS`, `ARGOS_RETENTION_RAW_STAT_DAYS`, `ARGOS_RETENTION_METRIC_DAYS`, `ARGOS_RETENTION_ROLLUP_1M_DAYS`, `ARGOS_RETENTION_ROLLUP_1H_DAYS` | 30, 7, 14, 14, 90, 365 | retention in days. In this version `ARGOS_RETENTION_RAW_STAT_DAYS` and `ARGOS_RETENTION_METRIC_DAYS` must be equal; the server refuses to start otherwise |
+| `ARGOS_RETENTION_XLOG_DAYS`, `ARGOS_RETENTION_PROFILE_DAYS`, `ARGOS_RETENTION_RAW_STAT_DAYS`, `ARGOS_RETENTION_METRIC_DAYS`, `ARGOS_RETENTION_ROLLUP_1M_DAYS`, `ARGOS_RETENTION_ROLLUP_1H_DAYS` | 30, 7, 14, 14, 90, 365 | retention in days of transactions, transaction steps, SQL and external call statistics, metrics, per-minute and per-hour rollups ([section 7.4](#74-retention-audit-log-and-master-key)). A value set through the administration API wins over these |
 | `ARGOS_METRICS_ALLOW_CIDRS` | loopback and private Docker ranges | clients allowed on the management port |
 | `ARGOS_SECURITY_COOKIE_SECURE` | `true` | `false` only for a short evaluation over plain HTTP ([section 5](#choose-the-address-of-the-ui)) |
 
 Secrets never go into `.env`: they stay in `secrets/` and reach the containers as files.
+
+### 7.4 Retention, audit log and master key
+
+**Changing the retention.** Edit the `ARGOS_RETENTION_*` variables in `.env` and restart the
+server (`sudo ./argos-compose.sh compose up -d server`), or set the values through the
+administration API (`PUT /api/v1/admin/settings/retention`); a value set through the API is kept
+in PostgreSQL and wins over `.env` at every start. A longer retention applies at once and rewrites
+no data. A shorter one must be confirmed (`"confirm": true`): the server then drops the days that
+are now outside the retention in the background, at most 10 partitions a minute, and records the
+change in the audit log (`RETENTION_CHANGED`). To see the retention of every table, its oldest day
+and its size, or to apply the configured values without a restart, run the server's command line
+in its container:
+
+```
+sudo ./argos-compose.sh compose exec -e JAVA_TOOL_OPTIONS= server java -Xmx256m   -cp @/opt/argos/app/jib-classpath-file io.argos.server.ServerApplication admin retention show
+```
+
+(`retention apply` applies and drops at once; add `--json` for machine-readable output.)
+
+**Audit log retention.** The server keeps the audit log for `argos.retention.audit` (365 days by
+default; it refuses to start with less than 90 days). A daily job at 04:30 server time creates the
+coming months and drops whole months older than that with its own PostgreSQL account `argos_audit`
+(`secrets/pg_audit_password`): the runtime account of the server can add audit rows but never
+change or delete them, and the database itself refuses to drop audit rows younger than 90 days.
+
+**Emergency retention.** When the ClickHouse disk is 90 % full, the server drops the oldest day
+partitions, oldest table data first (transaction steps, then metrics and statistics, then
+transactions), one day partition a minute until the disk is below 85 %, and never today's data or
+the rollups. Each drop appears in the audit log (`RETENTION_EMERGENCY_DROP`), as a
+`retention_emergency` event and in `argos_retention_emergency_drops_total`. From 95 % it stops
+writing to ClickHouse and keeps the data in its write-ahead log (up to `argos.wal.max-bytes`) until
+the disk is below 93 %. Freeing the disk can take more than 10 minutes. Add disk space or shorten
+the retention before it comes to that.
+
+**Dead-letter blocks.** A block of data that ClickHouse refuses three times with a schema, type or
+parse error is moved to `/data/dead-letter` in the `argos-data` volume (directory 0700, files
+0600, at most 1 GiB by default, `argos.writer.dead-letter.max-bytes`) and the server goes on with
+the next data. Its rows count as server drops (`argos_collector_dropped_total{reason="dead_letter"}`,
+the server drop alert and the collection status panel), and `GET /api/v1/admin/storage/health`
+shows the blocks and bytes. The files hold collected data and are never deleted automatically:
+find the cause in the server log (one line per block, with the ClickHouse error code), load a file
+again with `INSERT INTO argos.<table> FORMAT RowBinaryWithNamesAndTypes` if the data matters, then
+delete it.
+
+**Master key.** The server refuses to start when `secrets/master_key` is missing, is not a 32-byte
+key (64 hex characters or base64), or is readable by the group or other users (POSIX file
+systems; on Windows file systems the permission check is not possible and the server only logs
+that it skipped it). The key encrypts the notification channel settings, webhook signing keys,
+command results and application salts in PostgreSQL. Keep it with the backups, but in a separate
+place: a PostgreSQL backup without its key cannot be read. The steps to replace the key are in
+the administration command guide (`argos-admin secrets rekey`).
 
 ## 8. Reverse proxy (HTTPS on 443)
 
@@ -859,6 +910,7 @@ database passwords, which no longer match the accounts stored in the volumes.
 | a warning that file modes cannot be checked | the files are on a file system without POSIX modes (Windows, NTFS). This is not a supported production setup; install on a Linux file system |
 | an agent logs a TLS or certificate error | `server.address` is not in the certificate's names, or `server.tls.ca-file` is not the CA that signed it |
 | `token create` exits with code 4 | the application already has 5 active agent tokens |
+| the server exits at start with a message about `argos.master-key-file` | `secrets/master_key` is missing, malformed or has a mode other than `0600` (owner `10001` on a Linux Docker Engine). Restore the key from your backup; never generate a new one for an existing installation, or the stored secrets can no longer be read ([section 7.4](#74-retention-audit-log-and-master-key)) |
 | `token create` says the server service is not running or not healthy | start the stack (`sudo ./argos-compose.sh up`) and wait until `sudo ./argos-compose.sh status` shows the server healthy: the token is issued by the running server |
 
 ## 12. Not available in this version

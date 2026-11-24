@@ -21,11 +21,14 @@ public final class HealthViews {
    * source yet", never 0.
    *
    * @param ingestLagS current p99 ingest lag in seconds (null before the first insert)
-   * @param diskUsageRatio server disk usage: null until the storage health job exists (WO-28)
+   * @param diskUsageRatio the largest used ratio of the server's disks ({@code
+   *     argos_server_disk_usage_ratio{mount}}: the WAL file system and the ClickHouse disks), null
+   *     before the storage health job measured one
    * @param channelFailures24h notification deliveries that failed in the last 24 h (all channels),
    *     null only while PostgreSQL cannot be read
    * @param sessions live agent sessions
-   * @param certExpiryDays days until the TLS certificate expires: null until WO-28 reads it
+   * @param certExpiryDays whole days until the collector's TLS certificate expires (negative after
+   *     the expiry), null without a TLS listener
    */
   @Schema(name = "ServerHealth")
   public record Server(
@@ -162,6 +165,15 @@ public final class HealthViews {
   public record Wal(@Nullable Long bytes, @Nullable Long segments) {}
 
   /**
+   * The writer's dead-letter area (ADR-0010 C-158 (3)).
+   *
+   * @param blocks block files waiting for an operator
+   * @param bytes their bytes
+   */
+  @Schema(name = "StorageDeadLetter")
+  public record DeadLetter(long blocks, long bytes) {}
+
+  /**
    * The storage health (14 §4.14 {@code /admin/storage/health}, 13 §7.5, F-S22, F-S23).
    *
    * @param disk the fullest ClickHouse disk
@@ -176,10 +188,13 @@ public final class HealthViews {
    * @param oldestUnmergedPartAgeS age of the oldest never-merged part in a partition with more than
    *     one part, or null
    * @param mutationsPending unfinished mutations (deletion jobs)
-   * @param ttlLastRunAt the last TTL run: null until the storage health job records it (WO-28)
+   * @param ttlLastRunAt the last TTL run the storage health job saw (the oldest partition of a
+   *     table disappeared without an emergency drop), null when none was seen yet
    * @param dictionaryUnresolved dictionary ids still unknown after the requests to the agents
    * @param wal the server's write-ahead log
-   * @param emergencyRetentionActive whether emergency retention shortening is on: null until WO-28
+   * @param emergencyRetentionActive whether the emergency retention shortening is on, null before
+   *     the storage health job's first run
+   * @param deadLetter the writer's dead-letter area, null without one (WO-28)
    */
   @Schema(name = "StorageHealth")
   public record Storage(
@@ -198,5 +213,6 @@ public final class HealthViews {
           @Nullable Instant ttlLastRunAt,
       @JsonProperty("dictionary_unresolved") @Nullable Long dictionaryUnresolved,
       Wal wal,
-      @JsonProperty("emergency_retention_active") @Nullable Boolean emergencyRetentionActive) {}
+      @JsonProperty("emergency_retention_active") @Nullable Boolean emergencyRetentionActive,
+      @JsonProperty("dead_letter") @Nullable DeadLetter deadLetter) {}
 }

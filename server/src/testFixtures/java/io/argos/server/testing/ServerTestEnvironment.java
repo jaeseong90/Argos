@@ -116,6 +116,7 @@ public final class ServerTestEnvironment implements AutoCloseable {
   private final Path secretsDir;
   private final Map<String, String> springProperties;
   private io.argos.server.testing.fakeagent.TestCertificates.TestPki collectorPki;
+  private io.argos.server.testing.alert.TestMasterKey masterKey;
 
   private ServerTestEnvironment(
       PostgreSQLContainer postgres,
@@ -250,6 +251,16 @@ public final class ServerTestEnvironment implements AutoCloseable {
     // is the source tree (server/) under Gradle.
     p.put("argos.jwt-key-file", path(secretsDir.resolve("conf").resolve("jwt.key")));
     p.put("argos.auth.setup-token-file", path(secretsDir.resolve("conf").resolve("setup-token")));
+    // WO-28: the audit fallback file (records PostgreSQL could not take) of the server under test,
+    // not logs/ of the source tree.
+    p.put(
+        "argos.audit.fallback-file",
+        path(secretsDir.resolve("audit").resolve("audit-fallback.jsonl")));
+    // WO-28: the master key of the envelope cipher (16 §8.2). The server refuses to start without
+    // one (ADR-0010 C-226 (2)); a new key per environment, generated at run time in this private
+    // directory (owner-only where POSIX permissions exist), never in conf/ of the source tree.
+    masterKey = io.argos.server.testing.alert.TestMasterKey.create(secretsDir.resolve("conf"));
+    p.put(masterKey.property(), path(masterKey.file()));
     // WO-21: the gRPC collector listener (LISTENERS start step) of a server under test: loopback,
     // a free port, TLS with a test PKI generated at run time in this private directory (nothing
     // committed). Without it the server would look for conf/tls/server.crt and refuse to start.
@@ -263,6 +274,8 @@ public final class ServerTestEnvironment implements AutoCloseable {
     // close()), never in data/wal of the working directory (server/ of the source tree under
     // Gradle). Every server started on this environment shares it, so a restart recovers it.
     p.put("argos.wal.dir", path(walDirectory()));
+    // WO-28: the writer's dead-letter area too (ADR-0010 C-158 (3)).
+    p.put("argos.writer.dead-letter.dir", path(secretsDir.resolve("dead-letter")));
     return p;
   }
 
@@ -281,6 +294,14 @@ public final class ServerTestEnvironment implements AutoCloseable {
    */
   public Path collectorCaCertificate() {
     return collectorPki.caCertificate();
+  }
+
+  /**
+   * The master key of {@link #springProperties()} ({@code argos.master-key-file}, WO-28): to derive
+   * its key id or decrypt in a test.
+   */
+  public io.argos.server.testing.alert.TestMasterKey masterKey() {
+    return masterKey;
   }
 
   /** {@code argos.collector.port} of {@link #springProperties()} (WO-21). */

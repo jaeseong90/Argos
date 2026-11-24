@@ -71,7 +71,10 @@ public final class CaptureConfig {
    */
   public static final String USER_ID_SOURCE_SESSION = "session";
 
-  /** {@link #userIdSourceType()} of {@code mdc:<key>}: not supported until WO-18 (C-125). */
+  /**
+   * {@link #userIdSourceType()} of {@code mdc:<key>}: read by the logging module from the MDC of
+   * the transaction's log events (ADR-0010 C-125 (3)).
+   */
   public static final String USER_ID_SOURCE_MDC = "mdc";
 
   private static final String[] NONE = new String[0];

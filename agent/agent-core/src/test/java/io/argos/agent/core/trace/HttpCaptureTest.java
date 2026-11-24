@@ -180,8 +180,11 @@ class HttpCaptureTest {
             .build();
     Transaction fromMdc = transaction();
     ids.apply(fromMdc, mdc, "kim");
-    assertThat(fromMdc.userId()).isNull();
-    assertThat(counters.userIdSkipped(AgentCounters.USER_ID_SKIPPED_MDC_UNSUPPORTED)).isEqualTo(1);
+    assertThat(fromMdc.userId())
+        .as("mdc: values follow the mode (WO-18, C-125 (3))")
+        .isEqualTo("kim");
+    ids.atEnd(fromMdc, mdc);
+    assertThat(counters.userIdSkipped(AgentCounters.USER_ID_SKIPPED_MDC_ABSENT)).isZero();
 
     Transaction off = transaction();
     ids.apply(off, CaptureConfig.DEFAULT, "kim");

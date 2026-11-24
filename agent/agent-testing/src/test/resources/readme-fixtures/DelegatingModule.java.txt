@@ -1,0 +1,16 @@
+package org.example.alpha.instrumentation;
+
+/** Fixture of ModuleReadmeLintTest (not compiled): the witness is a class of the module. */
+public final class DelegatingModule implements InstrumentationModule {
+  static final String HANDLER = "org.example.alpha.Connect$Handler";
+
+  @Override
+  public ElementMatcher<ClassLoader> witness() {
+    return new DelegateWitness();
+  }
+
+  @Override
+  public List<TypeInstrumentation> types() {
+    return Collections.emptyList();
+  }
+}

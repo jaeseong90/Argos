@@ -298,8 +298,8 @@ class ReconcileJobIT {
   @Order(1)
   @DisplayName(
       "T-SV-019 a clean day: the cron run checks yesterday (13 rollup and 2 D-12 comparisons), 0"
-          + " mismatches, nothing rebuilt, summary row 'clean', gauge 0 for every app; a second cron"
-          + " run of the same day does nothing")
+          + " mismatches, nothing rebuilt, summary row 'clean', gauge 0 for every app; a second"
+          + " cron run of the same day does nothing")
   void cleanDay() throws Exception {
     Optional<ReconcileReport> run = job().run();
     assertThat(run).isPresent();
@@ -573,5 +573,75 @@ class ReconcileJobIT {
           .isInstanceOf(SQLException.class)
           .hasMessageContaining("permission denied");
     }
+  }
+
+  @Test
+  @Order(5)
+  @DisplayName(
+      "T-SV-019c consistency checks are audited: the cron run as CONSISTENCY_CHECKED actor system"
+          + " (result clean), the command as actor argos-admin (failure mismatch_left without"
+          + " --rebuild, success repaired with it, failure busy under the lock); skipped runs leave"
+          + " no row")
+  void audited() throws Exception {
+    List<String> rows = auditRows("CONSISTENCY_CHECKED");
+    String d = day.toString();
+    assertThat(rows.get(0)).isEqualTo("system system day " + d + " success clean");
+    assertThat(rows)
+        .contains(
+            "system argos-admin day " + d + " failure busy",
+            "system argos-admin day " + d + " failure mismatch_left",
+            "system argos-admin day " + d + " success repaired");
+    assertThat(auditAfter("CONSISTENCY_CHECKED").get(0))
+        .contains("\"trigger\": \"scheduled\"")
+        .contains("\"result\": \"clean\"");
+  }
+
+  /**
+   * The audit rows of {@code action}, oldest first, as {@code "<actor_type> <actor_name>
+   * <target_type> <target_id> <result> <reason>"} (ADR-0010 C-220 (3)).
+   */
+  private static List<String> auditRows(String action) throws Exception {
+    List<String> rows = new ArrayList<>();
+    try (Connection c = env.connect(PgAccount.APP);
+        PreparedStatement ps =
+            c.prepareStatement(
+                "SELECT actor_type, actor_name, target_type, target_id, result, reason FROM"
+                    + " argos.audit_logs WHERE action = ? ORDER BY ts, id")) {
+      ps.setString(1, action);
+      try (ResultSet rs = ps.executeQuery()) {
+        while (rs.next()) {
+          rows.add(
+              rs.getString(1)
+                  + " "
+                  + rs.getString(2)
+                  + " "
+                  + rs.getString(3)
+                  + " "
+                  + rs.getString(4)
+                  + " "
+                  + rs.getString(5)
+                  + " "
+                  + rs.getString(6));
+        }
+      }
+    }
+    return rows;
+  }
+
+  /** The {@code after} JSON of the audit rows of {@code action}, oldest first. */
+  private static List<String> auditAfter(String action) throws Exception {
+    List<String> rows = new ArrayList<>();
+    try (Connection c = env.connect(PgAccount.APP);
+        PreparedStatement ps =
+            c.prepareStatement(
+                "SELECT after::text FROM argos.audit_logs WHERE action = ? ORDER BY ts, id")) {
+      ps.setString(1, action);
+      try (ResultSet rs = ps.executeQuery()) {
+        while (rs.next()) {
+          rows.add(String.valueOf(rs.getString(1)));
+        }
+      }
+    }
+    return rows;
   }
 }

@@ -51,10 +51,13 @@ class MigrationStartupIT {
    * mutes}, WO-25), V008 (alert channels: {@code webhook_signing_keys}, WO-25) and V009 ({@code
    * alert_events.reason}, ADR-0010 C-227 (3), WO-38), V010 (agent token revocation columns), V011
    * (commands and config changes) and V012 (app management: {@code apps.app_packages}, soft delete,
-   * WO-26).
+   * WO-26), V013 (audit query indexes, application salts, WO-28), V014 (privacy job columns, audit
+   * partition floor, WO-28).
    */
   static final List<String> PG_VERSIONS =
-      List.of("001", "002", "003", "004", "005", "006", "007", "008", "009", "010", "011", "012");
+      List.of(
+          "001", "002", "003", "004", "005", "006", "007", "008", "009", "010", "011", "012", "013",
+          "014");
 
   /**
    * The bundled ClickHouse scripts: V001, V002 (ingest columns, ADR-0010 C-144, WO-21) and V003
@@ -261,7 +264,10 @@ class MigrationStartupIT {
             "ix_alert_events_rule_ts",
             "ix_alert_rules_app",
             "ix_alert_states_active",
+            // V013 (WO-28): audit query filters.
+            "ix_audit_action_ts",
             "ix_audit_actor_ts",
+            "ix_audit_target_ts",
             "ix_audit_ts",
             // V011 (WO-26): commands and config changes.
             "ix_commands_inflight",
@@ -280,6 +286,8 @@ class MigrationStartupIT {
             "ix_login_failures_unknown_last_failed",
             "ix_mutes_ends",
             "ix_pending_registrations_last_attempt",
+            // V014 (WO-28): unfinished privacy deletion jobs.
+            "ix_privacy_jobs_open",
             "ix_reconcile_results_day",
             "ix_user_sessions_family",
             "ix_user_sessions_user");

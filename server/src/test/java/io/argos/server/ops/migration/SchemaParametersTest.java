@@ -41,7 +41,7 @@ class SchemaParametersTest {
   }
 
   @Test
-  @DisplayName("12 §10 keys map onto the template keys; raw-days is stat = metric")
+  @DisplayName("12 §10 keys map onto the template keys; raw-days is the metric retention")
   void mapping() {
     SchemaParameters p =
         from(
@@ -50,7 +50,7 @@ class SchemaParametersTest {
                 "argos.clickhouse.table-prefix", "t1_",
                 "argos.retention.xlog", "20d",
                 "argos.retention.profile", "3d",
-                "argos.retention.stat", "10d",
+                "argos.retention.stat", "21d",
                 "argos.retention.metric", "240h",
                 "argos.retention.rollup-1m", "60d",
                 "argos.retention.rollup-1h", "400d"));
@@ -67,11 +67,19 @@ class SchemaParametersTest {
   }
 
   @Test
-  @DisplayName("refused: stat != metric, partial days, zero, bad database or prefix")
+  @DisplayName(
+      "WO-28 key split (C-112): stat != metric is accepted, raw-days follows metric and the"
+          + " stat value is still validated")
+  void statAndMetricMayDiffer() {
+    assertThat(from(Map.of("argos.retention.stat", "7d")).retention("raw-days")).isEqualTo(14);
+    assertThat(from(Map.of("argos.retention.metric", "30d")).retention("raw-days")).isEqualTo(30);
+    assertThatThrownBy(() -> from(Map.of("argos.retention.stat", "36h")))
+        .hasMessageContaining("argos.retention.stat must be a whole number of days");
+  }
+
+  @Test
+  @DisplayName("refused: partial days, zero, bad database or prefix")
   void refused() {
-    assertThatThrownBy(() -> from(Map.of("argos.retention.stat", "7d")))
-        .hasMessageContaining(
-            "argos.retention.stat (7d) and argos.retention.metric (14d) must be equal");
     assertThatThrownBy(() -> from(Map.of("argos.retention.xlog", "36h")))
         .hasMessageContaining("argos.retention.xlog must be a whole number of days");
     assertThatThrownBy(() -> from(Map.of("argos.retention.profile", "0d")))

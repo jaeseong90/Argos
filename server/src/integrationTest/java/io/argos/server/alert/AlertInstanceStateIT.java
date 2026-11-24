@@ -348,6 +348,64 @@ class AlertInstanceStateIT {
     assertThat(stack.engine().activeAlerts()).noneMatch(x -> x.ruleId().equals(rule));
   }
 
+  @Test
+  @DisplayName(
+      "T-SV-023a instance_down alerts resolve as target_gone when the instance is archived"
+          + " (C-236 (2), 12 §4.2): a DOWN instance keeps its FIRING alert across housekeeping;"
+          + " once archived the next housekeeping resolves it (alert_events RESOLVED, reason"
+          + " target_gone) and it leaves the active alerts")
+  @Tag("req:C-236")
+  void instanceDownArchivedResolves() throws Exception {
+    AgentTokens.IssuedToken token = stack.app("alert-archived");
+    stack.engine().housekeepingNow();
+    UUID rule = stack.templateRule(token.appId(), "instance_down");
+    int id;
+    try (FakeAgent a = stack.agent(token, "alert-archived", "host-x:8080")) {
+      assertThat(a.connect().accepted()).isTrue();
+      id = a.instanceId();
+      assertThat(a.heartbeatRound(Duration.ofSeconds(5))).isPresent();
+      bye(a, id);
+    }
+    // The Bye grace is 5 minutes (12 §4.2): DOWN afterwards fires instance_down.
+    for (int s = 0; s < 40 && state(id) != InstanceState.DOWN; s++) {
+      CLOCK.advance(Duration.ofSeconds(10));
+      stack.tick();
+    }
+    assertThat(state(id)).isEqualTo(InstanceState.DOWN);
+    String unit = "instance:" + id;
+    Awaitility.await()
+        .atMost(20, TimeUnit.SECONDS)
+        .until(
+            () -> {
+              stack.engine().evaluateNow();
+              return unitState(rule, unit) == AlertState.FIRING;
+            });
+
+    // DOWN (live state and stored state) is what fires it, never what resolves it.
+    stack.engine().housekeepingNow();
+    stack.engine().evaluateNow();
+    assertThat(unitState(rule, unit)).as("DOWN, not archived").isEqualTo(AlertState.FIRING);
+
+    try (Connection c = stack.env.connect(PgAccount.APP);
+        PreparedStatement ps =
+            c.prepareStatement("UPDATE argos.instances SET archived_at = now() WHERE id = ?")) {
+      ps.setInt(1, id);
+      assertThat(ps.executeUpdate()).isEqualTo(1);
+    }
+    CLOCK.advance(Duration.ofSeconds(1));
+    stack.engine().housekeepingNow();
+    assertThat(unitState(rule, unit)).as("archived").isEqualTo(AlertState.RESOLVED);
+    assertThat(
+            stack.rows(
+                "SELECT target_id, to_state, reason FROM argos.alert_events"
+                    + " WHERE rule_id = ? ORDER BY ts, to_state",
+                rule))
+        .containsExactly(
+            Arrays.asList((long) id, "FIRING", "condition"),
+            Arrays.asList((long) id, "RESOLVED", "target_gone"));
+    assertThat(stack.engine().activeAlerts()).noneMatch(x -> x.ruleId().equals(rule));
+  }
+
   /** A FIRING {@code alert_states} row of an instance unit (restored at the next start). */
   private static void firingRow(UUID rule, int appId, String unit, int instanceId)
       throws Exception {

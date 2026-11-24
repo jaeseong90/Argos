@@ -1,0 +1,62 @@
+{
+  "title": "검색",
+  "inputLabel": "ID 또는 텍스트 검색",
+  "placeholder": "트랜잭션 ID, 트레이스 ID, user:<ID>, req:<ID> 또는 서비스·SQL·인스턴스 이름",
+  "submit": "검색",
+  "help": "숫자 20자리 이하는 트랜잭션 ID, 16진수 32자리는 트레이스 ID입니다. user:와 req:는 선택한 시간 범위(최대 24시간)에서 찾습니다. 그 밖의 텍스트는 서비스 이름·SQL·인스턴스에서 찾습니다.",
+  "tooLong": "검색어가 {{bytes, number}}바이트를 넘습니다. 줄여 주세요.",
+  "start": {
+    "title": "찾을 내용을 입력하세요",
+    "description": "트랜잭션 ID, 트레이스 ID, user:<사용자 ID>, req:<요청 ID> 또는 서비스·SQL·인스턴스 이름 일부를 입력하고 Enter를 누르세요."
+  },
+  "rangeRequired": {
+    "title": "24시간 이하의 시간 범위를 선택하세요",
+    "description": "사용자 ID·요청 ID 검색은 선택한 시간 범위에서 찾으며, 범위는 24시간 이하여야 합니다. 시간 범위 선택기에서 더 짧은 범위를 고른 뒤 다시 검색하세요."
+  },
+  "tooShort": {
+    "title": "몇 글자 더 입력하세요",
+    "description": "텍스트 검색은 {{count, number}}글자 이상이어야 합니다."
+  },
+  "empty": {
+    "title": "찾은 결과가 없습니다",
+    "descriptionId": "보존 중인 데이터에 이 ID의 트랜잭션이나 트레이스가 없습니다. ID를 확인하거나 실행 시각 전후의 XLog를 여세요.",
+    "descriptionRange": "선택한 시간 범위에 일치하는 것이 없습니다. 범위를 넓히거나(최대 24시간) 값을 확인하세요.",
+    "descriptionText": "이 텍스트를 포함하는 서비스·SQL·인스턴스 이름이 없습니다. 이름의 더 짧은 부분으로 찾아 보세요."
+  },
+  "notCollected": {
+    "all": "사용자 ID를 수집하지 않습니다: 이 환경의 모든 인스턴스가 사용자 ID 모드 off로 실행 중입니다. 사용자로 찾으려면 에이전트 설정의 capture.user-id.mode를 켜세요.",
+    "some": "인스턴스 {{total, number}}개 중 {{off, number}}개가 사용자 ID를 수집하지 않습니다(사용자 ID 모드 off). 그 인스턴스의 트랜잭션은 사용자 ID로 찾을 수 없습니다."
+  },
+  "caption": "검색 결과",
+  "column": {
+    "type": "종류",
+    "label": "일치 항목",
+    "target": "열기"
+  },
+  "open": "열기",
+  "notOpenable": "열 화면 없음",
+  "kind": {
+    "tx": "트랜잭션 ID",
+    "trace": "트레이스 ID",
+    "user": "사용자 ID(시간 범위)",
+    "request": "요청 ID(시간 범위)",
+    "text": "텍스트: 서비스·SQL·인스턴스",
+    "empty": "ID 또는 텍스트를 입력하세요"
+  },
+  "type": {
+    "tx": "트랜잭션",
+    "trace": "트레이스",
+    "service": "서비스",
+    "sql": "SQL",
+    "instance": "인스턴스",
+    "other": "기타"
+  },
+  "error": {
+    "rateLimited": "검색이 너무 많습니다. 1분 뒤 다시 검색하세요.",
+    "rateLimitedRetry": "검색이 너무 많습니다. {{seconds, number}}초 뒤 다시 검색하세요.",
+    "hashUnavailable": "이 애플리케이션은 사용자 ID를 해시로 저장하며 지금은 솔트를 읽을 수 없습니다. 나중에 다시 시도하거나 관리자에게 서버 확인을 요청하세요.",
+    "rangeInvalid": "이 검색에 맞지 않는 시간 범위입니다. 24시간 이하의 범위를 선택하세요.",
+    "queryInvalid": "이 종류의 검색에 맞지 않는 검색어입니다. 확인 후 다시 검색하세요.",
+    "other": "검색에 실패했습니다. 다시 시도하세요."
+  }
+}

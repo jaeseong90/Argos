@@ -10,6 +10,20 @@ Outgoing calls through OkHttp 3 and 4.
 
 ## Supported library versions
 
+### Version range and witness
+
+| Library | Supported range | Minimum verified | Maximum verified | Boundary tests |
+|---|---|---|---|---|
+| `com.squareup.okhttp3:okhttp` | 3.10 to 4.12 | 3.14.9 | 4.12.0 | `test` on 3.14.9 and `testOkHttp4` on 4.12.0 (`OkHttpAdviceTest`, `OkHttpCallTimeoutTest`, `HttpClientOkHttpModuleTest`); end to end `agent-testing` `httpclient.HttpClientStepsTest` (shop-boot2 3.14.9 on JDK 8, shop-boot3 4.12.0 on JDK 21, `client=okhttp`) |
+
+- Witness (`HttpClientOkHttpModule.witness()`, resource lookup only): `okhttp3.OkHttpClient`,
+  `okhttp3.OkHttpClient$Builder`, `okhttp3.Interceptor` and `okhttp3.Call`.
+- Run: `./gradlew :agent:agent-instrumentation:httpclient-okhttp:check` (`test` and
+  `:agent:agent-instrumentation:httpclient-okhttp:testOkHttp4`); end to end
+  `./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot3@21 --tests '*httpclient*'`.
+
+### Details
+
 | Library | Range | Tested (module tests) |
 |---|---|---|
 | `com.squareup.okhttp3:okhttp` | 3.10 to 4.12 | 3.14.9 (`test`), 4.12.0 (`testOkHttp4`) |

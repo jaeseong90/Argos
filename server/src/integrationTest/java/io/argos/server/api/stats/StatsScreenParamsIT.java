@@ -50,6 +50,14 @@ class StatsScreenParamsIT {
 
   static final int INSTANCE = 9301;
 
+  /** D-20 / C-237 (8): HTTP, BATCH and mixed services without other rows. */
+  static final int APP_BATCH = 931;
+
+  static final int INSTANCE_BATCH = 9311;
+  static final long SERVICE_HTTP = 0x7A31_0000_0000_0001L;
+  static final long SERVICE_BATCH = 0x7A31_0000_0000_0002L;
+  static final long SERVICE_MIXED = 0x7A31_0000_0000_0003L;
+
   static final long DB = 0x7D30_0000_0000_0001L;
 
   // SQL statements: sum_ms descends S1 > S2 > S3 > S4, the bucket p95 descends S3 > S2 > S1 > S4.
@@ -134,6 +142,37 @@ class StatsScreenParamsIT {
     errors(tx, GROUP_SAME, 5, 5);
     errors(tx, GROUP_GONE, 2, 0);
     rows.xlog(tx);
+
+    // D-20 / C-237 (8): 15 to 5 minutes ago, Apdex T 500 ms (satisfied <= 500 < tolerating <=
+    // 2000 < frustrated). HTTP: 6 satisfied. BATCH: 4. Mixed: 2 satisfied + 2 frustrated HTTP
+    // (Apdex 0.5) and 3 satisfied BATCH, which must not lift it to 5/7.
+    app(env, APP_BATCH, "c237-batch-apdex");
+    instance(env, INSTANCE_BATCH, APP_BATCH, "c237-batch-apdex:8080");
+    List<XlogRow> batch = new ArrayList<>();
+    Instant t0 = base.minus(Duration.ofMinutes(15));
+    int k = 0;
+    for (int i = 0; i < 6; i++) {
+      batch.add(kindRow(t0.plusSeconds(k++ * 37L), SERVICE_HTTP, "HTTP", 100));
+    }
+    for (int i = 0; i < 4; i++) {
+      batch.add(kindRow(t0.plusSeconds(k++ * 37L), SERVICE_BATCH, "BATCH", 100));
+    }
+    for (int i = 0; i < 2; i++) {
+      batch.add(kindRow(t0.plusSeconds(k++ * 37L), SERVICE_MIXED, "HTTP", 100));
+      batch.add(kindRow(t0.plusSeconds(k++ * 37L), SERVICE_MIXED, "HTTP", 3_000));
+    }
+    for (int i = 0; i < 3; i++) {
+      batch.add(kindRow(t0.plusSeconds(k++ * 37L), SERVICE_MIXED, "BATCH", 100));
+    }
+    rows.xlog(batch);
+  }
+
+  private static XlogRow kindRow(Instant ts, long service, String kind, int elapsedMs) {
+    return XlogRow.at(APP_BATCH, INSTANCE_BATCH, ts)
+        .service(service)
+        .kind(kind)
+        .elapsedMs(elapsedMs)
+        .set("apdex_t_ms", 500);
   }
 
   private record Shape(
@@ -496,6 +535,72 @@ class StatsScreenParamsIT {
       if (!lines[i].isEmpty()) {
         out.add(lines[i].substring(1, lines[i].indexOf('"', 1)));
       }
+    }
+    return out;
+  }
+
+  // ---------------------------------------------------------------------- D-20, C-237 (8)
+
+  @Test
+  @Tag("req:D-20")
+  @Tag("req:F-U05")
+  @DisplayName(
+      "T-API-011d services/stats gives BATCH transactions no Apdex (D-20, C-237 (8)): a BATCH"
+          + " service has apdex null for kind=BATCH and kind=ALL, a mixed service's Apdex counts"
+          + " only its HTTP transactions, HTTP is unchanged; sort=apdex puts null rows last; the"
+          + " CSV apdex cell is empty")
+  void batchServicesHaveNoApdex() {
+    String r = range(base.minus(Duration.ofMinutes(20)), base);
+    String path = "/api/v1/apps/" + APP_BATCH + "/services/stats?";
+
+    Map<String, JsonNode> all = byService(get(path + "kind=ALL&" + r));
+    assertThat(all)
+        .containsOnlyKeys(unsigned(SERVICE_HTTP), unsigned(SERVICE_BATCH), unsigned(SERVICE_MIXED));
+    assertThat(all.get(unsigned(SERVICE_BATCH)).path("count").asLong()).isEqualTo(4);
+    assertThat(all.get(unsigned(SERVICE_BATCH)).has("apdex")).isTrue();
+    assertThat(all.get(unsigned(SERVICE_BATCH)).path("apdex").isNull()).isTrue();
+    assertThat(all.get(unsigned(SERVICE_HTTP)).path("apdex").asDouble()).isEqualTo(1.0);
+    assertThat(all.get(unsigned(SERVICE_MIXED)).path("count").asLong()).isEqualTo(7);
+    assertThat(all.get(unsigned(SERVICE_MIXED)).path("apdex").asDouble())
+        .as("HTTP only: (2 + 0 / 2) / 4, not (5 + 0 / 2) / 7")
+        .isEqualTo(0.5);
+
+    Map<String, JsonNode> batch = byService(get(path + "kind=BATCH&" + r));
+    assertThat(batch).containsOnlyKeys(unsigned(SERVICE_BATCH), unsigned(SERVICE_MIXED));
+    for (JsonNode row : batch.values()) {
+      assertThat(row.path("apdex").isNull()).as("kind=BATCH: %s", row).isTrue();
+    }
+    assertThat(batch.get(unsigned(SERVICE_MIXED)).path("count").asLong()).isEqualTo(3);
+
+    Map<String, JsonNode> http = byService(get(path + r));
+    assertThat(http).containsOnlyKeys(unsigned(SERVICE_HTTP), unsigned(SERVICE_MIXED));
+    assertThat(http.get(unsigned(SERVICE_MIXED)).path("apdex").asDouble()).isEqualTo(0.5);
+    assertThat(http.get(unsigned(SERVICE_HTTP)).path("apdex").asDouble()).isEqualTo(1.0);
+
+    for (String dir : List.of("desc", "asc")) {
+      JsonNode sorted = get(path + "kind=ALL&sort=apdex:" + dir + "&" + r);
+      List<String> order = ids(sorted, "service_id");
+      assertThat(order).as("sort=apdex:%s", dir).hasSize(3).endsWith(unsigned(SERVICE_BATCH));
+    }
+
+    ApiResponse csv = viewer.get(path + "kind=ALL&format=csv&" + r);
+    assertThat(csv.status()).as(csv.toString()).isEqualTo(200);
+    String[] lines = csv.body().split("\r\n", -1);
+    List<String> header = Arrays.asList(lines[0].split(",", -1));
+    int apdex = header.indexOf("\"apdex\"");
+    assertThat(apdex).as("apdex column in %s", lines[0]).isNotNegative();
+    String batchLine =
+        Arrays.stream(lines)
+            .filter(l -> l.startsWith("\"" + unsigned(SERVICE_BATCH) + "\""))
+            .findFirst()
+            .orElseThrow();
+    assertThat(batchLine.split(",", -1)[apdex]).isIn("", "\"\"");
+  }
+
+  private static Map<String, JsonNode> byService(JsonNode body) {
+    Map<String, JsonNode> out = new LinkedHashMap<>();
+    for (JsonNode row : body.path("data")) {
+      out.put(row.path("service_id").asString(), row);
     }
     return out;
   }

@@ -137,7 +137,7 @@ class GlobalSearchIT {
   @Test
   @DisplayName(
       "user and request ids need from/to (400 without); a plain user id and a request id find the"
-          + " transaction; a hashed app answers 422")
+          + " transaction; a hashed app is searched by its salted HMAC (WO-28: 200, no 422)")
   void userAndRequest() {
     ApiResponse missing = viewer.get("/api/v1/search?type=user&q=bob-42");
     assertThat(missing.status()).isEqualTo(400);
@@ -153,9 +153,8 @@ class GlobalSearchIT {
     assertThat(request.path("matches")).hasSize(1);
     int hashedApp = TxApiFixture.shared().dataset().apps().get(0).appId();
     ApiResponse hashed = viewer.get("/api/v1/search?type=user&q=someone&app=" + hashedApp + range);
-    assertThat(hashed.status()).isEqualTo(422);
-    assertThat(hashed.json().path("error").path("details").path(0).path("reason").asString())
-        .isEqualTo("user_id_hash_unavailable");
+    assertThat(hashed.status()).as(hashed.toString()).isEqualTo(200);
+    assertThat(hashed.json().path("data").path("matches")).isEmpty();
   }
 
   @Test

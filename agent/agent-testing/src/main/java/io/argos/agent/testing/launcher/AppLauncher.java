@@ -361,7 +361,32 @@ public final class AppLauncher {
       settings.putAll(collectorSettings(dir));
     }
     settings.putAll(agentSettings.asMap());
+    if (harnessDefaults
+        && assumesEveryProfile(settings.get(NORMAL_RATE))
+        && settings.get(OVERHEAD_MONITOR) == null) {
+      // ADR-0010 C-240 (3): a suite that assumes normal-rate=1.0 must not see the CPU guard halve
+      // it on a host with few cores (development builds only; a release build drops the key).
+      settings.put(OVERHEAD_MONITOR, "off");
+    }
     return settings;
+  }
+
+  /** {@code sampling.profile.normal-rate}. */
+  static final String NORMAL_RATE = "sampling.profile.normal-rate";
+
+  /** {@code test.overhead-monitor} (development builds only, C-240 (3)). */
+  static final String OVERHEAD_MONITOR = "test.overhead-monitor";
+
+  /** True for a {@code normal-rate} of 1.0 (every normal transaction keeps its profile). */
+  static boolean assumesEveryProfile(String normalRate) {
+    if (normalRate == null) {
+      return false;
+    }
+    try {
+      return Double.parseDouble(normalRate.trim()) >= 1.0;
+    } catch (NumberFormatException e) {
+      return false;
+    }
   }
 
   /** Directory of the collector files of a run ({@link #collector(FakeCollector)}). */

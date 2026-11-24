@@ -2,6 +2,7 @@
 package io.argos.server.alert.channel;
 
 import io.argos.server.secrets.EnvelopeCipher;
+import io.argos.server.secrets.SecretField;
 import io.argos.server.secrets.SecretUnavailableException;
 import io.argos.server.storage.postgres.alert.channel.ChannelRepository;
 import io.argos.server.storage.postgres.alert.channel.ChannelRow;
@@ -85,10 +86,10 @@ public class ChannelVault {
   }
 
   static String configAad(UUID channelId) {
-    return EnvelopeCipher.aad("notification_channels", "config_enc", channelId.toString());
+    return SecretField.CHANNEL_CONFIG.aad(channelId.toString());
   }
 
   static String keyAad(UUID channelId, String keyId) {
-    return EnvelopeCipher.aad("webhook_signing_keys", "key_enc", channelId + "/" + keyId);
+    return SecretField.WEBHOOK_SIGNING_KEY.aad(channelId + "/" + keyId);
   }
 }

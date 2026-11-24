@@ -100,7 +100,11 @@ items:
     title: disk usage and certificate expiry measured by the server itself
     req: [F-U17]
     owner: WO-28
-    coverage: component tests of src/features/overview ServerHealthPanel (values, warnings, Not available for null); the 2.10-4 check above shows them as Not available while GET /overview server.disk_usage_ratio and cert_expiry_days are null (DSN-12-14 server metrics, WO-28)
+    coverage: warnings and a certificate value are component tests of src/features/overview ServerHealthPanel (the stack's collector has no TLS certificate)
+    route: /overview
+    assert:
+      - visible: overview-server-panel
+      - check: overviewServerMeasured
 
   - id: 2.10-5
     title: a row opens the dashboard of its application with the same time range, kind, environment and live state

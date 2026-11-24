@@ -86,7 +86,7 @@ class AgentCountersTest {
         .containsEntry("argos_agent_profile_dropped_total", 1L)
         .containsEntry("argos_agent_scope_chain_cut_total", 1L)
         .containsEntry("argos_agent_user_id_skipped_total{reason=\"no_salt\"}", 0L)
-        .containsEntry("argos_agent_user_id_skipped_total{reason=\"mdc_unsupported\"}", 0L)
+        .containsEntry("argos_agent_user_id_skipped_total{reason=\"mdc_absent\"}", 0L)
         .doesNotContainKey("argos_agent_ignored_total{reason=\"referer\"}");
     for (String name : snapshot.keySet()) {
       assertThat(name).startsWith("argos_agent_");

@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.server.ops.rollup;
 
+import io.argos.server.audit.Actor;
+import io.argos.server.audit.AuditEvent;
+import io.argos.server.audit.AuditService;
 import io.argos.server.config.ArgosProperties;
 import io.argos.server.ops.management.MeterNames;
 import io.argos.server.ops.migration.MigrationSource;
@@ -30,10 +33,11 @@ import org.springframework.scheduling.support.CronTrigger;
 
 /**
  * The nightly consistency check (F-S22, D-14, 12 §9.1): at {@code argos.ops.reconcile.cron} (Spring
- * cron, server time zone, default {@code 0 0 3 * * *}; there is no off switch) it checks the
- * previous UTC day with {@link ReconcileService} (rollup lock: one run at a time over every node
- * and the {@code argos-admin} commands; a day already checked by another node is skipped), rebuilds
- * the mismatching rollups and records the result in {@code reconcile_results}.
+ * cron, server time zone, default {@code 0 0 3 * * *}; {@code argos.ops.reconcile.enabled=false}
+ * leaves it unscheduled, ADR-0010 C-220 (3)) it checks the previous UTC day with {@link
+ * ReconcileService} (rollup lock: one run at a time over every node and the {@code argos-admin}
+ * commands; a day already checked by another node is skipped), rebuilds the mismatching rollups and
+ * records the result in {@code reconcile_results}.
  *
  * <p>Gauge {@value #GAUGE} ({@code argos_reconcile_mismatch_minutes{app}}): per application, the
  * D-03 minutes (xlog against {@code app_stat_1m}, {@code service_stat_1m}, {@code
@@ -44,6 +48,10 @@ import org.springframework.scheduling.support.CronTrigger;
  *
  * <p>The job runs on its own thread ({@code argos-reconcile}), so a long check does not delay the
  * other scheduled jobs. A failure is logged at WARN and the next night runs again.
+ *
+ * <p>Every run that checked a day, or failed to, is one {@code CONSISTENCY_CHECKED} audit row with
+ * actor {@code system} ({@link RollupAudit}); a run skipped because another node or command holds
+ * the lock or already checked the day is not recorded (it did nothing).
  */
 public final class ReconcileJob implements InitializingBean, DisposableBean {
 
@@ -59,7 +67,9 @@ public final class ReconcileJob implements InitializingBean, DisposableBean {
   private final MigrationSource source;
   private final Clock clock;
   private final MultiGauge gauge;
+  private final AuditService audit;
   private final String cron;
+  private final boolean enabled;
   private final AtomicBoolean running = new AtomicBoolean();
   private ThreadPoolTaskScheduler scheduler;
 
@@ -68,13 +78,20 @@ public final class ReconcileJob implements InitializingBean, DisposableBean {
    * @param source the bundled migration files
    * @param clock UTC clock (the previous day, retention)
    * @param meters the server's registry
+   * @param audit the audit service, or null (a context without it records nothing)
    */
   public ReconcileJob(
-      ArgosProperties properties, MigrationSource source, Clock clock, MeterRegistry meters) {
+      ArgosProperties properties,
+      MigrationSource source,
+      Clock clock,
+      MeterRegistry meters,
+      AuditService audit) {
     this.properties = Objects.requireNonNull(properties, "properties");
     this.source = Objects.requireNonNull(source, "source");
     this.clock = Objects.requireNonNull(clock, "clock");
+    this.audit = audit;
     this.cron = properties.ops().reconcile().cron();
+    this.enabled = properties.ops().reconcile().enabled();
     this.gauge =
         MultiGauge.builder(GAUGE)
             .description(
@@ -89,6 +106,12 @@ public final class ReconcileJob implements InitializingBean, DisposableBean {
    */
   @Override
   public void afterPropertiesSet() {
+    if (!enabled) {
+      LOG.info(
+          "The nightly consistency check is off (argos.ops.reconcile.enabled=false); run"
+              + " argos-admin consistency check to check a day");
+      return;
+    }
     if (cron == null || !CronExpression.isValidExpression(cron)) {
       LOG.warn(
           "The nightly consistency check is not scheduled: argos.ops.reconcile.cron is invalid");
@@ -101,8 +124,13 @@ public final class ReconcileJob implements InitializingBean, DisposableBean {
     s.setWaitForTasksToCompleteOnShutdown(false);
     s.initialize();
     // scheduled() catches and logs every failure; the future carries nothing to check.
-    var unused = s.schedule(this::scheduled, new CronTrigger(cron, ZoneId.systemDefault()));
+    var unused = s.schedule(this::cronRun, new CronTrigger(cron, ZoneId.systemDefault()));
     scheduler = s;
+  }
+
+  /** Whether the nightly run is scheduled (tests). */
+  public boolean isScheduled() {
+    return scheduler != null;
   }
 
   @Override
@@ -112,7 +140,7 @@ public final class ReconcileJob implements InitializingBean, DisposableBean {
     }
   }
 
-  private void scheduled() {
+  private void cronRun() {
     try {
       run();
     } catch (RuntimeException e) {
@@ -151,17 +179,30 @@ public final class ReconcileJob implements InitializingBean, DisposableBean {
               properties, source, day, ReconcileReport.SCHEDULED, true, oncePerDay, clock);
       if (outcome instanceof Outcome.Done<ReconcileReport> done) {
         updateGauge(done.value());
+        if (audit != null) {
+          RollupAudit.checked(audit, Actor.system(), done.value());
+        }
         return Optional.of(done.value());
       }
       Outcome.Refused<ReconcileReport> refused = (Outcome.Refused<ReconcileReport>) outcome;
       switch (refused.reason()) {
         case BUSY, ALREADY_DONE ->
             LOG.info("The consistency check of {} is skipped: {}", day, refused.message());
-        default ->
-            LOG.warn(
-                "The consistency check of {} failed; it runs again next night: {}",
-                day,
-                refused.message());
+        default -> {
+          LOG.warn(
+              "The consistency check of {} failed; it runs again next night: {}",
+              day,
+              refused.message());
+          if (audit != null) {
+            RollupAudit.refused(
+                audit,
+                Actor.system(),
+                AuditEvent.CONSISTENCY_CHECKED,
+                RollupAudit.day(day),
+                RollupAudit.reason(refused.reason()),
+                RollupAudit.dayDetail(day, List.of()));
+          }
+        }
       }
       return Optional.empty();
     } finally {

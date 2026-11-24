@@ -56,13 +56,13 @@ import io.argos.proto.v1.TransactionRecord;
  * encoding is normative (ADR-0010 C-141; the {@code profile_step} table of proto/README.md).
  *
  * <p>Not filled yet (no producer before the work order named): {@code headers}, {@code request_id},
- * {@code sql_ids}, {@code dbc_wait_ms}, {@code dispatch_count}, {@code timed_out}, {@code
- * error_top_frame_id} (WO-12/13/19), {@code app_version_id} (0: the instance's {@code
- * AgentHello.app_version}). {@code ProfileStep.batch_size} is the step's {@code executeBatch} item
- * count ({@code Tracer.stepBatch}, WO-13), absent when not set. WO-14 fills {@code caller_app_id}
- * (the incoming {@code tracestate} {@code argos} entry), {@code ProfileStep.failure} (HTTP steps)
- * and {@code ext_count} / {@code ext_time_ms} (written by {@code Tracer.httpEnd} through {@code
- * TraceContext.addExternalCall}).
+ * {@code sql_ids}, {@code dbc_wait_ms}, {@code dispatch_count}, {@code timed_out} (WO-12/13),
+ * {@code app_version_id} (0: the instance's {@code AgentHello.app_version}). WO-19 fills {@code
+ * error_top_frame_id} ({@link Transaction#topAppFrameId()}, its FRAME text pre-sent). {@code
+ * ProfileStep.batch_size} is the step's {@code executeBatch} item count ({@code Tracer.stepBatch},
+ * WO-13), absent when not set. WO-14 fills {@code caller_app_id} (the incoming {@code tracestate}
+ * {@code argos} entry), {@code ProfileStep.failure} (HTTP steps) and {@code ext_count} / {@code
+ * ext_time_ms} (written by {@code Tracer.httpEnd} through {@code TraceContext.addExternalCall}).
  */
 final class BatchAssembler {
   private final Dictionary dictionary;
@@ -176,6 +176,12 @@ final class BatchAssembler {
       long classId = dictionary.id(DictKind.CLASS, errorClass);
       record.setErrorClassId(classId);
       dictionaryCache.reference(DictKind.CLASS, classId);
+    }
+    // WO-19: the error's first application frame, line-free (C-131 fingerprint, C-237 (6)).
+    long topFrameId = tx.topAppFrameId();
+    if (topFrameId != 0) {
+      record.setErrorTopFrameId(topFrameId);
+      dictionaryCache.reference(DictKind.FRAME, topFrameId);
     }
     String message = tx.errorMessage();
     if (message != null) {

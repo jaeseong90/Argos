@@ -168,7 +168,8 @@ public final class ServletHelperJavax {
   /**
    * The raw user id of {@code capture.user-id.source} for the tracer (which applies the mode): a
    * header, an attribute of an existing session ({@code getSession(false)}, never a new session,
-   * D-26), or nothing for an {@code mdc:} source (the tracer counts it, C-125).
+   * D-26), or nothing for an {@code mdc:} source: the logging module reads that one from the log
+   * events of the transaction (C-125 (3), WO-18).
    */
   static void userId(
       Tracer tracer, TraceContext context, HttpServletRequest request, CaptureConfig capture) {
@@ -188,8 +189,6 @@ public final class ServletHelperJavax {
           // The session was invalidated meanwhile: no user id.
         }
       }
-    } else if (CaptureConfig.USER_ID_SOURCE_MDC.equals(type)) {
-      tracer.setUserId(context, null);
     }
   }
 

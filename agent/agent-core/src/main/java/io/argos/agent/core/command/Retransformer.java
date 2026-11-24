@@ -35,8 +35,11 @@ import java.util.function.LongSupplier;
  *       fails, class by class, skipping the ones that fail.
  * </ol>
  *
- * The custom advice itself (a {@code METHOD} step) is WO-18: in WO-17 a retransformation applies
- * the agent's existing transformations again and changes nothing else.
+ * The custom module (WO-18, {@code io.argos.agent.instrumentation.custom}) reads the installed
+ * policy in its matchers, so the retransformation adds the {@code METHOD} step advice to the
+ * methods of the new items and removes it from the methods of removed items. The {@code disabled}
+ * WARN of an item over the limit is written after the policy is installed: a refused change
+ * installs nothing and logs no such WARN.
  */
 public final class Retransformer {
   /** Self-diagnostics extras keys (16 §5.6 "자가 진단 보고"). */
@@ -131,7 +134,6 @@ public final class Retransformer {
         }
       }
     }
-    next.warnDisabled(disabled);
     RetransformLimiter.Decision decision = limiter.tryAcquire(classes.size());
     if (!decision.allowed()) {
       rejected.incrementAndGet();
@@ -145,6 +147,9 @@ public final class Retransformer {
       return new Result(false, 0, refusal);
     }
     CustomMethodPolicy.install(next);
+    // Only now: a refused change installs nothing, so its over-limit items disable nothing in
+    // force and must not be reported as disabled (WO-17 lane A2 note, fixed in WO-18).
+    next.warnDisabled(disabled);
     int done = retransform(classes);
     classesTotal.addAndGet(done);
     long ms = TimeUnit.NANOSECONDS.toMillis(Math.max(0L, nanoClock.getAsLong() - start));

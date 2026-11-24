@@ -8,6 +8,46 @@
 import type { Untrusted } from '../untrusted';
 
 export interface paths {
+  '/api/v1/about': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Server version, protocol version, agent versions in use and uptime
+     * @description version and commit of the server build (the UI has the server's version), the agent protocol version, the agent versions of the instances that are not archived with their counts (most common first, at most 1,000; a null version is an agent that reported none), whole seconds since the server started and the repository document of the support policy.
+     */
+    get: operations['about_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/about/licenses': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Open-source components of the server, the UI and the agent
+     * @description Per part (server, ui, agent) the components of this build with their version and license, by name. A build without the generated list answers available=false, reason=not_generated (reason=unreadable for a list of the wrong form); at most 5,000 components per part (truncated). Read from the build, no network.
+     */
+    get: operations['about_licenses_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/admin/apps/{appId}/config': {
     parameters: {
       query?: never;
@@ -82,6 +122,46 @@ export interface paths {
     get: operations['tokens_list'];
     put?: never;
     post: operations['tokens_issue'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/audit': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Audit log
+     * @description The audit records of [from, to) (at most 366 days), newest first. actor matches the actor id or name exactly; action is a 16 §11.1 event name; target_type and target_id match exactly. Pages of limit (default 100, at most 500) continue with cursor = meta.next_cursor. Read only: the log cannot be changed through the API. Every call is recorded as AUDIT_LOG_VIEWED.
+     */
+    get: operations['admin_audit_list'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/audit/export': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Export the audit log
+     * @description The records of the same filters as GET /admin/audit as CSV (16 §9.6: UTF-8 with BOM, every cell quoted, formula prefix), newest first, at most 10,000 rows (400 limit_exceeded with format/too_many_rows above: narrow the range). format is csv (the default). tz: IANA time zone of the times (UTC without). At most 10 exports a minute per user. Recorded as AUDIT_LOG_EXPORTED.
+     */
+    get: operations['admin_audit_export'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -208,6 +288,85 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/admin/privacy/deletions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Delete the transactions of a user id or a client address
+     * @description Exactly one of user_id and ip, in the request body only (never in the URL, SEC-33). Queues a job (GET /admin/privacy/jobs/{jobId}); rollups are not changed. 5 requests per user and hour.
+     */
+    post: operations['privacy_delete'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/privacy/jobs/{jobId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** The state of a privacy deletion job */
+    get: operations['privacy_job'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/settings/privacy': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** The server's privacy defaults */
+    get: operations['settings_privacy'];
+    /**
+     * Change the server's default IP mode
+     * @description Agents with a local capture.remote-ip keep theirs; nothing is pushed.
+     */
+    put: operations['settings_update_privacy'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/settings/retention': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** The effective data retention and the ClickHouse tables' TTL */
+    get: operations['settings_retention'];
+    /**
+     * Change the data retention
+     * @description Absent fields keep their value. A shorter value needs confirm: true; data outside it is dropped.
+     */
+    put: operations['settings_update_retention'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/admin/storage/health': {
     parameters: {
       query?: never;
@@ -217,11 +376,27 @@ export interface paths {
     };
     /**
      * Storage health
-     * @description ClickHouse disks, the partitions with the most active parts, merges, insert health counters, mutations (system tables read as argos_reader), the server's WAL and unresolved dictionary ids. ttl_last_run_at and emergency_retention_active are null until the storage health job exists (WO-28).
+     * @description ClickHouse disks, the partitions with the most active parts, merges, insert health counters, mutations (system tables read as argos_reader), the server's WAL and unresolved dictionary ids; from the storage health job the last TTL run it saw (null before one), whether the emergency retention is on (null before its first run) and the writer's dead-letter area.
      */
     get: operations['storage_health_get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/tls/reload': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['admin_tls_reload'];
     delete?: never;
     options?: never;
     head?: never;
@@ -690,7 +865,7 @@ export interface paths {
     put?: never;
     /**
      * Create an application
-     * @description name 1 to 128 and env 1 to 32 characters (no control characters), group at most 64, apdex_t_ms 1 to 65535 (default 500), registration_policy auto (default) or approval. 409 already_exists when (name, env) exists. Agents of the application connect with a token issued by POST /admin/apps/{appId}/tokens.
+     * @description name 1 to 128 and env 1 to 32 characters (no control characters), group at most 64, apdex_t_ms 1 to 65535 (default 500), registration_policy auto or approval (absent: the environment default argos.agent.auto-register.<env> applies). 409 already_exists when (name, env) exists. Agents of the application connect with a token issued by POST /admin/apps/{appId}/tokens.
      */
     post: operations['apps_create'];
     delete?: never;
@@ -736,7 +911,7 @@ export interface paths {
     };
     /**
      * Running transactions of an application
-     * @description The latest 5-second snapshot of every live agent session (memory). At most 2,000 items, longest first (meta.truncated). per_instance lists only the instances with a live session, each with its instance state (UP, WARN, STALE, DOWN) as in GET /apps/{appId}/instances.
+     * @description The latest 5-second snapshot of every live agent session (memory). At most 2,000 items, longest first (meta.truncated). per_instance lists only the instances with a live session, each with its instance state (UP, WARN, STALE, DOWN) as in GET /apps/{appId}/instances. default_thresholds_ms are the operator-wide default elapsed-colour thresholds of the screen (argos.ui.active-thresholds-ms).
      */
     get: operations['active_get'];
     put?: never;
@@ -936,7 +1111,7 @@ export interface paths {
     };
     /**
      * Service statistics
-     * @description Per service of [from, to) from service_stat_1m/1h with raw rows for the live tail and unaligned edges; percentiles merge the DD states (C-53). sort: count, error_rate, avg_ms, p95_ms, p99_ms, max_ms, apdex or sum_ms (default sum_ms:desc). limit at most 500 (default 100; meta.truncated when more exist). split_version=true: one row per service and application version. compare_prev=true adds delta against the previous range of the same length (count and p95_ms relative, error_rate absolute). Also as CSV (format=csv, tz). meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.
+     * @description Per service of [from, to) from service_stat_1m/1h with raw rows for the live tail and unaligned edges; percentiles merge the DD states (C-53). sort: count, error_rate, avg_ms, p95_ms, p99_ms, max_ms, apdex or sum_ms (default sum_ms:desc). limit at most 500 (default 100; meta.truncated when more exist). split_version=true: one row per service and application version. compare_prev=true adds delta against the previous range of the same length (count and p95_ms relative, error_rate absolute). apdex counts HTTP and MESSAGE transactions only: a service with only BATCH transactions in the range has apdex null (D-20). Also as CSV (format=csv, tz). meta.source follows the source rule of 14 §3 (at most 1 year). 64-bit ids (service_id, sql_id, db_id, host_id, group_id, version_id) are unsigned decimal strings.
      */
     get: operations['service_stats_list'];
     put?: never;
@@ -1042,7 +1217,7 @@ export interface paths {
     put?: never;
     /**
      * Search the transactions of an application
-     * @description Every filter of 14 §4.6; sort elapsed_ms:desc (default) or ts:desc; keyset paging with meta.next_cursor; at most 1,000 rows a page, ranges up to 24 h (user, request and trace id searches without from and to default to the last hour; that 1 h range is fixed by the first page and carried by its cursor, so later pages read the same hour, and meta.from/meta.to give the range used; any other search without from or to answers 400 range_invalid, detail missing). format=csv exports up to 10,000 rows (more: 400 limit_exceeded) and records EXPORT_CSV. A user_id filter on an application in hashed mode answers 422 filter_invalid (user_id_hash_unavailable) until application salts exist.
+     * @description Every filter of 14 §4.6; sort elapsed_ms:desc (default) or ts:desc; keyset paging with meta.next_cursor; at most 1,000 rows a page, ranges up to 24 h (user, request and trace id searches without from and to default to the last hour; that 1 h range is fixed by the first page and carried by its cursor, so later pages read the same hour, and meta.from/meta.to give the range used; any other search without from or to answers 400 range_invalid, detail missing). format=csv exports up to 10,000 rows (more: 400 limit_exceeded) and records EXPORT_CSV. A user_id filter matches plain-mode rows and, where instances record hashed user ids, the application's salted HMAC of the id (16 §6.3); only an application in hashed mode alone whose salt cannot be read answers 422 filter_invalid (user_id_hash_unavailable).
      */
     post: operations['transactions_search'];
     delete?: never;
@@ -1460,7 +1635,7 @@ export interface paths {
     };
     /**
      * Overview of every application
-     * @description At most 500 applications (meta.truncated when there are more) with instance counts, status, the TPS, p95 and error rate of the last 5 minutes, the last hour per minute (app_stat_1m with the raw live tail), live active and batch counts, the last deploy marker and the server summary. Cached for 5 s per filter. status is the worst state of the application's instances that are not archived (DOWN, then STALE, then WARN, then UP; DOWN without instances), each state as in GET /apps/{appId}/instances (12 §4.2); instances.up counts the instances in UP or WARN, instances.total those that are not archived. firing counts the application's active alerts (FIRING and ACKED) by severity and alerts_firing_total the rows of GET /overview/alerts with the same env (server self alerts included), both from the alert engine now (ADR-0010 C-212 (2)); server.channel_failures_24h counts the deliveries that failed in the last 24 h; server.disk_usage_ratio and server.cert_expiry_days are null until WO-28.
+     * @description At most 500 applications (meta.truncated when there are more) with instance counts, status, the TPS, p95 and error rate of the last 5 minutes, the last hour per minute (app_stat_1m with the raw live tail), live active and batch counts, the last deploy marker and the server summary. Cached for 5 s per filter. status is the worst state of the application's instances that are not archived (DOWN, then STALE, then WARN, then UP; DOWN without instances), each state as in GET /apps/{appId}/instances (12 §4.2); instances.up counts the instances in UP or WARN, instances.total those that are not archived. firing counts the application's active alerts (FIRING and ACKED) by severity and alerts_firing_total the rows of GET /overview/alerts with the same env (server self alerts included), both from the alert engine now (ADR-0010 C-212 (2)); server.channel_failures_24h counts the deliveries that failed in the last 24 h; server.disk_usage_ratio is the largest used ratio of the write-ahead log and ClickHouse disks and server.cert_expiry_days the days until the collector's TLS certificate expires, each null until the server has measured it (no TLS: no certificate).
      */
     get: operations['overview_get'];
     put?: never;
@@ -1500,7 +1675,7 @@ export interface paths {
     };
     /**
      * Find transactions, traces, services, SQL and instances
-     * @description type=auto: 15-20 digits whose time is not in the future are a transaction id (an id counts from 2026-01-01: 18 digits in 2026), 32 hex digits a trace id, anything else text (services, SQL, instances; at least 3 characters). type=tx takes any unsigned 64-bit decimal. user and request searches need from and to (at most 24 h); user ids match applications in plain mode (an application in hashed mode answers 422 user_id_hash_unavailable). q is at most 1 KB. Heavy bucket: 10 a minute.
+     * @description type=auto: 15-20 digits whose time is not in the future are a transaction id (an id counts from 2026-01-01: 18 digits in 2026), 32 hex digits a trace id, anything else text (services, SQL, instances; at least 3 characters). type=tx takes any unsigned 64-bit decimal. user and request searches need from and to (at most 24 h); user ids match plain-mode rows and, with app_id, hashed-mode rows by the application's salted HMAC of the id (16 §6.3; 422 user_id_hash_unavailable only when a hashed-only application's salt cannot be read). q is at most 1 KB. Heavy bucket: 10 a minute.
      */
     get: operations['search_find'];
     put?: never;
@@ -1520,7 +1695,7 @@ export interface paths {
     };
     /**
      * Server summary
-     * @description The data.server block of the overview: current ingest lag (p99, null before the first insert), the notification deliveries that failed in the last 24 h (null only while PostgreSQL cannot be read) and live agent sessions. disk_usage_ratio and cert_expiry_days are null until WO-28 records them.
+     * @description The data.server block of the overview: current ingest lag (p99, null before the first insert), the largest used ratio of the server's disks (WAL file system and ClickHouse disks), the notification deliveries that failed in the last 24 h (null only while PostgreSQL cannot be read), live agent sessions and the whole days until the collector's TLS certificate expires (null without TLS).
      */
     get: operations['server_health_get'];
     put?: never;
@@ -1647,6 +1822,38 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    About: {
+      agent_versions: components['schemas']['AboutAgentVersion'][];
+      commit: string;
+      /** Format: int32 */
+      protocol_version: number;
+      support_policy_url: string | null;
+      /** Format: int64 */
+      uptime_s: number;
+      version: Untrusted;
+    };
+    AboutAgentVersion: {
+      /** Format: int64 */
+      count: number;
+      version: Untrusted | null;
+    };
+    AboutLicenseComponent: {
+      license: Untrusted | null;
+      name: Untrusted;
+      version: Untrusted | null;
+    };
+    AboutLicenseSection: {
+      available: boolean;
+      components: components['schemas']['AboutLicenseComponent'][];
+      /** @enum {string|null} */
+      reason: 'not_generated' | 'unreadable' | null;
+      truncated: boolean;
+    };
+    AboutLicenses: {
+      agent: components['schemas']['AboutLicenseSection'];
+      server: components['schemas']['AboutLicenseSection'];
+      ui: components['schemas']['AboutLicenseSection'];
+    };
     ActiveInstance: {
       buckets: number[];
       /** Format: int64 */
@@ -1682,6 +1889,8 @@ export interface components {
       virtual_thread: boolean;
     };
     ActiveTransactions: {
+      /** @description The operator-wide default elapsed-colour thresholds of the active transactions screen in ms, ascending (argos.ui.active-thresholds-ms, default 1000, 3000, 8000). A viewer's own thresholds win. Only GET /apps/{appId}/active carries them; the WebSocket active push leaves them out. */
+      default_thresholds_ms?: number[];
       items: components['schemas']['ActiveTransaction'][];
       per_instance: components['schemas']['ActiveInstance'][];
       /** Format: date-time */
@@ -2226,8 +2435,15 @@ export interface components {
       /** Format: int32 */
       registered_from_app_id: number | null;
       registration_policy: string;
+      /** @description True when registration_policy is the environment default (argos.agent.auto-register.<env>) because the application sets none; false when the application sets it (ADR-0010 C-231 (7)). */
+      registration_policy_inherited: boolean | null;
       /** Format: int32 */
       slow_threshold_ms: number;
+      /**
+       * Format: int32
+       * @description The application's usable agent tokens: active, or rotating within their grace period, neither revoked nor expired (05 §2.11 application list; a count only, never a token or prefix).
+       */
+      tokens_active: number;
     };
     AppConfig: {
       current: {
@@ -2243,7 +2459,7 @@ export interface components {
       env: string;
       group?: string;
       name: string;
-      /** @description auto (default) or approval */
+      /** @description auto or approval. Absent: the application sets none and the environment default (argos.agent.auto-register.<env>, auto unless configured) applies; the response then shows that default with registration_policy_inherited true. */
       registration_policy?: string;
     };
     AppDeleted: {
@@ -2287,6 +2503,42 @@ export interface components {
       prefix: string;
       token: string;
       token_id: string;
+    };
+    AuditActor: {
+      id: string | null;
+      name: Untrusted | null;
+      /** @enum {string} */
+      type: 'user' | 'agent' | 'system';
+    };
+    AuditPiiSubject: {
+      tx_id: string | null;
+      user_id: Untrusted | null;
+    };
+    AuditRecord: {
+      action: string;
+      actor: components['schemas']['AuditActor'];
+      after: {
+        [key: string]: unknown;
+      } | null;
+      before: {
+        [key: string]: unknown;
+      } | null;
+      id: string;
+      ip: string | null;
+      pii_subject: components['schemas']['AuditPiiSubject'] | null;
+      reason: Untrusted | null;
+      request_id: Untrusted | null;
+      /** @enum {string} */
+      result: 'success' | 'failure' | 'rejected';
+      target: components['schemas']['AuditTarget'];
+      /** Format: date-time */
+      ts: string;
+      user_agent: Untrusted | null;
+    };
+    AuditTarget: {
+      id: string | null;
+      name: Untrusted | null;
+      type: string | null;
     };
     ChannelView: {
       allow_http: boolean;
@@ -2635,6 +2887,49 @@ export interface components {
       target: Untrusted;
       vendor: Untrusted | null;
     };
+    DeletionAccepted: {
+      /**
+       * Format: int32
+       * @description null: every application
+       */
+      app_id: number | null;
+      /** Format: date-time */
+      from: string;
+      /** Format: uuid */
+      job_id: string;
+      notices: string[];
+      /** @description Always true (13 §9) */
+      rollups_excluded: boolean;
+      /** @enum {string} */
+      status: 'queued';
+      /** @enum {string} */
+      subject_kind: 'user_id' | 'ip';
+      /** @description SHA-256 of the normalised value */
+      subject_sha256: string;
+      /** Format: date-time */
+      to: string;
+    };
+    DeletionRequest: {
+      /**
+       * Format: int32
+       * @description Restrict to one application
+       */
+      app_id?: number;
+      /**
+       * Format: date-time
+       * @description Range start, ISO-8601 UTC
+       */
+      from: string;
+      /** @description The client address, an IPv4 or IPv6 literal */
+      ip?: string;
+      /**
+       * Format: date-time
+       * @description Range end (exclusive), ISO-8601 UTC, at most 30 days after from
+       */
+      to: string;
+      /** @description The user id (normalised like the search) */
+      user_id?: string;
+    };
     EffectiveConfigEntry: {
       key: string;
       remote_allowed: boolean;
@@ -2642,6 +2937,14 @@ export interface components {
       server_value: Untrusted | null;
       source: string | null;
       value: Untrusted | null;
+    };
+    EnvelopeAbout: {
+      data: components['schemas']['About'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeAboutLicenses: {
+      data: components['schemas']['AboutLicenses'];
+      meta: components['schemas']['QueryMeta'];
     };
     EnvelopeAdminUserView: {
       data: components['schemas']['AdminUserView'];
@@ -2719,6 +3022,10 @@ export interface components {
       data: components['schemas']['CsrfResponse'];
       meta: components['schemas']['QueryMeta'];
     };
+    EnvelopeDeletionAccepted: {
+      data: components['schemas']['DeletionAccepted'];
+      meta: components['schemas']['QueryMeta'];
+    };
     EnvelopeEventCreated: {
       data: components['schemas']['EventCreated'];
       meta: components['schemas']['QueryMeta'];
@@ -2779,8 +3086,24 @@ export interface components {
       data: components['schemas']['MeResponse'];
       meta: components['schemas']['QueryMeta'];
     };
+    EnvelopePrivacyJobView: {
+      data: components['schemas']['PrivacyJobView'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopePrivacySettingsView: {
+      data: components['schemas']['PrivacySettingsView'];
+      meta: components['schemas']['QueryMeta'];
+    };
     EnvelopeRefreshResponse: {
       data: components['schemas']['RefreshResponse'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeRetentionUpdated: {
+      data: components['schemas']['RetentionUpdated'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeRetentionView: {
+      data: components['schemas']['RetentionView'];
       meta: components['schemas']['QueryMeta'];
     };
     EnvelopeRotatedKeyView: {
@@ -2801,6 +3124,10 @@ export interface components {
     };
     EnvelopeTestResultView: {
       data: components['schemas']['TestResultView'];
+      meta: components['schemas']['QueryMeta'];
+    };
+    EnvelopeTlsReloadView: {
+      data: components['schemas']['TlsReloadView'];
       meta: components['schemas']['QueryMeta'];
     };
     ErrorGroup: {
@@ -3015,6 +3342,8 @@ export interface components {
     IssuedTokenResponse: {
       /** Format: int32 */
       app_id: number;
+      /** @description The collector address (host:port) agents should use, from the server setting argos.collector.public-address; null when it is not set (the client then uses the host it reached the server on, port 9100) */
+      collector_address: string | null;
       /**
        * Format: date-time
        * @description null: the token does not expire
@@ -3035,6 +3364,14 @@ export interface components {
       token: string;
       /** Format: uuid */
       token_id: string;
+    };
+    JobTable: {
+      done: boolean;
+      mutation_id: string;
+      /** @enum {string} */
+      name: 'xlog' | 'profile_step';
+      /** @description UTC day yyyy-MM-dd */
+      partition: string;
     };
     KillSwitchRequest: {
       enabled: boolean;
@@ -3187,6 +3524,51 @@ export interface components {
       last_attempt_at: string | null;
       name: Untrusted;
     };
+    PrivacyJobView: {
+      /** Format: int32 */
+      app_id: number | null;
+      /** Format: date-time */
+      created_at: string;
+      /** @description Short failure code (e.g. interrupted_by_restart) */
+      error: string | null;
+      /** Format: date-time */
+      finished_at: string | null;
+      /** Format: date-time */
+      from: string;
+      /** Format: uuid */
+      job_id: string;
+      rollups_excluded: boolean;
+      /**
+       * Format: int64
+       * @description Matching rows of xlog and profile_step counted before the mutations were issued; null while they are being issued
+       */
+      rows_affected: number | null;
+      /** Format: date-time */
+      started_at: string | null;
+      /** @enum {string} */
+      status: 'queued' | 'running' | 'done' | 'failed';
+      /** @enum {string} */
+      subject_kind: 'user_id' | 'ip';
+      subject_sha256: string;
+      tables: components['schemas']['JobTable'][];
+      /** Format: date-time */
+      to: string;
+      /** @description e.g. ip_masked_scope */
+      warnings: string[];
+    };
+    PrivacySettingsRequest: {
+      /** @enum {string} */
+      default_ip_mode: 'full' | 'masked' | 'off';
+    };
+    PrivacySettingsView: {
+      /** @enum {string} */
+      default_ip_mode: 'full' | 'masked' | 'off';
+      /**
+       * @description settings: chosen in the setup or through this API; config: argos.privacy.default-ip-mode
+       * @enum {string}
+       */
+      default_ip_mode_source: 'settings' | 'config';
+    };
     /** @description The meta of every response (14 §2.5): request_id and generated_at always, the other fields where the endpoint has them */
     QueryMeta: {
       /** Format: date-time */
@@ -3293,6 +3675,10 @@ export interface components {
       data: components['schemas']['App'][];
       meta: components['schemas']['QueryMeta'];
     };
+    ResponseEnvelopeListAuditRecord: {
+      data: components['schemas']['AuditRecord'][];
+      meta: components['schemas']['QueryMeta'];
+    };
     ResponseEnvelopeListConfigChange: {
       data: components['schemas']['ConfigChange'][];
       meta: components['schemas']['QueryMeta'];
@@ -3368,6 +3754,92 @@ export interface components {
     ResponseEnvelopeXlogSummary: {
       data: components['schemas']['XlogSummary'];
       meta: components['schemas']['QueryMeta'];
+    };
+    RetentionChange: {
+      /** Format: int32 */
+      from_days: number;
+      table: string;
+      /** Format: int32 */
+      to_days: number;
+    };
+    RetentionTable: {
+      /** Format: int64 */
+      bytes: number;
+      /**
+       * Format: int32
+       * @description TTL of the table now; -1: none
+       */
+      current_days: number;
+      /** Format: int32 */
+      desired_days: number;
+      field: string;
+      /** @description Oldest active partition id (yyyyMMdd or yyyyMM); null: empty */
+      oldest_partition: string | null;
+      /** Format: int32 */
+      partitions: number;
+      /** Format: int64 */
+      rows: number;
+      table: string;
+    };
+    RetentionUpdateRequest: {
+      /** @description Must be true when a value becomes shorter: data outside the new retention is dropped */
+      confirm?: boolean;
+      /** Format: int32 */
+      metric_raw_days?: number;
+      /** Format: int32 */
+      profile_days?: number;
+      /** Format: int32 */
+      rollup_1h_days?: number;
+      /** Format: int32 */
+      rollup_1m_days?: number;
+      /** Format: int32 */
+      stat_raw_days?: number;
+      /** Format: int32 */
+      xlog_days?: number;
+    };
+    RetentionUpdated: {
+      /** @description The TTLs were applied to ClickHouse; false: stored, applied at the next start or by argos-admin retention apply */
+      applied: boolean;
+      /** @description Why the values were not applied */
+      apply_error: string | null;
+      changes: components['schemas']['RetentionChange'][];
+      /**
+       * Format: int32
+       * @description Partitions outside a shortened retention, dropped in the background
+       */
+      queued_drops: number;
+      sources: {
+        [key: string]: string;
+      };
+      values: components['schemas']['RetentionValues'];
+    };
+    RetentionValues: {
+      /** Format: int32 */
+      metric_raw_days: number;
+      /** Format: int32 */
+      profile_days: number;
+      /** Format: int32 */
+      rollup_1h_days: number;
+      /** Format: int32 */
+      rollup_1m_days: number;
+      /** Format: int32 */
+      stat_raw_days: number;
+      /** Format: int32 */
+      xlog_days: number;
+    };
+    RetentionView: {
+      /** @description argos.retention.* values */
+      config: components['schemas']['RetentionValues'];
+      /** Format: int32 */
+      pending_drops: number;
+      /** @description Origin of each value: settings (set through this API) or config */
+      sources: {
+        [key: string]: string;
+      };
+      /** @description The ClickHouse tables; null when ClickHouse could not be read */
+      tables: components['schemas']['RetentionTable'][] | null;
+      /** @description The effective retention */
+      values: components['schemas']['RetentionValues'];
     };
     RevokeTokenRequest: {
       reason: string;
@@ -3575,6 +4047,12 @@ export interface components {
       timeouts?: (number | null)[];
       ts: string[];
     };
+    StorageDeadLetter: {
+      /** Format: int64 */
+      blocks: number;
+      /** Format: int64 */
+      bytes: number;
+    };
     StorageDisk: {
       /** Format: int64 */
       free_bytes: number;
@@ -3587,6 +4065,7 @@ export interface components {
     StorageHealth: {
       /** Format: int64 */
       active_parts: number;
+      dead_letter: components['schemas']['StorageDeadLetter'] | null;
       /** Format: int64 */
       delayed_inserts: number | null;
       /** Format: int64 */
@@ -3645,6 +4124,15 @@ export interface components {
        * @description HTTP status, or the SMTP reply code; null without an answer
        */
       status_code: number | null;
+    };
+    TlsReloadView: {
+      /** @enum {string} */
+      listener: 'grpc';
+      /** Format: date-time */
+      not_after: string;
+      reloaded: boolean;
+      /** @description Serial number of the certificate, lower-case hex */
+      serial: string | null;
     };
     Trace: {
       critical_path: string[];
@@ -4073,6 +4561,46 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  about_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeAbout'];
+        };
+      };
+    };
+  };
+  about_licenses_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeAboutLicenses'];
+        };
+      };
+    };
+  };
   admin_config_get: {
     parameters: {
       query?: never;
@@ -4222,6 +4750,69 @@ export interface operations {
       };
     };
   };
+  admin_audit_list: {
+    parameters: {
+      query: {
+        from: string;
+        to: string;
+        /** @description Actor id or name (exact) */
+        actor?: string;
+        /** @description Event name (16 §11.1) */
+        action?: string;
+        target_type?: string;
+        target_id?: string;
+        cursor?: string;
+        /** @description Rows of a page, at most 500 (default 100) */
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseEnvelopeListAuditRecord'];
+        };
+      };
+    };
+  };
+  admin_audit_export: {
+    parameters: {
+      query: {
+        from: string;
+        to: string;
+        actor?: string;
+        action?: string;
+        target_type?: string;
+        target_id?: string;
+        /** @description csv (the default) */
+        format?: 'json' | 'csv';
+        /** @description IANA time zone of the CSV times */
+        tz?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The CSV file */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/csv': string;
+        };
+      };
+    };
+  };
   admin_config_changes_get: {
     parameters: {
       query?: never;
@@ -4360,6 +4951,140 @@ export interface operations {
       };
     };
   };
+  privacy_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DeletionRequest'];
+      };
+    };
+    responses: {
+      /** @description Accepted */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeDeletionAccepted'];
+        };
+      };
+    };
+  };
+  privacy_job: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopePrivacyJobView'];
+        };
+      };
+    };
+  };
+  settings_privacy: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopePrivacySettingsView'];
+        };
+      };
+    };
+  };
+  settings_update_privacy: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PrivacySettingsRequest'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopePrivacySettingsView'];
+        };
+      };
+    };
+  };
+  settings_retention: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeRetentionView'];
+        };
+      };
+    };
+  };
+  settings_update_retention: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RetentionUpdateRequest'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeRetentionUpdated'];
+        };
+      };
+    };
+  };
   storage_health_get: {
     parameters: {
       query?: never;
@@ -4376,6 +5101,26 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseEnvelopeStorageHealth'];
+        };
+      };
+    };
+  };
+  admin_tls_reload: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['EnvelopeTlsReloadView'];
         };
       };
     };

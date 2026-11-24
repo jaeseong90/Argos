@@ -41,8 +41,8 @@ import java.util.concurrent.atomic.LongAdder;
  *   <li>{@code argos_agent_scope_chain_cut_total}: activations that found 64 unclosed bindings on
  *       their thread and started a new chain (10 §14 "상한", {@code TracerImpl.activate})
  *   <li>{@code argos_agent_user_id_skipped_total{reason}}: {@link #USER_ID_SKIPPED_REASONS},
- *       transactions whose user id was not recorded ({@code hashed} without salt, {@code mdc:}
- *       source before WO-18; ADR-0010 C-125)
+ *       transactions whose user id was not recorded ({@code hashed} without salt; an {@code mdc:}
+ *       source whose key no log event of the transaction carried; ADR-0010 C-125)
  * </ul>
  */
 public final class AgentCounters {
@@ -65,13 +65,16 @@ public final class AgentCounters {
   /** {@code user_id_skipped_total{reason}}: {@code hashed} without a salt (ADR-0010 C-125). */
   public static final String USER_ID_SKIPPED_NO_SALT = "no_salt";
 
-  /** {@code user_id_skipped_total{reason}}: an {@code mdc:} source before WO-18 (C-125). */
-  public static final String USER_ID_SKIPPED_MDC_UNSUPPORTED = "mdc_unsupported";
+  /**
+   * {@code user_id_skipped_total{reason}}: a transaction ended without a value of the {@code
+   * mdc:<key>} source (no log event of the transaction carried the key; ADR-0010 C-125 (3), WO-18).
+   */
+  public static final String USER_ID_SKIPPED_MDC_ABSENT = "mdc_absent";
 
   /** Reasons of {@code argos_agent_user_id_skipped_total} (ADR-0010 C-125). */
   public static final List<String> USER_ID_SKIPPED_REASONS =
       Collections.unmodifiableList(
-          Arrays.asList(USER_ID_SKIPPED_NO_SALT, USER_ID_SKIPPED_MDC_UNSUPPORTED));
+          Arrays.asList(USER_ID_SKIPPED_NO_SALT, USER_ID_SKIPPED_MDC_ABSENT));
 
   static final String DROPPED = "argos_agent_dropped_total";
   static final String IGNORED = "argos_agent_ignored_total";
@@ -87,6 +90,9 @@ public final class AgentCounters {
   static final String PROFILE_DROPPED = "argos_agent_profile_dropped_total";
   static final String SCOPE_CHAIN_CUT = "argos_agent_scope_chain_cut_total";
   static final String USER_ID_SKIPPED = "argos_agent_user_id_skipped_total";
+
+  /** Self metric of {@link #stackCaptureSeconds()} (10 §11 "에이전트 자기", §13.1). */
+  public static final String STACK_CAPTURE_SECONDS = "argos_agent_stack_capture_seconds_total";
 
   /** Step types that can be orphans: SQL (1) .. MESSAGE (10), index = type. */
   private static final int STEP_TYPES = StepType.MESSAGE + 1;
@@ -105,6 +111,8 @@ public final class AgentCounters {
   private final LongAdder profileDropped = new LongAdder();
   private final LongAdder scopeChainCut = new LongAdder();
   private final LongAdder[] userIdSkipped = adders(USER_ID_SKIPPED_REASONS.size() + 1);
+  private final LongAdder stackCaptureNanos = new LongAdder();
+  private final LongAdder stackCaptures = new LongAdder();
 
   /** Module id to module name ({@link #setModuleNames}); null slots are not reported. */
   private final AtomicReferenceArray<String> moduleNames =
@@ -226,6 +234,32 @@ public final class AgentCounters {
 
   public long userIdSkipped(String reason) {
     return userIdSkipped[index(USER_ID_SKIPPED_REASONS, reason)].sum();
+  }
+
+  /**
+   * One slow-stack cycle of {@code argos-watch} (10 §13.1, WO-19): {@code stacks} stacks taken in
+   * {@code nanos} nanoseconds (the batched {@code getThreadInfo}, the virtual-thread stacks and the
+   * STACK steps written). Kept apart from {@link #snapshot()} (a long map): {@link
+   * #stackCaptureSeconds()} is {@value #STACK_CAPTURE_SECONDS} in the self metrics and {@code
+   * stack_capture_seconds_total} in the self-diagnostics.
+   */
+  public void addStackCapture(long nanos, int stacks) {
+    if (nanos > 0) {
+      stackCaptureNanos.add(nanos);
+    }
+    if (stacks > 0) {
+      stackCaptures.add(stacks);
+    }
+  }
+
+  /** Seconds spent taking slow stacks since start ({@value #STACK_CAPTURE_SECONDS}). */
+  public double stackCaptureSeconds() {
+    return stackCaptureNanos.sum() / 1e9;
+  }
+
+  /** Slow stacks taken since start. */
+  public long stackCaptures() {
+    return stackCaptures.sum();
   }
 
   // --- reads ----------------------------------------------------------------------------------

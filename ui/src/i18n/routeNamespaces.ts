@@ -42,6 +42,19 @@ export const ROUTE_NAMESPACES: Readonly<Record<string, readonly LazyNamespace[]>
   'alert-rule-new': ['alerts'],
   'alert-rule': ['alerts'],
   'alert-channels': ['alerts'],
+  // Administration screens (WO-39).
+  'admin-apps': ['admin'],
+  'admin-pending': ['admin'],
+  'admin-instances': ['admin'],
+  'admin-tokens': ['admin'],
+  'admin-users': ['admin'],
+  licenses: ['admin'],
+  about: ['admin'],
+  'admin-config': ['admin'],
+  'admin-audit': ['admin'],
+  'admin-privacy': ['admin'],
+  // Global search (WO-39 lane B).
+  search: ['search'],
   // /tx/:txId deep-link alias (routeTree.tsx), before it redirects to the transaction screen.
   'tx-alias': ['tx'],
   // WO-04 PoC page, outside production builds (ADR-0010 C-203).

@@ -726,11 +726,16 @@ WO 수락 기준은 아래 ID를 인용한다. 번호는 예약이며 구현 시
 | T-AG-065 | MDC 주입 4프레임워크, 앱 `MDC.clear()` 무영향 | 통합 | F-A20 |
 | T-AG-066 | 버전 태그(설정·매니페스트), env 태그 필수 | 통합 | F-A21·A25 |
 | T-AG-067 | AgentBye 후 1초 플러시, 서버 수신 | 통합 | F-A26 |
-| T-AG-068 | `--check` 표·종료 코드(연결·TLS·토큰·시계·JDK) | 통합 | F-A27 |
+| T-AG-068 | `--check` 표·종료 코드(연결·TLS·토큰·시계·JDK) (WO-19: 릴리스 jar `CheckCliTest` 정상 0·토큰 거부 1·신뢰 못 하는 CA 1·시계 2초 WARN 0·연결 실패 1·사용법 2, `--json`·`--classpath shop-boot3.jar`, 8u242는 JRE 경로가 있을 때만) | 통합 | F-A27 |
 | T-AG-069 | 하드 캡: 불허 키 거부·허용 키 적용 | 통합 | SEC-23 |
 | T-AG-070 | JDK 17·21·25 `HttpURLConnection`·`ThreadPoolExecutor`·`CompletableFuture` 계측 `IllegalAccessError` 0 | 매트릭스 | F-A31 |
 | T-AG-071 | 전송: in-flight ≤ 4, `isReady` 백프레셔, 큐 초과 드롭·카운터, `batch_seq` 단조, 8u252 TLS | 통합 | DSN-02-11 |
 | T-AG-072 | 환경 덤프 마스킹 30케이스 + 시드 0건 | 통합 | SEC-20 |
+| T-AG-053a | (쌍 15 마무리, ADR-0010 C-240 (6)) 모든 `ContextStore`가 약한 맵 항목 예산 하나를 나눠 쓴다(기본 100,000 = 측정값 74 B/항목으로 약 7.06 MiB, 10 §14 기타 12 MB 안): 예산을 넘는 새 키는 어느 저장소에서든 버리고 저장소·예산 양쪽에 셈, 저장소별 상한 유지, 값 교체는 새 단위를 쓰지 않고 제거·정리는 단위를 돌려준다(`ContextStoreTest`) | 단위 | N-02 |
+| T-AG-059a~d | (WO-19, ADR-0010 C-222 (1)·C-237 (6)) a: 예외로 끝난 트랜잭션에 최상위 ERROR step 하나(CLASS 이름, 요약 모드에서는 없음, `getStackTrace` 실패에도 트랜잭션 종료, `ErrorStepTest`) / b: ERROR step 프레임은 `capture.stack-depth` 앞쪽, 30개 상한(`ErrorFrameAssemblerTest`) / c: `error_top_frame_id` = 첫 앱 프레임(줄 번호 없는 FRAME id, 전체 스택 탐색, 에이전트 자신 제외, 패키지 접두는 세그먼트 단위, 원격 `instrumentation.app-packages` 즉시 적용, `TopFrameTest`·`AppPackagesPushTest`) / d: Throwable 없는 에러 상태(sendError 500·에러 클래스 문자열)는 ERROR step 없이 에러 표시, 실앱(`ErrorStackE2eTest` boot3@21·boot2@8) | 단위·통합 | F-A06, F-U07 |
+| T-AG-064a~g | (WO-19, ADR-0010 C-240) a: 사이클당 트랜잭션 ≤ 10, 트랜잭션당 표본 ≤ 5, 간격(`transaction.slow-stack.interval-ms`) 뒤에만 새 표본 / b: 플랫폼 스레드는 사이클당 일괄 `getThreadInfo(long[], depth)` 1회 / c: 깊이 64(`transaction.slow-stack.depth`), STACK step은 요약하지 않음 / d: 가상 스레드는 배치 밖에서 `Thread.getStackTrace`로 하나씩(`SlowStackVirtualThreadTest` JDK 21·25) / e: 사이클 비용 → `argos_agent_stack_capture_seconds_total`, 원격 `enabled=false` 다음 틱 정지·비용 초과 자동 비활성(`SlowStackWatcherTest`, 실앱 `SlowStackE2eTest` boot3@21 SAMPLE_VT) / f: 에이전트 스레드 CPU가 1분 창에서 호스트의 1% 초과 → `normal-rate` 절반·`SELF_CPU_HIGH` 1회·WARN, 5분 평온 뒤 복귀, 서버 스로틀과 낮은 쪽 우선(`OverheadMonitorTest`) / g: (쌍 15 마무리, C-240 (3)) 개발 빌드 전용 키 `argos.test.overhead-monitor=off`는 OverheadMonitor를 argos-watch 작업에서 뺀다, 릴리스 빌드는 모든 출처에서 T-BLD-010 WARN과 함께 버린다(`ConfigLoaderTest`·`OverheadMonitorTest`), 하네스는 `normal-rate=1.0` 전제 실행에만 켠다(`HarnessPartsTest`) | 단위·통합 | F-A19, N-01, DSN-18-15 |
+| T-AG-066a~d | (WO-19) a: 매니페스트 `Implementation-Version` → `app.version`(Hello·모든 레코드) / b: 설정한 `app.version`이 매니페스트보다 우선 / c: `app.env` 없으면 `default`와 WARN 1줄 / d: env가 Hello와 모든 레코드에(`AppVersionTest`·`AppTagsTest`, 실앱 `[wo19-tags]`) | 단위·통합 | F-A21, F-A25 |
+| T-AG-068a | (WO-19, 10 §13.3) `--check` 판정 단위: 설정(주소·토큰 없음 FAIL), DNS·TCP 실패 FAIL, TLS 실패 분류(호스트 이름·신뢰·만료·TLS 아님)와 만료 30일 WARN, 토큰 형식, Hello 거부 사유·조언·승인 대기 FAIL·시계 WARN, JDK 판정(01 §8), `--classpath` 호환표, `--json` 객체 하나, 종료 코드 0·1·2, `--version` 한 줄, 출력 ASCII, 토큰 마스크 `argos_****`(C-94, `CheckCommandTest`) | 단위 | F-A27 |
 
 ### A.2 서버 (T-SV)
 
@@ -796,6 +801,26 @@ WO 수락 기준은 아래 ID를 인용한다. 번호는 예약이며 구현 시
 | T-SV-047 | 자기 메트릭 Prometheus 노출·인증 | 통합 | F-S20, SEC-55 |
 | T-SV-048 | 설정 토큰 부트스트랩·비밀번호 정책·잠금 | 보안 | SEC-47·48 |
 | T-SV-049 | 금지 DB 비밀번호 기동 거부 | 보안 | SEC-74 |
+| T-SV-044a~f | (WO-28, ADR-0010 C-238 (5)) a: 감사 카탈로그 74개 스냅샷(`AuditCatalogTest`, 커밋본 `audit-catalog.txt`) / b: 한 기록이 `audit_logs`와 JSONL 파일에 같은 ts·열 이름으로(`AuditSinksIT`) / c: syslog UDP·TCP(옥텟 카운팅) RFC 5424, SD-ID `argos@32473`, MSGID = 이벤트 / d: PG가 받지 못하면(잠금 5초 초과) 로그인은 성공하고 폴백 파일·다른 싱크에 남으며 `argos_audit_write_failures_total` 증가 / e: `GET /admin/audit` 대상·행위 필터, 최신순, 키셋 커서(다른 필터의 커서 거부, `AuditApiIT`) / f: 에이전트 감사 3종(`AGENT_SESSION_REJECTED`·주소당 분당 상한 `AGENT_AUTH_FAILED`·`AGENT_AUTH_BLOCKED`), gRPC 응답이 감사 저장을 기다리지 않음(`AgentAuditIT`) | 통합·보안 | SEC-80~82 |
+| T-SV-045a~d | (WO-28, 13 §9) a: user_id 조건은 plain 값과 앱별 HMAC hashed 값, 값은 텍스트로 나타나지 않음(`DeletionQueriesTest`) / b: 뮤테이션은 하루 `DELETE IN PARTITION ID`, profile_step은 같은 조건의 xlog 트랜잭션(xlog보다 먼저) / c: 모든 앱의 plain·hashed 트랜잭션과 step 삭제, 롤업 유지, 작업 queued → running → done(`PrivacyDeletionIT`, 실제 CH·PG) / d: IP 삭제는 전체 주소 행과 그 /24의 masked 행, 경고 `ip_masked_scope` | 단위·통합 | F-S32, SEC-33 |
+| T-SV-046a~e | (WO-28, 13 §8, C-238 (1)(6)) a: 저장소 상태 잡 게이지 = 읽은 system 테이블(`StorageHealthIT`) / b~d: 비상 보존(`argos.testing.disk-usage-file`로 사용률 주입) 0.9부터 13 §8 순서로 하루 파티션씩 DROP·0.85 멈춤·0.96 삽입 정지(WAL 유지)·0.92 재개 뒤 전량 적재, 오늘 파티션은 DROP 안 함(`EmergencyRetentionIT`) / e: 결정적 거부 3회 블록은 0600 dead-letter 파일, 행은 `argos_collector_dropped_total{reason="dead_letter"}`(`DeadLetterIT`) | 통합·카오스 | F-S22·S23 |
+| T-SV-047a~c | (WO-28, 12 §9.4, C-238 (13)) a: 8081 `/actuator/prometheus` 베어러 토큰으로 12 §9.4 이름 전수와 WO-28 이름(`argos_server_tls_cert_expiry_seconds{listener="grpc"}`, `argos_self_metrics_write_failures_total`, `argos_ch_memory_tracking_bytes`) / b: 토큰 없음·틀림 401, HTTP 포트에 없음 404 / c: 서버 미터를 metric app_id 0(instance 0, env '')에 5초 격자로 기록, `/server/health`·수집 건강이 값을 돌려줌(`SelfMetricsIT`) | 통합 | F-S20, SEC-55 |
+| T-SV-053a~o | (WO-28, 17 §4.4, `argos-admin` 서브커맨드별 `--json`·종료 코드·감사) a~c: `secrets rekey`(모든 비밀 열 재암호화)·별칭 `master-key rotate --new-key-file`·모르는 키 행 유지 exit 1·키 없음·인자 오류 exit 2(`AdminCliSecretsIT`) / d~f: `retention show|apply`(PG settings 우선, MODIFY TTL·보존 밖 DROP, RETENTION_CHANGED by argos-admin, 종료 코드, `RetentionApplyIT`) / g~o: `migrate`(멱등)·`config effective|check`·`cleanup instances|dictionary|commands`·`token issue|rotate|revoke`·`setup-token regenerate`·`tls reload`·`bundle`·`version`(감사 없음, C-238 (10)) (`AdminCliOpsIT`) | 통합 | DSN-17-14 |
+| T-SV-019a~d | (WO-28 이월, ADR-0010 C-220 (3)) a: `argos.ops.reconcile.enabled`(기본 true, false면 야간 정합 미예약, `ReconcileJobScheduleTest`) / b: `rollup rebuild` 실행마다 ROLLUP_REBUILT(성공·busy·usage) / c: 정합 검사 CONSISTENCY_CHECKED(cron은 system, 명령은 argos-admin, 결과별) / d: `apdex reapply` APDEX_REAPPLIED(범위·재기록 행 수) | 단위·통합 | D-14, F-S22 |
+| T-SV-023a | (WO-28, ADR-0010 C-236 (2), 12 §4.2) 보관된 인스턴스의 instance_down 알림은 다음 정리에서 RESOLVED `target_gone`, 보관 전에는 FIRING 유지(`AlertInstanceStateIT`) | 통합 | F-S25 |
+| T-SV-040k | (WO-28, C-231 (9)) 토큰 발급·회전 응답에 `collector_address` = `argos.collector.public-address`(설정 마법사 첫 앱 스니펫이 사용), 토큰 목록에는 없음(`SelfMetricsIT`) | 통합 | F-S30 |
+| T-SV-043c | (WO-28, C-231 (7)) 홈 앱 등록 정책이 `argos.agent.auto-register.<env>`보다 우선, NULL이면 환경 기본(`RegistrationPolicyIT`) | 통합 | F-S30 |
+| T-SEC-06g·06h | (WO-28, 17 §4.4) g: 풀어 낸 진단 번들 어느 항목에도 심은 비밀값(에이전트 토큰·DB 비밀번호·마스터 키·웹훅 URL·메트릭 토큰·설정 토큰) 없음, 토큰은 `argos_****`만, 문서화한 구획(`DiagnosticBundleSecurityTest`, 0600은 POSIX만) / h: 마스킹 규칙·로그 기간 절단(`BundleMaskingTest`·`TarGzWriterTest`) | 보안·단위 | SEC-06 |
+| T-SEC-09a~d | (WO-28, 16 §3.1, C-238 (9)) a: 만료 7일 인증서 → `argos_server_tls_cert_expiry_seconds{listener="grpc"}`·서버 규칙 인증서 만료 FIRING / b: 파일 교체 → 재기동 없이 새 인증서(일련번호), 기존 세션 유지, TLS_RELOADED(system, watch) / c: 암호화 PKCS#8 키 + `key-password-file`, 비밀번호는 로그에 없음 / d: `POST /admin/tls/reload` 관리자 전용·TLS_RELOADED(사용자, api), `reload.watch=false`(`CertReloadSecurityTest`) | 보안 | SEC-09 |
+| T-SEC-22b·52c·52d | (WO-28, 16 §8.2, C-226 (2)·C-238 (2)) 52c: 마스터 키 없음·형식 오류·그룹/타인 읽기(0644) → KEYS 단계 기동 거부(한 줄, 키·파일 내용 없음, 0644는 POSIX만, `permissive`는 WARN) / 52d·22b: `secrets rekey` 뒤 PG에 평문 비밀값 0, 모든 봉투가 새 kid, 새 키만 둔 서버가 서명 시험 전송·명령 결과 열람·user_id 솔트 유지(`MasterKeySecurityTest`) | 보안 | SEC-22, SEC-52 |
+| T-SEC-32b | (WO-28, C-125 (2)·C-152) Hello에 앱의 32바이트 솔트(세션마다 같고 앱마다 다름), hashed 행을 plain id로 트랜잭션·전역 검색, 다른 앱 솔트로는 못 찾음(`UserIdSaltIT`) | 통합 | SEC-32 |
+| T-SEC-33a~d | (WO-28) a: user_id 삭제(=T-SV-045c) / b: 감사(requested·completed)·작업 행·서버 로그에 SHA-256만, 값 없음 / c: viewer·operator 403, 30일 넘는 범위·대상 2개·호스트 이름 거부 / d: 관리자당 시간당 5건, 6번째 429 + Retry-After, 작업 없음(C-136 (2), `PrivacyDeletionIT`) | 통합·보안 | SEC-33 |
+| T-SEC-52a | (WO-25 세분, WO-28 이름 정리) PG에 평문 URL·수신자·SMTP 비밀번호·서명 키 없음, 봉투는 마스터 키(회전의 이전 키 포함)로 복호화(`AlertChannelSecurityTest`) | 보안 | SEC-52 |
+| T-SEC-80b~d | (WO-28, C-238 (5)(8)) b: 채널 생성·수정·시험 전송·서명 키 회전·삭제 감사(행위자 관리자, URL·키 없음, `ChannelAuditSecurityTest`) / c: 카탈로그 모든 이벤트가 IT·보안 시험에서 `audit_logs` 행으로 단언되거나 사유와 함께 예외(쌍 14 마무리로 예외 0, `AuditCatalogCoverageTest`), CUSTOM_METHOD_CHANGED는 custom-methods 원격 변경의 결과 때 success(적용)·rejected(`rejected_by_agent`, 에이전트 거부) 한 행(`ConfigChangeIT`) / d: 서버 기본 IP 모드 변경 PRIVACY_SETTING_CHANGED 한 행, 잘못된 모드 400·viewer 403(`PrivacyDeletionIT`) | 보안·통합 | SEC-80 |
+| T-SEC-82p·82q | (WO-28, C-116) p: `argos_audit`는 90일 안 감사 파티션 DROP 불가(42501), `argos_app`은 감사 함수 실행 불가 / q: 일일 잡이 감사(365일)·알림 이력 보존 밖 월 파티션을 감사 계정으로 DROP, 현재 월 유지, 두 달 앞 생성(`AuditPartitionJobIT`) | 통합·보안 | SEC-82 |
+| T-SV-022a | (WO-39, ADR-0010 C-218 (3)) WS overview 상태가 REST 기준: 기동 뒤 한 번도 연결하지 않은 인스턴스는 WS push와 `GET /overview`·`GET /apps`에서 같이 DOWN(2/3), 보관한 인스턴스(세션 있는 STALE·추적 안 된 것)는 어디에도 세지 않음(`OverviewStateIT`) | 통합 | F-U17 |
+| T-SEC-33e | (쌍 15 마무리, ADR-0010 C-241 (3)) 삭제 대상은 요청 본문으로만 간다: `POST /admin/privacy/deletions`의 URL에 대상 값 없음, 서버 액세스 로그(이 클래스에서 켠 Tomcat 요청 줄)에 user_id·주소 없음, 옛 쿼리스트링 형태 `DELETE /admin/privacy/subjects`는 404이고 작업을 만들지 않음, 쿼리 매개변수는 읽지 않음(`PrivacyDeletionIT`) | 통합 | SEC-33 |
+| T-SEC-47 (UI) | (WO-39) 관리자가 있으면 설정 마법사가 닫히고, 없거나 쓴 설정 토큰은 토큰 안내와 함께 거부(`auth.spec`) | E2E | SEC-47 |
 
 ### A.3 저장소·API·UI·빌드·NFR (T-ST / T-API / T-UI / T-BLD / T-NFR)
 
@@ -811,11 +836,14 @@ WO 수락 기준은 아래 ID를 인용한다. 번호는 예약이며 구현 시
 | T-ST-052 | 마이그레이션 두 경로·MV 4단계 교체 | N-22 |
 | T-ST-053 | `argos_reader` 쿼리 상한·`system.query_log` 검증 | 03 3.2 |
 | T-ST-054 | 삭제 뮤테이션 소요(일 파티션) | SEC-33 |
+| T-ST-040a~f | (WO-28, C-112·C-238 (3)(12)) a: 보존 대상 테이블 → 보존 키(sql/ext_stat_raw는 stat, metric은 metric), 스테이징 제외 / b: 마지막 행이 오늘 시작(UTC) 전에 만료된 파티션만 보존 밖, 오늘은 제외 / c: API 값이 설정 파일보다 우선, 필드별 단축 감지, 범위 밖 거부(`RetentionPlannerTest`) / d: 기동 시 stat ≠ metric TTL 적용, RETENTION_CHANGED(system) / e: 연장은 MODIFY TTL, part 재작성 0 / f: 단축은 confirm 없으면 400, 있으면 TTL 변경 + 보존 밖 파티션 DROP(분당 10개 상한, `RetentionApplyIT`) | N-08 |
+| T-ST-040g | (WO-39, ADR-0010 C-238 (3)) `PUT /admin/settings/retention` 뒤 재기동 없이 조회 경계가 바뀐다(xlog 30 → 3일: 5일 전 범위가 경계 밖), 모든 계열의 원본·롤업 보존이 유효값, 읽을 수 없는 저장값은 마지막 값 유지(`RetentionQueryBoundaryIT`·`QuerySourcesTest`) | N-08 |
 | T-API-001 | OpenAPI 린트·`x-argos-role` 전수 | SEC-49 |
 | T-API-002 | 호환 diff가 breaking 탐지(필드 제거·타입 변경) | O-R03 |
 | T-API-003 | 소스 선택 규칙·`source` 응답·마지막 2분 원본 | 02 §6.3 |
 | T-API-004 | 범위 상한·행 제한·타임아웃·에러 본문 표준 | 03 3.2 |
 | T-API-005 | ID 단건 조회(ts 복원), trace 24h 기본 | D-11 |
+| T-API-005b | (쌍 15 마무리, ADR-0010 C-223 (1)(2)) trace 호출자: 들어온 traceparent의 parent span id가 trace 안 트랜잭션의 span_id면 그것이 호출자(Argos tracestate의 호출 앱과 같을 때), 없을 때만 시간 덮기. 같은 밀리초에 시작한 호출자와 첫 피호출자가 다음 피호출자를 함께 덮어도 각 피호출자가 자기 호출자·호출 step을 얻는다(`TraceServiceTest`, 실스택 시드 timeout hop trace) | D-11, F-U10 |
 | T-API-006 | XLog 10만 점 초과 결정적 샘플링 `shown/total` | A-5 |
 | T-API-007 | WS 프레임 스키마·구독 상한·인증 | SEC-44 |
 | T-API-007a | WS 클라이언트 프레임(14 §5.2) 파싱: subscribe·unsubscribe·ping, 잘못된 프레임은 `invalid_params`(유효한 id는 유지, 보낸 값은 되돌리지 않음) | SEC-44 |
@@ -828,7 +856,9 @@ WO 수락 기준은 아래 ID를 인용한다. 번호는 예약이며 구현 시
 | T-API-011a | (WO-36, ADR-0010 C-222 (3)·(9)) sql·external 통계 `sort=p95_ms`가 행의 버킷 p95(C-14) 순서(내림·오름), 생성기 데이터에서도 내림차순(`StatsScreenParamsIT`, 실제 CH·PG) | F-U05·U06, 14 §4.8 |
 | T-API-011b | (WO-36, C-222 (3)·(9)) errors/groups `compare_prev`: `delta.count` = (현재 − 직전) / 직전, 직전 0이면 null, 생성기 데이터에서 직접 계산한 값과 일치 | F-U07, 14 §4.8 |
 | T-API-011c | (쌍 9 마무리, ADR-0010 C-222 (7)) `external/{hostId}` 시계열에 버킷별 `timeouts`·`connect_failures`(덮인 빈 버킷 0), 다른 통계 시계열에는 없음(`StatsScreenParamsIT`, 실제 CH·PG). 14 §4.8 정정(비파괴 가산) | F-U05, 14 §4.8 |
+| T-API-011d | (쌍 14 마무리, ADR-0010 C-237 (8), D-20) `services/stats`에서 BATCH 트랜잭션은 Apdex에 넣지 않는다: BATCH만 있는 서비스는 `kind=BATCH`·`ALL`에서 `apdex` null, HTTP·BATCH가 섞인 서비스는 HTTP 건수로만 계산, HTTP 결과 불변, `sort=apdex`에서 null 행은 마지막, CSV apdex 칸 비움(`StatsScreenParamsIT`, 실제 CH·PG). UI는 null을 '—'(`ServicesPage.test`) | D-20, F-U05, 14 §4.8 |
 | T-API-012a | (WO-38, ADR-0010 C-227 (3)·C-228 (2)(7)) 알림 응답 추가 필드: 실제 엔진의 모든 이벤트에 `reason`(닫힌 목록, V009 이전 행 null), events·`/overview/alerts`·대시보드 `firing[]`의 `rule` {id, name, metric, unit}, 규칙 이력 `changed_by_name`, `AlertRuleRef.metric`·`unit` 열거값 = `AlertMetric`(`AlertsApiIT`, `AlertSchemaEnumsTest`) | F-S17, F-S26 |
+| T-API-013a~c | (WO-39, ADR-0010 C-241 (1)) a: `GET /about`(버전·커밋 = `X-Argos-Server-Version`, 프로토콜, `agent_versions[{version,count}]`, 가동 시간)·`GET /about/licenses`(server·ui·agent 구획, 생성 목록 없으면 `available=false`·`reason=not_generated`, 형식 오류 `unreadable`, 5,000개 넘으면 `truncated`, 네트워크 없음) / b: `GET /apps`·`/apps/{id}`의 `tokens_active`(활성 + 회전 유예, `AppsAdminIT`) / c: 액티브 경과 색 기본 임계 `argos.ui.active-thresholds-ms`(기본 1000·3000·8000, 잘못된 값은 기본값), REST에만 `default_thresholds_ms`(`ActiveThresholdsTest`) | O-R12, O-L04, F-U04 |
 | T-UI-001 | XLog 좌표·선택 영역 계산·결정적 샘플 표시 | F-U02 |
 | T-UI-002 | 시간 범위 상태 리듀서(드래그·프리셋·이동·실시간 해제) | 05 §2.0 |
 | T-UI-003 | URL ↔ 상태 직렬화·스키마 검증·1KB 상한 | F-U14, SEC-64 |
@@ -861,6 +891,13 @@ WO 수락 기준은 아래 ID를 인용한다. 번호는 예약이며 구현 시
 | T-E2E-alerts-30~40 | `required/alerts.yaml`의 05 §2.4-1~5·§2.9-1~6 체크리스트(필수): 편집기 전 필드·허용 변수만, 7일 미리보기(500ms 디바운스) = API, 템플릿 생성·변경 표시, 복제·비활성≠삭제·이력 = API, 채널 목적지 검증·마스킹·테스트 전송, FIRING·ACKED 고정·채널 상태, 10열 = /alerts/events, 필터 = 서버 매개변수, 행 동작, 7·30일 통계 = /alerts/stats, 전체 현황 → 전 앱 이력 | F-S17, F-S24~27, 05 §2.4·§2.9 |
 | T-E2E-057·058 | (WO-26, C-136 (3)·C-153) 057: 설정 마법사 첫 앱 단계가 앱을 등록하고 에이전트 토큰을 1회 표시(다시 볼 수 없음) / 058: `/account`가 본인 세션을 현재 표시와 함께 나열하고 다른 세션을 즉시 종료(실서버) | F-S30, SEC-42 |
 | T-E2E-async-1~3 | (WO-15, ADR-0010 C-232 (6)(8), 실서버 shop-boot3 + 에이전트) 1: executor·CompletableFuture·@Async SQL이 요청 트랜잭션 상세에 step으로(타임라인·요약 = API) / 2: 호출 트리가 각 비동기 분기의 SQL 행을 API대로 / 3: 가상 스레드(SAMPLE_VT, JDK 21) 요청의 CPU·할당 'Not measurable'·VT 배지(JVM 없는 e2e:docker에서는 skip) | F-A07, F-A30, D-23 |
+| T-E2E-admin-1~13 | 관리 화면(WO-39, ADR-0010 C-241): `required/admin.yaml`의 05 §2.11-1~10(앱 8열·인스턴스 9열·승인 대기·토큰·설정 변경·킬 스위치·설치 안내·수집 상태 순위·개인정보·라이선스)과 15 §9.10-1~3(사용자·감사·about) 체크리스트(필수) | F-S29, F-S30, 05 §2.11 |
+| T-E2E-admin-20~29 | 20: T-ACPT-07 자동 부분(새 앱·설치 안내·토큰 1회 표시로 실제 에이전트 부착) / 21: T-ACPT-18 자동 부분(원격 허용 키 변경·사유·diff = 미리보기·적용·이력·되돌리기, 로컬 키 잠금·422) / 22: 킬 스위치(취소 시 요청 0, 켜면 WARN kill_switch) / 23: 승인 대기(같은 앱 이름의 새 env, 승인 시 토큰 1회) / 24: 토큰 회전 7일 유예·폐기 경고·세션 종료 / 25: 사용자 생성·첫 비밀번호 변경 강제·역할 메뉴·세션 종료 / 26: 감사 행 = `GET /admin/audit`, CSV / 27: 개인정보 4모드 = API, 삭제 요청 done(대상은 본문에만, C-241 (3)) / 28: 수집 상태 순위 = API, 대시보드 '제외 N' 링크(C-211 (2)) / 29: about·licenses = API | F-S29, F-S30, SEC-33, T-ACPT-07·18 |
+| T-E2E-admin-40~43 | 관리 화면 시각 기준 이미지(e2e:docker): 앱 목록·설정 diff 대화상자·1회 표시 토큰(값 가림)·서버가 요청을 거부할 때(4xx, 요청 ID)의 앱 목록 | F-U16, 05 §2.0 |
+| T-E2E-search-1~8 | 전역 검색(WO-39): 1 tx id 한 건이면 바로 상세 / 2 trace id → trace 화면 / 3 T-ACPT-12 `user:<id>` 범위 결과 = `GET /search` / 4 24시간 넘는 request id 검색은 보내지 않고 범위 축소 안내 / 5 텍스트 검색의 서비스·SQL·인스턴스 = API / 6 결과 없음과 다음 행동 / 7 user id를 수집하지 않는 인스턴스 안내 / 8 Ctrl+K·Enter → `/search?q=`, 뒤로 | F-U15, T-ACPT-12 |
+| T-E2E-search-30~33 | `required/search.yaml`의 15 §9.12-1~4 체크리스트(필수): 입력 해석 표시, tx id 한 건 즉시 이동, 텍스트 결과 = API, user·request id는 24시간 이내 | F-U15 |
+| T-E2E-roles-1~3 | (WO-39) 조회자·운영자·관리자: 측면 메뉴 = 16 §7.10 표(하드코딩 기대표), 숨긴 화면 URL 거부, 상위 쓰기 403, 쓰기 버튼이 역할을 따름(`roles.spec`) | SEC-42, 16 §7.10 |
+| T-E2E-dashboard-5 | (WO-39, ADR-0010 C-217 (2)) `required/dashboard.yaml` 5번째 항목(05 §2.3-3): 인스턴스 타일의 STALE(노랑)·WARN(주황 테두리)이 API 상태와 같음 | F-U03, 05 §2.3 |
 | T-BLD-001 | major version 52 전수 | 03 3.1 |
 | T-BLD-002 | jar 클래스는 `io.argos.`·`io.argos.agent.shaded.`만 | 03 3.1 |
 | T-BLD-003 | `META-INF` LICENSE·NOTICE·THIRD-PARTY-NOTICES·argos-deps.txt·sbom 존재·형식 | O-L04, SEC-77 |
@@ -873,7 +910,9 @@ WO 수락 기준은 아래 ID를 인용한다. 번호는 예약이며 구현 시
 | T-BLD-010 | 릴리스 빌드에서 `argos.test.*`·`argos.testing.*` 무시 | DSN-18-15 |
 | T-BLD-011 | 에이전트 네트워크 클래스 참조 허용 목록(gRPC 채널만) | N-17 |
 | T-BLD-012 | `NOTICE` 차용 코드 출처 린트(헤더 ↔ NOTICE 대조) | O-L05 |
+| T-BLD-017 | (WO-19, ADR-0010 C-240 (8)) 계측 모듈 README 린트: 필수 절·지원 범위·시험 클래스 이름이 실제로 있음(위반 픽스처 13, `ModuleReadmeLintTest`) | O-R03 |
 | T-NFR-01~04, 26~30 | 7장 벤치 하네스 판정 | N-01~04, N-26~30 |
+| T-NFR-30 (부착 시험) | (WO-19, ADR-0010 C-240 (7)) `PremainTimeAttachTest`: premain ≤ 500ms·배너 1줄·stdout 0(JDK 8·21), 공유 머신은 최대 3회 중 최솟값의 참고 판정, N-30 판정은 WO-51 전용 장비 | N-30 |
 | T-NFR-06 | 8장 1시간 부하 | N-06 |
 | T-NFR-07·24 | 30일 데이터 조회 응답(Q1·Q3·Q5·Q7·Q8, ID 검색) | N-07, N-24 |
 | T-NFR-12·17 | 에어갭 설치·egress 0 | N-12, N-17 |

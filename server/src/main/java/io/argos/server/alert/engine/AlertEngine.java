@@ -702,43 +702,67 @@ public final class AlertEngine implements SmartLifecycle {
    * restart). The {@code alert} push of the RESOLVED transition carries {@code reason:
    * target_gone}.
    *
+   * <p>The instance units of the event rule {@code instance_down} ({@link
+   * AlertMetric#INSTANCE_STATE}) are resolved the same way when their instance is archived or
+   * deleted (ADR-0010 C-236 (2), 12 §4.2), found by the housekeeping pass only; a DOWN transition
+   * or a stored DOWN is what fires them and never resolves them.
+   *
    * @param down instances that just became DOWN, or null to look up every candidate's instance
    */
   private void resolveGoneTargets(Set<Integer> down, long now) {
     Map<Integer, List<UnitState>> candidates = new LinkedHashMap<>();
+    Map<Integer, List<UnitState>> downCandidates = new LinkedHashMap<>();
     for (UnitState s : units.values()) {
       LoadedRule lr = rules.get(s.ruleId);
       if (lr == null
           || s.targetType != TargetType.INSTANCE
           || s.targetId == null
           || !s.state.active()
-          || lr.spec.noData() != RuleSpec.NoData.IGNORE
-          || lr.metric.source() == AlertMetric.Source.EVENT
           || lr.metric == AlertMetric.ARGOS_NOTIFICATION_FAILURES_TOTAL) {
         continue;
       }
       int id = s.targetId.intValue();
+      if (lr.metric.source() == AlertMetric.Source.EVENT) {
+        // instance_down: only an archived or deleted instance is gone (C-236 (2)).
+        if (lr.metric == AlertMetric.INSTANCE_STATE && down == null && !registry.live(id)) {
+          downCandidates.computeIfAbsent(id, k -> new ArrayList<>()).add(s);
+        }
+        continue;
+      }
+      if (lr.spec.noData() != RuleSpec.NoData.IGNORE) {
+        continue;
+      }
       // A DOWN transition is trusted as is; the stored state only without a session (it may lag
       // a reconnect).
       if (down != null ? down.contains(id) : !registry.live(id)) {
         candidates.computeIfAbsent(id, k -> new ArrayList<>()).add(s);
       }
     }
-    if (candidates.isEmpty()) {
+    if (candidates.isEmpty() && downCandidates.isEmpty()) {
       return;
     }
     Set<Integer> gone;
+    Set<Integer> removed;
     if (down != null) {
       gone = candidates.keySet();
+      removed = Set.of();
     } else {
       try {
-        gone = apps.goneInstances(candidates.keySet());
+        gone = candidates.isEmpty() ? Set.of() : apps.goneInstances(candidates.keySet());
+        removed =
+            downCandidates.isEmpty() ? Set.of() : apps.removedInstances(downCandidates.keySet());
       } catch (RuntimeException e) {
         evaluationErrors.increment();
         logError("The instances of firing alerts could not be read", e);
         return;
       }
     }
+    resolveGone(gone, candidates, now);
+    resolveGone(removed, downCandidates, now);
+    refreshActive(now);
+  }
+
+  private void resolveGone(Set<Integer> gone, Map<Integer, List<UnitState>> candidates, long now) {
     for (Integer id : gone) {
       for (UnitState s : candidates.getOrDefault(id, List.of())) {
         List<Change> changes = StateMachine.resolveGone(s, now);
@@ -747,7 +771,6 @@ public final class AlertEngine implements SmartLifecycle {
         }
       }
     }
-    refreshActive(now);
   }
 
   private void handleChannelHealth(ChannelHealthEvent e) {

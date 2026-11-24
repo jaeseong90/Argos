@@ -66,6 +66,7 @@ import {
 } from '../required/dumpsChecks';
 import { PLAYWRIGHT_IMAGE } from '../stack/images';
 import { shopProblem, startShop } from '../stack/liveShop';
+import { retireInstancesNamed } from '../stack/retire';
 import { stopProcess } from '../stack/seed/traffic';
 import { httpGet } from '../stack/wait';
 
@@ -87,12 +88,20 @@ test.beforeAll(async ({ session, seed }, testInfo) => {
   await ensureActiveFeed(seed, (role) => apiAs(session, seed, role));
 });
 
-// eslint-disable-next-line no-empty-pattern -- Playwright passes fixtures first; the hook uses none
-test.afterAll(async ({}, testInfo) => {
-  await testInfo.attach('active-feed.log', { body: activeFeedLog(), contentType: 'text/plain' });
-  await testInfo.attach('command-feed.log', { body: commandFeedLog(), contentType: 'text/plain' });
-  await stopActiveFeed();
-  await stopCommandFeed();
+test.afterAll(async ({ session, seed }, testInfo) => {
+  testInfo.setTimeout(3 * 60_000);
+  // Stopped feeds archive their instances (C-241 (7)): no instance_down stays FIRING after them.
+  const operator = () => apiAs(session, seed, 'operator');
+  try {
+    await stopActiveFeed(operator);
+    await stopCommandFeed(operator);
+  } finally {
+    await testInfo.attach('active-feed.log', { body: activeFeedLog(), contentType: 'text/plain' });
+    await testInfo.attach('command-feed.log', {
+      body: commandFeedLog(),
+      contentType: 'text/plain',
+    });
+  }
 });
 
 test.describe('the real WebSocket server', () => {
@@ -385,6 +394,8 @@ test.describe('the real agent', () => {
       } finally {
         await stopProcess(shop.child);
         await slow;
+        // C-241 (7): the stopped shop's instance never stays FIRING as instance_down.
+        await retireInstancesNamed(await as('operator'), appId, [ACTIVE_31_INSTANCE]);
       }
     },
   );

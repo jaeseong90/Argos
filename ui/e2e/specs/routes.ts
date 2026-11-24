@@ -2,10 +2,10 @@
 //
 // Every route of the WO-30 shell (docs/15 §3.1, ADR-0010 C-166 app-scoped paths) with the manifest
 // values that fill its parameters: the built screens (/login, /setup, /account and every registry
-// entry with a `load` line, e.g. the WO-34 detail and trace routes and the WO-38 alert screens,
-// which the page hooks of every visit then check too) and the lazy placeholders of
-// the screens not built yet (route-pending). The layout spec opens each at 1366x768;
-// routes.test.ts keeps this list in step with src/routes/screens.ts.
+// entry with a `load` line, e.g. the WO-34 detail and trace routes, the WO-38 alert screens and
+// the WO-39 admin screens and global search, which the page hooks of every visit then check too)
+// and the lazy placeholders of the screens not built yet (route-pending). The layout spec opens
+// each at 1366x768; routes.test.ts keeps this list in step with src/routes/screens.ts.
 import type { SeedManifest } from '../stack/manifest';
 
 export interface ShellRoute {
@@ -28,17 +28,17 @@ export const SHELL_ROUTES: readonly ShellRoute[] = [
   { pattern: '/alerts/rules/new', kind: 'screen', role: 'operator' },
   { pattern: '/alerts/rules/:ruleId', kind: 'screen', role: 'operator' },
   { pattern: '/alerts/channels', kind: 'screen', role: 'operator' },
-  { pattern: '/admin/apps', kind: 'placeholder', role: 'operator' },
-  { pattern: '/admin/pending', kind: 'placeholder', role: 'operator' },
-  { pattern: '/admin/instances', kind: 'placeholder', role: 'operator' },
-  { pattern: '/admin/tokens', kind: 'placeholder', role: 'admin' },
-  { pattern: '/admin/config', kind: 'placeholder', role: 'admin' },
-  { pattern: '/admin/users', kind: 'placeholder', role: 'admin' },
-  { pattern: '/admin/audit', kind: 'placeholder', role: 'admin' },
-  { pattern: '/admin/privacy', kind: 'placeholder', role: 'admin' },
-  { pattern: '/admin/licenses', kind: 'placeholder', role: 'viewer' },
-  { pattern: '/admin/about', kind: 'placeholder', role: 'viewer' },
-  { pattern: '/search', kind: 'placeholder', role: 'viewer' },
+  { pattern: '/admin/apps', kind: 'screen', role: 'operator' },
+  { pattern: '/admin/pending', kind: 'screen', role: 'admin' },
+  { pattern: '/admin/instances', kind: 'screen', role: 'operator' },
+  { pattern: '/admin/tokens', kind: 'screen', role: 'admin' },
+  { pattern: '/admin/config', kind: 'screen', role: 'admin' },
+  { pattern: '/admin/users', kind: 'screen', role: 'admin' },
+  { pattern: '/admin/audit', kind: 'screen', role: 'admin' },
+  { pattern: '/admin/privacy', kind: 'screen', role: 'admin' },
+  { pattern: '/admin/licenses', kind: 'screen', role: 'viewer' },
+  { pattern: '/admin/about', kind: 'screen', role: 'viewer' },
+  { pattern: '/search', kind: 'screen', role: 'viewer' },
   { pattern: '/traces/:traceId', kind: 'screen', role: 'viewer' },
   { pattern: '/apps/:appId/dashboard', kind: 'screen', role: 'viewer' },
   { pattern: '/apps/:appId/xlog', kind: 'screen', role: 'viewer' },

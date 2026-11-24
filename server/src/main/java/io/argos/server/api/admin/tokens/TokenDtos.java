@@ -121,9 +121,16 @@ final class TokenDtos {
           @Nullable String rotatedTokenId,
       @Schema(description = "Rotation only: when the rotated token stops authenticating")
           @JsonProperty("grace_until")
-          @Nullable Instant graceUntil) {
+          @Nullable Instant graceUntil,
+      @Schema(
+              description =
+                  "The collector address (host:port) agents should use, from the server setting"
+                      + " argos.collector.public-address; null when it is not set (the client then"
+                      + " uses the host it reached the server on, port 9100)")
+          @JsonProperty("collector_address")
+          @Nullable String collectorAddress) {
 
-    static IssuedTokenResponse of(IssuedToken t) {
+    static IssuedTokenResponse of(IssuedToken t, @Nullable String collectorAddress) {
       return new IssuedTokenResponse(
           t.tokenId().toString(),
           t.token(),
@@ -131,7 +138,8 @@ final class TokenDtos {
           t.appId(),
           millis(t.expiresAt()),
           t.rotatedTokenId() == null ? null : t.rotatedTokenId().toString(),
-          millis(t.graceUntil()));
+          millis(t.graceUntil()),
+          collectorAddress);
     }
 
     /** The prefix only, never the token. */

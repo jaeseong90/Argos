@@ -23,6 +23,7 @@ import { expectShell, expectUrl, state } from '../fixtures/ui';
 import type { RecordedServerFrame, WsStub } from '../fixtures/ws';
 import type { ApiSession } from '../stack/api';
 import type { Role, SeedManifest } from '../stack/manifest';
+import { retireInstances } from '../stack/retire';
 import {
   elapsedBand,
   expectedBuckets,
@@ -109,7 +110,21 @@ export async function restActive(
   appId: number,
   query: Readonly<Record<string, string | readonly string[]>> = { kind: 'ALL' },
 ): Promise<ActiveApi> {
-  return (await api.query<ActiveApi>(`/apps/${String(appId)}/active`, query)).data;
+  const answer = await api.query<ActiveApi & { default_thresholds_ms?: number[] }>(
+    `/apps/${String(appId)}/active`,
+    query,
+  );
+  // default_thresholds_ms is REST only (ADR-0010 C-225 (3)): the push of the same snapshot has no
+  // such field, so the snapshot compared with the push leaves it out.
+  const { default_thresholds_ms: defaults, ...snapshot } = answer.data;
+  if (defaults !== undefined) {
+    expect(defaults, 'REST default_thresholds_ms: three thresholds in ms').toHaveLength(3);
+    expect(
+      defaults.every((ms, i) => ms > 0 && (i === 0 || ms > (defaults[i - 1] ?? 0))),
+      `REST default_thresholds_ms ascending and positive: ${defaults.join(',')}`,
+    ).toBe(true);
+  }
+  return snapshot;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -159,12 +174,26 @@ export function ensureActiveFeed(
   return feed;
 }
 
-/** Stops the shared feed (the spec's afterAll); the next ensureActiveFeed starts a new one. */
-export async function stopActiveFeed(): Promise<void> {
+/**
+ * Stops the shared feed (the spec's afterAll) and archives its instances with an operator session
+ * of `operator` (ADR-0010 C-241 (7): a stopped feed instance never stays FIRING as instance_down);
+ * the next ensureActiveFeed starts a new one, whose reconnect lists the instances again.
+ */
+export async function stopActiveFeed(operator: () => Promise<ApiSession>): Promise<void> {
   const entry = shared;
   shared = null;
   const feed = await entry?.feed.catch(() => null);
-  await feed?.stop();
+  if (feed === null || feed === undefined) {
+    return;
+  }
+  await feed.stop();
+  const retired = await retireInstances(
+    await operator(),
+    feed.instances.map((i) => i.instanceId),
+  );
+  feedLog.push(
+    `${new Date().toISOString()} active feed stopped, instances archived: ${[...retired].map(([id, o]) => `${String(id)}=${o}`).join(' ')}`,
+  );
 }
 
 /** The feed's progress lines so far (attached by the spec). */

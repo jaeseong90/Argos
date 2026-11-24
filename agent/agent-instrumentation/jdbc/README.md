@@ -87,6 +87,27 @@ State lives in `ContextStore`s with bootstrap values only (10 §5.3 A-9): `State
 
 ## Supported library versions
 
+### Version range and witness
+
+| Library | Supported range | Minimum verified | Maximum verified | Boundary tests |
+|---|---|---|---|---|
+| JDBC API (`java.sql`, `javax.sql` of the JDK) | JDBC 4.0 to 4.3 | JDK 8 | JDK 21 | `test` on JDK 8 (`JdbcAdviceTest`, `JdbcModuleTest`); end to end `agent-testing` `jdbc.JdbcStepsTest` (shop-boot2 on JDK 8, shop-boot3 on JDK 21) |
+| H2 (`com.h2database:h2`) | 2.x | 2.1.214 | 2.4.240 | `jdbc.JdbcStepsTest` on H2 (default run: shop-boot2 2.1.214, shop-boot3 2.3.232; shop-boot4 2.4.240 when `-Pagent.e2e` lists `shop-boot4@21`) |
+| MySQL Connector/J (`com.mysql:mysql-connector-j`) against MySQL 8.4 | 8, 9 | 8.0.33 | 9.7.0 | `jdbc.JdbcStepsTest` with `-Pagent.jdbc.containers` (shop-boot2 8.0.33, shop-boot3 9.7.0) |
+| MariaDB Connector/J (`org.mariadb.jdbc:mariadb-java-client`) against MariaDB 11.4 | 3 | 3.5.8 | 3.5.8 | `jdbc.JdbcStepsTest` with `-Pagent.jdbc.containers` (shop-boot3) |
+| pgJDBC (`org.postgresql:postgresql`) against PostgreSQL 16 | 42 | 42.3.8 | 42.7.11 | `jdbc.JdbcStepsTest` with `-Pagent.jdbc.containers` (shop-boot2 42.3.8, shop-boot3 42.7.11) |
+| mssql-jdbc (`com.microsoft.sqlserver:mssql-jdbc`) against SQL Server 2022 | 12 | 12.10.2.jre11 | 12.10.2.jre11 | `jdbc.JdbcStepsTest` with `-Pagent.jdbc.containers` (shop-boot3) |
+| ojdbc11 (`com.oracle.database.jdbc:ojdbc11`) against Oracle Database Free 23 | 19, 21, 23 | 23.7.0.25.01 | 23.7.0.25.01 | `jdbc.JdbcStepsTest` with `-Pagent.jdbc.oracle=true` (shop-boot3); in-house 19c and the other vendors: `jdbc.VendorDatabaseTest` (human check, `ARGOS_TEST_<DB>_URL`) |
+
+- Witness (`JdbcModule.witness()`, resource lookup only): `java.sql.Connection`, which every
+  class loader that delegates to the platform sees; the module then matches implementations by
+  subtype (`SafeMatchers`, allowed for JDBC by 10 §5.1), never JDK proxies or `io.argos.*`.
+- Run: `./gradlew :agent:agent-instrumentation:jdbc:test`; end to end
+  `./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot3@21 --tests '*jdbc*'`
+  (add `-Pagent.jdbc.containers=true` and `-Pagent.jdbc.oracle=true` for the vendor rows).
+
+### Details
+
 JDBC 4.0-4.3 API (part of the JDK, no compile-time library). The module matches interfaces, so it
 does not depend on a driver version; the drivers of 10 §6.3 are checked end to end by the WO-13
 JDBC integration tests of `agent-testing` (Testcontainers, behind explicit flags, ADR-0010 C-149)

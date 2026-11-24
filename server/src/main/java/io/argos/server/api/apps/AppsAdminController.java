@@ -58,9 +58,10 @@ public class AppsAdminController {
       summary = "Create an application",
       description =
           "name 1 to 128 and env 1 to 32 characters (no control characters), group at most 64,"
-              + " apdex_t_ms 1 to 65535 (default 500), registration_policy auto (default) or"
-              + " approval. 409 already_exists when (name, env) exists. Agents of the application"
-              + " connect with a token issued by POST /admin/apps/{appId}/tokens.")
+              + " apdex_t_ms 1 to 65535 (default 500), registration_policy auto or approval"
+              + " (absent: the environment default argos.agent.auto-register.<env> applies). 409"
+              + " already_exists when (name, env) exists. Agents of the application connect with a"
+              + " token issued by POST /admin/apps/{appId}/tokens.")
   public Envelope<AppViews.App> create(
       @RequestBody(required = false) AppAdminDtos.CreateAppRequest body,
       HttpServletRequest request) {
@@ -76,7 +77,7 @@ public class AppsAdminController {
             body.apdexTMs() == null
                 ? AppInputs.DEFAULT_APDEX_T_MS
                 : AppInputs.apdexT("apdex_t_ms", body.apdexTMs()),
-            policy == null || policy);
+            policy);
     AppRecord created = admin.create(app, actor(request));
     return Envelope.of(apps.views(List.of(created)).get(0));
   }

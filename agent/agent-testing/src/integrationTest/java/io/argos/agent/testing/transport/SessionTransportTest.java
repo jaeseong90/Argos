@@ -100,12 +100,21 @@ class SessionTransportTest {
       assertThat(hello.getAgentEpoch()).isNotZero();
       assertThat(hello.getProcessStartMs()).isPositive();
       assertThat(hello.getRemoteConfigAllowList())
+          .as("the 10 §15 default list (C-240 (4))")
           .containsExactly(
               "sampling.**",
               "instrumentation.disabled",
-              "instrumentation.ignore-paths",
+              "instrumentation.ignore-*",
               "log.level",
-              "enabled");
+              "enabled",
+              "transaction.slow-stack.*",
+              "capture.error-message-max-length",
+              "capture.stack-depth",
+              "instrumentation.app-packages",
+              "async.step",
+              "active.snapshot-interval-seconds",
+              "metrics.interval-seconds",
+              "transaction.max-duration-ms");
       assertThat(hello.getInstrumentationModulesList()).contains("servlet", "jdbc");
       assertThat(hello.getIpMode()).isEqualTo(IpMode.IP_MASKED);
       assertThat(hello.getUserIdMode()).isEqualTo(UserIdMode.USER_ID_OFF);

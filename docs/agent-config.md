@@ -89,7 +89,6 @@ instrumentation:
   ignore-paths: [/actuator/health, /actuator/health/**, /ping]
   custom-methods:
     - pattern: "com.example.service.*Service#*"
-      step-type: METHOD
       as-transaction: false
 remote-config:
   allow: [sampling.**, instrumentation.disabled, instrumentation.ignore-paths, log.level, enabled]
@@ -104,9 +103,13 @@ Two keys have a structured form in the yml:
   `-Dargos.sampling.profile.slow-threshold-ms.services.<service name>=<ms>`; environment variables
   cannot carry service names. At most 1,000 services.
 - `instrumentation.custom-methods` is a list of mappings with `pattern`
-  (`<class glob>#<method glob>`), `step-type` (default `METHOD`) and `as-transaction` (default
-  `false`). As a system property or environment variable each item is written
-  `<class glob>#<method glob>[|<STEP TYPE>[|<as-transaction>]]`, items separated by commas.
+  (`<class glob>#<method glob>`) and `as-transaction` (default `false`). As a system property or
+  environment variable each item is written `<class glob>#<method glob>[|<as-transaction>]`
+  (`com.example.Job#run|true`), items separated by commas. There is no step type: a custom method
+  always records a `METHOD` step. An item written in the earlier format with a step type
+  (`step-type: SQL` in the yml, or `|SQL`, `|METHOD` or `|METHOD|true` after the method glob) is
+  ignored with one WARN at start, and the other items still apply; a pushed value with such an
+  item is rejected as a whole (see [Custom methods](#custom-methods)).
 
 List values given as a system property or environment variable are comma-separated
 (`-Dargos.instrumentation.disabled=jdbc,executor`) or a flow sequence when an item contains a
@@ -172,23 +175,36 @@ one WARN listing the rejected keys:
    a push that leaves out a current pattern is rejected, even when its other patterns are invalid.
 5. `invalid_value`: the value fails the same checks as a local value.
 
-The default list is the one of the security requirements:
+The default list names the keys whose "Remote" column is `Y`, apart from
+`instrumentation.exclude-classes`:
 
 ```yaml
 remote-config:
   allow:
     - sampling.**       # every sampling.profile.* key
     - instrumentation.disabled
-    - instrumentation.ignore-paths
+    - instrumentation.ignore-*   # ignore-paths, -extensions, -user-agents, -methods
     - log.level
     - enabled          # the kill switch; argos.enabled means the same key
+    - transaction.slow-stack.*
+    - capture.error-message-max-length
+    - capture.stack-depth
+    - instrumentation.app-packages
+    - async.step
+    - active.snapshot-interval-seconds
+    - metrics.interval-seconds
+    - transaction.max-duration-ms
 ```
+
+None of the `N` keys is in it: `capture.error-message-max-length` and `capture.stack-depth` only
+size the error data the agent already records (a longer message, more frames). To keep a
+collector from changing one of the default keys, write a list without it.
 
 Patterns are key globs: segments are separated by `.`, `*` matches characters within one segment
 (`instrumentation.ignore-*` matches `instrumentation.ignore-paths`), and a segment `**` matches all
 remaining segments (`transaction.**` matches every `transaction.*` key at any depth). A pattern
-may carry the `argos.` prefix. To let a collector change more keys, list them in the local yml,
-for example:
+may carry the `argos.` prefix. To let a collector change more keys, list them in the local yml
+together with the default patterns you keep, for example:
 
 ```yaml
 remote-config:
@@ -200,6 +216,13 @@ remote-config:
     - enabled
     - transaction.slow-stack.*
     - capture.error-message-max-length
+    - capture.stack-depth
+    - instrumentation.app-packages
+    - async.step
+    - active.snapshot-interval-seconds
+    - metrics.interval-seconds
+    - transaction.max-duration-ms
+    - instrumentation.exclude-classes
 ```
 
 A flow sequence (`[a, b]`) must stay on one line; write longer lists as a block sequence as above.
@@ -227,7 +250,9 @@ keep.
   every `capture.*` key and `async.step`, every `commands.*` key, `instrumentation.disabled`,
   `instrumentation.ignore-paths`, `instrumentation.ignore-extensions`,
   `instrumentation.ignore-user-agents`, `instrumentation.ignore-methods`,
-  `instrumentation.custom-methods` and its `max-classes-per-pattern`, `metrics.interval-seconds`,
+  `instrumentation.custom-methods` and its `max-classes-per-pattern`,
+  `instrumentation.app-packages` (for errors that end afterwards; `[]` returns to the derived
+  packages), `metrics.interval-seconds`,
   `active.snapshot-interval-seconds`, `transaction.max-duration-ms` and the
   `transaction.slow-stack.*` keys. `instrumentation.disabled` can turn off any module and turn
   back on a module the agent installed at start; a module that was already off at start was never
@@ -251,6 +276,11 @@ pushed (only when `remote-config.allow` names the key; the default list does not
   `com.sun.`, `io.argos.` (the agent's own classes, shaded libraries included) or `net.bytebuddy.`
   is ignored. Locally the agent logs one WARN per item at start, naming its position and the
   prefix; a pushed value with such an item is rejected as a whole (`forbidden_pattern`).
+- An item with a step type suffix of the earlier format (`|SQL`, `|METHOD`, `|METHOD|true`, or a
+  `step-type` field in the yml) is ignored the same way: locally one WARN naming its position
+  (`a step type suffix is not supported`), the other items still apply; a pushed value with such an
+  item is rejected as a whole (`FORBIDDEN_PATTERN`, message `step_type_suffix: item <n> ...`) and
+  the value in force stays. Write `|true` alone for `as-transaction`.
 - No pattern can reach those classes another way: a pattern that starts with `*` or `**` never
   matches a class under one of those prefixes, nor a generated class (lambdas, CGLIB and Spring
   CGLIB classes, JDK and other runtime proxies).
@@ -264,6 +294,23 @@ pushed (only when `remote-config.allow` names the key; the default list does not
   ones and the retransformed classes (`retransform_requests`, `retransform_rejected`,
   `retransformed_classes`).
 - A local change takes effect at the next start; a `CONFIG_RELOAD` reports it `restart_required`.
+  The local value is in force from the first class the JVM loads after the agent starts.
+
+What an item records:
+
+- The declared methods of the matching classes (never constructors, abstract, native, bridge or
+  synthetic methods, lambda bodies) record a `METHOD` step named `Class#method` inside a
+  transaction, with the error flag when the method throws; the exception is never changed. A call
+  through a CGLIB or JDK proxy records one step. Without a transaction nothing is recorded and
+  `argos_agent_orphan_steps_total{type="METHOD"}` counts the call.
+- With `as-transaction: true`, a call on a thread without a transaction begins a BATCH
+  transaction named `BATCH <Class#method>` (fixed name, status 0); inside a transaction it is a
+  `METHOD` step like any other item.
+- There is no step type option: the step is always `METHOD` (an item with a step type suffix is
+  ignored, see above).
+- Classes are counted once each per item, at class load as well as when retransformed. When an
+  item passes the limit, the classes it already instrumented stop recording at once, unless
+  another active item still matches them.
 
 ## Kill switch
 
@@ -346,8 +393,9 @@ that nothing unmasked leaves the agent.
 
 The servlet instrumentation records, for every HTTP transaction, the method, the path, the final
 status and the elapsed time. Everything else about the request is off or reduced by default, and
-none of the `capture.*` keys is in the default `remote-config.allow` list: widening what is
-collected takes a change of the local configuration.
+none of the `capture.*` keys that widen what is collected (all but
+`capture.error-message-max-length` and `capture.stack-depth`) is in the default
+`remote-config.allow` list: widening what is collected takes a change of the local configuration.
 
 The agent never consumes or changes a request: it does not call `getParameter*`, `getReader`,
 `getInputStream`, `getParts` or `getSession()`/`getSession(true)`. A session is only read when one
@@ -358,7 +406,7 @@ already exists (`getSession(false)`).
 | Path | - | always | The request URI without query string and path parameters (`;jsessionid=...`), cut at 2 KiB. Service names and dictionaries never contain a query string. |
 | Query string | `capture.query-string`, `capture.query-string.whitelist` | `off` | `off`: path only. `whitelist`: only the listed parameter names (exact, as sent) among the first 256 parameters of the query string, sorted by name, each value cut at 256 characters, re-assembled as `?a=1&b=2`. `full`: the raw query string. The URL with its query string is cut at 2 KiB. |
 | Client address | `capture.remote-ip`, `capture.trusted-proxies` | `masked`, `[]` | Without trusted proxies the socket address is used and `X-Forwarded-For` is ignored. With trusted proxies the hops are read from the right: the socket peer, then the `X-Forwarded-For` entries from right to left; trusted hops are skipped and the first untrusted address is the client. A peer that is not a trusted proxy is the client itself (a forged header from a direct client has no effect); an entry that is not an IP address gives the socket address. At most the last 32 `X-Forwarded-For` lines, their last 2,048 characters (cut between entries) and 32 hops from the right are read; when all 32 hops are trusted, the leftmost of them is used, never an entry further left. Then the mode: `full` keeps the address, `masked` zeroes the last IPv4 octet or the low 80 bits of an IPv6 address, `off` sends nothing (the address is not even read). |
-| User id | `capture.user-id.mode`, `capture.user-id.source` | `off` | `header:<name>` reads one request header, `session:<attribute>` an attribute of an existing session (a `String`, a JDK number or a `UUID`; other objects are ignored), `mdc:<key>` is not supported yet: nothing is recorded, `argos_agent_user_id_skipped_total{reason="mdc_unsupported"}` counts it and one WARN is logged. `plain` keeps at most 128 characters without control characters, with leading and trailing spaces removed. `hashed` sends the first 16 characters of base64url(HMAC-SHA256(salt, user id)) with the application's salt that the collector sends over TLS: 16 characters of `A-Z`, `a-z`, `0-9`, `-` and `_` (unpadded base64url, not hexadecimal). The HMAC input is the user id normalized exactly as `plain` records it (control characters removed, cut at 128 characters, leading and trailing spaces removed), encoded as UTF-8, so ` kim` followed by a control character hashes like `kim`; a search by user id must normalize the same way. While the collector has sent no salt, no user id is recorded (never the plain value): `argos_agent_user_id_skipped_total{reason="no_salt"}` counts it and one WARN is logged. The salt stays in memory and is never logged. |
+| User id | `capture.user-id.mode`, `capture.user-id.source` | `off` | `header:<name>` reads one request header, `session:<attribute>` an attribute of an existing session (a `String`, a JDK number or a `UUID`; other objects are ignored), `mdc:<key>` reads the key from the MDC of the log events the transaction creates (Logback, Log4j 2, Log4j 1.2 and reload4j; needs the `logging` module, see [Log correlation](#log-correlation)): the first usable value of a transaction is recorded with the same rules as the other sources, and a transaction that logs no event with the key records no user id and is counted in `argos_agent_user_id_skipped_total{reason="mdc_absent"}` (no WARN). `plain` keeps at most 128 characters without control characters, with leading and trailing spaces removed. `hashed` sends the first 16 characters of base64url(HMAC-SHA256(salt, user id)) with the application's salt that the collector sends over TLS: 16 characters of `A-Z`, `a-z`, `0-9`, `-` and `_` (unpadded base64url, not hexadecimal). The HMAC input is the user id normalized exactly as `plain` records it (control characters removed, cut at 128 characters, leading and trailing spaces removed), encoded as UTF-8, so ` kim` followed by a control character hashes like `kim`; a search by user id must normalize the same way. While the collector has sent no salt, no user id is recorded (never the plain value): `argos_agent_user_id_skipped_total{reason="no_salt"}` counts it and one WARN is logged. The salt stays in memory and is never logged. |
 | Headers | `capture.http-headers` | `[]` | Only the listed headers (names case-insensitive, at most 10), each value cut at 1 KiB. |
 | Request id | `capture.request-id-header` | not set | The value of the one named header, leading and trailing spaces removed, cut at 128 bytes, sent only as the transaction's request id (searchable on the collector). |
 
@@ -403,6 +451,126 @@ A transaction still open after `transaction.max-duration-ms` (default one
 hour) is ended by the agent's watch thread with the status recorded so far (599 when there is none)
 and the flags `timed_out` and `leaked` (`argos_agent_transactions_leaked_total`). The response flush
 is detected by container class names, Tomcat 9, 10.1 and 11 only; see the known limitations.
+
+## Batch jobs
+
+The `scheduler` module records scheduled and batch work as transactions of kind `BATCH`, kept
+apart from the HTTP statistics, Apdex and throughput. When the thread has no transaction:
+
+| Entry point | Supported | Transaction (service name fixed) |
+|---|---|---|
+| Spring `ScheduledMethodRunnable.run()` (every `@Scheduled` method) | Spring Framework 5.3 to 7.0 | `BATCH <class>#<method>` |
+| Quartz `Job.execute(JobExecutionContext)` (`QuartzJobBean` included) | Quartz 2.3 to 2.5 | `BATCH <group>.<name>` of the job key |
+| Spring Batch `AbstractStep.execute(StepExecution)` | Spring Batch 4.3 to 5.2 | `BATCH <job>.<step>`, one per step execution |
+
+- `<class>` is the user class: proxies (`$$SpringCGLIB$$0` and other CGLIB names, JDK proxies) add
+  no service names.
+- Inside another transaction (a job started by an HTTP request, a Spring Batch job run by a Quartz
+  job) no transaction is created: the entry point is a `METHOD` step named after the same text
+  without `BATCH ` (`settlementJob.settleStep`).
+- A chunk step that records more than `sampling.profile.max-steps` steps is folded into one
+  `SUMMARY` entry per step type and name, with count and total time, instead of one step per item.
+- A thrown exception, or a Spring Batch step execution that ended `FAILED`, marks the transaction
+  as an error; the status is 0. Exceptions and return values are never changed.
+- Spring Batch 6 (Spring Boot 4) and reactive `@Scheduled` methods (returning a `Publisher`) are
+  not recorded. A job started on an application-created `java.lang.Thread` is a new transaction,
+  and the worker threads of a partitioned or multi-threaded step are not linked to the step's
+  transaction (see [Context propagation](#context-propagation)).
+- Turn off with `instrumentation.disabled: [scheduler]`.
+
+## Log correlation
+
+The `logging` module adds two MDC keys to every log event created inside a transaction. They are
+a public contract:
+
+| Key | Value |
+|---|---|
+| `argos.trace_id` | the W3C trace id, 32 lower-case hex digits |
+| `argos.tx_id` | the transaction id, 16 lower-case hex digits |
+
+Print them with `%X{argos.trace_id}` and `%X{argos.tx_id}` in a Logback, Log4j 2 or Log4j 1.2
+pattern. They are added to the event's own MDC copy,
+never to the thread's MDC: the application's `MDC.clear()` does not remove them, a task that runs
+in the transaction on an executor thread logs with its ids, Logback's `AsyncAppender` keeps them,
+and events outside a transaction carry neither key.
+
+| Library | Supported |
+|---|---|
+| Logback (`logback-classic`) | 1.2 to 1.5 |
+| Log4j 1.2 (`log4j:log4j`) and reload4j | 1.2.17, reload4j 1.2.18 to 1.2.26 |
+| Log4j 2 (`log4j-core`) | 2.17 to 2.25, only with the garbage-free thread context map (see below) |
+
+With Log4j 2's default thread context maps (the copy-on-write map that 2.17 uses by default, the
+default map of 2.25 and of web applications), Log4j hands each event a read-only copy of the
+context data, and the agent does not replace it: **the two keys are not added**, and
+`%X{argos.trace_id}` prints nothing. Log events and the application are unaffected. To get the keys
+with Log4j 2, switch the application to the garbage-free thread context map before Log4j
+initializes, with any one of:
+
+- the JVM option `-Dlog4j2.garbagefree.threadContextMap=true` (the form the agent is tested with;
+  Log4j also reads it as `log4j2.garbagefreeThreadContextMap=true`),
+- the line `log4j2.garbagefreeThreadContextMap=true` in a `log4j2.component.properties` file on the
+  application class path,
+- the environment variable `LOG4J_GARBAGEFREE_THREAD_CONTEXT_MAP=true`.
+
+The garbage-free map keeps only `String` values in `ThreadContext`; check that the application
+does not rely on other value types before turning it on. `capture.user-id.source: mdc:<key>`
+works with every Log4j 2 map, since it only reads the event's context data.
+
+Turn off with `instrumentation.disabled: [logging]`; `capture.user-id.source: mdc:<key>` then
+records no user id.
+
+## Application packages
+
+`instrumentation.app-packages` names the application's own packages. When it is unset, the agent
+derives it from the main class: the `Start-Class` (Spring Boot) or `Main-Class` of the jar given
+to `java -jar`, otherwise the main class on the command line, cut to its top two package levels
+(one more level under `io.argos`). The agent's own packages, JDK packages, launchers (Tomcat
+`Bootstrap`, the Spring Boot loader without `Start-Class`, build tools) and the default package
+give no value. Self-diagnostics show the value in force (`effective_config` with source `default`,
+and `extras.app_packages` with `app_packages_source`). The agent derives it on its own threads
+after start, never on the application's main thread.
+
+The first frame of an exception's stack in these packages is the transaction's top application
+frame (`class.method(file)`, without the line number). The error group fingerprint uses it, so a
+redeploy that only moves lines keeps the group, while changing the packages (or upgrading from an
+agent that did not send the frame) starts new groups once. Without a matching frame the group is
+the error class and the normalized message. A remote change applies to errors that end afterwards;
+an empty list returns to the derived packages. The server's per-application packages (used to
+highlight frames on screen) are kept apart from this key.
+
+## Slow transactions and error stacks
+
+**Slow transactions.** Once a second the agent's watch thread looks at the running transactions.
+One that has run longer than its slow threshold (`sampling.profile.slow-threshold-ms`, per
+service) gets a stack sample of its thread as a `STACK` step: at most
+`transaction.slow-stack.max-threads-per-cycle` (10) threads per second, the ones with the fewest
+samples first, `transaction.slow-stack.interval-ms` (3,000) apart, at most
+`transaction.slow-stack.max-captures` (5) per transaction and `transaction.slow-stack.depth` (64)
+frames each (`class.method(file:line)`). Platform threads are read with one batched JMX call per
+second, virtual threads one by one. The application thread never waits for the agent. A
+transaction in summary mode, one that has ended, and an async request whose thread went back to
+the pool get no sample. The values are read from the configuration in force at each tick, so a
+remote change applies within a second.
+
+The time spent is counted in `argos_agent_stack_capture_seconds_total` and in the
+self-diagnostics (`stack_capture_seconds_total`, `stack_captures_total`). When ten one-second
+cycles in a row take more than 50 ms each, the sampler turns itself off with one WARN; a remote
+`transaction.slow-stack.enabled: true` (or the value going to `false` and back to `true`) turns
+it on again.
+
+**Error stacks.** A transaction that ends with an exception records one `ERROR` step with the
+exception's first `capture.stack-depth` frames (at most 30, `class.method(file:line)`) and sends
+its top application frame (see [Application packages](#application-packages)). A transaction in
+summary mode (all `sampling.profile.max-steps` used) records no `ERROR` step; an error status
+without an exception (`sendError`) records none either.
+
+**Self-throttling.** The agent measures the CPU time of its own threads over one-minute windows.
+When they use more than 1 % of the host's CPU (processors x 60 s) in a window, the agent halves
+`sampling.profile.normal-rate` (never above the configured or remote rate or the collector's
+throttle), sends the event `SELF_CPU_HIGH` and logs one WARN; after five calm minutes it returns
+to the configured rate with one INFO. The first window after start is measured but not judged.
+There is no key for these limits.
 
 ## SQL and connection pools
 
@@ -495,11 +663,78 @@ the first 64 positions and 4,096 characters of values are kept per execution, an
 the first parameter set. The values are dropped after each execution, so a statement executed
 again without new `set*` calls sends none.
 
+## Pre-flight check (`--check`)
+
+Run the agent jar on its own, on the application host and with the application's user, before
+adding `-javaagent` (or after changing the configuration):
+
+```
+java -jar argos-agent.jar --check [--config argos-agent.yml] [--json] [--classpath <dir|jar>...]
+java -jar argos-agent.jar --version
+```
+
+The check never attaches to an application. It reads the configuration exactly as the agent
+does at start: the file of `--config`, else `-Dargos.config`, `ARGOS_CONFIG` or
+`argos-agent.yml` next to the jar, then `-Dargos.<key>` and `ARGOS_<KEY>` of the `java -jar`
+command. `--classpath` takes the application's jar, WAR or library directories (several values,
+or one value joined with the path separator) and reads only file names and manifests.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | `config`: the file parses, required keys are set | FAIL: `server.address` or `app.name` missing, or the `--config` file does not exist. WARN: unknown keys, invalid values, `app.env` missing |
+| 2 | `token`: a token exists and has the form `argos_` plus 43 characters | FAIL: no token or a malformed one. WARN: `server.token` written in plain text |
+| 3 | `dns`, `tcp`, `tls`: the name of `server.address` resolves, the connection opens within 5 s, the TLS handshake verifies the chain (`server.tls.ca-file` or the JDK trust store) and the host name | FAIL: the name does not resolve, the connection is refused or times out, the certificate is not trusted, does not match the host name or has expired, Java 8 before update 252 (no ALPN). WARN: a certificate expires within 30 days, `insecure-skip-verify: true` (`TLS verification disabled`), `server.tls: false` (plaintext) |
+| 4 | `hello`: the collector accepts an `AgentHello` (server version, protocol, the agent versions it accepts, app and instance ids) | FAIL: refused, with the reason and what to do (token invalid, expired or revoked; application waiting for approval; agent version outside the accepted range; plaintext not allowed; limits) |
+| 5 | `clock`: offset between this host and the collector | WARN: 1 s or more |
+| 6 | `jdk`: Java version and vendor of the `java` that runs the check | FAIL: Java 8 before update 252, Java 7 or older. WARN: a line other than 8, 11, 17, 21, 25, or a vendor other than Temurin, Oracle, Corretto, Zulu |
+| 7 | `classpath`: Spring Boot, Spring Framework, Tomcat, Jetty, Undertow, Servlet API, JDBC drivers, pools, HTTP clients, logging and batch libraries found in `--classpath`, against the compatibility table | PASS supported, WARN unverified, FAIL unsupported. SKIP without `--classpath` |
+| 8 | `log-dir`: the agent's log directory can be written; `token-file`: permissions of `server.token-file` | FAIL: a configured `log.dir` that cannot be written (the agent would log to stderr). WARN: group or others have access to the token file (use `chmod 600`). INFO on a file system without POSIX permissions |
+
+A check that cannot run because an earlier one failed is `SKIP`. Exit code: `0` when nothing
+failed (PASS, WARN, SKIP, INFO only), `1` when a check failed, `2` for a usage error.
+
+Example:
+
+```
+Argos agent 1.0.0 (commit 3f2a1c9, protocol 1)
+ #   CHECK       RESULT  DETAIL
+ 1   config      PASS    /opt/argos/argos-agent.yml: app 'shop', env 'prod'
+ 2   token       PASS    argos_**** from server.token-file /etc/argos/token
+ 3   dns         PASS    collector.example.com -> 10.0.0.5
+ 3   tcp         PASS    connected to collector.example.com:9100
+ 3   tls         PASS    TLSv1.3, chain (server.tls.ca-file) and host name verified, certificate valid until 2027-06-30
+ 4   hello       PASS    accepted by server 1.0.0 (protocol 1, accepts agents 0.8.0 to 1.0.0): app id 3, instance id 41, instance 'shop-1-check'
+ 5   clock       PASS    offset +12 ms (server minus this host, round trip 4 ms)
+ 6   jdk         PASS    JDK 21.0.5 (Eclipse Adoptium): supported
+ 7   classpath   PASS    Spring Boot 3.5.16 (shop.jar): supported
+ 7   classpath   PASS    Tomcat 10.1.55 (shop.jar): supported
+ 8   log-dir     PASS    /opt/argos/logs is writable (default)
+ 8   token-file  PASS    /etc/argos/token is rw------- (owner only)
+Result: PASS (12 passed, 0 warnings, 0 failed, 0 skipped); exit code 0
+Note: the hello check opened a session as instance 'shop-1-check' and ended it with AgentBye; the server lists that instance as stopped
+Configuration (keys not at their default):
+  server.address = collector.example.com:9100 (file)
+  ...
+```
+
+`--json` prints one JSON object instead: `agent` (`version`, `commit`, `protocol`), `result`
+(`PASS`, `WARN` or `FAIL`), `exit_code`, `summary` (counts per status), `checks` (`item`,
+`check`, `status`, `detail`, `notes`), `side_effects` and `configuration`.
+
+Side effects and network: the check connects only to `server.address` (its name lookup and one
+session). The hello check registers an instance named `<app.instance or host name>-check` and
+ends its session at once with `AgentBye`, so the server shows that instance as stopped, not as
+down; a refused hello may still be recorded by the server (for example in the approval queue).
+The output says so in a `Note:` line. The token never appears: it is shown as `argos_****`, also
+inside server messages. The check prints to standard output only; it writes no log file and
+creates no directory.
+
 ## Effective configuration and configuration hash
 
 The agent keeps, for every key, the value in force and where it came from: `default`, `file`,
-`sysprop`, `env` or `remote`. Self-diagnostics and `--check` show it one key per line
-(`log.level = DEBUG (sysprop)`).
+`sysprop`, `env` or `remote`. Self-diagnostics show it one key per line
+(`log.level = DEBUG (sysprop)`); `--check` lists the keys that are not at their default in the
+same form.
 
 The configuration hash identifies the effective configuration: 16 hexadecimal digits of XXH3-64
 over the sorted `key=value` lines of every key that has a value, values in a canonical form (so
@@ -534,7 +769,7 @@ start.
 | `app.name` | string | (required) | - | Application name. |
 | `app.env` | string | `default` | - | Environment name (`prod`, `staging`, ...); `default` with a WARN when unset. |
 | `app.instance` | string | (automatic) | - | Instance name; `host:port`, else `host:pid` when unset. |
-| `app.version` | string | (automatic) | - | Application version; the jar manifest `Implementation-Version` when unset. |
+| `app.version` | string | (automatic) | - | Application version; when unset, the `Implementation-Version` of the jar or WAR given to `java -jar` (empty for class path starts and WARs in a standalone container). |
 | `app.group` | string | - | - | Group of the application on the overview. |
 
 ### Kill switch
@@ -569,7 +804,7 @@ start.
 | `capture.sql-parameters.whitelist-columns` | list (<= 256 items) | `[]` | N | Column names (any case) whose bind values are sent, after masking, in `partial` mode, for positions written `<column> = ?`. |
 | `capture.mask-patterns` | list (<= 32 items) | `[]` | N | Added masking regular expressions, applied after the built-in set; see [Masking](#masking). |
 | `capture.error-message-max-length` | int [0, 65536] | `1024` | Y | Characters of an exception message kept after masking. |
-| `capture.stack-depth` | int [0, 64] | `30` | Y | Frames of an error stack. |
+| `capture.stack-depth` | int [0, 64] | `30` | Y | Frames of an error stack (the ERROR step keeps at most 30). |
 
 ### Instrumentation
 
@@ -583,7 +818,7 @@ start.
 | `instrumentation.ignore-methods` | list (<= 16 items) | `OPTIONS` | Y | HTTP methods that are not recorded. |
 | `instrumentation.custom-methods` | list (<= 256 items) | `[]` | N | Extra methods to record; see [The YAML file](#the-yaml-file). JDK, `javax.*`, `jakarta.*` and agent classes are always excluded. |
 | `instrumentation.custom-methods.max-classes-per-pattern` | int [1, 10000] | `500` | N | Classes one custom pattern may match before it is turned off (WARN). |
-| `instrumentation.app-packages` | list (<= 32 items) | (automatic) | Y | Application packages used to find the top application frame; derived from the main class when unset. |
+| `instrumentation.app-packages` | list (<= 32 items) | (automatic) | Y | Application packages used to find the top application frame; derived from the main class when unset (see [Application packages](#application-packages)). |
 | `instrumentation.service-dictionary-max` | int [1, 100000] | `10000` | N | Service names per application; further names become `_other_`. The kept names are also bounded by estimated memory: 4 MiB, or room for this many names of 128 characters when that is more. Names of up to 128 characters always reach the count; longer names (up to 1,024 characters) can become `_other_` sooner. The bound grows by about 344 bytes per name: at 100,000 it is about 34 MB, above the default heap budget of the agent. |
 | `instrumentation.error-threshold` | int [1, 1000000] | `100` | N | Instrumentation errors that turn a module off. |
 | `instrumentation.transform-error-threshold` | int [1, 1000000] | `10` | N | Class transformation errors that turn a module off. |
@@ -696,7 +931,7 @@ on for a limited time when you need to see where executor tasks start.
 
 | Key | Type | Default | Remote | Description |
 |---|---|---|---|---|
-| `remote-config.allow` | list (<= 128 items) | `sampling.**, instrumentation.disabled, instrumentation.ignore-paths, log.level, enabled` | - | Key globs a collector may change; the hard limit, local configuration only. See [Remote configuration](#remote-configuration-remote-configallow). |
+| `remote-config.allow` | list (<= 128 items) | `sampling.**, instrumentation.disabled, instrumentation.ignore-*, log.level, enabled, transaction.slow-stack.*, capture.error-message-max-length, capture.stack-depth, instrumentation.app-packages, async.step, active.snapshot-interval-seconds, metrics.interval-seconds, transaction.max-duration-ms` | - | Key globs a collector may change; the hard limit, local configuration only. See [Remote configuration](#remote-configuration-remote-configallow). |
 | `log.level` | enum: ERROR, WARN, INFO, DEBUG, TRACE | `INFO` | Y | Agent log level. `DEBUG` and `TRACE` may write collected data, which can include personal data. |
 | `log.dir` | path | (automatic) | - | Agent log directory (created owner-only, `0700`); see [Known limitations](#known-limitations). |
 | `log.max-file-mb` | int [1, 1024] | `10` | - | Megabytes of one log file. |
@@ -725,6 +960,7 @@ may change at any time.
 | `test.exporter` | string | - | - | Test exporter: `file:<dir>` (JSONL file), `noop`, `drop` or `grpc`. With one other than `grpc`, a missing `server.address` is not reported. |
 | `test.faults` | list (<= 32 items) | `[]` | - | Fault injection specs `<kind>:<module id>`. |
 | `test.selfdiag-file` | path | - | - | File the agent writes its self-diagnostics snapshot to. |
+| `test.overhead-monitor` | enum: on, off | `on` | - | `off` turns the CPU guard off: the profile `normal-rate` is never halved when the agent threads use more than 1% of the host CPU. For test suites that assume `normal-rate=1.0` on hosts with few cores. |
 
 ## Known limitations
 

@@ -488,4 +488,212 @@ class ConfigChangeIT {
       }
     }
   }
+
+  @Test
+  @Order(5)
+  @DisplayName(
+      "T-SV-042 / T-SEC-80c the kill switch (POST /admin/apps/{appId}/kill-switch, enabled=false"
+          + " then true) is a kill_switch change pushed as enabled=false/true to the instance whose"
+          + " allow list names enabled; each call leaves an audit_logs row KILL_SWITCH (on, then"
+          + " off) with the change id, not CONFIG_PUSH; operators get 403")
+  void killSwitchAudited() {
+    FakeAgent k =
+        connected(agent("k", "aaaaaaaaaaaaaaaa", ConfigReplies.applyAll(), "enabled", "log.level"));
+    String path = "/api/v1/admin/apps/" + appId + "/kill-switch";
+    String targets = ",\"instance_ids\":[" + k.instanceId() + "]";
+
+    ApiResponse forbidden =
+        operator.post(path, "{\"enabled\":false,\"reason\":\"r\"" + targets + "}");
+    assertThat(forbidden.status()).as(forbidden.toString()).isEqualTo(403);
+
+    ApiResponse off =
+        admin.post(
+            path, "{\"enabled\":false,\"reason\":\"Agent suspected (INC-7)\"" + targets + "}");
+    assertThat(off.status()).as(off.toString()).isEqualTo(202);
+    assertThat(off.json().path("data").path("kind").asString()).isEqualTo("kill_switch");
+    UUID killOn = UUID.fromString(off.json().path("data").path("change_id").asString());
+    JsonNode done = awaitChange(killOn, "applied");
+    assertThat(resultOf(done, k.instanceId()).path("status").asString()).isEqualTo("applied");
+    List<ConfigPush> pushes = pushesOf(k);
+    assertThat(pushes).hasSize(1);
+    assertThat(pushes.get(0).getValuesMap()).containsOnly(Map.entry("enabled", "false"));
+
+    ApiResponse on =
+        admin.post(path, "{\"enabled\":true,\"reason\":\"Agent cleared (INC-7)\"" + targets + "}");
+    assertThat(on.status()).as(on.toString()).isEqualTo(202);
+    UUID killOff = UUID.fromString(on.json().path("data").path("change_id").asString());
+    awaitChange(killOff, "applied");
+    assertThat(pushesOf(k).get(pushesOf(k).size() - 1).getValuesMap())
+        .containsOnly(Map.entry("enabled", "true"));
+
+    Map<String, AuditLog.Row> kill = new HashMap<>();
+    for (AuditLog.Row row : AuditLog.rows(env, "KILL_SWITCH")) {
+      kill.put(row.targetId(), row);
+    }
+    assertThat(kill).containsKeys(killOn.toString(), killOff.toString());
+    AuditLog.Row rowOn = kill.get(killOn.toString());
+    assertThat(rowOn.actorType()).isEqualTo("user");
+    assertThat(rowOn.result()).isEqualTo("success");
+    assertThat(rowOn.after()).matches("(?s).*\"_kill_switch\":\\s*\"on\".*");
+    assertThat(kill.get(killOff.toString()).after())
+        .matches("(?s).*\"_kill_switch\":\\s*\"off\".*");
+    for (AuditLog.Row row : AuditLog.rows(env, "CONFIG_PUSH")) {
+      assertThat(row.targetId()).isNotIn(killOn.toString(), killOff.toString());
+    }
+  }
+
+  @Test
+  @Order(6)
+  @DisplayName(
+      "T-SEC-80c / C-238 (8) a change of instrumentation.custom-methods (WO-17 path) leaves one"
+          + " audit_logs row CUSTOM_METHOD_CHANGED at its outcome besides CONFIG_PUSH: success by"
+          + " the applying user when the agent applied it, rejected (rejected_by_agent,"
+          + " forbidden_pattern) when the agent refused it; only the custom method key and the"
+          + " outcome, no other key")
+  void customMethodChangeAudited() {
+    String key = "instrumentation.custom-methods";
+    FakeAgent ok = connected(agent("m1", "aaaaaaaaaaaaaaaa", ConfigReplies.applyAll(), key));
+    FakeAgent refusing =
+        connected(
+            agent(
+                "m2",
+                "aaaaaaaaaaaaaaaa",
+                ConfigReplies.rejecting(Map.of(key, RejectCode.FORBIDDEN_PATTERN)),
+                key));
+
+    UUID applied = customChange(ok, "[\"com.shop.Order#place\"]");
+    assertThat(resultOf(awaitChange(applied, "applied"), ok.instanceId()).path("status").asString())
+        .isEqualTo("applied");
+    UUID rejected = customChange(refusing, "[\"com.shop.Order#place|SQL\"]");
+    assertThat(
+            resultOf(awaitChange(rejected, "applied"), refusing.instanceId())
+                .path("status")
+                .asString())
+        .isEqualTo("rejected");
+
+    Map<String, AuditLog.Row> custom = new HashMap<>();
+    Awaitility.await()
+        .atMost(WAIT.toMillis(), TimeUnit.MILLISECONDS)
+        .untilAsserted(
+            () -> {
+              custom.clear();
+              for (AuditLog.Row row : AuditLog.rows(env, "CUSTOM_METHOD_CHANGED")) {
+                custom.put(row.targetId(), row);
+              }
+              assertThat(custom).containsKeys(applied.toString(), rejected.toString());
+            });
+    AuditLog.Row good = custom.get(applied.toString());
+    assertThat(good.actorType()).isEqualTo("user");
+    assertThat(good.targetType()).isEqualTo("config_change");
+    assertThat(good.targetName()).isEqualTo(appName);
+    assertThat(good.result()).isEqualTo("success");
+    assertThat(good.after())
+        .contains("com.shop.Order#place")
+        .matches("(?s).*\"_outcome\":\\s*\\{.*\"applied\":\\s*1.*")
+        .doesNotContain("log.level");
+    AuditLog.Row bad = custom.get(rejected.toString());
+    assertThat(bad.actorType()).isEqualTo("user");
+    assertThat(bad.result()).isEqualTo("rejected");
+    assertThat(bad.reason()).isEqualTo("rejected_by_agent");
+    assertThat(bad.after())
+        .matches("(?s).*\"rejected_by_agent\":\\s*1.*")
+        .contains("forbidden_pattern");
+    List<String> pushed = new ArrayList<>();
+    AuditLog.rows(env, "CONFIG_PUSH").forEach(r -> pushed.add(r.targetId()));
+    assertThat(pushed).contains(applied.toString(), rejected.toString());
+  }
+
+  @Test
+  @Order(7)
+  @DisplayName(
+      "T-SEC-80c / C-239 (3) the outcome of a custom method change that arrives after the server"
+          + " forgot who applied it (its memory cleared, as after a restart) is audited as"
+          + " CUSTOM_METHOD_CHANGED by the applying administrator recorded on the change"
+          + " (config_changes.applied_by, name read from users), target config_change with the app"
+          + " name, never the system")
+  void customMethodActorFromStoredChange() throws Exception {
+    String key = "instrumentation.custom-methods";
+    TestUsers.TestUser applier =
+        new TestUsers(env).create(Role.ADMIN, o -> o.mustChangePassword(false));
+    ApiTestClient client = server.client();
+    ApiResponse login = client.login(applier.username(), applier.password());
+    assertThat(login.status()).as(login.toString()).isEqualTo(200);
+    // An agent that receives the push but answers only when the test says so.
+    List<ConfigPush> received = new java.util.concurrent.CopyOnWriteArrayList<>();
+    FakeAgent late =
+        connected(
+            agent(
+                "m3",
+                "aaaaaaaaaaaaaaaa",
+                push -> {
+                  received.add(push);
+                  return null;
+                },
+                key));
+
+    UUID id = customChange(client, late, "[\"com.shop.Cart#checkout\"]");
+    Awaitility.await()
+        .atMost(WAIT.toMillis(), TimeUnit.MILLISECONDS)
+        .until(() -> !received.isEmpty());
+    // The server forgets the applying user it kept in memory (a restart between the push and the
+    // agent's answer).
+    java.lang.reflect.Field memory = ConfigChangeService.class.getDeclaredField("customAudits");
+    memory.setAccessible(true);
+    ((Map<?, ?>) memory.get(server.bean(ConfigChangeService.class))).clear();
+
+    late.send(
+        io.argos.proto.v1.AgentMessage.newBuilder()
+            .setConfigApplyResult(ConfigReplies.answer(received.get(0), Map.of()))
+            .build());
+    assertThat(resultOf(awaitChange(id, "applied"), late.instanceId()).path("status").asString())
+        .isEqualTo("applied");
+
+    AuditLog.Row[] row = new AuditLog.Row[1];
+    Awaitility.await()
+        .atMost(WAIT.toMillis(), TimeUnit.MILLISECONDS)
+        .untilAsserted(
+            () -> {
+              row[0] = null;
+              for (AuditLog.Row r : AuditLog.rows(env, "CUSTOM_METHOD_CHANGED")) {
+                if (r.targetId().equals(id.toString())) {
+                  row[0] = r;
+                }
+              }
+              assertThat(row[0]).as("CUSTOM_METHOD_CHANGED of " + id).isNotNull();
+            });
+    assertThat(row[0].actorType()).isEqualTo("user");
+    assertThat(row[0].actorId()).isEqualTo(applier.id().toString());
+    assertThat(row[0].actorName()).isEqualTo(applier.username());
+    assertThat(row[0].targetType()).isEqualTo("config_change");
+    assertThat(row[0].targetName()).isEqualTo(appName);
+    assertThat(row[0].result()).isEqualTo("success");
+    assertThat(row[0].after())
+        .contains("com.shop.Cart#checkout")
+        .matches("(?s).*\"applied\":\\s*1.*");
+  }
+
+  /** Proposes and applies a change of the custom methods to {@code target} only. */
+  private static UUID customChange(FakeAgent target, String value) {
+    return customChange(admin, target, value);
+  }
+
+  /** Proposes and applies, as {@code as}, a change of the custom methods to {@code target}. */
+  private static UUID customChange(ApiTestClient as, FakeAgent target, String value) {
+    ApiResponse created =
+        as.post(
+            changesPath(),
+            "{\"reason\":\"Trace order placement (INC-51)\",\"changes\":{"
+                + "\"instrumentation.custom-methods\":"
+                + "\""
+                + value.replace("\"", "\\\"")
+                + "\""
+                + "},\"targets\":{\"instance_ids\":["
+                + target.instanceId()
+                + "]}}");
+    assertThat(created.status()).as(created.toString()).isEqualTo(201);
+    UUID id = UUID.fromString(created.json().path("data").path("change_id").asString());
+    ApiResponse apply = as.post("/api/v1/admin/config/changes/" + id + "/apply", "{}");
+    assertThat(apply.status()).as(apply.toString()).isEqualTo(202);
+    return id;
+  }
 }

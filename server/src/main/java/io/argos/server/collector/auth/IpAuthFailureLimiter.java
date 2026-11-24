@@ -3,6 +3,7 @@ package io.argos.server.collector.auth;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import io.argos.server.audit.AgentAuditEvents;
 import io.argos.server.collector.CollectorCalls;
 import io.argos.server.collector.CollectorMetrics;
 import io.argos.server.collector.limits.SlidingWindowCounter;
@@ -52,6 +53,7 @@ public final class IpAuthFailureLimiter implements ServerInterceptor {
   private final CollectorMetrics metrics;
   private final SlidingWindowCounter<String> failures;
   private final Cache<String, Long> blockedUntil;
+  private volatile AgentAuditEvents audit = AgentAuditEvents.NONE;
 
   /**
    * @param failuresPerMinute failures within a minute that block an address
@@ -91,12 +93,36 @@ public final class IpAuthFailureLimiter implements ServerInterceptor {
     return Contexts.interceptCall(context, call, headers, next);
   }
 
+  /**
+   * Where the agent audit events go ({@code AGENT_AUTH_FAILED}, {@code AGENT_AUTH_BLOCKED};
+   * ADR-0010 C-158 (1)); {@link AgentAuditEvents#NONE} until the audit service hands itself over.
+   */
+  public void auditEvents(AgentAuditEvents events) {
+    this.audit = events == null ? AgentAuditEvents.NONE : events;
+  }
+
   /** Records one authentication failure of {@code peer}; blocks it at the threshold. */
   public void recordFailure(String peer) {
+    recordFailure(peer, null, null);
+  }
+
+  /**
+   * Records one authentication failure of {@code peer} and its audit event {@code
+   * AGENT_AUTH_FAILED} (when {@code reason} is given); blocks the address at the threshold ({@code
+   * AGENT_AUTH_BLOCKED}). The audit calls never block (they queue).
+   *
+   * @param tokenPrefix the token's display prefix, or null
+   * @param reason the failure reason code, or null to record no {@code AGENT_AUTH_FAILED}
+   */
+  public void recordFailure(String peer, String tokenPrefix, String reason) {
     long now = clock.millis();
+    if (reason != null) {
+      audit.authFailed(peer, tokenPrefix, reason);
+    }
     if (failures.record(peer, now)) {
       blockedUntil.put(peer, now + block.toMillis());
       failures.reset(peer);
+      audit.authBlocked(peer, block.toMinutes());
       LOG.warn(
           "Blocking agent connections from {} for {} min after repeated authentication failures"
               + " (16 §2.5)",

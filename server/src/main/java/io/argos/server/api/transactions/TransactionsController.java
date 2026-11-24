@@ -109,9 +109,10 @@ public class TransactionsController {
               + " hour, and meta.from/meta.to give the range used; any other search without from or"
               + " to answers 400 range_invalid, detail missing). format=csv exports up to 10,000"
               + " rows"
-              + " (more: 400 limit_exceeded) and records EXPORT_CSV. A user_id filter on an"
-              + " application in hashed mode answers 422 filter_invalid (user_id_hash_unavailable)"
-              + " until application salts exist.",
+              + " (more: 400 limit_exceeded) and records EXPORT_CSV. A user_id filter matches"
+              + " plain-mode rows and, where instances record hashed user ids, the application's"
+              + " salted HMAC of the id (16 §6.3); only an application in hashed mode alone whose"
+              + " salt cannot be read answers 422 filter_invalid (user_id_hash_unavailable).",
       responses =
           @ApiResponse(
               responseCode = "200",

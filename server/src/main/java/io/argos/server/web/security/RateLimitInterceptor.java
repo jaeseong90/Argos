@@ -18,8 +18,9 @@ import org.springframework.web.servlet.HandlerInterceptor;
  * heavy token:
  *
  * <ul>
- *   <li>{@link RateLimitBucket#HEAVY}: one bucket per user ({@code users.id}; a handler without a
- *       session, which a heavy endpoint never is, per client address);
+ *   <li>{@link RateLimitBucket#HEAVY} and {@link RateLimitBucket#PRIVACY_DELETE}: one bucket per
+ *       user ({@code users.id}; a handler without a session, which these endpoints never are, per
+ *       client address);
  *   <li>{@link RateLimitBucket#AUTH}, {@link RateLimitBucket#CSP_REPORT}: per client address,
  *       unless {@link IpRateLimitFilter} already charged that bucket for the request by its path;
  *   <li>buckets the web layer does not enforce: nothing (their work order does).
@@ -54,7 +55,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
       return true;
     }
     String key =
-        bucket == RateLimitBucket.HEAVY
+        bucket == RateLimitBucket.HEAVY || bucket == RateLimitBucket.PRIVACY_DELETE
             ? ArgosPrincipal.current()
                 .map(p -> "user:" + p.userId())
                 .orElseGet(() -> "ip:" + RateLimiter.clientAddress(request))

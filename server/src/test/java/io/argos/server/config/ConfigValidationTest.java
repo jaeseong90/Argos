@@ -104,6 +104,46 @@ class ConfigValidationTest {
   }
 
   @Test
+  @Tag("req:SEC-82")
+  @DisplayName(
+      "C-116 argos.retention.audit below 90 days is refused, 90 days accepted;"
+          + " argos.privacy.deletion.max-range is whole days from 1 to 31")
+  void auditRetentionFloorAndDeletionRange() {
+    Map<String, Object> settings = validSettings(dir);
+    settings.put("argos.retention.audit", "89d");
+    settings.put("argos.privacy.deletion.max-range", "32d");
+    assertThat(violations(settings))
+        .containsExactly(
+            "argos.privacy.deletion.max-range: must be whole days between 1d and 31d"
+                + " (file [conf/application.yml])",
+            "argos.retention.audit: must be at least 90d (C-116, SEC-82)"
+                + " (file [conf/application.yml])");
+    settings.put("argos.retention.audit", "90d");
+    settings.put("argos.privacy.deletion.max-range", "30d");
+    assertThat(violations(settings)).isEmpty();
+  }
+
+  @Test
+  @Tag("req:F-S23")
+  @DisplayName(
+      "argos.ops.emergency.target-ratio must be below the emergency ratio; drops-per-minute 1 to"
+          + " 600 (WO-28)")
+  void emergencyRetentionKeys() {
+    Map<String, Object> settings = validSettings(dir);
+    settings.put("argos.ops.emergency.target-ratio", "0.9");
+    assertThat(violations(settings))
+        .containsExactly(
+            "argos.ops.emergency.target-ratio: must be below argos.ops.disk.emergency-ratio"
+                + " (file [conf/application.yml])");
+    settings.put("argos.ops.emergency.target-ratio", "0.85");
+    settings.put("argos.ops.emergency.drops-per-minute", "601");
+    assertThat(violations(settings))
+        .anyMatch(s -> s.startsWith("argos.ops.emergency.drops-per-minute:"));
+    settings.put("argos.ops.emergency.drops-per-minute", "1");
+    assertThat(violations(settings)).isEmpty();
+  }
+
+  @Test
   @DisplayName("cross-key rules: durations, retention days, thresholds, cron, CIDRs, SMTP")
   void crossKeyRules() {
     Map<String, Object> settings = validSettings(dir);

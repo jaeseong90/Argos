@@ -1,11 +1,16 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.server.audit;
 
+import java.time.Instant;
+import java.util.Objects;
+
 /**
  * One row of {@code audit_logs} as a sink writes it (13 §12 columns; values already cut to the
- * column sizes and masked by {@link DefaultAuditService}). The timestamp is the database's {@code
- * now()} at insert.
+ * column sizes and masked by {@link DefaultAuditService}). Every sink writes the same record: the
+ * PostgreSQL row, the JSON Lines line and the syslog message carry the same {@code ts}.
  *
+ * @param ts when the service recorded the event (the server's wall clock, UTC); the PostgreSQL row
+ *     stores this value, not the database's {@code now()}
  * @param actorType {@code user}, {@code agent} or {@code system} (8)
  * @param actorId actor id (64), or null
  * @param actorName actor name (128), or null
@@ -20,8 +25,11 @@ package io.argos.server.audit;
  * @param reason reason code (512), or null
  * @param beforeJson masked JSON object, or null
  * @param afterJson masked JSON object, or null
+ * @param subjectUserId the user id whose personal data was viewed (SEC-81, 128), or null
+ * @param subjectTxId the transaction whose personal data was viewed (SEC-81), or null
  */
 public record AuditRecord(
+    Instant ts,
     String actorType,
     String actorId,
     String actorName,
@@ -35,4 +43,14 @@ public record AuditRecord(
     String result,
     String reason,
     String beforeJson,
-    String afterJson) {}
+    String afterJson,
+    String subjectUserId,
+    Long subjectTxId) {
+
+  public AuditRecord {
+    Objects.requireNonNull(ts, "ts");
+    Objects.requireNonNull(actorType, "actorType");
+    Objects.requireNonNull(action, "action");
+    Objects.requireNonNull(result, "result");
+  }
+}

@@ -656,14 +656,25 @@ export const RULE_SECTIONS = ['target', 'condition', 'schedule', 'notify', 'prev
 let previewRecorders = 0;
 
 /**
- * The preview requests the page sends from now on (bodies, in order). The browser's network events
- * do not carry these bodies (the shared transport sends a cloned Request: postData is null, see
- * xlogChecks expectCsvDownload), so the page's fetch is wrapped and the body of each
- * POST /alerts/rules/preview is copied (Request.clone) to a test binding before it is sent. The
- * wrapper lives until the next document load (the rule screens navigate inside the app).
+ * The preview requests the page sends from now on (bodies, in order): `recordPostBodies` of
+ * POST /alerts/rules/preview.
  */
 export async function recordPreviews(
   page: Page,
+): Promise<{ bodies: () => unknown[]; stop: () => void }> {
+  return recordPostBodies(page, '/api/v1/alerts/rules/preview');
+}
+
+/**
+ * The JSON bodies of the POST requests to `path` the page sends from now on, in order. The
+ * browser's network events do not carry these bodies (the shared transport sends a cloned Request:
+ * postData is null, see xlogChecks expectCsvDownload), so the page's fetch is wrapped and the body
+ * of each matching POST is copied (Request.clone) to a test binding before it is sent. The wrapper
+ * lives until the next document load (the screens navigate inside the app).
+ */
+export async function recordPostBodies(
+  page: Page,
+  path: string,
 ): Promise<{ bodies: () => unknown[]; stop: () => void }> {
   const bodies: unknown[] = [];
   let active = true;
@@ -696,7 +707,7 @@ export async function recordPreviews(
         return original(input, init);
       };
     },
-    [binding, '/api/v1/alerts/rules/preview'] as const,
+    [binding, path] as const,
   );
   return {
     bodies: () => [...bodies],

@@ -14,7 +14,8 @@ import java.util.regex.Pattern;
  *   <li>{@link #foreignStdoutLines}: stdout lines that are neither a log line of the application
  *       (Spring Boot console format, banner off) nor a continuation of one (stack trace lines);
  *   <li>{@link #agentMentions}: lines that name the agent ({@code io.argos.agent}, {@code Argos
- *       agent}, {@code [argos});
+ *       agent}, {@code [argos}, but not the MDC keys {@code [argos.trace_id=} / {@code
+ *       [argos.tx_id=} that the application's pattern prints);
  *   <li>{@link #unexpectedStderrLines}: stderr lines other than the JVM's CDS notice (10 §14
  *       "CDS").
  * </ul>
@@ -48,8 +49,16 @@ public final class AppOutput {
           "(OpenJDK|Java HotSpot\\(TM\\)) 64-Bit Server VM warning: Sharing is only supported for"
               + " boot loader classes because bootstrap classpath has been appended");
 
+  /**
+   * Agent mentions. The MDC keys {@code argos.trace_id} and {@code argos.tx_id} (10 §6.9, WO-18)
+   * are a public contract that the application's own log pattern prints ({@code [%X]} in the shop
+   * apps gives {@code [argos.trace_id=..., argos.tx_id=...]}); they are application output, not
+   * agent output, so {@code [argos} followed by one of those keys is not a mention.
+   */
   private static final Pattern AGENT_MENTION =
-      Pattern.compile("(io\\.argos\\.agent|Argos agent|\\[argos)", Pattern.CASE_INSENSITIVE);
+      Pattern.compile(
+          "(io\\.argos\\.agent|Argos agent|\\[argos(?!\\.(?:trace_id|tx_id)=))",
+          Pattern.CASE_INSENSITIVE);
 
   private AppOutput() {}
 

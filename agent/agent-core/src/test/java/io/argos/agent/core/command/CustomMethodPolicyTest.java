@@ -3,11 +3,16 @@ package io.argos.agent.core.command;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.argos.agent.core.config.AgentConfig;
+import io.argos.agent.core.config.ConfigInputs;
+import io.argos.agent.core.config.ConfigLoader;
 import io.argos.agent.core.log.LogCapture;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -103,28 +108,72 @@ class CustomMethodPolicyTest {
   @Test
   @DisplayName(
       "T-SEC-25 globs: * within a package segment, ** across, ? one character; method globs and"
-          + " the step type and as-transaction fields")
+          + " the as-transaction field")
   void globs() {
     CustomMethodPolicy policy =
         CustomMethodPolicy.of(
             Arrays.asList(
                 "com.example.service.*Service#find*",
-                "com.example.**.Repo?#save|SQL|true",
-                "com.example.Api#<init>|METHOD"),
+                "com.example.**.Repo?#save|true",
+                "com.example.Api#<init>|false"),
             500);
     CustomMethodPolicy.Item service = policy.items().get(0);
     assertThat(service.matchesClass("com.example.service.OrderService")).isTrue();
     assertThat(service.matchesClass("com.example.service.sub.OrderService")).isFalse();
     assertThat(service.matchesMethod("findAll")).isTrue();
     assertThat(service.matchesMethod("save")).isFalse();
-    assertThat(service.stepType()).isEqualTo("METHOD");
+    assertThat(service.stepTypeSuffix()).isFalse();
     assertThat(service.asTransaction()).isFalse();
     CustomMethodPolicy.Item repo = policy.items().get(1);
     assertThat(repo.matchesClass("com.example.a.b.RepoX")).isTrue();
     assertThat(repo.matchesClass("com.example.a.b.RepoXY")).isFalse();
-    assertThat(repo.stepType()).isEqualTo("SQL");
+    assertThat(repo.stepTypeSuffix()).isFalse();
     assertThat(repo.asTransaction()).isTrue();
     assertThat(policy.items().get(2).matchesMethod("<init>")).isTrue();
+    assertThat(policy.items().get(2).asTransaction()).isFalse();
+  }
+
+  @Test
+  @DisplayName(
+      "T-SEC-25 C-237 (5) an item with a step type suffix of the earlier format (|SQL, |METHOD,"
+          + " |METHOD|true) is ignored alone with one WARN that names the position, never the"
+          + " item; the other items stay active")
+  void stepTypeSuffixIgnored() {
+    CustomMethodPolicy policy =
+        CustomMethodPolicy.of(
+            Arrays.asList(
+                "com.example.Repo#save|SQL",
+                "com.example.Job#run|METHOD|true",
+                "com.example.Api#call|METHOD",
+                "com.example.Batch#run|TRUE",
+                "com.example.Service#find*"),
+            500);
+    assertThat(policy.ignoredCount()).isEqualTo(3);
+    assertThat(policy.items())
+        .extracting(CustomMethodPolicy.Item::stepTypeSuffix)
+        .containsExactly(true, true, true, false, false);
+    assertThat(policy.items().get(0).matchesClass("com.example.Repo")).isFalse();
+    assertThat(policy.items().get(1).asTransaction()).isFalse();
+    assertThat(policy.activeItems())
+        .extracting(CustomMethodPolicy.Item::position)
+        .containsExactly(4, 5);
+    assertThat(policy.items().get(3).asTransaction()).isTrue();
+    assertThat(CustomMethodPolicy.hasStepTypeSuffix("a.B#c|SQL")).isTrue();
+    assertThat(CustomMethodPolicy.hasStepTypeSuffix("a.B#c|METHOD|false")).isTrue();
+    assertThat(CustomMethodPolicy.hasStepTypeSuffix("a.B#c|false")).isFalse();
+    assertThat(CustomMethodPolicy.hasStepTypeSuffix("a.B#c")).isFalse();
+
+    try (LogCapture log = LogCapture.start("INFO")) {
+      policy.warnIgnored("local configuration:");
+      List<String> warns = log.linesAt("WARN");
+      assertThat(warns).hasSize(3);
+      assertThat(warns.get(0))
+          .contains(
+              "local configuration: instrumentation.custom-methods item 1 ignored: a step type"
+                  + " suffix is not supported (custom methods always record METHOD steps)");
+      assertThat(warns.get(2)).contains("item 3 ignored: a step type suffix");
+      assertThat(log.text()).doesNotContain("Repo#save").doesNotContain("Job#run");
+    }
   }
 
   @Test
@@ -207,5 +256,51 @@ class CustomMethodPolicyTest {
     assertThat(modifiable.classes()).containsExactly(org.junit.jupiter.api.Test.class);
     assertThat(CustomMethodPolicy.forbiddenPrefixOf("javax.foo.Bar#x|SQL")).isEqualTo("javax.");
     assertThat(CustomMethodPolicy.forbiddenPrefixOf("com.foo.Bar#x")).isNull();
+  }
+
+  @Test
+  @DisplayName(
+      "T-SEC-25 agent start installs the local policy: a mixed list ignores only the forbidden"
+          + " item with one WARN (no item text) and keeps the others; no items installs the empty"
+          + " policy; isOf recognises the installed value")
+  void installLocal() {
+    Map<String, String> properties = new HashMap<String, String>();
+    properties.put(
+        "argos.instrumentation.custom-methods",
+        "[com.example.A#a, java.lang.String#*, com.example.B#*]");
+    AgentConfig config = load(properties);
+    try (LogCapture log = LogCapture.start("INFO")) {
+      CustomMethodPolicy policy = CustomMethodPolicy.installLocal(config);
+      assertThat(CustomMethodPolicy.current()).isSameAs(policy);
+      assertThat(policy.ignoredCount()).isEqualTo(1);
+      assertThat(policy.activeItems())
+          .extracting(CustomMethodPolicy.Item::position)
+          .containsExactly(1, 3);
+      assertThat(log.linesAt("WARN"))
+          .singleElement()
+          .asString()
+          .contains(
+              "local configuration: instrumentation.custom-methods item 2 ignored: the class"
+                  + " pattern starts with the forbidden prefix java.")
+          .doesNotContain("String#");
+      assertThat(
+              policy.isOf(
+                  config.instrumentationCustomMethods(),
+                  config.instrumentationCustomMethodsMaxClassesPerPattern()))
+          .isTrue();
+      assertThat(policy.isOf(Collections.singletonList("com.example.A#a"), 500)).isFalse();
+    }
+    assertThat(CustomMethodPolicy.installLocal(load(new HashMap<String, String>())).isEmpty())
+        .isTrue();
+    assertThat(CustomMethodPolicy.current().isOf(Collections.<String>emptyList(), 500)).isTrue();
+  }
+
+  private static AgentConfig load(Map<String, String> properties) {
+    Map<String, String> all = new HashMap<String, String>(properties);
+    all.put("argos.server.address", "collector.example:9100");
+    all.put("argos.app.name", "orders");
+    return ConfigLoader.load(
+            new ConfigInputs(null, all, Collections.<String, String>emptyMap(), false))
+        .config();
   }
 }

@@ -10,6 +10,21 @@ Outgoing calls through Apache HttpClient 4 (classic, blocking).
 
 ## Supported library versions
 
+### Version range and witness
+
+| Library | Supported range | Minimum verified | Maximum verified | Boundary tests |
+|---|---|---|---|---|
+| `org.apache.httpcomponents:httpclient` | 4.5.x | 4.5.14 | 4.5.14 | `test` on JDK 8 (`Apache4AdviceTest`, `HttpClientApache4ModuleTest`); end to end `agent-testing` `httpclient.HttpClientStepsTest` (shop-boot2 on JDK 8, `client=hc4`) |
+
+- Witness (`HttpClientApache4Module.witness()`, resource lookup only): `org.apache.http.impl.client.CloseableHttpClient`,
+  `org.apache.http.HttpRequest` and `org.apache.http.HttpHost`.
+- Run: `./gradlew :agent:agent-instrumentation:httpclient-apache4:test`; end to end
+  `./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8 --tests '*httpclient*'`.
+- One version only: the lower boundary (4.5.0) needs artifacts that are not in the build's
+  verification metadata yet.
+
+### Details
+
 | Library | Range | Tested (module tests) |
 |---|---|---|
 | `org.apache.httpcomponents:httpclient` | 4.5.x | 4.5.14 |

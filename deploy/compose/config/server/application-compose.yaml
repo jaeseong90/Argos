@@ -6,7 +6,8 @@
 # packaged application.yml of the server. It holds no secret: every secret is a file under
 # /run/secrets, named by a *-file key.
 #
-# Container paths: /data (volume argos-data: WAL, setup token, JWT key, temporary files),
+# Container paths: /data (volume argos-data: WAL, dead-letter blocks, setup token, JWT key,
+# temporary files),
 # /logs (volume argos-logs: server log files), /conf (this file and tls/), /run/secrets (Compose
 # secrets from ./secrets).
 #
@@ -48,6 +49,12 @@ argos:
     public-url: ${ARGOS_WEB_PUBLIC_URL:}
   # Secret files (17 section 6.1): never values.
   master-key-file: ${ARGOS_MASTER_KEY_FILE:/run/secrets/master_key}
+  postgres:
+    # The audit retention account (V001 argos_audit, ADR-0010 C-116): the daily partition job
+    # (04:30) creates the coming audit_logs months and drops months outside argos.retention.audit.
+    audit:
+      user: argos_audit
+      password-file: /run/secrets/pg_audit_password
   # Empty: setup token wizard. Set by compose.unattended.yaml: unattended administrator.
   admin-password-file: ${ARGOS_ADMIN_PASSWORD_FILE:}
   jwt-key-file: /data/jwt.key
@@ -61,6 +68,12 @@ argos:
       key-file: ${ARGOS_TLS_KEY_FILE:/conf/tls/server.key}
   wal:
     dir: /data/wal
+  # Blocks ClickHouse refused three times with a schema, type or parse error (ADR-0010 C-158 (3)):
+  # kept for the operator (0700/0600, bounded by argos.writer.dead-letter.max-bytes, never deleted
+  # automatically).
+  writer:
+    dead-letter:
+      dir: /data/dead-letter
 
 logging:
   file:

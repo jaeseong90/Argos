@@ -82,13 +82,16 @@ class AgentArchitectureTest {
     assertThat(layout.relocatedPackages()).contains("net.bytebuddy", "io.netty", "io.grpc");
     assertThat(layout.entryPoints()).containsExactly("io.argos.agent.AgentPremain");
     assertThat(layout.guardHolder()).isEqualTo("io.argos.agent.bootstrap.Argos");
-    // Approved 1.0 entries (10 §5.3 A-5): httpclient-jdk11 (WO-14). A new entry needs approval.
+    // Approved 1.0 entries (10 §5.3 A-5): httpclient-jdk11 (WO-14), logging/logback @Return and
+    // logging/log4j1 @FieldValue("mdcCopy") (WO-18). A new entry needs approval.
     assertThat(layout.allowlist().entries())
         .extracting(
             e -> e.module() + "|" + e.adviceClass() + "|" + e.method() + "|" + e.annotation())
         .containsExactly(
             "httpclient-jdk11|io.argos.agent.instrumentation.httpclient.jdk11.HttpClientSendAdvice"
-                + "|enter|Argument");
+                + "|enter|Argument",
+            "logging|io.argos.agent.instrumentation.logging.LogbackMdcAdvice|exit|Return",
+            "logging|io.argos.agent.instrumentation.logging.Log4j1EventAdvice|exit|FieldValue");
   }
 
   @Test

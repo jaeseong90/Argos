@@ -29,7 +29,6 @@ public class TransactionBaselineService {
   private final QueryExecutor executor;
   private final DictionaryNames names;
   private final QuerySources sources;
-  private final ArgosProperties.Retention retention;
 
   public TransactionBaselineService(
       QueryExecutor executor,
@@ -39,7 +38,6 @@ public class TransactionBaselineService {
     this.executor = executor;
     this.names = names;
     this.sources = sources;
-    this.retention = properties.retention();
   }
 
   /** The baseline of the first row of {@code found}. */
@@ -76,7 +74,7 @@ public class TransactionBaselineService {
     String sample = null;
     Instant sampleTs = null;
     Boolean sameInstance = null;
-    boolean rawAvailable = from.isAfter(sources.now().minus(retention.xlog()));
+    boolean rawAvailable = from.isAfter(sources.now().minus(sources.xlogRetention()));
     if (rawAvailable) {
       QueryParams base =
           QueryParams.create()

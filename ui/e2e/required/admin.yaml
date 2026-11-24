@@ -1,0 +1,160 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# docs/05 §2.11 "관리 화면" and the docs/15 §9.10 screens it does not list (users and roles, audit
+# log, about) as data-driven E2E tests (docs/18 §13, DSN-18-10): one entry per item, in checklist
+# order. Each item opens its administration screen on the real stack and runs a named check of
+# e2e/required/adminChecks.ts that asks the API the same question inside the test (GET /apps,
+# /apps/{id}/instances, /admin/pending-registrations, /admin/apps/{id}/tokens, /admin/apps/{id}/
+# config, /apps/{id}/collection-health, /admin/settings/privacy and /retention, /about/licenses,
+# /admin/users, /admin/audit, /about) and compares the screen with the answer. The shared engine
+# (specs/required.spec.ts) declares them as T-E2E-admin-<n> (n from 1; specs/admin.spec.ts uses
+# 20 and up). The changes themselves (create, issue once, approve, config change with diff and
+# revert, kill switch, rotate and revoke, users, deletion requests) run end to end against the
+# real agent in specs/admin.spec.ts (T-E2E-admin-20 .. 29); `coverage` names those and the
+# component tests behind each item.
+screen: admin
+title: Administration screens
+source: docs/05 §2.11, docs/15 §9.10
+items:
+  - id: 2.11-1
+    title: application list with name, environment, group, instances, tokens, registration policy, recommended rules and last received (operator read only)
+    req: [F-U10, F-S30]
+    owner: WO-39
+    coverage: E2E T-E2E-admin-20 (create); component AdminAppsPage.test.tsx; T-API-013b (tokens_active)
+    role: operator
+    route: /admin/apps
+    assert:
+      - visible: admin-apps
+      - check: adminAppsList
+
+  - id: 2.11-2
+    title: instance list with state, name, agent version (compat warning), config hash (drift), last heartbeat, drops, clock offset, disabled modules and IP mode; archived list
+    req: [F-U10, F-S28]
+    owner: WO-39
+    coverage: E2E T-E2E-admin-20 (UP row of the real agent); component AdminInstancesPage.test.tsx (compat badge, drift, archive and delete)
+    role: operator
+    route: /admin/instances?app={primary_app_id}
+    assert:
+      - visible: admin-instances
+      - check: adminInstancesList
+
+  - id: 2.11-3
+    title: registration approval queue with name and environment, host, attempts; approve and reject offered
+    req: [F-U10, F-S30]
+    owner: WO-39
+    coverage: E2E T-E2E-admin-23 (a refused agent queued, approved with its token shown once, another rejected); component AdminPendingPage.test.tsx
+    role: admin
+    route: /admin/pending
+    assert:
+      - visible: admin-pending
+      - check: adminPendingList
+
+  - id: 2.11-4
+    title: agent tokens by prefix with issuer, created, expiry (expires soon badge), last use, live sessions and state; issue, rotate, revoke
+    req: [F-U10, F-S01, SEC-02]
+    owner: WO-39
+    coverage: E2E T-E2E-admin-20 (issue once) and T-E2E-admin-24 (rotate once, revoke ends the session); component AdminTokensPage.test.tsx (nothing kept after the dialog)
+    role: admin
+    route: /admin/tokens?app={traffic_app_id}
+    assert:
+      - visible: admin-tokens
+      - check: adminTokensList
+
+  - id: 2.11-5
+    title: configuration change with the current effective values, remotely allowed keys only (others locked), reason, targets, preview, history
+    req: [F-U10, F-S29, SEC-23]
+    owner: WO-39
+    coverage: E2E T-E2E-admin-21 (diff = preview, applied within 10 s on the real agent, revert, 422 for a local key); component AdminConfigPage.test.tsx
+    role: admin
+    route: /admin/config?app={traffic_app_id}
+    assert:
+      - visible: admin-config
+      - check: adminConfigScreen
+
+  - id: 2.11-6
+    title: kill switch section with the application state; the confirmation explains the impact and Cancel sends nothing
+    req: [F-U10, F-A13]
+    owner: WO-39
+    coverage: E2E T-E2E-admin-22 (on with the real agent, WARN kill_switch on the dashboard tile, off again) and T-E2E-admin-26 (audit row)
+    role: admin
+    route: /admin/config?app={traffic_app_id}
+    assert:
+      - visible: admin-config
+      - check: adminKillSwitchSection
+
+  - id: 2.11-7
+    title: install guide with the -javaagent options, argos-agent.yml, the --check command, the compatibility note and the canary checklist
+    req: [F-U10, F-A27]
+    owner: WO-39
+    coverage: E2E T-E2E-admin-20 (the guide of a new app, then the issued token attaches a real agent); component javaagent.test.ts
+    role: operator
+    route: /admin/apps?app={primary_app_id}
+    assert:
+      - visible: admin-install
+      - check: adminInstallGuide
+
+  - id: 2.11-8
+    title: collection health ranking by drops, ingest lag, clock offset and excluded requests
+    req: [F-U10, F-S28, D-19]
+    owner: WO-39
+    coverage: E2E T-E2E-admin-28 (the dashboard's excluded link opens it); component AdminInstancesPage.test.tsx and the dashboard link test
+    role: operator
+    route: /admin/instances?tab=collection&app={primary_app_id}&from={range_from}&to={range_to}
+    assert:
+      - visible: admin-collection
+      - check: adminCollectionRanking
+
+  - id: 2.11-9
+    title: privacy settings per instance (IP, user id, query string, SQL parameters), the server default, the deletion request form and the retention values
+    req: [F-U10, SEC-33, F-S32]
+    owner: WO-39
+    coverage: E2E T-E2E-admin-27 (a deletion job to done, the subject in no page URL); component AdminPrivacyPage.test.tsx
+    role: admin
+    route: /admin/privacy?app={traffic_app_id}
+    assert:
+      - visible: admin-privacy
+      - check: adminPrivacyScreen
+
+  - id: 2.11-10
+    title: open source licenses of server, UI and agent as the server reports them (or why they are missing)
+    req: [F-U10, O-L04]
+    owner: WO-39
+    coverage: E2E T-E2E-admin-29; T-API-013a; the generated lists themselves are WO-44
+    role: viewer
+    route: /admin/licenses
+    assert:
+      - visible: admin-licenses
+      - check: adminLicenses
+
+  - id: 9.10-1
+    title: (15 §9.10) users with role, enabled, lockout, must change password; create, own account not deletable
+    req: [F-U10, F-S05, SEC-49]
+    owner: WO-39
+    coverage: E2E T-E2E-admin-25 (create with the password once, forced change, role, end sessions, unlock, delete); component AdminUsersPage.test.tsx
+    role: admin
+    route: /admin/users
+    assert:
+      - visible: admin-users
+      - check: adminUsersList
+
+  - id: 9.10-2
+    title: (15 §9.10) audit log over the range with the action filter in the URL; rows = GET /admin/audit; CSV export offered
+    req: [F-U10, F-S08, SEC-80]
+    owner: WO-39
+    coverage: E2E T-E2E-admin-26 (rows and the CSV of the same filter); component AdminAuditPage.test.tsx
+    role: admin
+    route: /admin/audit?range=24h&action=LOGIN_SUCCESS
+    assert:
+      - visible: admin-audit
+      - check: adminAuditList
+
+  - id: 9.10-3
+    title: (15 §9.10) about with server version, commit, protocol, uptime and the agent version distribution
+    req: [F-U10]
+    owner: WO-39
+    coverage: E2E T-E2E-admin-29; T-API-013a
+    role: viewer
+    route: /admin/about
+    assert:
+      - visible: admin-about
+      - check: adminAbout

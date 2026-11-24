@@ -26,3 +26,5 @@
 #   httpclient-reactornetty: only if 10 §6.5 needs it
 
 httpclient-jdk11 | io.argos.agent.instrumentation.httpclient.jdk11.HttpClientSendAdvice | enter | Argument | HttpClientImpl.send/sendAsync request -> the same request plus propagation headers (Jdk11RequestHelper delegates every other method; 10 §5.3 A-5, approved for 1.0)
+logging | io.argos.agent.instrumentation.logging.LogbackMdcAdvice | exit | Return | Logback LoggingEvent.getMDCPropertyMap/getMdc -> a new unmodifiable map: the event's entries plus argos.trace_id and argos.tx_id (event field and thread MDC unchanged; 10 §5.3 A-5, §6.9, approved for 1.0)
+logging | io.argos.agent.instrumentation.logging.Log4j1EventAdvice | exit | FieldValue | Log4j 1.2/reload4j LoggingEvent.<init> mdcCopy -> a copy of the event's MDC copy plus argos.trace_id and argos.tx_id (thread MDC unchanged; 10 §5.3 A-5, §6.9, approved for 1.0)

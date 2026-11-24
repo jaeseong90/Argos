@@ -154,8 +154,9 @@ describe('T-UI-006 application instance (createAppI18n)', () => {
     const { loaders, calls } = countingLoaders();
     const i18n = appI18n('ko', loaders);
     await loadRouteNamespaces('account', i18n);
-    // /alerts has its catalog since WO-38; the administration screens still have none (WO-39).
-    await loadRouteNamespaces('admin-apps', i18n);
+    // The administration screens have their catalog since WO-39; the application map (F-U11)
+    // is still a placeholder without one.
+    await loadRouteNamespaces('map', i18n);
     expect(calls).toEqual([]);
   });
 

@@ -2,6 +2,7 @@
 package io.argos.agent.core.transport;
 
 import io.argos.agent.core.config.AgentConfig;
+import io.argos.agent.core.config.AppVersion;
 import io.argos.agent.core.metric.CgroupReader;
 import io.argos.proto.ProtocolLimits;
 import io.argos.proto.ProtocolVersion;
@@ -28,9 +29,10 @@ import java.util.Locale;
  * updates them; a new session's hello carries the latest ones).
  *
  * <ul>
- *   <li>configuration: {@code app.name}, {@code app.env}, {@code app.version}, {@code app.instance}
- *       (else {@code host:pid} until the connector port is known), {@code config_hash} (token
- *       excluded), {@code remote_config_allow}, the four capture modes;
+ *   <li>configuration: {@code app.name}, {@code app.env}, {@code app.version} (else the main jar's
+ *       {@code Implementation-Version}, {@link AppVersion}), {@code app.instance} (else {@code
+ *       host:pid} until the connector port is known), {@code config_hash} (token excluded), {@code
+ *       remote_config_allow}, the four capture modes;
  *   <li>runtime: agent version, {@code protocol_version} ({@code ProtocolVersion.CURRENT}), host
  *       name, pid, JVM version and vendor, OS, architecture, process start, {@code cgroup} ({@code
  *       v1}, {@code v2} or {@code none}, {@link CgroupReader#systemMode()}), {@code
@@ -66,7 +68,9 @@ final class AgentIdentity implements SessionClient.HelloSource {
     String instance = config.appInstance();
     this.instanceName =
         instance == null || instance.trim().isEmpty() ? host + ":" + pid : instance.trim();
-    this.appVersion = config.appVersion() == null ? "" : config.appVersion();
+    // app.version, else the main jar's Implementation-Version (one manifest read per JVM, on
+    // argos-sender; T-AG-066), else empty.
+    this.appVersion = AppVersion.of(config).value();
     this.configHash = configHash == null ? "" : configHash;
     int string = ProtocolLimits.DEFAULT_MAX_STRING_BYTES;
     AgentHello.Builder hello =

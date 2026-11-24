@@ -217,6 +217,53 @@ class RetransformerTest {
 
   @Test
   @DisplayName(
+      "T-SEC-25 a refused change (retransform_limit) whose item is over the class limit logs no"
+          + " 'disabled' WARN and leaves the policy in force and its counters unchanged; the same"
+          + " change accepted a minute later warns once (WO-17 lane A2 note)")
+  void refusedChangeDisablesNothing() throws Exception {
+    Class<?>[] classes = copiesOfTarget(3);
+    FakeInstrumentation inst = new FakeInstrumentation(classes);
+    Retransformer retransformer = retransformer(inst);
+    CustomMethodPolicy first = policy(TARGET + "#value");
+    assertThat(retransformer.apply(CustomMethodPolicy.current(), first).applied()).isTrue();
+    millis.addAndGet(10_000L);
+    try (LogCapture log = LogCapture.start("INFO")) {
+      // At most 2 classes per item: TARGET#* (3 classes) is over the limit; the 3 classes of the
+      // value in force make the change touch classes, so the minute refuses it.
+      CustomMethodPolicy tooWide =
+          CustomMethodPolicy.of(Collections.singletonList(TARGET + "#*"), 2);
+      Retransformer.Result refused = retransformer.apply(first, tooWide);
+      assertThat(refused.applied()).isFalse();
+      assertThat(refused.refusal()).startsWith("retransform_limit: ");
+      assertThat(log.linesAt("WARN"))
+          .singleElement()
+          .asString()
+          .contains("retransform_limit")
+          .doesNotContain("disabled");
+    }
+    assertThat(CustomMethodPolicy.current()).isSameAs(first);
+    assertThat(first.disabledCount()).isZero();
+    assertThat(retransformer.diagnostics())
+        .containsEntry(Retransformer.EXTRA_DISABLED, 0L)
+        .containsEntry(Retransformer.EXTRA_REJECTED, 1L)
+        .containsEntry(Retransformer.EXTRA_CLASSES, 3L);
+    assertThat(inst.calls).hasSize(1);
+
+    millis.addAndGet(60_000L);
+    try (LogCapture log = LogCapture.start("INFO")) {
+      CustomMethodPolicy again = CustomMethodPolicy.of(Collections.singletonList(TARGET + "#*"), 2);
+      assertThat(retransformer.apply(first, again).applied()).isTrue();
+      assertThat(log.linesAt("WARN"))
+          .singleElement()
+          .asString()
+          .contains("instrumentation.custom-methods item 1 disabled: it matches more than 2");
+      assertThat(CustomMethodPolicy.current()).isSameAs(again);
+    }
+    assertThat(retransformer.diagnostics()).containsEntry(Retransformer.EXTRA_DISABLED, 1L);
+  }
+
+  @Test
+  @DisplayName(
       "T-AG-046 the classes a removed item matched are retransformed too; forbidden and generated"
           + " classes never are")
   void previousClassesAndExclusions() throws Exception {
@@ -341,6 +388,40 @@ class RetransformerTest {
         applier(g, inst).apply(push("instrumentation.custom-methods", "[com.example.A#a]"));
     assertThat(notAllowed.getRejected(0).getCode()).isEqualTo(RejectCode.NOT_ALLOWED);
     assertThat(inst.calls).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "T-SEC-25 C-237 (5) a pushed custom-methods item with a step type suffix rejects the whole"
+          + " key FORBIDDEN_PATTERN (step_type_suffix), nothing is retransformed; |true alone is"
+          + " the as-transaction field and is applied")
+  void stepTypeSuffixPush() throws Exception {
+    RemoteFixture f = new RemoteFixture(dir, allowCustomMethods());
+    fixture = f;
+    FakeInstrumentation inst = new FakeInstrumentation(copiesOfTarget(1));
+    ConfigPushApplier applier = applier(f, inst);
+    try (LogCapture log = LogCapture.start("INFO")) {
+      ConfigApplyResult result =
+          applier.apply(
+              push(
+                  "instrumentation.custom-methods",
+                  "[" + TARGET + "#value, com.example.Repo#save|SQL]"));
+      assertThat(result.getAppliedKeysList()).isEmpty();
+      assertThat(result.getRejected(0).getCode()).isEqualTo(RejectCode.FORBIDDEN_PATTERN);
+      assertThat(result.getRejected(0).getMessage())
+          .isEqualTo(
+              "step_type_suffix: item 2 has a step type suffix (custom methods always record"
+                  + " METHOD steps)");
+      assertThat(log.text()).doesNotContain("Repo#save");
+    }
+    assertThat(inst.calls).isEmpty();
+    assertThat(f.config.config().instrumentationCustomMethods()).isEmpty();
+
+    ConfigApplyResult asTransaction =
+        applier.apply(push("instrumentation.custom-methods", "[" + TARGET + "#value|true]"));
+    assertThat(asTransaction.getAppliedKeysList())
+        .containsExactly("instrumentation.custom-methods");
+    assertThat(CustomMethodPolicy.current().items().get(0).asTransaction()).isTrue();
   }
 
   @Test

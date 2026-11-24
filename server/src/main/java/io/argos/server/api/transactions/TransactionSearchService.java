@@ -8,6 +8,7 @@ import io.argos.server.api.query.QueryLimits;
 import io.argos.server.api.query.QuerySources;
 import io.argos.server.api.query.UntrustedStrings;
 import io.argos.server.config.ArgosProperties;
+import io.argos.server.privacy.salt.UserIdHasher;
 import io.argos.server.storage.query.DictionaryNames;
 import io.argos.server.storage.query.DictionaryNames.Kind;
 import io.argos.server.storage.query.QueryExecutor;
@@ -27,7 +28,10 @@ import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -42,6 +46,12 @@ import org.springframework.stereotype.Component;
  * the scope digest names the default range instead of the times, so a later page reads the same
  * hour although the clock moved on. A request with explicit {@code from}/{@code to} keeps them in
  * the scope digest; a cursor of the one kind is refused by the other ({@code cursor/invalid}).
+ *
+ * <p>{@code user_id} (ADR-0010 C-152, C-163, WO-28): the input is normalised like the agent's
+ * value; rows of {@code plain} mode match it, and when instances of the application record {@code
+ * hashed} user ids, rows of that mode match its HMAC with the application's salt ({@link
+ * UserIdHasher}, 16 §6.3); an application with both modes matches both. Only a {@code hashed}-only
+ * application whose salt cannot be read answers 422 {@code user_id_hash_unavailable}.
  */
 @Component
 public class TransactionSearchService {
@@ -72,8 +82,9 @@ public class TransactionSearchService {
   private final AppDirectory directory;
   private final CursorCodec cursors;
   private final QuerySources sources;
-  private final ArgosProperties.Retention retention;
+  private final @Nullable UserIdHasher hasher;
 
+  /** Without hashed user id search (tests). */
   public TransactionSearchService(
       QueryExecutor executor,
       DictionaryNames names,
@@ -81,12 +92,24 @@ public class TransactionSearchService {
       CursorCodec cursors,
       QuerySources sources,
       ArgosProperties properties) {
+    this(executor, names, directory, cursors, sources, properties, null);
+  }
+
+  @Autowired
+  public TransactionSearchService(
+      QueryExecutor executor,
+      DictionaryNames names,
+      AppDirectory directory,
+      CursorCodec cursors,
+      QuerySources sources,
+      ArgosProperties properties,
+      @Nullable UserIdHasher hasher) {
+    this.hasher = hasher;
     this.executor = executor;
     this.names = names;
     this.directory = directory;
     this.cursors = cursors;
     this.sources = sources;
-    this.retention = properties.retention();
   }
 
   /**
@@ -132,8 +155,8 @@ public class TransactionSearchService {
   /**
    * Validates a request (14 §7.2 limits, ADR-0010 C-152, C-163).
    *
-   * @throws ApiException 400 for invalid input, 422 for a {@code user_id} filter on an application
-   *     in {@code hashed} mode
+   * @throws ApiException 400 for invalid input, 422 for a {@code user_id} filter on a {@code
+   *     hashed}-only application whose salt cannot be read
    */
   public Plan plan(int appId, TransactionSearch.Request body, int maxLimit) {
     TransactionSearch.Request req =
@@ -215,8 +238,8 @@ public class TransactionSearchService {
       if (userId == null) {
         throw new ApiException(ErrorCode.FILTER_INVALID).detail("user_id", "empty");
       }
-      requireSearchableUserIds(appId);
     }
+    String userIdHash = userId == null ? null : hashedUserId(appId, userId);
 
     note(set, "service_id", !services.isEmpty());
     note(set, "instance_id", !instances.isEmpty());
@@ -298,12 +321,13 @@ public class TransactionSearchService {
             .string("ip", ip == null ? "::" : ip.exact())
             .string("ip_masked", ip == null ? "::" : ip.masked())
             .string("uid", userId == null ? "" : userId)
+            .string("uid_hash", userIdHash == null ? "" : userIdHash)
             .string("rid", requestId == null ? "" : requestId)
             .uint64("sql", sql)
             .uint64Array("versions", versions)
             .int64("has_profile", f.hasProfile() == null ? -1 : (f.hasProfile() ? 1 : 0))
             .string("trace", trace == null ? "" : trace);
-    boolean exceeded = from.isBefore(sources.now().minus(retention.xlog()));
+    boolean exceeded = from.isBefore(sources.now().minus(sources.xlogRetention()));
     return new Plan(
         appId,
         from,
@@ -333,15 +357,38 @@ public class TransactionSearchService {
         .detail("cursor", "invalid");
   }
 
-  /** C-152: a {@code user_id} filter needs an application in {@code plain} mode. */
-  private void requireSearchableUserIds(int appId) {
+  /**
+   * The hashed form of a normalised {@code user_id} filter when instances of the application record
+   * hashed user ids (16 §6.3, C-152 as WO-28 completes it), else null. A {@code hashed}-only
+   * application whose salt cannot be read is 422 {@code user_id_hash_unavailable}.
+   */
+  private @Nullable String hashedUserId(int appId, String userId) {
+    return hashedUserId(directory, hasher, appId, userId);
+  }
+
+  /**
+   * {@link #hashedUserId(int, String)} for any caller (the global search by user id).
+   *
+   * @throws ApiException 422 {@code user_id_hash_unavailable} for an application whose instances
+   *     all record hashed user ids and whose salt cannot be read
+   */
+  public static @Nullable String hashedUserId(
+      AppDirectory directory, @Nullable UserIdHasher hasher, int appId, String userId) {
     Set<String> modes = directory.userIdModes(appId);
-    if (!modes.contains("plain") && modes.contains("hashed")) {
+    if (!modes.contains("hashed")) {
+      return null;
+    }
+    Optional<String> hashed = hasher == null ? Optional.empty() : hasher.hashed(appId, userId);
+    if (hashed.isPresent()) {
+      return hashed.get();
+    }
+    if (!modes.contains("plain")) {
       throw new ApiException(
               ErrorCode.FILTER_UNPROCESSABLE,
-              "The application stores hashed user ids; searching them needs the application salt")
+              "The application stores hashed user ids and its salt cannot be read now")
           .detail("user_id", "user_id_hash_unavailable");
     }
+    return null;
   }
 
   /** The total of the plan's filters. */

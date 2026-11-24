@@ -87,27 +87,38 @@ class RemoteConfigGateTest {
 
   @Test
   @DisplayName(
-      "T-SEC-23a C-92: the Y column does not widen the default list; only the local list does")
-  void remoteColumnDoesNotWiden() {
-    for (String key :
+      "T-SEC-23a C-240 (4): the default list is the 10 §15 list: its keys apply by default, every"
+          + " key it reaches has the Remote column Y, a Y key outside it"
+          + " (instrumentation.exclude-classes) needs the local list")
+  void defaultListIsTheDesignList() {
+    for (String[] change :
         Arrays.asList(
-            "transaction.max-duration-ms",
-            "transaction.slow-stack.enabled",
-            "capture.error-message-max-length",
-            "instrumentation.ignore-extensions",
-            "metrics.interval-seconds",
-            "async.step")) {
-      assertThat(ConfigKeys.spec(key).remote()).isEqualTo(KeySpec.Remote.Y);
-      assertThat(DEFAULTS.evaluate(key, "true", AllowList.DEFAULT))
-          .as(key)
-          .isEqualTo(Decision.NOT_ALLOWED);
+            new String[] {"transaction.max-duration-ms", "60000"},
+            new String[] {"transaction.slow-stack.enabled", "false"},
+            new String[] {"capture.error-message-max-length", "512"},
+            new String[] {"capture.stack-depth", "20"},
+            new String[] {"instrumentation.ignore-extensions", "css"},
+            new String[] {"instrumentation.app-packages", "com.example"},
+            new String[] {"metrics.interval-seconds", "10"},
+            new String[] {"active.snapshot-interval-seconds", "10"},
+            new String[] {"async.step", "true"})) {
+      assertThat(ConfigKeys.spec(change[0]).remote()).isEqualTo(KeySpec.Remote.Y);
+      assertThat(DEFAULTS.evaluate(change[0], change[1], AllowList.DEFAULT))
+          .as(change[0])
+          .isEqualTo(Decision.APPLY);
     }
-    AllowList local = AllowList.of(Arrays.asList("transaction.**", "async.step"));
-    assertThat(DEFAULTS.evaluate("transaction.max-duration-ms", "60000", local))
+    for (KeySpec spec : ConfigKeys.all()) {
+      if (!spec.isFamily() && AllowList.DEFAULT.matches(spec.name())) {
+        assertThat(spec.remote()).as(spec.name()).isEqualTo(KeySpec.Remote.Y);
+      }
+    }
+    assertThat(ConfigKeys.spec("instrumentation.exclude-classes").remote())
+        .isEqualTo(KeySpec.Remote.Y);
+    assertThat(DEFAULTS.evaluate("instrumentation.exclude-classes", "com.x.*", AllowList.DEFAULT))
+        .isEqualTo(Decision.NOT_ALLOWED);
+    AllowList local = AllowList.of(Arrays.asList("instrumentation.exclude-classes"));
+    assertThat(DEFAULTS.evaluate("instrumentation.exclude-classes", "com.x.*", local))
         .isEqualTo(Decision.APPLY);
-    assertThat(DEFAULTS.evaluate("transaction.slow-stack.enabled", "false", local))
-        .isEqualTo(Decision.APPLY);
-    assertThat(DEFAULTS.evaluate("async.step", "true", local)).isEqualTo(Decision.APPLY);
   }
 
   @Test

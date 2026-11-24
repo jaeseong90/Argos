@@ -19,6 +19,7 @@
 // with null there and the specs skip their round-trip tests with SKIP_NO_COMMAND_FEED.
 import type { ApiSession } from '../stack/api';
 import type { Role, SeedManifest } from '../stack/manifest';
+import { retireInstances } from '../stack/retire';
 import {
   type ActiveFeedCommands,
   type FeedApp,
@@ -153,12 +154,26 @@ export function ensureCommandFeed(
   return feed;
 }
 
-/** Stops the shared command feed (a spec's afterAll); the next ensureCommandFeed starts anew. */
-export async function stopCommandFeed(): Promise<void> {
+/**
+ * Stops the shared command feed (a spec's afterAll) and archives its instances with an operator
+ * session of `operator` (ADR-0010 C-241 (7): a stopped feed instance never stays FIRING as
+ * instance_down); the next ensureCommandFeed starts anew, whose reconnect lists them again.
+ */
+export async function stopCommandFeed(operator: () => Promise<ApiSession>): Promise<void> {
   const entry = shared;
   shared = null;
   const feed = await entry?.feed.catch(() => null);
-  await feed?.stop();
+  if (feed === null || feed === undefined) {
+    return;
+  }
+  await feed.stop();
+  const retired = await retireInstances(await operator(), [
+    feed.instanceIds.normal,
+    feed.instanceIds.truncated,
+  ]);
+  feedLog.push(
+    `${new Date().toISOString()} command feed stopped, instances archived: ${[...retired].map(([id, o]) => `${String(id)}=${o}`).join(' ')}`,
+  );
 }
 
 /** The feed's progress lines so far (attached by the spec; never a token). */

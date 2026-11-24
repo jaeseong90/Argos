@@ -28,8 +28,9 @@ import java.util.Map;
  * <p>Two table rows have a structured value: {@code sampling.profile.slow-threshold-ms} is "int or
  * {default, services{}}" (the per-service values are the family {@value
  * #SLOW_THRESHOLD_SERVICES}{@code <service name>}), and {@code instrumentation.custom-methods} is a
- * list of {pattern, step-type, as-transaction} written as list items {@code <class glob>#<method
- * glob>[|<STEP TYPE>[|<as-transaction>]]} ({@link KeySpec.Format#CUSTOM_METHOD}).
+ * list of {pattern, as-transaction} written as list items {@code <class glob>#<method
+ * glob>[|<as-transaction>]} ({@link KeySpec.Format#CUSTOM_METHOD}; the step is always METHOD, an
+ * item with a step type suffix of the earlier format is ignored, ADR-0010 C-237 (5)).
  */
 public final class ConfigKeys {
   /** System property prefix ({@code -Dargos.<key>}). */
@@ -218,12 +219,26 @@ public final class ConfigKeys {
   public static final String TEST_SELFDIAG_FILE = "test.selfdiag-file";
 
   /**
-   * The default of {@code remote-config.allow}: the five patterns of SEC-23 (ADR-0010 C-92), with
-   * SEC-23's {@code sampling.*} written {@code sampling.**} so that it reaches the {@code
-   * sampling.profile.*} keys (C-118).
+   * Test-only switch of the agent's CPU guard (ADR-0010 C-240 (3)): {@code off} keeps the {@code
+   * OverheadMonitor} from halving the profile {@code normal-rate}, so that a suite that assumes
+   * {@code normal-rate=1.0} is not shaken on a CI runner with few cores. Development builds only,
+   * the same rule as the C-95 test keys: release builds drop it with the T-BLD-010 WARN.
+   */
+  public static final String TEST_OVERHEAD_MONITOR = "test.overhead-monitor";
+
+  /**
+   * The default of {@code remote-config.allow}: the 10 §15 list (ADR-0010 C-240 (4); every key it
+   * names is inside the remote hard cap of 16 §5.5: none is immutable, none is a default-deny key
+   * of SEC-23), with {@code sampling.*} written {@code sampling.**} so that it reaches the {@code
+   * sampling.profile.*} keys (C-118). It widens the five SEC-23 patterns of C-92 by the keys whose
+   * Remote column is {@code Y}; {@code instrumentation.exclude-classes} (Y) is not in 10 §15 and
+   * needs the local list.
    */
   public static final String REMOTE_CONFIG_ALLOW_DEFAULT =
-      "sampling.**, instrumentation.disabled, instrumentation.ignore-paths, log.level, enabled";
+      "sampling.**, instrumentation.disabled, instrumentation.ignore-*, log.level, enabled,"
+          + " transaction.slow-stack.*, capture.error-message-max-length, capture.stack-depth,"
+          + " instrumentation.app-packages, async.step, active.snapshot-interval-seconds,"
+          + " metrics.interval-seconds, transaction.max-duration-ms";
 
   private static final Map<String, KeySpec> SPECS = new LinkedHashMap<String, KeySpec>();
   private static final List<KeySpec> FAMILIES = new ArrayList<KeySpec>();
@@ -443,7 +458,7 @@ public final class ConfigKeys {
         list(
                 INSTRUMENTATION_CUSTOM_METHODS,
                 "",
-                "Custom methods: <class glob>#<method glob>[|<step type>[|<as-transaction>]].")
+                "Custom methods: <class glob>#<method glob>[|<as-transaction>].")
             .format(KeySpec.Format.CUSTOM_METHOD)
             .items(256, 800)
             .remote(KeySpec.Remote.N));
@@ -667,6 +682,14 @@ public final class ConfigKeys {
             .kind(KeySpec.Kind.TEST));
     add(
         path(TEST_SELFDIAG_FILE, "Self-diagnostics snapshot file (development builds).")
+            .kind(KeySpec.Kind.TEST));
+    add(
+        enumeration(
+                TEST_OVERHEAD_MONITOR,
+                "on",
+                "CPU guard: off keeps normal-rate from being halved (development builds).",
+                "on",
+                "off")
             .kind(KeySpec.Kind.TEST));
   }
 

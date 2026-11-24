@@ -1,27 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Elapsed colour thresholds (05 §2.6-1 "설정 가능"): three inputs in seconds, validated
-// 0 < t1 < t2 < t3 <= 3,600 s before they apply; the default 1/3/8 s restores the server's
-// buckets. The choice is a per-browser preference (thresholdPreference.ts).
+// 0 < t1 < t2 < t3 <= 3,600 s before they apply; "Default" restores the operator-wide default
+// (argos.ui.active-thresholds-ms, ADR-0010 C-225 (3)), else 1/3/8 s, the server's buckets. The
+// choice is a per-browser preference (thresholdPreference.ts).
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { THRESHOLD_PROBLEM_KEYS } from './labels';
 import {
   DEFAULT_THRESHOLDS,
-  isDefaultThresholds,
   MAX_THRESHOLD_S,
   thresholdProblem,
   type ThresholdProblem,
   type Thresholds,
 } from './model';
+import { sameThresholds } from './thresholdPreference';
 
 export interface ThresholdSettingsProps {
   readonly thresholds: Thresholds;
   readonly onApply: (thresholds: Thresholds) => void;
+  /** What "Default" restores: the operator default (C-225 (3)), else 1/3/8 s. */
+  readonly defaults?: Thresholds;
 }
 
-export function ThresholdSettings({ thresholds, onApply }: ThresholdSettingsProps) {
+export function ThresholdSettings({
+  thresholds,
+  onApply,
+  defaults = DEFAULT_THRESHOLDS,
+}: ThresholdSettingsProps) {
   const { t } = useTranslation(['common', 'active']);
   const [draft, setDraft] = useState<readonly string[]>(() => thresholds.map(String));
   const [shownFor, setShownFor] = useState<Thresholds>(thresholds);
@@ -58,7 +65,8 @@ export function ThresholdSettings({ thresholds, onApply }: ThresholdSettingsProp
       role="group"
       aria-label={t('active:thresholds.label')}
       data-testid="active-thresholds"
-      data-custom={String(!isDefaultThresholds(thresholds))}
+      data-custom={String(!sameThresholds(thresholds, defaults))}
+      data-defaults={defaults.join(',')}
     >
       <span className="active-thresholds__label">{t('active:thresholds.label')}</span>
       {labels.map((label, index) => (
@@ -99,10 +107,10 @@ export function ThresholdSettings({ thresholds, onApply }: ThresholdSettingsProp
       <button
         type="button"
         className="control-button"
-        disabled={isDefaultThresholds(thresholds)}
+        disabled={sameThresholds(thresholds, defaults)}
         onClick={() => {
           setProblem(null);
-          onApply(DEFAULT_THRESHOLDS);
+          onApply(defaults);
         }}
         data-testid="active-thresholds-reset"
       >

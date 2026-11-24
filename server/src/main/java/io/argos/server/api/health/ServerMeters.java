@@ -54,6 +54,44 @@ public class ServerMeters {
     return gaugeLong("argos.wal.segments");
   }
 
+  /**
+   * The largest used ratio of the server's disks ({@code argos.server.disk.usage.ratio{mount}}),
+   * rounded to four places, or null before one was measured.
+   */
+  public Double diskUsageRatio() {
+    MeterRegistry r = registry.getIfAvailable();
+    if (r == null) {
+      return null;
+    }
+    Double max = null;
+    for (Gauge g : r.find("argos.server.disk.usage.ratio").gauges()) {
+      double v = g.value();
+      if (Double.isFinite(v)) {
+        max = max == null ? v : Math.max(max, v);
+      }
+    }
+    return max == null ? null : Math.round(max * 10_000.0) / 10_000.0;
+  }
+
+  /**
+   * Whole days until the collector's TLS certificate expires ({@code
+   * argos.server.tls.cert.expiry.days}, the smallest when there are several), or null without one.
+   */
+  public Long certExpiryDays() {
+    MeterRegistry r = registry.getIfAvailable();
+    if (r == null) {
+      return null;
+    }
+    Double min = null;
+    for (Gauge g : r.find("argos.server.tls.cert.expiry.days").gauges()) {
+      double v = g.value();
+      if (Double.isFinite(v)) {
+        min = min == null ? v : Math.min(min, v);
+      }
+    }
+    return min == null ? null : (long) Math.floor(min);
+  }
+
   /** Dictionary ids still unknown after the requests to the agents, or null. */
   public Long dictionaryUnresolved() {
     return gaugeLong("argos.dictionary.unresolved");

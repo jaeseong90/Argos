@@ -1,0 +1,14 @@
+package org.example.alpha.instrumentation;
+
+/** Fixture of ModuleReadmeLintTest (not compiled): a module that keeps the default witness. */
+public final class NoWitnessModule implements InstrumentationModule {
+  @Override
+  public String id() {
+    return "alpha";
+  }
+
+  @Override
+  public List<TypeInstrumentation> types() {
+    return Collections.emptyList();
+  }
+}

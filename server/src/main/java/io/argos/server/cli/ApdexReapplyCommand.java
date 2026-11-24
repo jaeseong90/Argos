@@ -1,17 +1,20 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.server.cli;
 
+import io.argos.server.audit.AuditEvent;
 import io.argos.server.config.ArgosProperties;
 import io.argos.server.ops.migration.MigrationSource;
 import io.argos.server.ops.rollup.ApdexReapplier;
 import io.argos.server.ops.rollup.ApdexReapplier.DayResult;
 import io.argos.server.ops.rollup.ApdexReapplier.Result;
 import io.argos.server.ops.rollup.Outcome;
+import io.argos.server.ops.rollup.RollupAudit;
 import java.io.PrintStream;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import org.jspecify.annotations.Nullable;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ArrayNode;
@@ -28,6 +31,9 @@ import tools.jackson.databind.node.ObjectNode;
  * apdex_t_ms}, {@code overrides}, {@code rows_changed}, {@code duration_ms}, {@code days[]} with
  * {@code day}, {@code rows_changed}, {@code changed_tables[]}); a failure with {@code --json}
  * prints {@code {"command", "error"}}. Exit codes 0, 1 (refused or failed), 2 (invalid arguments).
+ *
+ * <p>Audit (ADR-0010 C-220 (3)): one {@code APDEX_REAPPLIED} row per run (application, range, rows
+ * re-stamped), result {@code failure} with the reason when it did not run ({@link RollupAudit}).
  */
 final class ApdexReapplyCommand {
 
@@ -130,6 +136,19 @@ final class ApdexReapplyCommand {
             options.to(),
             Clock.systemUTC());
     if (outcome instanceof Outcome.Refused<Result> refused) {
+      Map<String, Object> detail = RollupAudit.range(options.from(), options.to());
+      if (options.serviceId() != null) {
+        detail.put("service_id", Long.toUnsignedString(options.serviceId()));
+      }
+      try (CliAudit audit = CliAudit.open(properties)) {
+        RollupAudit.refused(
+            audit.service(),
+            CliAudit.actor(),
+            AuditEvent.APDEX_REAPPLIED,
+            RollupAudit.app(options.appId()),
+            RollupAudit.reason(refused.reason()),
+            detail);
+      }
       return fail(
           options,
           refused.message(),
@@ -138,6 +157,9 @@ final class ApdexReapplyCommand {
           refused.reason() == Outcome.Reason.USAGE ? AdminCli.EXIT_USAGE : AdminCli.EXIT_FAILURE);
     }
     Result result = ((Outcome.Done<Result>) outcome).value();
+    try (CliAudit audit = CliAudit.open(properties)) {
+      RollupAudit.reapplied(audit.service(), CliAudit.actor(), result);
+    }
     out.print(options.json() ? json(result) + System.lineSeparator() : table(result));
     out.flush();
     return AdminCli.EXIT_OK;

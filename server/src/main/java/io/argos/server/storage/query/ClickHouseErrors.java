@@ -32,8 +32,34 @@ import java.util.regex.Pattern;
  *   <li>500 {@code internal}: anything else is a defect of the query (syntax, types, a setting the
  *       profile refuses) and is logged as an error by the executor.
  * </ul>
+ *
+ * <p>For the batch writer ({@link #deterministicInsertCode}, ADR-0010 C-158 (3); WO-28): the codes
+ * of {@link #DETERMINISTIC_INSERT_CODES} say that ClickHouse refused the content of a block (its
+ * columns, types or bytes), so the same block is refused again however often it is sent; every
+ * other failure (connection, timeout, memory, too many parts, authentication, a missing table of a
+ * broken installation) is transient and retried without end.
  */
-final class ClickHouseErrors {
+public final class ClickHouseErrors {
+
+  /**
+   * ClickHouse error codes that refuse the content of an inserted block (schema, type and parse
+   * errors): 6 {@code CANNOT_PARSE_TEXT}, 8 {@code THERE_IS_NO_COLUMN}, 10 {@code
+   * NOT_FOUND_COLUMN_IN_BLOCK}, 16 {@code NO_SUCH_COLUMN_IN_TABLE}, 20 {@code
+   * NUMBER_OF_COLUMNS_DOESNT_MATCH}, 26 {@code CANNOT_PARSE_QUOTED_STRING}, 27 {@code
+   * CANNOT_PARSE_INPUT_ASSERTION_FAILED}, 32 {@code ATTEMPT_TO_READ_AFTER_EOF}, 33 {@code
+   * CANNOT_READ_ALL_DATA}, 36 {@code BAD_ARGUMENTS}, 38 {@code CANNOT_PARSE_DATE}, 41 {@code
+   * CANNOT_PARSE_DATETIME}, 43 {@code ILLEGAL_TYPE_OF_ARGUMENT}, 44 {@code ILLEGAL_COLUMN}, 47
+   * {@code UNKNOWN_IDENTIFIER}, 50 {@code UNKNOWN_TYPE}, 53 {@code TYPE_MISMATCH}, 69 {@code
+   * ARGUMENT_OUT_OF_BOUND}, 70 {@code CANNOT_CONVERT_TYPE}, 72 {@code CANNOT_PARSE_NUMBER}, 117
+   * {@code INCORRECT_DATA}, 131 {@code TOO_LARGE_STRING_SIZE}, 349 {@code
+   * CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN}, 469 {@code VIOLATED_CONSTRAINT}. Syntax errors (62) are
+   * not here: the statement text is the server's own, so a syntax error would refuse every block
+   * and is a defect to fix, not data to set aside.
+   */
+  public static final Set<Integer> DETERMINISTIC_INSERT_CODES =
+      Set.of(
+          6, 8, 10, 16, 20, 26, 27, 32, 33, 36, 38, 41, 43, 44, 47, 50, 53, 69, 70, 72, 117, 131,
+          349, 469);
 
   /** Codes answered 504 {@code query_timeout}. */
   static final Set<Integer> TIMEOUT_CODES = Set.of(159, 160, 158, 307, 396, 241);
@@ -86,6 +112,15 @@ final class ClickHouseErrors {
       t = t.getCause();
     }
     return new Outcome(ErrorCode.INTERNAL, 0, failure.getClass().getSimpleName());
+  }
+
+  /**
+   * The ClickHouse code of a failed insert when it refuses the block's content ({@link
+   * #DETERMINISTIC_INSERT_CODES}), else 0 (a transient failure).
+   */
+  public static int deterministicInsertCode(Throwable failure) {
+    int code = code(failure);
+    return DETERMINISTIC_INSERT_CODES.contains(code) ? code : 0;
   }
 
   /** The ClickHouse error code in the cause chain: a server exception or a "Code: N" text. */

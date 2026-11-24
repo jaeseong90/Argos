@@ -4,6 +4,7 @@ package io.argos.agent.core.command;
 import io.argos.agent.bootstrap.ArgosThread;
 import io.argos.agent.core.config.AgentConfig;
 import io.argos.agent.core.config.AllowList;
+import io.argos.agent.core.config.AppPackages;
 import io.argos.agent.core.config.ConfigInputs;
 import io.argos.agent.core.config.ConfigLoader;
 import io.argos.agent.core.config.EffectiveConfig;
@@ -82,7 +83,9 @@ public final class RemoteWiring {
     }
     final RuntimeConfig config = new RuntimeConfig(loaded);
     RuntimeConfig.install(config);
-    SamplingControl sampling = new SamplingControl(context.runtime(), Sampler.of(config.config()));
+    // WO-19: the runtime's one control, shared with argos-watch's overhead monitor (its cap stays).
+    SamplingControl sampling =
+        SamplingControl.shared(context.runtime(), Sampler.of(config.config()));
     RuntimeApplier.Events events =
         new RuntimeApplier.Events() {
           @Override
@@ -102,10 +105,22 @@ public final class RemoteWiring {
             sampling,
             context.maxDurationEnforcer(),
             events);
-    // SEC-25: the policy of the local custom methods; forbidden items are ignored with a WARN.
-    CustomMethodPolicy policy = CustomMethodPolicy.of(loaded.config());
-    CustomMethodPolicy.install(policy);
-    policy.warnIgnored("local configuration:");
+    // SEC-25: the policy of the local custom methods, installed at agent start before the agent
+    // builder (CustomMethodPolicy.installLocal, forbidden items ignored with a WARN). It is kept,
+    // with the classes its items counted at load time; installed here only when start did not.
+    AgentConfig local = loaded.config();
+    if (!CustomMethodPolicy.current()
+        .isOf(
+            local.instrumentationCustomMethods(),
+            local.instrumentationCustomMethodsMaxClassesPerPattern())) {
+      CustomMethodPolicy.installLocal(local);
+    }
+    final AppPackages appPackages = AppPackages.of(local);
+    appPackages.logOnce();
+    // WO-19: the packages of error_top_frame_id (a remote value applied meanwhile wins).
+    if (context.runtime() != null && context.runtime().tracerImpl() != null) {
+      context.runtime().tracerImpl().setAppPackagesIfUnset(appPackages.packages());
+    }
     final Retransformer retransformer =
         new Retransformer(context.instrumentation(), new RetransformLimiter(), NANO_CLOCK);
     final Supplier<Map<String, Object>> transportExtras = extras;
@@ -119,6 +134,7 @@ public final class RemoteWiring {
               out.putAll(transport);
             }
             out.putAll(retransformer.diagnostics());
+            out.putAll(appPackages.diagnostics());
             return out;
           }
         };
@@ -156,7 +172,8 @@ public final class RemoteWiring {
                 new Supplier<EffectiveConfig>() {
                   @Override
                   public EffectiveConfig get() {
-                    return config.effective();
+                    // U-20: an unset instrumentation.app-packages shows the inferred value.
+                    return appPackages.effective(config.effective());
                   }
                 })
             .allow(

@@ -35,7 +35,9 @@ WHERE kind IN {kinds:Array(String)}
   AND ({ip_filter:UInt8} = 0
        OR (ip_mode = 'full' AND remote_ip = {ip:IPv6})
        OR (ip_mode = 'masked' AND remote_ip = {ip_masked:IPv6}))
-  AND ({uid:String} = '' OR (user_id_mode = 'plain' AND user_id = {uid:String}))
+  AND ({uid:String} = ''
+       OR (user_id_mode = 'plain' AND user_id = {uid:String})
+       OR ({uid_hash:String} != '' AND user_id_mode = 'hashed' AND user_id = {uid_hash:String}))
   AND ({rid:String} = '' OR request_id = {rid:String})
   AND ({sql:UInt64} = 0 OR has(sql_ids, {sql:UInt64}))
   AND (length({versions:Array(UInt64)}) = 0 OR app_version_id IN {versions:Array(UInt64)})

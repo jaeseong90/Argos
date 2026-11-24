@@ -231,6 +231,80 @@ val servletFixtureWars =
     }
   }
 
+// --- Spring-free logging fixture (WO-18, T-AG-065, 10 §6.9) ----------------------------------------
+// src/loggingFixture: a plain main with an embedded Tomcat 11 (jakarta) and one servlet that logs
+// through Log4j 2, Log4j 1.2 or reload4j (example.logging.LoggingFixtureApp). One executable jar per
+// framework, each with its own run time class path in lib/ (Manifest Class-Path) and a launch
+// descriptor next to it (kind=jar, catalog=none), so that AppLauncher starts it like a sample app:
+// build/logging-fixture/<flavor>/logging-fixture-<flavor>.jar. Versions from the Boot 4.1 BOM
+// (Tomcat 11.0, Log4j 2.25), Log4j 1.2.17 and reload4j 1.2.26: all already verified. Test-only,
+// never shipped (Java 17 bytecode, run on the e2e JDK 21).
+val loggingFixture = sourceSets.create("loggingFixture")
+
+tasks.named<JavaCompile>(loggingFixture.compileJavaTaskName) {
+  options.release = 17
+  options.compilerArgs.addAll(listOf("-Xlint:-options", "-Xlint:-classfile"))
+}
+
+dependencies {
+  add(loggingFixture.compileOnlyConfigurationName, platform(libs.sample.boot4.bom))
+  add(loggingFixture.compileOnlyConfigurationName, libs.sample.tomcat.embed.core)
+  add(loggingFixture.compileOnlyConfigurationName, libs.sample.log4j.core)
+  add(loggingFixture.compileOnlyConfigurationName, libs.sample.log4j1)
+}
+
+/** Flavor -> the framework library of its class path ("log4j1" and "reload4j" share the code). */
+val loggingFixtureFlavors =
+  mapOf("log4j2" to libs.sample.log4j.core, "log4j1" to libs.sample.log4j1, "reload4j" to libs.sample.reload4j)
+
+val loggingFixtureJars =
+  loggingFixtureFlavors.mapValues { (flavor, library) ->
+    val suffix = flavor.replaceFirstChar(Char::uppercaseChar)
+    val scope = configurations.dependencyScope("loggingFixture${suffix}Libraries")
+    dependencies {
+      add(scope.name, platform(libs.sample.boot4.bom))
+      add(scope.name, libs.sample.tomcat.embed.core)
+      add(scope.name, library)
+    }
+    val runtime =
+      configurations.resolvable("loggingFixture${suffix}Runtime") {
+        extendsFrom(scope.get())
+        attributes {
+          attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage.JAVA_RUNTIME))
+          attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category.LIBRARY))
+          attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE, objects.named(LibraryElements.JAR))
+          attribute(Bundling.BUNDLING_ATTRIBUTE, objects.named(Bundling.EXTERNAL))
+        }
+      }
+    val dir = layout.buildDirectory.dir("logging-fixture/$flavor")
+    val libraries =
+      tasks.register<Sync>("loggingFixture${suffix}Libs") {
+        description = "Run time libraries of the $flavor logging fixture (test-only)."
+        from(runtime)
+        into(dir.map { it.dir("lib") })
+      }
+    val descriptor =
+      tasks.register<WriteProperties>("loggingFixture${suffix}Descriptor") {
+        description = "Launch descriptor of the $flavor logging fixture (test-only)."
+        destinationFile = dir.map { it.file("logging-fixture-$flavor.properties") }
+        property("app", "logging-fixture-$flavor")
+        property("kind", "jar")
+        property("catalog", "none")
+        property("runJdk", "21")
+      }
+    tasks.register<Jar>("loggingFixture${suffix}Jar") {
+      description = "Spring-free $flavor logging fixture (WO-18, test-only, never shipped)."
+      dependsOn(libraries, descriptor)
+      archiveFileName = "logging-fixture-$flavor.jar"
+      destinationDirectory = dir
+      from(loggingFixture.output)
+      val files: FileCollection = runtime.get()
+      inputs.files(files).withPropertyName("loggingFixtureRuntime").withNormalizer(ClasspathNormalizer::class.java)
+      manifest { attributes("Main-Class" to "example.logging.LoggingFixtureApp") }
+      doFirst { manifest.attributes("Class-Path" to files.files.joinToString(" ") { "lib/" + it.name }) }
+    }
+  }
+
 // --- Harness library (src/main, 18 §5.1, WO-05) and sample apps with the agent --------------------
 // src/main: launcher, collector, export, assertion, baseline, leak, log, jvm (README). The
 // integrationTest's e2e classes start WO-01 sample apps with the release agent jar through
@@ -361,6 +435,25 @@ tasks.withType<Test>().configureEach {
   if (recordBaselines) outputs.upToDateWhen { false }
 }
 
+// Module README lint (WO-19, readme.ModuleReadmeLintTest): it reads settings.gradle.kts, every
+// instrumentation module's README, build script and sources, and the test classes the READMEs
+// name, so a README-only change runs it again.
+tasks.named<Test>("test") {
+  inputs.file(layout.settingsDirectory.file("settings.gradle.kts"))
+    .withPathSensitivity(PathSensitivity.RELATIVE)
+    .withPropertyName("settingsScript")
+  inputs.files(
+    fileTree(layout.settingsDirectory.dir("agent/agent-instrumentation")) {
+      include("*/README.md", "*/build.gradle.kts", "*/src/**/*.java")
+    }
+  )
+    .withPathSensitivity(PathSensitivity.RELATIVE)
+    .withPropertyName("moduleReadmes")
+  inputs.files(fileTree(layout.projectDirectory.dir("src/integrationTest/java")) { include("**/*.java") })
+    .withPathSensitivity(PathSensitivity.RELATIVE)
+    .withPropertyName("readmeTestClasses")
+}
+
 tasks.named<Test>("integrationTest") {
   val launchers =
     (attachJdks + e2eJdks + gcJdks).distinct().associateWith { version ->
@@ -401,6 +494,16 @@ tasks.named<Test>("integrationTest") {
       }
     )
   }
+  // The Spring-free logging fixtures (package logging, WO-18): small, built for every run.
+  val loggingFixtureFiles = loggingFixtureJars.mapValues { (_, task) -> task.flatMap { it.archiveFile } }
+  loggingFixtureFiles.forEach { (flavor, jar) ->
+    inputs.file(jar).withPropertyName("loggingFixture-$flavor").withPathSensitivity(PathSensitivity.NONE)
+  }
+  jvmArgumentProviders.add(
+    CommandLineArgumentProvider {
+      loggingFixtureFiles.map { (flavor, jar) -> "-Dargos.test.loggingFixture.$flavor=" + jar.get().asFile.absolutePath }
+    }
+  )
   // Locals only inside the providers below (the configuration cache cannot keep script objects).
   val combos = e2eCombos.joinToString(",")
   // Transformed-class lists and JSONL of the e2e runs (T-AG-005 baseline input, PoC run table).

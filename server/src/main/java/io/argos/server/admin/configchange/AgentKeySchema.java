@@ -234,6 +234,7 @@ public final class AgentKeySchema {
     key("test.exporter", "string", "-");
     key("test.faults", "list (<= 32 items)", "-");
     key("test.selfdiag-file", "path", "-");
+    key("test.overhead-monitor", "enum: on, off", "-");
   }
 
   private AgentKeySchema() {}

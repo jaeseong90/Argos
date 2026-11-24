@@ -14,11 +14,12 @@ import java.util.Map;
  *       after} are masked as a last line of defence (secret-looking keys, token-looking values),
  *       but callers record only the fields that changed and are not secret;
  *   <li>it never throws and never fails the request: a write failure is counted in {@code
- *       argos_audit_write_failures_total} and logged without the record's content (16 §11.3; the
- *       fallback file of 16 §11.3 is WO-28's).
+ *       argos_audit_write_failures_total}, logged without the record's content, and a record the
+ *       PostgreSQL sink could not write goes to the fallback file (16 §11.3).
  * </ul>
  *
- * The request id of the current request is added automatically.
+ * The request id of the current request is added automatically. Events of agents (on gRPC threads)
+ * go through {@link AsyncAuditDispatcher} instead, which never blocks its caller.
  */
 public interface AuditService {
 
@@ -39,6 +40,24 @@ public interface AuditService {
       AuditResult result,
       Map<String, ?> before,
       Map<String, ?> after);
+
+  /**
+   * Records one event that showed personal data (SEC-81): {@code subject} goes to {@code
+   * audit_logs.subject_user_id} and {@code subject_tx_id}. Implementations that store records
+   * override it; the default drops the subject.
+   *
+   * @param subject whose data was shown, or null
+   */
+  default void record(
+      AuditEvent event,
+      Actor actor,
+      Target target,
+      AuditResult result,
+      Map<String, ?> before,
+      Map<String, ?> after,
+      AuditSubject subject) {
+    record(event, actor, target, result, before, after);
+  }
 
   /** Records one event without before and after values. */
   default void record(AuditEvent event, Actor actor, Target target, AuditResult result) {

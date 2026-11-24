@@ -164,6 +164,21 @@ final class TokenCreateCommand {
    */
   static int execute(
       Options options, ArgosProperties properties, PrintStream out, PrintStream err) {
+    return execute(options, COMMAND, properties, out, err);
+  }
+
+  /**
+   * Issues the token under the name {@code command} ({@code token create}, or its 17 §4.4 alias
+   * {@code token issue}) and prints it.
+   *
+   * @return the exit code
+   */
+  static int execute(
+      Options options,
+      String command,
+      ArgosProperties properties,
+      PrintStream out,
+      PrintStream err) {
     try (TokenAdminDatabase db = TokenAdminDatabase.open(properties.postgres())) {
       AgentTokenStore store = db.tokens();
       TokenService tokens =
@@ -174,14 +189,15 @@ final class TokenCreateCommand {
       EnsuredApp app = store.ensureApp(options.app(), options.env());
       Actor actor = new Actor(Actor.Type.SYSTEM, options.actor(), options.actor(), null, null);
       IssuedToken issued = tokens.issue(actor, app.appId(), options.expiresDays());
-      print(options, app, issued, out);
+      print(options, command, app, issued, out);
       return AdminCli.EXIT_OK;
     } catch (TokenAdminDatabaseException e) {
-      return fail(options, e.getMessage(), "database", out, err, AdminCli.EXIT_FAILURE);
+      return fail(options, command, e.getMessage(), "database", out, err, AdminCli.EXIT_FAILURE);
     } catch (ApiException e) {
       boolean limit = e.details().stream().anyMatch(d -> "token_limit".equals(d.reason()));
       return fail(
           options,
+          command,
           e.clientMessage(),
           limit ? "token_limit" : e.errorCode().code(),
           out,
@@ -190,6 +206,7 @@ final class TokenCreateCommand {
     } catch (DataAccessException e) {
       return fail(
           options,
+          command,
           "PostgreSQL: " + e.getClass().getSimpleName(),
           "database",
           out,
@@ -199,11 +216,12 @@ final class TokenCreateCommand {
   }
 
   /** Prints the result; the only place the token is written. */
-  private static void print(Options options, EnsuredApp app, IssuedToken issued, PrintStream out) {
+  private static void print(
+      Options options, String command, EnsuredApp app, IssuedToken issued, PrintStream out) {
     String expires = issued.expiresAt() == null ? "never" : issued.expiresAt().toString();
     if (options.json()) {
       ObjectNode node = JSON.createObjectNode();
-      node.put("command", COMMAND);
+      node.put("command", command);
       node.put("app", options.app());
       node.put("env", options.env());
       node.put("app_id", app.appId());
@@ -233,16 +251,22 @@ final class TokenCreateCommand {
   }
 
   private static int fail(
-      Options options, String message, String code, PrintStream out, PrintStream err, int exit) {
+      Options options,
+      String command,
+      String message,
+      String code,
+      PrintStream out,
+      PrintStream err,
+      int exit) {
     if (options.json()) {
       ObjectNode node = JSON.createObjectNode();
-      node.put("command", COMMAND);
+      node.put("command", command);
       node.put("error", message);
       node.put("code", code);
       out.println(JSON.writeValueAsString(node));
       out.flush();
     }
-    err.println("argos-admin " + COMMAND + ": " + message);
+    err.println("argos-admin " + command + ": " + message);
     err.flush();
     return exit;
   }

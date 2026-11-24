@@ -16,6 +16,8 @@ import { isApiError } from '../../api/errors';
 import { queryKeys } from '../../api/queryKeys';
 import { CodeBlock } from '../../components/CodeBlock';
 import { useFormat } from '../../i18n/format';
+// The -javaagent options are shared with the install guide of the application list (WO-39).
+import { javaagentOptions } from '../admin/install/javaagent';
 
 /** Limits of the server (AppInputs: name 1..128, env 1..32, no control characters). */
 export const APP_NAME_MAX = 128;
@@ -31,11 +33,6 @@ function hasControl(value: string): boolean {
   return false;
 }
 
-/** Where the guide puts the token file and the agent jar (docs/install/compose.md §9). */
-const TOKEN_FILE = '/opt/argos-agent/token';
-const AGENT_JAR = '/opt/argos-agent/argos-agent.jar';
-const COLLECTOR_PORT = 9100;
-
 type FirstAppMessage =
   | { readonly key: 'nameRequired' | 'envRequired' | 'exists' | 'invalid' }
   | {
@@ -50,31 +47,6 @@ function fieldValue(raw: string, max: number): string | null {
     return null;
   }
   return value;
-}
-
-/** A JVM option value: plain when it needs no quoting, else in double quotes. */
-function optionValue(value: string): string {
-  return /^[A-Za-z0-9._-]+$/.test(value) ? value : `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
-}
-
-/** The collector host as this browser reached the server (IPv6 literals in brackets). */
-function collectorHost(): string {
-  const host = typeof window === 'undefined' ? '' : window.location.hostname;
-  if (host === '') {
-    return '<argos-host>';
-  }
-  return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
-}
-
-/** The JVM options of the agent for this application (docs/agent-config.md, system properties). */
-export function javaagentOptions(name: string, env: string, host = collectorHost()): string {
-  return [
-    `-javaagent:${AGENT_JAR}`,
-    `-Dargos.server.address=${host}:${String(COLLECTOR_PORT)}`,
-    `-Dargos.server.token-file=${TOKEN_FILE}`,
-    `-Dargos.app.name=${optionValue(name)}`,
-    `-Dargos.app.env=${optionValue(env)}`,
-  ].join('\n');
 }
 
 function createFailure(failure: unknown): FirstAppMessage {
@@ -114,6 +86,8 @@ interface RegisteredApp {
 interface ShownToken {
   readonly token: string;
   readonly expiresAt: string | null;
+  /** argos.collector.public-address of the server, or null (C-231 (9)). */
+  readonly collectorAddress: string | null;
 }
 
 export interface SetupFirstAppProps {
@@ -137,7 +111,11 @@ export function SetupFirstApp({ onDone }: SetupFirstAppProps) {
   const issue = async (target: RegisteredApp): Promise<void> => {
     try {
       const issued = await issueAgentToken(target.appId);
-      setShown({ token: issued.token, expiresAt: issued.expires_at });
+      setShown({
+        token: issued.token,
+        expiresAt: issued.expires_at,
+        collectorAddress: issued.collector_address ?? null,
+      });
     } catch (failure) {
       setError(tokenFailure(failure));
     }
@@ -260,7 +238,7 @@ export function SetupFirstApp({ onDone }: SetupFirstAppProps) {
         <h3>{t('auth:setup.firstApp.attachTitle')}</h3>
         <p>{t('auth:setup.firstApp.attach')}</p>
         <CodeBlock
-          value={javaagentOptions(app.name, app.env)}
+          value={javaagentOptions(app.name, app.env, undefined, shown.collectorAddress)}
           label={t('auth:setup.firstApp.snippetLabel')}
           foldLines={0}
           data-testid="setup-first-app-snippet"

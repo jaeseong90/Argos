@@ -8,9 +8,9 @@
 // /events of the same bounds, e2e/fixtures/dashboardOracle.ts). The WebSocket is the docs/14 §5
 // stub (C-205 (3)) except in dashboardLiveServer (wsMode 'server': the real /ws of WO-22); the
 // outage shading checks use the collection outage of the seed (manifest `outage`, WO-22) and the
-// firing alert checks the real FIRING alert of the seed (manifest `alert`, WO-25). Items the seed
-// cannot show yet (real STALE/WARN tiles) are test.fixme entries of the YAML naming their work
-// order.
+// firing alert checks the real FIRING alert of the seed (manifest `alert`, WO-25). The real
+// STALE/WARN tiles (2.3-3, WO-39, ADR-0010 C-217 (2)) come from an agent of the check's own: the
+// kill switch makes it WARN kill_switch, stopping it makes it STALE (dashboardWarnStaleLive).
 import { expect, type Page, type TestInfo } from '@playwright/test';
 
 import {
@@ -49,6 +49,18 @@ import type { WsStub } from '../fixtures/ws';
 import type { ApiSession } from '../stack/api';
 import { manifestAlert, type Role, type SeedManifest } from '../stack/manifest';
 
+import {
+  apiKillSwitch,
+  changeResult,
+  createApp,
+  deleteAppQuietly,
+  issueToken,
+  ownShopProblem,
+  runSuffix,
+  startOwnShop,
+  writeTokenFile,
+  type OwnShop,
+} from './adminChecks';
 import { apiAlertTransitions } from './alertsChecks';
 
 /** The check context of checks.ts (structurally; this file does not import it). */
@@ -1075,6 +1087,111 @@ const dashboardLiveServer: DashboardCheck = async (ctx) => {
   ).toEqual([]);
 };
 
+/**
+ * The tile of `instanceId` on the dashboard of `appId` over [now - 15 min, now + 1 min) shows the
+ * state and WARN reasons of GET /dashboard asked the same question (05 §2.3-3, C-216 (2): reasons
+ * only while WARN), with the state label of the badge. Waits until the API reports `expected`
+ * (one of the states) first; resolves with the API's tile.
+ */
+export async function expectInstanceTileOfApi(
+  page: Page,
+  api: ApiSession,
+  appId: number,
+  instanceId: number,
+  expected: readonly string[],
+  timeoutMs = 60_000,
+): Promise<{ state: string; warn_reasons: string[] }> {
+  const window = (): { from: string; to: string } => {
+    const now = Date.now();
+    return {
+      from: new Date(Math.floor((now - 15 * MINUTE) / 1000) * 1000).toISOString(),
+      to: new Date(Math.ceil((now + MINUTE) / 1000) * 1000).toISOString(),
+    };
+  };
+  await expect
+    .poll(
+      async () => {
+        const data = await apiDashboard(api, appId, window());
+        return data.instances.find((i) => i.instance_id === instanceId)?.state ?? 'absent';
+      },
+      { timeout: timeoutMs, intervals: [1000], message: `instance ${String(instanceId)} state` },
+    )
+    .toMatch(new RegExp(`^(${expected.join('|')})$`));
+  const range = window();
+  await page.goto(dashboardPath(appId, range.from, range.to));
+  await expect(page.getByTestId('dashboard-page')).toHaveAttribute(
+    'data-state',
+    /^(ready|empty)$/,
+    { timeout: 30_000 },
+  );
+  const data = await apiDashboard(api, appId, range);
+  const apiTile = data.instances.find((i) => i.instance_id === instanceId);
+  expect(apiTile, `instance ${String(instanceId)} in GET /dashboard`).toBeDefined();
+  if (apiTile === undefined) {
+    throw new Error('unreachable');
+  }
+  const reasons = apiTile.state === 'WARN' ? [...new Set(apiTile.warn_reasons)] : [];
+  const tileEl = page.locator(
+    `[data-testid="dashboard-instance-tile"][data-instance-id="${String(instanceId)}"]`,
+  );
+  await expect(tileEl).toHaveAttribute('data-state', apiTile.state);
+  await expect(tileEl).toHaveAttribute('data-warn-reasons', reasons.join(','));
+  await expect(tileEl.getByTestId('dashboard-instance-tile-status')).toHaveAttribute(
+    'data-status',
+    apiTile.state.toUpperCase(),
+  );
+  return { state: apiTile.state, warn_reasons: reasons };
+}
+
+/**
+ * 05 §2.3-3 STALE and WARN tiles on real data (WO-39, ADR-0010 C-217 (2)): an application of the
+ * check's own with shop-boot3 and the stack's agent (token issued through the API): the kill
+ * switch makes its instance WARN kill_switch, then the agent stops and the instance goes STALE
+ * (the E2E server's stale-after is 20 s); each time the tile = GET /dashboard. The app is deleted
+ * afterwards. Without a host JVM (e2e:docker) it is skipped with the reason.
+ */
+const dashboardWarnStaleLive: DashboardCheck = async ({ seed, testInfo, apiAs, page }) => {
+  const problem = ownShopProblem(seed.run_id);
+  testInfo.skip(problem !== null, problem ?? '');
+  testInfo.setTimeout(6 * 60_000);
+  const api = await apiAs('admin');
+  const suffix = runSuffix(seed.run_id);
+  const app = await createApp(api, { name: `wo39-dash-${suffix}`, env: 'e2e' });
+  let shop: OwnShop | null = null;
+  try {
+    const issued = await issueToken(api, app.app_id);
+    const tokenFile = writeTokenFile(seed.run_id, `wo39-dash-${suffix}.token`, issued.token);
+    shop = await startOwnShop(seed.run_id, api, app, tokenFile, `wo39-dash-${suffix}`);
+    const off = await apiKillSwitch(api, app.app_id, false, [shop.instanceId], 'WO-39 E2E 2.3-3');
+    expect(await changeResult(api, off.change_id, shop.instanceId)).toBe('applied');
+    const warn = await expectInstanceTileOfApi(page, api, app.app_id, shop.instanceId, ['WARN']);
+    expect(warn.warn_reasons).toContain('kill_switch');
+    await testInfo.attach('dashboard-warn.png', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    const on = await apiKillSwitch(api, app.app_id, true, [shop.instanceId], 'WO-39 E2E 2.3-3');
+    expect(await changeResult(api, on.change_id, shop.instanceId)).toBe('applied');
+    await shop.stop();
+    const stale = await expectInstanceTileOfApi(
+      page,
+      api,
+      app.app_id,
+      shop.instanceId,
+      ['STALE'],
+      90_000,
+    );
+    expect(stale.warn_reasons).toEqual([]);
+    await testInfo.attach('dashboard-stale.png', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+  } finally {
+    await shop?.stop();
+    await deleteAppQuietly(api, { app_id: app.app_id, name: String(app.name) }, testInfo);
+  }
+};
+
 export const DASHBOARD_CHECKS: Readonly<Record<string, DashboardCheck>> = {
   dashboardTiles,
   dashboardCharts,
@@ -1088,4 +1205,5 @@ export const DASHBOARD_CHECKS: Readonly<Record<string, DashboardCheck>> = {
   dashboardPointMenuMarkers,
   dashboardOutageShading,
   dashboardLiveServer,
+  dashboardWarnStaleLive,
 };

@@ -5,6 +5,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AdminAppsQ,
+  AdminAuditQ,
+  AdminConfigQ,
+  AdminInstancesQ,
+  AdminPrivacyQ,
+  AdminTokensQ,
+  AdminUsersQ,
+  AUDIT_FILTER_MAX_CHARS,
   AlertRuleQ,
   AlertRulesQ,
   AlertsQ,
@@ -582,5 +590,102 @@ describe('T-UI-003 URL state: alert screens (docs/15 §9.9, WO-38)', () => {
         { key: 'template', reason: 'invalid' },
       ]);
     }
+  });
+});
+
+describe('T-UI-003 URL state: administration screens (docs/15 §9.10, WO-39)', () => {
+  const CHANGE = '0b6f2f8e-3f0e-4c1a-9a43-2d7b51c0e9aa';
+
+  it('T-UI-003 writes nothing for the defaults of every administration schema', () => {
+    for (const schema of [
+      AdminAppsQ,
+      AdminInstancesQ,
+      AdminTokensQ,
+      AdminConfigQ,
+      AdminAuditQ,
+      AdminPrivacyQ,
+      AdminUsersQ,
+    ] as UrlSchema[]) {
+      expect(writeQuery(schema, defaultState(schema))).toBe('');
+    }
+    expect(defaultState(AdminInstancesQ).tab).toBe('list');
+    expect(defaultState(AdminInstancesQ).archived).toBe(false);
+  });
+
+  it('T-UI-003 round-trips the instance screen keys (dashboard "N excluded" link, C-211 (2))', () => {
+    const parsed = parseUrl(
+      AdminInstancesQ,
+      'from=now-1h&app=7&archived=1&tab=collection&sort=-drops',
+    );
+    expect(parsed.issues).toEqual([]);
+    expect(parsed.state).toMatchObject({
+      app: 7,
+      archived: true,
+      tab: 'collection',
+      sort: 'drops:desc',
+      time: { kind: 'relative', range: '1h' },
+    });
+    expect(roundTrip(AdminInstancesQ, parsed.canonical)).toBe(parsed.canonical);
+  });
+
+  it.each([
+    ['tab=archive', 'tab'],
+    ['archived=true', 'archived'],
+    ['app=0', 'app'],
+    ['app=abc', 'app'],
+    ['app=1&app=2', 'app'],
+  ])(
+    'T-UI-003 refuses an invalid instance screen key and restores its default: %s',
+    (query, key) => {
+      const parsed = parseUrl(AdminInstancesQ, query);
+      expect(parsed.issues).toEqual([{ key, reason: 'invalid' }]);
+      expect(parsed.state.tab).toBe('list');
+      expect(parsed.state.archived).toBe(false);
+    },
+  );
+
+  it('T-UI-003 reads the application, token, user and config keys', () => {
+    expect(parseUrl(AdminAppsQ, 'q=order&app=3').state).toMatchObject({ q: 'order', app: 3 });
+    expect(parseUrl(AdminTokensQ, 'app=12').state.app).toBe(12);
+    expect(parseUrl(AdminUsersQ, 'q=ali').state.q).toBe('ali');
+    const config = parseUrl(AdminConfigQ, `app=4&change=${CHANGE}`);
+    expect(config.issues).toEqual([]);
+    expect(config.state).toMatchObject({ app: 4, change: CHANGE });
+    expect(parseUrl(AdminConfigQ, 'change=not-a-uuid').issues).toEqual([
+      { key: 'change', reason: 'invalid' },
+    ]);
+  });
+
+  it('T-UI-003 keeps audit filters as untrusted text up to 256 characters', () => {
+    const parsed = parseUrl(
+      AdminAuditQ,
+      'from=now-24h&actor=alice&action=TOKEN_ISSUED&target_type=app&target_id=%3Cscript%3E',
+    );
+    expect(parsed.issues).toEqual([]);
+    expect(parsed.state).toMatchObject({
+      actor: 'alice',
+      action: 'TOKEN_ISSUED',
+      target_type: 'app',
+      target_id: '<script>',
+    });
+    expect(roundTrip(AdminAuditQ, parsed.canonical)).toBe(parsed.canonical);
+    const longest = 'a'.repeat(AUDIT_FILTER_MAX_CHARS);
+    expect(parseUrl(AdminAuditQ, `actor=${longest}`).state.actor).toBe(longest);
+    for (const bad of ['a'.repeat(AUDIT_FILTER_MAX_CHARS + 1), 'x\u0007y', '']) {
+      const result = parseUrl(AdminAuditQ, `target_id=${encodeURIComponent(bad)}`);
+      expect(result.state.target_id).toBeUndefined();
+      expect(result.issues).toEqual([{ key: 'target_id', reason: 'invalid' }]);
+    }
+  });
+
+  it('T-UI-003 the privacy screen carries only the job id and the application (SEC-33)', () => {
+    const parsed = parseUrl(AdminPrivacyQ, `app=2&job=${CHANGE}`);
+    expect(parsed.issues).toEqual([]);
+    expect(parsed.state).toMatchObject({ app: 2, job: CHANGE });
+    // A deletion subject is not a key of the schema: it is neither read nor written back.
+    const withSubject = parseUrl(AdminPrivacyQ, `job=${CHANGE}&user_id=alice&ip=10.0.0.1`);
+    expect(withSubject.canonical).toBe(`job=${CHANGE}`);
+    expect(Object.keys(withSubject.state)).not.toContain('user_id');
+    expect(Object.keys(withSubject.state)).not.toContain('ip');
   });
 });

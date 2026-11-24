@@ -13,6 +13,9 @@ import io.argos.server.api.query.QuerySources;
 import io.argos.server.api.query.SourcePlan;
 import io.argos.server.api.query.UntrustedStrings;
 import io.argos.server.config.ArgosProperties;
+import io.argos.server.ops.storage.EmergencyRetention;
+import io.argos.server.ops.storage.StorageHealthJob;
+import io.argos.server.storage.clickhouse.DeadLetterStore;
 import io.argos.server.storage.postgres.catalog.CatalogRepository;
 import io.argos.server.storage.postgres.catalog.CatalogRepository.AppRecord;
 import io.argos.server.storage.postgres.catalog.CatalogRepository.InstanceRecord;
@@ -29,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 /**
@@ -52,6 +56,9 @@ public class HealthService {
   private final CatalogRepository catalog;
   private final EventService events;
   private final AlertStatusService alerts;
+  private final ObjectProvider<StorageHealthJob> storageJob;
+  private final ObjectProvider<EmergencyRetention> emergency;
+  private final ObjectProvider<DeadLetterStore> deadLetter;
   private final String database;
 
   public HealthService(
@@ -63,6 +70,9 @@ public class HealthService {
       CatalogRepository catalog,
       EventService events,
       AlertStatusService alerts,
+      ObjectProvider<StorageHealthJob> storageJob,
+      ObjectProvider<EmergencyRetention> emergency,
+      ObjectProvider<DeadLetterStore> deadLetter,
       ArgosProperties properties) {
     this.queries = queries;
     this.metrics = metrics;
@@ -72,6 +82,9 @@ public class HealthService {
     this.catalog = catalog;
     this.events = events;
     this.alerts = alerts;
+    this.storageJob = storageJob;
+    this.emergency = emergency;
+    this.deadLetter = deadLetter;
     this.database = properties.clickhouse().database();
   }
 
@@ -81,7 +94,11 @@ public class HealthService {
    */
   public HealthViews.Server server() {
     return new HealthViews.Server(
-        meters.ingestLagSeconds(), null, alerts.channelFailures24h(), states.sessionCount(), null);
+        meters.ingestLagSeconds(),
+        meters.diskUsageRatio(),
+        alerts.channelFailures24h(),
+        states.sessionCount(),
+        meters.certExpiryDays());
   }
 
   /**
@@ -234,6 +251,9 @@ public class HealthService {
     }
     QueryResult mutations = queries.run("health/mutations", db);
     long merging = merges.getLong("running");
+    StorageHealthJob job = storageJob.getIfAvailable();
+    EmergencyRetention retention = emergency.getIfAvailable();
+    DeadLetterStore letters = deadLetter.getIfAvailable();
     return new HealthViews.Storage(
         fullest,
         disks,
@@ -249,9 +269,10 @@ public class HealthService {
         eventValues.getOrDefault("InsertedRows", 0L),
         oldest == null ? null : Math.max(0, Duration.between(oldest, queries.now()).toSeconds()),
         mutations.single().getLong("pending"),
-        null,
+        job == null ? null : job.ttlLastRunAt(),
         meters.dictionaryUnresolved(),
         new HealthViews.Wal(meters.walBytes(), meters.walSegments()),
-        null);
+        retention == null ? null : retention.activeOrNull(),
+        letters == null ? null : new HealthViews.DeadLetter(letters.blocks(), letters.bytes()));
   }
 }

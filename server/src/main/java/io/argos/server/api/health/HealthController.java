@@ -66,9 +66,10 @@ public class HealthController {
       summary = "Server summary",
       description =
           "The data.server block of the overview: current ingest lag (p99, null before the first"
-              + " insert), the notification deliveries that failed in the last 24 h (null only"
-              + " while PostgreSQL cannot be read) and live agent sessions. disk_usage_ratio and"
-              + " cert_expiry_days are null until WO-28 records them.")
+              + " insert), the largest used ratio of the server's disks (WAL file system and"
+              + " ClickHouse disks), the notification deliveries that failed in the last 24 h"
+              + " (null only while PostgreSQL cannot be read), live agent sessions and the whole"
+              + " days until the collector's TLS certificate expires (null without TLS).")
   @ArgosLimits(timeoutS = 10)
   @ArgosSource({"memory:meters", "memory:sessions", "postgres:notification_deliveries"})
   public ResponseEnvelope<HealthViews.Server> serverHealth() {
@@ -84,8 +85,9 @@ public class HealthController {
       description =
           "ClickHouse disks, the partitions with the most active parts, merges, insert health"
               + " counters, mutations (system tables read as argos_reader), the server's WAL and"
-              + " unresolved dictionary ids. ttl_last_run_at and emergency_retention_active are"
-              + " null until the storage health job exists (WO-28).")
+              + " unresolved dictionary ids; from the storage health job the last TTL run it saw"
+              + " (null before one), whether the emergency retention is on (null before its first"
+              + " run) and the writer's dead-letter area.")
   @ArgosLimits(timeoutS = 10)
   @ArgosSource({
     "system.parts",

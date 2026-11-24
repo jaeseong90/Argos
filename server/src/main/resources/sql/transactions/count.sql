@@ -4,8 +4,9 @@
 -- POST /apps/{appId}/transactions/search, without the page cursor. Same filters as search.*.sql:
 -- empty arrays, 0, -1 and '' mean "no filter"; the indexed filters (user_id, request_id, sql_ids,
 -- trace_id; bloom indexes of 13 §3.1) keep their skip indexes in this form (constant folding).
--- user_id matches plain-mode rows only (ADR-0010 C-152); remote_ip matches a full address exactly
--- and a masked one by its masked form (/24, IPv6 /48; 14 §4.6).
+-- user_id matches plain-mode rows by uid and hashed-mode rows by uid_hash, the HMAC of uid with the
+-- application's salt (16 section 6.3; '' when the application has no hashed instances); remote_ip
+-- matches a full address exactly and a masked one by its masked form (/24, IPv6 /48; 14 §4.6).
 -- @tables xlog
 SELECT count() AS total
 FROM {db}.{p}xlog
@@ -22,7 +23,9 @@ WHERE kind IN {kinds:Array(String)}
   AND ({ip_filter:UInt8} = 0
        OR (ip_mode = 'full' AND remote_ip = {ip:IPv6})
        OR (ip_mode = 'masked' AND remote_ip = {ip_masked:IPv6}))
-  AND ({uid:String} = '' OR (user_id_mode = 'plain' AND user_id = {uid:String}))
+  AND ({uid:String} = ''
+       OR (user_id_mode = 'plain' AND user_id = {uid:String})
+       OR ({uid_hash:String} != '' AND user_id_mode = 'hashed' AND user_id = {uid_hash:String}))
   AND ({rid:String} = '' OR request_id = {rid:String})
   AND ({sql:UInt64} = 0 OR has(sql_ids, {sql:UInt64}))
   AND (length({versions:Array(UInt64)}) = 0 OR app_version_id IN {versions:Array(UInt64)})

@@ -364,4 +364,74 @@ class RollupRebuildIT {
     assertThat(unknown.err()).contains("Unknown rollup table xlog");
     assertThat(unknown.out()).isEmpty();
   }
+
+  @Test
+  @Order(6)
+  @DisplayName(
+      "T-SV-019b every rollup rebuild run is audited: ROLLUP_REBUILT success for both days (actor"
+          + " argos-admin, target day, the 13 tables), failure 'busy' while the lock was held and"
+          + " 'usage' for the unknown table")
+  void audited() throws Exception {
+    List<String> rows = auditRows("ROLLUP_REBUILT");
+    String day = lastDay.toString();
+    assertThat(rows)
+        .contains(
+            "system argos-admin day " + day + " success null",
+            "system argos-admin day " + firstDay + " success null",
+            "system argos-admin day " + day + " failure busy",
+            "system argos-admin day " + day + " failure usage");
+    assertThat(auditAfter("ROLLUP_REBUILT").get(0))
+        .contains("\"day\": \"" + day + "\"")
+        .contains("instance_stat_1h")
+        .contains("\"identical\": true");
+  }
+
+  /**
+   * The audit rows of {@code action}, oldest first, as {@code "<actor_type> <actor_name>
+   * <target_type> <target_id> <result> <reason>"} (ADR-0010 C-220 (3)).
+   */
+  private static List<String> auditRows(String action) throws Exception {
+    List<String> rows = new ArrayList<>();
+    try (Connection c = env.connect(PgAccount.APP);
+        PreparedStatement ps =
+            c.prepareStatement(
+                "SELECT actor_type, actor_name, target_type, target_id, result, reason FROM"
+                    + " argos.audit_logs WHERE action = ? ORDER BY ts, id")) {
+      ps.setString(1, action);
+      try (ResultSet rs = ps.executeQuery()) {
+        while (rs.next()) {
+          rows.add(
+              rs.getString(1)
+                  + " "
+                  + rs.getString(2)
+                  + " "
+                  + rs.getString(3)
+                  + " "
+                  + rs.getString(4)
+                  + " "
+                  + rs.getString(5)
+                  + " "
+                  + rs.getString(6));
+        }
+      }
+    }
+    return rows;
+  }
+
+  /** The {@code after} JSON of the audit rows of {@code action}, oldest first. */
+  private static List<String> auditAfter(String action) throws Exception {
+    List<String> rows = new ArrayList<>();
+    try (Connection c = env.connect(PgAccount.APP);
+        PreparedStatement ps =
+            c.prepareStatement(
+                "SELECT after::text FROM argos.audit_logs WHERE action = ? ORDER BY ts, id")) {
+      ps.setString(1, action);
+      try (ResultSet rs = ps.executeQuery()) {
+        while (rs.next()) {
+          rows.add(String.valueOf(rs.getString(1)));
+        }
+      }
+    }
+    return rows;
+  }
 }

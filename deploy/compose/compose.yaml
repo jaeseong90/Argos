@@ -66,7 +66,8 @@ services:
       ARGOS_TLS_KEY_FILE: /conf/tls/server.key
       ARGOS_LOG_LEVEL: ${ARGOS_LOG_LEVEL:-INFO}
       ARGOS_TZ_DISPLAY: ${ARGOS_TZ_DISPLAY:-UTC}
-      # Retention in days (13 defaults). RAW_STAT and METRIC must be equal (ADR-0010 C-112).
+      # Retention in days (13 defaults). RAW_STAT and METRIC may differ (WO-28, ADR-0010 C-112); a
+      # value set in the UI or API (PUT /api/v1/admin/settings/retention) wins over these.
       ARGOS_RETENTION_XLOG_DAYS: ${ARGOS_RETENTION_XLOG_DAYS:-30}
       ARGOS_RETENTION_PROFILE_DAYS: ${ARGOS_RETENTION_PROFILE_DAYS:-7}
       ARGOS_RETENTION_RAW_STAT_DAYS: ${ARGOS_RETENTION_RAW_STAT_DAYS:-14}
@@ -108,6 +109,8 @@ services:
     secrets:
       - pg_owner_password
       - pg_app_password
+      # The audit retention account (argos_audit): the daily job that drops expired audit months.
+      - pg_audit_password
       - ch_writer_password
       - ch_reader_password
       - ch_migrator_password

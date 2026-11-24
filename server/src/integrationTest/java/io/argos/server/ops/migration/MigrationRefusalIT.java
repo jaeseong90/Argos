@@ -220,13 +220,6 @@ class MigrationRefusalIT {
     }
   }
 
-  @Test
-  @DisplayName(
-      "argos.retention.stat != argos.retention.metric refuses the start (one raw retention)")
-  void retentionMismatch() {
-    assertRefused(
-        MigrationApps.refused(env, null, Map.of("argos.retention.stat", "7d")),
-        PhaseOrder.CLICKHOUSE_MIGRATION,
-        "argos.retention.stat (7d) and argos.retention.metric (14d) must be equal");
-  }
+  // argos.retention.stat != argos.retention.metric no longer refuses the start: WO-28 splits the
+  // keys (ADR-0010 C-112) and RetentionApplyIT (T-ST-040) proves that the start applies each.
 }

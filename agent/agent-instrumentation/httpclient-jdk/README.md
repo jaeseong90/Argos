@@ -73,12 +73,27 @@ it. One step for `getResponseCode()`, `connect()` first, `getOutputStream()` wit
 calls; header injection, preserved application `traceparent`, `argos=` entry only for
 `argos-state.hosts`, nothing for `exclude-hosts`; every row of the table above except unknown host
 (covered by the core classifier tests). The retransformed `java.base` class is checked end to end
-by the agent harness (`JdkClassesAgentTest`, T-AG-070, and the WO-14 `httpclient` suite).
+by the agent harness (`e2e.SampleAppAgentTest` and `attach.AgentAttachTest`, T-AG-070, and the
+WO-14 `httpclient` suite).
 
 ## Supported library versions
+
+### Version range and witness
+
+| Library | Supported range | Minimum verified | Maximum verified | Boundary tests |
+|---|---|---|---|---|
+| `java.net.HttpURLConnection` (implementation `sun.net.www.protocol.http.HttpURLConnection`) | JDK 8 to 25 | JDK 8 | JDK 25 | `test` on JDK 8 (`HttpUrlConnectionAdviceTest`, `HttpClientJdkModuleTest`); end to end `agent-testing` `e2e.SampleAppAgentTest` (`/api/pay/1?client=hurl`, shop-boot3 on JDK 25 in the full matrix run) and `httpclient.HttpClientStepsTest` (shop-boot2 on JDK 8, shop-boot3 on JDK 21) |
+
+- Witness: none (`HttpClientJdkModule` keeps the default witness, every class loader): the target
+  is a `java.base` class on the core's JDK allow-list, present in every JVM.
+- Run: `./gradlew :agent:agent-instrumentation:httpclient-jdk:test`; end to end
+  `./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot3@21,shop-boot3@25 --tests '*SampleAppAgentTest*' --tests '*httpclient*'`.
+
+### Details
 
 `java.net.HttpURLConnection` of JDK 8-25 (the `connected` and `responseCode` fields and the four
 methods exist unchanged in all of them). Module tests run on JDK 8; `shop-boot3`
 `/api/pay/{id}?client=hurl` runs end to end on JDK 17, 21 and 25 in the agent harness
-(`JdkClassesAgentTest`), and the WO-14 `httpclient` suite covers `shop-boot2` on JDK 8 and
+(`e2e.SampleAppAgentTest`; JDK classes loaded before premain in `attach.AgentAttachTest`, T-AG-070),
+and the WO-14 `httpclient` suite covers `shop-boot2` on JDK 8 and
 `shop-boot3` on JDK 21. Other JDK and application combinations run in the CI matrix.

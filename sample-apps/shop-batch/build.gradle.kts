@@ -42,6 +42,11 @@ sampleApp {
       expectRuntime("virtualThreads", "true")
       expectRuntime("scheduledVirtualThreads", "true")
     }
+    // settleStep prices every item with its own query (20,000 SQL per run, WO-18 summary mode).
+    variant("per-item-sql") {
+      env("SAMPLE_BATCH_PER_ITEM_SQL", "true")
+      expectRuntime("batchPerItemSql", "true")
+    }
     // Batch metadata, Quartz store and shop data behind the 4-level routing chain (D-24).
     variant("routing-ds") {
       env("SAMPLE_ROUTING_DS", "true")

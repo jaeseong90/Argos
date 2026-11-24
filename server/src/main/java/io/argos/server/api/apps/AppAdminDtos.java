@@ -24,7 +24,8 @@ public final class AppAdminDtos {
    * @param env environment, 1 to 32 characters
    * @param group group, at most 64 characters, or null
    * @param apdexTMs Apdex T, 1 to 65,535 ms (default 500)
-   * @param registrationPolicy {@code auto} (default) or {@code approval}
+   * @param registrationPolicy {@code auto} or {@code approval}; absent: none, the environment
+   *     default {@code argos.agent.auto-register.<env>} applies (ADR-0010 C-231 (7))
    */
   @Schema(name = "AppCreateRequest")
   public record CreateAppRequest(
@@ -32,7 +33,13 @@ public final class AppAdminDtos {
       @Schema(requiredMode = RequiredMode.REQUIRED) String env,
       @Nullable String group,
       @JsonProperty("apdex_t_ms") @Nullable Integer apdexTMs,
-      @Schema(description = "auto (default) or approval") @JsonProperty("registration_policy")
+      @Schema(
+              description =
+                  "auto or approval. Absent: the application sets none and the environment"
+                      + " default (argos.agent.auto-register.<env>, auto unless configured)"
+                      + " applies; the response then shows that default with"
+                      + " registration_policy_inherited true.")
+          @JsonProperty("registration_policy")
           @Nullable String registrationPolicy) {}
 
   /**

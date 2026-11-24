@@ -926,6 +926,93 @@ export const ServiceDetailQ = {
   tab: enumField('tab', SERVICE_DETAIL_TABS, 'sql'),
 } as const satisfies UrlSchema;
 
+// ---------------------------------------------------------------------------------------------
+// Administration screens (docs/15 §9.10, 05 §2.11, WO-39)
+// ---------------------------------------------------------------------------------------------
+
+/** Longest audit filter value in characters (actor, action, target type and id; WO-39 §1.2). */
+export const AUDIT_FILTER_MAX_CHARS = 256;
+
+/**
+ * Free text of at most `maxChars` characters (and the 1 KB byte limit), no control characters;
+ * render via SafeText.
+ */
+export function boundedTextField(key: string, maxChars: number): UrlField<Untrusted | undefined> {
+  return stringField(
+    key,
+    z
+      .string()
+      .min(1)
+      .refine((v) => Array.from(v).length <= maxChars)
+      .refine(fitsFilterValue)
+      .refine((v) => !hasControlCharacter(v))
+      .transform(untrusted),
+  );
+}
+
+/** Application list `/admin/apps`: name search (`q`) and the application whose install guide is open. */
+export const AdminAppsQ = {
+  ...CommonQ,
+  q: textField('q'),
+  app: intField('app'),
+} as const satisfies UrlSchema;
+
+/** Tabs of the instance administration screen: the list and the collection health ranking. */
+export const ADMIN_INSTANCE_TABS = ['list', 'collection'] as const;
+
+/**
+ * Instance administration `/admin/instances`: the application, the archived list switch and the
+ * tab (the dashboard's "N excluded" link opens `tab=collection&app=<id>`, ADR-0010 C-211 (2)).
+ * The collection ranking's sort key is CommonQ `sort`.
+ */
+export const AdminInstancesQ = {
+  ...CommonQ,
+  app: intField('app'),
+  archived: flagField('archived'),
+  tab: enumField('tab', ADMIN_INSTANCE_TABS, 'list'),
+} as const satisfies UrlSchema;
+
+/** Agent tokens `/admin/tokens`: the application. */
+export const AdminTokensQ = {
+  ...CommonQ,
+  app: intField('app'),
+} as const satisfies UrlSchema;
+
+/** Configuration changes `/admin/config`: the application and the change shown with its results. */
+export const AdminConfigQ = {
+  ...CommonQ,
+  app: intField('app'),
+  change: stringField('change', z.string().regex(RULE_ID_PATTERN)),
+} as const satisfies UrlSchema;
+
+/**
+ * Audit log `/admin/audit`: the range is the global one (`from`/`to`); actor, action, target type
+ * and target id filter it (each at most 256 characters).
+ */
+export const AdminAuditQ = {
+  ...CommonQ,
+  actor: boundedTextField('actor', AUDIT_FILTER_MAX_CHARS),
+  action: boundedTextField('action', AUDIT_FILTER_MAX_CHARS),
+  target_type: boundedTextField('target_type', AUDIT_FILTER_MAX_CHARS),
+  target_id: boundedTextField('target_id', AUDIT_FILTER_MAX_CHARS),
+} as const satisfies UrlSchema;
+
+/**
+ * Privacy `/admin/privacy`: the application of the per-instance modes and the deletion job being
+ * followed. The deletion subject (user id or IP) is never a URL key (SEC-33, docs/16 §6.7).
+ */
+export const AdminPrivacyQ = {
+  ...CommonQ,
+  app: intField('app'),
+  job: stringField('job', z.string().regex(RULE_ID_PATTERN)),
+} as const satisfies UrlSchema;
+
+/** Users `/admin/users`: user name search. */
+export const AdminUsersQ = {
+  ...CommonQ,
+  q: textField('q'),
+} as const satisfies UrlSchema;
+
 export type CommonState = UrlStateOf<typeof CommonQ>;
 export type StatsListState = UrlStateOf<typeof StatsListQ>;
 export type ErrorsState = UrlStateOf<typeof ErrorsQ>;

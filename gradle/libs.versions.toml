@@ -216,6 +216,23 @@ sample-starter-mail = { module = "org.springframework.boot:spring-boot-starter-m
 sample-starter-hateoas = { module = "org.springframework.boot:spring-boot-starter-hateoas" }
 sample-spring-jdbc = { module = "org.springframework:spring-jdbc" }
 sample-spring-context = { module = "org.springframework:spring-context" }
+# Scheduler instrumentation (WO-18, 10 §6.8), versions from the Boot BOMs: compileOnly and module
+# tests at the Boot 2 line (Quartz 2.3.2, Spring Batch 4.3.10), the JDK 17 variant at the Boot 3
+# line (Quartz 2.5.2, Spring Batch 5.2.6).
+sample-quartz = { module = "org.quartz-scheduler:quartz" }
+sample-spring-batch-core = { module = "org.springframework.batch:spring-batch-core" }
+# Logging instrumentation (WO-18, 10 §6.9): compileOnly API of the logging module helpers (SLF4J,
+# Log4j 2 API, Log4j 1.2; no Logback type) and test-only libraries of its module tests and of the
+# agent-testing logging fixture, never shipped. SLF4J, Logback and Log4j 2 versions come from the
+# Boot BOMs (Boot 2.7: SLF4J 1.7.36, Logback 1.2.12, Log4j 2.17.2 on JDK 8; Boot 4.1: SLF4J 2.0.x,
+# Logback 1.5.38, Log4j 2.25.5). Log4j 1.2.17 (the last Log4j 1 release) and reload4j (its
+# maintained fork, same packages) have no BOM. Apache-2.0 or MIT; Logback is a dev-only row.
+sample-slf4j-api = { module = "org.slf4j:slf4j-api" }
+sample-logback-classic = { module = "ch.qos.logback:logback-classic" }
+sample-log4j-api = { module = "org.apache.logging.log4j:log4j-api" }
+sample-log4j-core = { module = "org.apache.logging.log4j:log4j-core" }
+sample-log4j1 = { module = "log4j:log4j", version = "1.2.17" }
+sample-reload4j = { module = "ch.qos.reload4j:reload4j", version = "1.2.26" }
 sample-hc4 ={ module = "org.apache.httpcomponents:httpclient" }
 sample-hc5 = { module = "org.apache.httpcomponents.client5:httpclient5" }
 sample-okhttp3 = { module = "com.squareup.okhttp3:okhttp", version.ref = "sample-okhttp3" }

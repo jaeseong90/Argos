@@ -145,6 +145,13 @@ prepare() {
   ./argos-env-init.sh --ram-mb 8192 --public-url http://localhost:8080 "$@"
   timing "$mode: argos-env-init.sh" $(($(now) - t0))
 
+  # The server refuses a master key file that group or others can read (16 section 8.2, WO-28,
+  # ADR-0010 C-226 (2)). A file written from Windows shows as 0777 inside a container; Docker
+  # Desktop keeps the mode and owner a container sets, so set them from one (as for the TLS key
+  # below). On a Linux engine env-init already made it 0600 for uid 10001 and this changes nothing.
+  docker run --rm --network none --label io.argos.wo40=1 --entrypoint sh -v "$(host_path "$PWD/secrets"):/s" "$POSTGRES_IMAGE" -c \
+    "chmod 0600 /s/master_key && chown 10001:10001 /s/master_key"
+
   # Throwaway self-signed certificate for 9100 (C-172 (1): only the smoke harness creates one). The
   # key belongs to uid 10001 (the server's user, as the installation guide asks), also where Docker
   # Desktop keeps the owner that a container sets.
@@ -230,6 +237,25 @@ never_written() {
   fi
   rm -f "$patterns" "$work/container-logs.txt"
   log "ok: $desc"
+}
+
+# audit_job_check: the audit partition job (WO-28, C-116) is wired on a real installation: the
+# server did not log that the job is off (argos.postgres.audit has the pg_audit_password secret),
+# and argos_audit logs in over the network with that secret (scram, not the local trust rule) and
+# creates the audit_logs month three months ahead through audit_logs_maintain_partitions.
+audit_job_check() {
+  local part n
+  if ./argos-compose.sh logs server --no-color 2>&1 | grep -q 'The audit retention job is off'; then
+    fail "the server logs that the audit retention job is off (pg_audit_password not wired to argos.postgres.audit)"
+  fi
+  # shellcheck disable=SC2016 # the script runs in the postgres container's shell, which expands it
+  ./argos-compose.sh compose exec -T postgres sh -c \
+    'PGPASSWORD=$(cat /run/secrets/pg_audit_password) psql -X -q -A -t -v ON_ERROR_STOP=1 -h postgres -U argos_audit -d argos -c "SELECT count(*) FROM argos.audit_logs_maintain_partitions(3, NULL)"' \
+    >/dev/null || fail "argos_audit could not run audit_logs_maintain_partitions with secrets/pg_audit_password"
+  part=$(psql_owner "SELECT 'audit_logs_p' || to_char(date_trunc('month', now() AT TIME ZONE 'UTC') + interval '3 months', 'YYYYMM')")
+  n=$(psql_owner "SELECT count(*) FROM pg_class c JOIN pg_namespace s ON s.oid = c.relnamespace WHERE s.nspname = 'argos' AND c.relname = '$part'")
+  [[ "$n" == 1 ]] || fail "audit_logs partition $part was not created by argos_audit (found $n)"
+  log "ok: audit partition job wired: no 'job is off' log, argos_audit (secret, scram) created $part"
 }
 
 wizard_extra() {
@@ -390,6 +416,7 @@ for mode in $MODES; do
       (umask 077 && printf '%s' "$(head -c 18 /dev/urandom | base64 | tr -d '\n=' | tr '+/' '-_')" >"$work/admin-password")
       run_smoke wizard --complete-setup --admin-password-file "$work/admin-password"
       sample_stats "wizard after smoke"
+      audit_job_check
       wizard_extra
       ;;
     unattended)
@@ -397,6 +424,7 @@ for mode in $MODES; do
       up unattended
       run_smoke unattended --check-admin-login
       sample_stats "unattended after smoke"
+      audit_job_check
       unattended_extra
       ;;
     *) fail "unknown mode $mode" ;;

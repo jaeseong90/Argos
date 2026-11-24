@@ -4,6 +4,8 @@ package io.argos.agent.bootstrap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Associates a value with an object without changing the object (10 §3, VirtualField equivalent):
@@ -13,7 +15,11 @@ import java.util.concurrent.ConcurrentMap;
  * its class loader alive. Values must be bootstrap types, boxed primitives, strings, {@code long[]}
  * or {@code WeakReference} (10 §5.3 A-9): a value that refers to its key would never be collected.
  * Every store is bounded ({@link #maxEntries()}); a full store drops new entries and counts them
- * ({@link #droppedEntries()}).
+ * ({@link #droppedEntries()}). All weak-map entries of all stores together are bounded as well
+ * ({@link #totalMaxEntries()}, ADR-0010 C-240 (6)): up to {@value #MAX_STORES} stores could
+ * otherwise hold {@value #DEFAULT_MAX_ENTRIES} entries each, past the "other 12 MB" of 10 §14. An
+ * entry the shared budget refuses is dropped and counted twice: by its store ({@link
+ * #droppedEntries()}) and by the budget ({@link #budgetDroppedEntries()}).
  *
  * <p>Field injection (DSN-02-05, 10 §6.6): for task keys ({@code Runnable}, {@code Callable},
  * {@code ForkJoinTask}) with {@link TraceContext} values the store is field backed: a key whose
@@ -27,10 +33,26 @@ public abstract class ContextStore<K, V> {
   /** Default upper bound of entries per store (overridable by the core). */
   public static final int DEFAULT_MAX_ENTRIES = 100_000;
 
+  /**
+   * Default upper bound of weak-map entries over all stores together (ADR-0010 C-240 (6)): at the
+   * measured 74 bytes per weak-map entry (C-120 (3), {@code ContextStoreFootprintTest}) 100,000
+   * entries are about 7.06 MiB, the worst case of every store together. Field-backed entries (task
+   * objects with an {@code argos$ctx} field) use no map entry and no budget.
+   */
+  public static final int DEFAULT_TOTAL_MAX_ENTRIES = 100_000;
+
   /** Upper bound of distinct (key type, value type) stores. */
   static final int MAX_STORES = 256;
 
   private static volatile int limit = DEFAULT_MAX_ENTRIES;
+
+  private static volatile int totalLimit = DEFAULT_TOTAL_MAX_ENTRIES;
+
+  /** Weak-map entries of all stores (reserved before a put, released on remove and expunge). */
+  private static final AtomicInteger SHARED = new AtomicInteger();
+
+  /** Entries refused by the shared budget. */
+  private static final AtomicLong BUDGET_DROPPED = new AtomicLong();
 
   /** keyType name -> valueType name -> store (names, never Class objects: no loader pinning). */
   private static final ConcurrentMap<String, ConcurrentMap<String, ContextStore<?, ?>>> STORES =
@@ -142,6 +164,45 @@ public abstract class ContextStore<K, V> {
     if (value > 0) {
       limit = value;
     }
+  }
+
+  /** The upper bound of weak-map entries over all stores (C-240 (6)). */
+  public static int totalMaxEntries() {
+    return totalLimit;
+  }
+
+  static void setTotalMaxEntries(int value) {
+    if (value > 0) {
+      totalLimit = value;
+    }
+  }
+
+  /** Weak-map entries counted against the shared budget now (approximate under concurrency). */
+  public static int sharedEntries() {
+    return Math.max(0, SHARED.get());
+  }
+
+  /** Entries every store together did not keep because the shared budget was spent. */
+  public static long budgetDroppedEntries() {
+    return BUDGET_DROPPED.get();
+  }
+
+  /**
+   * Takes one entry of the shared budget; false (and counted) when it is spent. Wait-free: an
+   * increment that goes past the bound is taken back at once.
+   */
+  static boolean reserveShared() {
+    if (SHARED.incrementAndGet() > totalLimit) {
+      SHARED.decrementAndGet();
+      BUDGET_DROPPED.incrementAndGet();
+      return false;
+    }
+    return true;
+  }
+
+  /** Gives one entry back to the shared budget (an entry removed, expunged or not stored). */
+  static void releaseShared() {
+    SHARED.decrementAndGet();
   }
 
   public abstract V get(K key);

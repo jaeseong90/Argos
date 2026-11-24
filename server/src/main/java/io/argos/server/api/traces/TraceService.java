@@ -71,7 +71,6 @@ public class TraceService {
   private final DictionaryNames names;
   private final AppDirectory directory;
   private final QuerySources sources;
-  private final ArgosProperties.Retention retention;
 
   public TraceService(
       QueryExecutor executor,
@@ -83,7 +82,6 @@ public class TraceService {
     this.names = names;
     this.directory = directory;
     this.sources = sources;
-    this.retention = properties.retention();
   }
 
   /**
@@ -151,7 +149,7 @@ public class TraceService {
       rows = rows.subList(0, MAX_NODES);
     }
     // The same rule as the XLog and the transaction search: the raw xlog retention.
-    boolean exceeded = searched.from().isBefore(sources.now().minus(retention.xlog()));
+    boolean exceeded = searched.from().isBefore(sources.now().minus(sources.xlogRetention()));
     return new Result(build(traceHex, rows, searched, now), truncated, exceeded);
   }
 
@@ -224,10 +222,14 @@ public class TraceService {
           .add(new Call((int) s.getLong("app_id"), tx, start, start + s.getLong("elapsed_ms"), s));
     }
 
-    // Callers: the caller app's transaction whose run covers the callee's start. Without a caller
+    // Callers: the incoming traceparent's parent-id is the caller transaction's own span id
+    // (ADR-0010 C-223 (1)(2)), so the transaction of the trace with that span_id is the caller
+    // whenever it is there (and of the caller application the Argos tracestate names, if any).
+    // Only without it, the caller app's transaction whose run covers the callee's start: two
+    // transactions of the app that start in the same millisecond (a caller and its first callee)
+    // both cover a later callee, and the time alone cannot tell them apart. Without a caller
     // application (the default agent configuration sends no Argos tracestate entry, so
-    // caller_app_id is 0), the incoming traceparent's parent-id is the caller transaction's own
-    // span id (ADR-0010 C-223 (1)(2)): the transaction of the trace with that span_id.
+    // caller_app_id is 0) the span id is the only link.
     long tol = TOLERANCE.toMillis();
     Map<Long, Tx> bySpan = new HashMap<>();
     for (Tx t : txs) {
@@ -244,16 +246,20 @@ public class TraceService {
     for (Tx c : txs) {
       boolean incoming = c.row().getBoolean("incoming_trace");
       Tx best = null;
-      if (c.callerApp() == 0) {
-        long parentSpan = c.row().getLong("parent_span_id");
-        if (!incoming || parentSpan == 0) {
-          continue;
-        }
+      long parentSpan = incoming ? c.row().getLong("parent_span_id") : 0L;
+      if (parentSpan != 0) {
         Tx bySpanId = bySpan.get(parentSpan);
-        if (bySpanId != null && bySpanId.index() != c.index()) {
+        if (bySpanId != null
+            && bySpanId.index() != c.index()
+            && (c.callerApp() == 0 || bySpanId.appId() == c.callerApp())) {
           best = bySpanId;
         }
-      } else {
+      }
+      if (c.callerApp() == 0) {
+        if (parentSpan == 0) {
+          continue;
+        }
+      } else if (best == null) {
         long bestScore = Long.MAX_VALUE;
         for (Tx p : txs) {
           if (p.index() == c.index() || p.appId() != c.callerApp()) {

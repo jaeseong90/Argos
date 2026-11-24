@@ -138,6 +138,24 @@ recording proxy request of each namespace and asserts that.
 
 ## Supported library versions
 
+### Version range and witness
+
+| Library | Supported range | Minimum verified | Maximum verified | Boundary tests |
+|---|---|---|---|---|
+| `javax.servlet:javax.servlet-api` (module tests; compiled against 3.1.0) | 3.1 to 4.0 | 4.0.1 | 4.0.1 | `test` on JDK 8 (`ServletHelperTest`, `ServletCaptureTest`, `AsyncEndTest`, `ServletModuleTest`) |
+| `jakarta.servlet:jakarta.servlet-api` (module tests) | 5.0 to 6.1 | 5.0.0 | 5.0.0 | `test` on JDK 8 (`ServletHelperTest`, `ServletCaptureTest`, `ServletModuleTest`) |
+| Apache Tomcat, javax.servlet 4.0 | 9.0 | 9.0.83 | 9.0.123 | `agent-testing` `servlet.RequestBoundaryTest` (shop-boot2, embedded 9.0.83) and `servlet.WarDispatchTest` (shop-war-javax, standalone 9.0.123) |
+| Apache Tomcat, jakarta.servlet 6.0 and 6.1 | 10.1, 11.0 | 10.1.55 | 11.0.27 | `servlet.RequestBoundaryTest` (shop-boot3 10.1.55, shop-boot4 11.0.27) and `servlet.WarDispatchTest` (shop-war-jakarta 10.1.61 and 11.0.27) |
+
+- Witness (`ServletModule.witness()`, resource lookup only), one of: `javax.servlet.http.HttpServlet`,
+  `jakarta.servlet.http.HttpServlet`.
+- Run: `./gradlew :agent:agent-instrumentation:servlet:test`; end to end
+  `./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot3@21,shop-boot4@21,shop-war-javax@8,shop-war-jakarta@21 --tests '*servlet*'`.
+- Jetty and Undertow are not verified yet (WO-50); javax.servlet 3.1 containers are compiled for
+  but not run.
+
+### Details
+
 Compiled against the lowest supported APIs (`javax.servlet-api` 3.1.0, `jakarta.servlet-api`
 5.0.0, `compileOnly`; the application's own classes are used at run time). The javax
 `HttpServletMapping` helper (`src/servlet4`, `ServletMappingHelperJavax`) is compiled on its own

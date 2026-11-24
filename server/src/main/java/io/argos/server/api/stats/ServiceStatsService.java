@@ -95,6 +95,7 @@ public class ServiceStatsService {
       long extMs,
       long satisfied,
       long tolerating,
+      long apdexCount,
       Double p50,
       Double p95,
       Double p99) {
@@ -184,7 +185,8 @@ public class ServiceStatsService {
               x.p95(),
               x.p99(),
               x.maxMs(),
-              Values.ratio(x.satisfied() + x.tolerating() / 2.0, x.count(), 4),
+              // D-20, C-237 (8): BATCH transactions get no Apdex (null for a BATCH service)
+              Values.ratio(x.satisfied() + x.tolerating() / 2.0, x.apdexCount(), 4),
               x.sumMs(),
               Values.ratio(x.sqlMs(), x.sumMs(), 4),
               Values.ratio(x.extMs(), x.sumMs(), 4),
@@ -225,6 +227,7 @@ public class ServiceStatsService {
               row.getLong("ext_ms"),
               row.getLong("satisfied"),
               row.getLong("tolerating"),
+              row.getLong("apdex_count"),
               Values.quantile(row, "q", 0),
               Values.quantile(row, "q", 1),
               Values.quantile(row, "q", 2)));

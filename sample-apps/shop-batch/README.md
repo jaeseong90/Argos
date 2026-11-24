@@ -29,11 +29,22 @@ Spring Batch runs the job in the calling thread (Boot's `JobLauncher`); every ru
 `run.id`, so a job can be started any number of times. `SAMPLE_VT=true` (JDK 21) runs Tomcat, the
 `@Scheduled` methods and the task executor on virtual threads.
 
+With an agent attached (10 §6.8), a job run by `POST /batch/run/{job}` belongs to that HTTP
+request: each Spring Batch step is a METHOD step of the request's transaction. With
+`?detached=true` the app starts the job on a plain `java.lang.Thread` of its own (no executor, so
+nothing is propagated, 10 §8) and each step is a BATCH transaction `BATCH settlementJob.<step>`.
+`SAMPLE_BATCH_PER_ITEM_SQL=true` makes `settleStep`'s processor price every item with its own
+query (`SELECT price FROM products WHERE id = ?`, 20,000 statements per run, the N+1 shape that
+drives the agent's step summary mode); by default the prices come from an in-memory table read
+once.
+
 ## Endpoints
 
 | Endpoint | Answer |
 |---|---|
 | `POST /batch/run/{job}` | runs the Spring Batch job to its end: 200 with the execution summary (status, read/write/commit counts per step, `stepsInSharedDataSource`), 500 when it did not complete, 404 for an unknown job |
+| `POST /batch/run/{job}?detached=true` | starts the job on a new plain thread of the app (`shop-batch-detached-<runId>`) and answers at once: 202 with `runId`, `state=RUNNING`, `statusUrl`; 404 for an unknown job |
+| `GET /batch/executions/{id}?awaitMs=` | state of detached run `id` (`last`: the newest of the last 32 runs); `awaitMs` (≤ 60,000) waits for it to finish: `state` RUNNING, DONE (with the execution summary of `POST /batch/run/{job}` at the top level) or FAILED (`failure`); 404 for an unknown run |
 | `POST /batch/quartz/{job}` | fires the Quartz job now and waits up to 30 s for it: `fired`, `completed`, last result; 504 when it did not finish, 404 for an unknown job |
 | `GET /batch/scheduled?awaitMs=` | counters of the three `@Scheduled` methods; `awaitMs` (≤ 60,000) waits until each has run once |
 | `GET /batch/jobs` | Spring Batch and Quartz jobs (next fire times), `quartzJobsInSharedDataSource` |
@@ -45,7 +56,8 @@ Spring Batch runs the job in the calling thread (Boot's `JobLauncher`); every ru
 
 The smoke triggers every job and checks its completion: `settlementJob` (`status=COMPLETED`,
 `readCount=writeCount=20000`, both steps in the shared DataSource, and the chunk step's own counts
-`chunkStepReadCount=20000` and `chunkStepCommitCount=5`), both Quartz jobs (`fired`,
+`chunkStepReadCount=20000` and `chunkStepCommitCount=5`), the same job detached (202, then
+`GET /batch/executions/last` until `state=DONE`, `status=COMPLETED`), both Quartz jobs (`fired`,
 `completed`), the three `@Scheduled` kinds (each at least once), the four XSS job names (sentinel
 `ARGOS_SEED` in the answer).
 
@@ -60,6 +72,7 @@ is exhausted only when the fifth chunk starts). A different commit interval chan
 | `jdk21` | 21 | |
 | `jdk25` | 25 | with `--sun-misc-unsafe-memory-access=deny` (as the 02 §9 matrix runs JDK 25) |
 | `vt` | 21 | `SAMPLE_VT=true`: request and `@Scheduled` threads are virtual |
+| `per-item-sql` | 17 | `SAMPLE_BATCH_PER_ITEM_SQL=true`: `batchPerItemSql=true`, `settleStep` still completes with 20,000 items |
 | `routing-ds` | 17 | `SAMPLE_ROUTING_DS=true`: the four-level chain under Batch, Quartz and the shop data |
 
 PostgreSQL 16 and MySQL 8.4 (`SAMPLE_DB=postgres|mysql`, two starts on the same database) were

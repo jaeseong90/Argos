@@ -83,7 +83,6 @@ public class TransactionDetailService {
   private final AppDirectory directory;
   private final AuditService audit;
   private final QuerySources sources;
-  private final ArgosProperties.Retention retention;
   private final String logLinkTemplate;
 
   public TransactionDetailService(
@@ -98,7 +97,6 @@ public class TransactionDetailService {
     this.directory = directory;
     this.audit = audit;
     this.sources = sources;
-    this.retention = properties.retention();
     this.logLinkTemplate = properties.ui() == null ? null : properties.ui().logLinkTemplate();
   }
 
@@ -176,7 +174,7 @@ public class TransactionDetailService {
 
     Instant now = sources.now();
     Instant end = ts.plusMillis(elapsed);
-    boolean expired = ts.isBefore(now.minus(retention.profile()));
+    boolean expired = ts.isBefore(now.minus(sources.profileRetention()));
     String state;
     boolean pending = false;
     if (!captured) {

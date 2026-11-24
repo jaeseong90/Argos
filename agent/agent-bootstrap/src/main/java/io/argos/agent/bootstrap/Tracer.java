@@ -158,8 +158,9 @@ public interface Tracer {
    * source has no value (yet). The core applies {@code capture.user-id.mode} (16 §6.3, SEC-32):
    * {@code plain} keeps at most 128 characters without control characters, {@code hashed} sends the
    * first 16 characters of base64url(HMAC-SHA256(app salt, user id)) and nothing (counted, one
-   * WARN) while no salt is known, an {@code mdc:} source records nothing until WO-18 (ADR-0010
-   * C-125). The first decided value is kept; later calls of the same transaction are ignored.
+   * WARN) while no salt is known; an {@code mdc:} source is passed in by the logging module from
+   * the transaction's log events (ADR-0010 C-125 (3)). The first decided value is kept; later calls
+   * of the same transaction are ignored.
    */
   void setUserId(TraceContext ctx, String rawUserId);
 

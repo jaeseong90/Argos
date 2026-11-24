@@ -41,6 +41,12 @@ public final class SelfDiagnostics {
   public static final String DIRECT_MEMORY_BYTES = "direct_memory_bytes";
   public static final String PREMAIN_MS = "premain_ms";
 
+  /** Seconds the slow-stack sampler spent taking stacks (10 §13.1, WO-19). */
+  public static final String STACK_CAPTURE_SECONDS_TOTAL = "stack_capture_seconds_total";
+
+  /** Stacks the slow-stack sampler took (10 §13.1, WO-19). */
+  public static final String STACK_CAPTURES_TOTAL = "stack_captures_total";
+
   /** The state and error count of one instrumentation module. */
   public static final class Module {
     private final int id;
@@ -116,6 +122,8 @@ public final class SelfDiagnostics {
   private final Double agentThreadsCpuSeconds;
   private final Long directMemoryBytes;
   private final Double premainMs;
+  private final Double stackCaptureSeconds;
+  private final Long stackCaptures;
   private final Map<String, Long> counters;
   private final List<Module> modules;
 
@@ -127,6 +135,8 @@ public final class SelfDiagnostics {
     this.agentThreadsCpuSeconds = b.agentThreadsCpuSeconds;
     this.directMemoryBytes = b.directMemoryBytes;
     this.premainMs = b.premainMs;
+    this.stackCaptureSeconds = b.stackCaptureSeconds;
+    this.stackCaptures = b.stackCaptures;
     this.counters = Collections.unmodifiableMap(new LinkedHashMap<String, Long>(b.counters));
     this.modules = Collections.unmodifiableList(new ArrayList<Module>(b.modules));
   }
@@ -168,6 +178,18 @@ public final class SelfDiagnostics {
     return premainMs == null ? OptionalDouble.empty() : OptionalDouble.of(premainMs);
   }
 
+  /** Seconds spent taking slow stacks ({@value #STACK_CAPTURE_SECONDS_TOTAL}). */
+  public OptionalDouble stackCaptureSeconds() {
+    return stackCaptureSeconds == null
+        ? OptionalDouble.empty()
+        : OptionalDouble.of(stackCaptureSeconds);
+  }
+
+  /** Slow stacks taken ({@value #STACK_CAPTURES_TOTAL}). */
+  public OptionalLong stackCaptures() {
+    return optional(stackCaptures);
+  }
+
   /** {@link AgentCounters#snapshot()} at the time of this snapshot. */
   public Map<String, Long> counters() {
     return counters;
@@ -192,6 +214,9 @@ public final class SelfDiagnostics {
     decimal(out, AGENT_THREADS_CPU_SECONDS_TOTAL, agentThreadsCpuSeconds);
     number(out, DIRECT_MEMORY_BYTES, directMemoryBytes);
     decimal(out, PREMAIN_MS, premainMs);
+    // Microsecond resolution: a few short cycles must not read as 0.000 (WO-19 cost check).
+    decimal(out, STACK_CAPTURE_SECONDS_TOTAL, stackCaptureSeconds, "%.6f");
+    number(out, STACK_CAPTURES_TOTAL, stackCaptures);
     out.append(",\"counters\":{");
     boolean first = true;
     for (Map.Entry<String, Long> counter : counters.entrySet()) {
@@ -237,10 +262,14 @@ public final class SelfDiagnostics {
   }
 
   private static void decimal(StringBuilder out, String name, Double value) {
+    decimal(out, name, value, "%.3f");
+  }
+
+  private static void decimal(StringBuilder out, String name, Double value, String format) {
     if (value != null && !value.isNaN() && !value.isInfinite()) {
       out.append(',');
       string(out, name);
-      out.append(':').append(String.format(Locale.ROOT, "%.3f", value));
+      out.append(':').append(String.format(Locale.ROOT, format, value));
     }
   }
 
@@ -273,6 +302,8 @@ public final class SelfDiagnostics {
     private Double agentThreadsCpuSeconds;
     private Long directMemoryBytes;
     private Double premainMs;
+    private Double stackCaptureSeconds;
+    private Long stackCaptures;
     private Map<String, Long> counters = Collections.emptyMap();
     private final List<Module> modules = new ArrayList<Module>();
 
@@ -310,6 +341,13 @@ public final class SelfDiagnostics {
 
     public Builder premainMs(double value) {
       this.premainMs = value;
+      return this;
+    }
+
+    /** {@value #STACK_CAPTURE_SECONDS_TOTAL} and {@value #STACK_CAPTURES_TOTAL} (WO-19). */
+    public Builder stackCapture(double seconds, long stacks) {
+      this.stackCaptureSeconds = seconds;
+      this.stackCaptures = stacks;
       return this;
     }
 

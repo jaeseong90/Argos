@@ -41,6 +41,7 @@ import {
 } from '../required/transactionChecks';
 import { shopProblem, startShop } from '../stack/liveShop';
 import type { SeedManifest } from '../stack/manifest';
+import { retireInstancesNamed } from '../stack/retire';
 import {
   ASYNC_PATH,
   ASYNC_SERVICE,
@@ -415,6 +416,8 @@ test(
       });
     } finally {
       await stopProcess(shop.child);
+      // C-241 (7): the stopped shop's instance never stays FIRING as instance_down.
+      await retireInstancesNamed(await apiAs('operator'), seed.traffic.app_id, [VT_INSTANCE]);
     }
   },
 );

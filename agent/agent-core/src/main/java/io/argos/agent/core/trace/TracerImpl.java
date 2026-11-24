@@ -85,6 +85,9 @@ public final class TracerImpl implements Tracer {
   /** HTTP status of a transaction ended because its context leaked (10 §7.1). */
   public static final int LEAKED_STATUS = 599;
 
+  /** Most frames of an ERROR step (10 §14 "스택(30/64)", 11 §4.3 {@code frame_ids} of ERROR). */
+  public static final int MAX_ERROR_FRAMES = 30;
+
   private final Dictionary dictionary;
   private final SqlIds sqlIds;
 
@@ -126,6 +129,14 @@ public final class TracerImpl implements Tracer {
 
   /** {@code capture.user-id.*} (WO-12, 16 §6.3, ADR-0010 C-125). */
   private final UserIds userIds;
+
+  /**
+   * The class-name prefixes of {@code instrumentation.app-packages} ({@link ErrorFrames#prefixes})
+   * for {@code error_top_frame_id} (WO-19, C-237 (6)); null until the packages are installed off
+   * the premain thread ({@link #setAppPackages}, {@link #setAppPackagesIfUnset}): an error before
+   * that has no application frame (0).
+   */
+  private final AtomicReference<String[]> appPackagePrefixes = new AtomicReference<String[]>();
 
   /**
    * The pool and Tomcat registries (WO-13, 10 §6.4), created by their first use: an application
@@ -573,6 +584,8 @@ public final class TracerImpl implements Tracer {
       ctx.error = true;
     }
     ctx.serviceName = finalServiceName(ctx);
+    // capture.user-id.source mdc:<key> without a value in any log event (C-125 (3)).
+    userIds.atEnd(tx, capture());
 
     long cpu = -1L;
     long allocated = -1L;
@@ -589,6 +602,9 @@ public final class TracerImpl implements Tracer {
     }
 
     StepBuffer steps = tx.steps();
+    if (error != null) {
+      errorStack(tx, steps, errorType, error, endNanos);
+    }
     steps.seal();
     if (steps.summarized()) {
       ctx.addFlags(TraceContext.FLAG_SUMMARIZED);
@@ -615,6 +631,55 @@ public final class TracerImpl implements Tracer {
         // A profile the queue drops (now or later, to make room) counts profile_dropped_total.
         queues.profile().offer(profile);
       }
+    }
+  }
+
+  /**
+   * The stack of the error a transaction ends with (ADR-0010 C-222 (1), C-237 (6); WO-19), before
+   * the step buffer is sealed:
+   *
+   * <ul>
+   *   <li>one top-level {@link StepType#ERROR} step at the end time, with no duration, on the
+   *       ending thread: {@code name_id} = the CLASS dictionary id of the error class, {@code
+   *       error=true}, no detail (the message is on the record), and the first {@code
+   *       capture.stack-depth} frames (at most {@value #MAX_ERROR_FRAMES}) as {@code
+   *       class.method(file:line)} FRAME ids, through the same path as {@link #stepStack}. The
+   *       server takes the representative stack of the error group from it (12 §3.5 (4)). A
+   *       transaction in summary mode (every {@code max-steps} slot taken) or sealed by a
+   *       concurrent end gets none: the step cannot be recorded, and a summary entry would carry no
+   *       stack;
+   *   <li>the transaction's {@code topAppFrameId} ({@code error_top_frame_id}): the FRAME id of
+   *       {@code class.method(file)} (no line, C-131 fingerprint) of the first frame of the whole
+   *       stack in an application package ({@link ErrorFrames}), 0 when there is none or the
+   *       packages are not known yet. Independent of the summary mode.
+   * </ul>
+   *
+   * Only for a {@link Throwable}: an error status without one ({@code sendError(500)}) records no
+   * ERROR step. Reads the stack once ({@link Throwable#getStackTrace()} returns a copy; the error
+   * itself is not changed). A failure here is logged once and never loses the record.
+   */
+  private void errorStack(
+      Transaction tx, StepBuffer steps, String errorType, Throwable error, long endNanos) {
+    try {
+      StackTraceElement[] frames = error.getStackTrace();
+      int top = ErrorFrames.topAppFrame(frames, appPackagePrefixes.get());
+      if (top >= 0) {
+        tx.topAppFrame(dictionary.id(DictKind.FRAME, frameText(frames[top], false)));
+      }
+      if (steps == null) {
+        return;
+      }
+      long nameId = errorType == null ? 0L : dictionary.id(DictKind.CLASS, errorType);
+      int seq =
+          steps.startRecorded(
+              StepType.ERROR, nameId, 0L, endNanos, StepBuffer.NO_PARENT, Thread.currentThread());
+      if (seq < 0) {
+        return;
+      }
+      stack(steps, seq, frames, Integer.MAX_VALUE);
+      steps.end(seq, 0, true, 0L, endNanos);
+    } catch (Throwable t) {
+      AgentLogger.warnOnce("tracer.error-stack", "error stack failed: {}", t.toString());
     }
   }
 
@@ -756,8 +821,9 @@ public final class TracerImpl implements Tracer {
    * {@inheritDoc}
    *
    * <p>At most {@code maxDepth} frames, and never more than 64 ({@link
-   * StepBuffer#MAX_STACK_FRAMES}) for a {@link StepType#STACK} step or {@code capture.stack-depth}
-   * (30) for any other step (10 §14 "스택(30/64)").
+   * StepBuffer#MAX_STACK_FRAMES}) for a {@link StepType#STACK} step, {@code capture.stack-depth}
+   * and {@value #MAX_ERROR_FRAMES} for an {@link StepType#ERROR} step, {@code capture.stack-depth}
+   * for any other step (10 §14 "스택(30/64)").
    */
   @Override
   public void stepStack(TraceContext ctx, int seq, StackTraceElement[] frames, int maxDepth) {
@@ -766,31 +832,157 @@ public final class TracerImpl implements Tracer {
       if (tx == null || frames == null || seq < 0 || seq >= StepBuffer.SUMMARY_SEQ_BASE) {
         return;
       }
-      StepBuffer steps = tx.steps();
-      if (seq >= steps.size()) {
-        return;
-      }
-      int limit =
-          steps.type(seq) == StepType.STACK
-              ? StepBuffer.MAX_STACK_FRAMES
-              : Math.min(StepBuffer.MAX_STACK_FRAMES, capture().stackDepth());
-      int depth = Math.min(frames.length, Math.max(0, Math.min(maxDepth, limit)));
-      long[] ids = new long[depth];
-      for (int i = 0; i < depth; i++) {
-        StackTraceElement frame = frames[i];
-        ids[i] =
-            dictionary.id(
-                DictKind.FRAME,
-                frame.getClassName()
-                    + "."
-                    + frame.getMethodName()
-                    + "("
-                    + frame.getFileName()
-                    + ")");
-      }
-      steps.stack(seq, ids);
+      stack(tx.steps(), seq, frames, maxDepth);
     } catch (Throwable t) {
       AgentLogger.warnOnce("tracer.stack", "step stack failed: {}", t.toString());
+    }
+  }
+
+  /** Sets the stack of a recorded step of {@code steps} within the caps of {@link #stepStack}. */
+  private void stack(StepBuffer steps, int seq, StackTraceElement[] frames, int maxDepth) {
+    if (steps == null || seq >= steps.size()) {
+      return;
+    }
+    int type = steps.type(seq);
+    int limit;
+    if (type == StepType.STACK) {
+      limit = StepBuffer.MAX_STACK_FRAMES;
+    } else {
+      int depth = Math.min(StepBuffer.MAX_STACK_FRAMES, capture().stackDepth());
+      limit = type == StepType.ERROR ? Math.min(MAX_ERROR_FRAMES, depth) : depth;
+    }
+    steps.stack(seq, frameIds(frames, Math.min(maxDepth, limit)));
+  }
+
+  // --- application packages (error_top_frame_id, WO-19) ---------------------------------------
+
+  /**
+   * Installs the application packages ({@code instrumentation.app-packages}, configured or
+   * inferred: {@code AppPackages.of(config).packages()}) the top application frame of an error is
+   * looked up in. Called off the premain thread: by the remote wiring on {@code argos-sender}, by
+   * {@code argos-watch} at its start, and by the runtime applier when the value changes remotely.
+   * Errors that end afterwards use the new packages; an empty list finds no frame (0).
+   */
+  public void setAppPackages(java.util.List<String> packages) {
+    appPackagePrefixes.set(ErrorFrames.prefixes(packages));
+  }
+
+  /**
+   * {@link #setAppPackages} unless packages were already installed (a remote change wins over the
+   * start value installed later by another thread).
+   *
+   * @return true when {@code packages} were installed
+   */
+  public boolean setAppPackagesIfUnset(java.util.List<String> packages) {
+    return appPackagePrefixes.compareAndSet(null, ErrorFrames.prefixes(packages));
+  }
+
+  /** True once application packages were installed ({@link #setAppPackages}). */
+  public boolean appPackagesKnown() {
+    return appPackagePrefixes.get() != null;
+  }
+
+  /** FRAME dictionary ids of the first {@code maxDepth} frames ({@link #frameText}). */
+  private long[] frameIds(StackTraceElement[] frames, int maxDepth) {
+    int depth = Math.min(frames.length, Math.max(0, maxDepth));
+    long[] ids = new long[depth];
+    int kept = 0;
+    for (int i = 0; i < depth; i++) {
+      StackTraceElement frame = frames[i];
+      if (frame != null) {
+        ids[kept++] = dictionary.id(DictKind.FRAME, frameText(frame, true));
+      }
+    }
+    return kept == depth ? ids : java.util.Arrays.copyOf(ids, kept);
+  }
+
+  /**
+   * The FRAME dictionary text of a stack frame (10 §13.1): {@code class.method(file:line)} for the
+   * frames of STACK and ERROR steps ({@code withLine}), {@code class.method(file)} without it (the
+   * line-free form the error group fingerprint needs, so that a redeploy that moves lines keeps the
+   * group, ADR-0010 C-131; WO-19 plan assumption). A frame without a file reads {@code (Unknown
+   * Source)}, a native one {@code (Native Method)}, like {@link StackTraceElement#toString()}.
+   */
+  public static String frameText(StackTraceElement frame, boolean withLine) {
+    StringBuilder out =
+        new StringBuilder(frame.getClassName().length() + frame.getMethodName().length() + 32);
+    out.append(frame.getClassName()).append('.').append(frame.getMethodName()).append('(');
+    String file = frame.getFileName();
+    if (frame.isNativeMethod()) {
+      out.append("Native Method");
+    } else if (file == null) {
+      out.append("Unknown Source");
+    } else {
+      out.append(file);
+      if (withLine && frame.getLineNumber() >= 0) {
+        out.append(':').append(frame.getLineNumber());
+      }
+    }
+    return out.append(')').toString();
+  }
+
+  // --- slow stacks (argos-watch, 10 §13.1, WO-19) ---------------------------------------------
+
+  /**
+   * Slow-stack samples taken of {@code ctx}'s transaction, or -1 when it has ended or is not a
+   * transaction of this tracer. {@code argos-watch} only ({@code SlowStackWatcher}).
+   */
+  public static int stackCaptures(TraceContext ctx) {
+    Transaction tx = open(ctx);
+    return tx == null ? -1 : tx.stackCaptures();
+  }
+
+  /**
+   * {@code nanoTime} of the last slow-stack sample of {@code ctx}'s transaction (0 before the
+   * first). {@code argos-watch} only.
+   */
+  public static long lastStackNanos(TraceContext ctx) {
+    Transaction tx = open(ctx);
+    return tx == null ? 0L : tx.lastStackNanos();
+  }
+
+  /**
+   * Records a slow-stack sample of {@code ctx}'s transaction (10 §13.1): a top-level {@link
+   * StepType#STACK} step at {@code nowNanos} with no duration, on {@code thread} (the thread the
+   * sample was taken of, not the calling {@code argos-watch}), whose stack is the first {@code
+   * maxDepth} frames of {@code frames} (at most {@value StepBuffer#MAX_STACK_FRAMES}) as {@code
+   * class.method(file:line)} FRAME ids. The sample counts for {@link #stackCaptures} even when it
+   * cannot be kept; a transaction in summary mode gets no further sample (a STACK step is never
+   * summarized), and an ended or sealed one none at all. Lock-free like every step write ({@link
+   * StepBuffer}); never throws. Core only: the agent's own thread calls it, never advice.
+   *
+   * @return true when the STACK step was recorded
+   */
+  public boolean recordStack(
+      TraceContext ctx, Thread thread, StackTraceElement[] frames, int maxDepth, long nowNanos) {
+    try {
+      Transaction tx = open(ctx);
+      if (tx == null || frames == null) {
+        return false;
+      }
+      tx.stackCaptured(nowNanos);
+      StepBuffer steps = tx.steps();
+      if (steps == null || steps.isSealed()) {
+        return false;
+      }
+      if (steps.summarized()) {
+        tx.stackCapturesDone();
+        return false;
+      }
+      long[] ids = frameIds(frames, Math.min(maxDepth, StepBuffer.MAX_STACK_FRAMES));
+      int seq = steps.startRecorded(StepType.STACK, 0L, 0L, nowNanos, StepBuffer.NO_PARENT, thread);
+      if (seq < 0) {
+        if (!steps.isSealed()) {
+          tx.stackCapturesDone();
+        }
+        return false;
+      }
+      steps.stack(seq, ids);
+      steps.end(seq, 0, false, 0L, nowNanos);
+      return true;
+    } catch (Throwable t) {
+      AgentLogger.warnOnce("tracer.slow-stack", "slow stack sample failed: {}", t.toString());
+      return false;
     }
   }
 

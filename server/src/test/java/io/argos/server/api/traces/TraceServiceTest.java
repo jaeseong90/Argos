@@ -53,6 +53,48 @@ class TraceServiceTest {
   }
 
   private static TraceService service(String xlogRetention) {
+    return service(xlogRetention, List.of(oneNode()), List.of());
+  }
+
+  /** A transaction row of {@code traces/nodes}. */
+  private static Map<String, Object> node(
+      long txId, long startMs, long elapsedMs, long callerApp, long span, long parentSpan) {
+    Map<String, Object> node = new LinkedHashMap<>();
+    node.put("tx_id", txId);
+    node.put("app_id", 5L);
+    node.put("env", "prod");
+    node.put("ts_ms", startMs);
+    node.put("elapsed_ms", elapsedMs);
+    node.put("caller_app_id", callerApp);
+    node.put("incoming_trace", parentSpan != 0);
+    node.put("span_id", span);
+    node.put("parent_span_id", parentSpan);
+    node.put("instance_id", 50L);
+    node.put("service_id", 11L);
+    node.put("app_version_id", 0L);
+    node.put("http_status", 502L);
+    node.put("error", true);
+    node.put("profile_captured", true);
+    return node;
+  }
+
+  /** An HTTP step row of {@code traces/http_steps}. */
+  private static Map<String, Object> call(long txId, long offsetMs, long elapsedMs) {
+    Map<String, Object> step = new LinkedHashMap<>();
+    step.put("app_id", 5L);
+    step.put("tx_id", txId);
+    step.put("seq", 1L);
+    step.put("start_offset_ms", offsetMs);
+    step.put("elapsed_ms", elapsedMs);
+    step.put("name_id", 0L);
+    step.put("target_id", 0L);
+    step.put("status", 0L);
+    step.put("error", true);
+    step.put("detail", "/api/hop/1");
+    return step;
+  }
+
+  private static Map<String, Object> oneNode() {
     Map<String, Object> node = new LinkedHashMap<>();
     node.put("tx_id", 42L);
     node.put("app_id", 5L);
@@ -69,6 +111,11 @@ class TraceServiceTest {
     node.put("http_status", 200L);
     node.put("error", false);
     node.put("profile_captured", false);
+    return node;
+  }
+
+  private static TraceService service(
+      String xlogRetention, List<Map<String, Object>> nodes, List<Map<String, Object>> httpSteps) {
     // Stub collaborators (plain subclasses, no database and no mock agent): one transaction, no
     // HTTP steps, no names.
     QueryExecutor executor =
@@ -77,8 +124,11 @@ class TraceServiceTest {
           public QueryResult query(String name, QueryParams params, QueryOptions options) {
             return switch (name) {
               case "traces/nodes" ->
-                  new QueryResult("q1", List.of(), List.of(), List.of(row(node)));
-              case "traces/http_steps" -> new QueryResult("q2", List.of(), List.of(), List.of());
+                  new QueryResult(
+                      "q1", List.of(), List.of(), nodes.stream().map(n -> row(n)).toList());
+              case "traces/http_steps" ->
+                  new QueryResult(
+                      "q2", List.of(), List.of(), httpSteps.stream().map(n -> row(n)).toList());
               default -> throw new AssertionError("unexpected query " + name);
             };
           }
@@ -134,6 +184,33 @@ class TraceServiceTest {
     assertThat(shortRetention.trace(TRACE, NOW.minus(Duration.ofDays(8)), null).retentionExceeded())
         .as("?ts older than the retention")
         .isTrue();
+  }
+
+  @Test
+  @Tag("req:F-U10")
+  @DisplayName(
+      "T-API-005b a caller and its first callee that start in the same millisecond both cover the"
+          + " next callee: the traceparent's parent span id names the caller, so each callee gets"
+          + " its own caller and caller step (pair 15 wrap-up, C-223 (1)(2))")
+  void sameMillisecondCallersFollowTheSpanId() {
+    long t0 = NOW.minus(Duration.ofHours(1)).toEpochMilli();
+    // A (root) calls B at once; B calls C; C waits for a 1 s timeout. A and B share their start.
+    List<Map<String, Object>> nodes =
+        List.of(
+            node(100L, t0, 1015, 0, 11L, 0L),
+            node(101L, t0, 1012, 5, 22L, 11L),
+            node(102L, t0 + 2, 1011, 5, 33L, 22L));
+    List<Map<String, Object>> steps = List.of(call(100L, 0, 1013), call(101L, 1, 1010));
+    TraceView view = service(null, nodes, steps).trace(TRACE, null, "1h").view();
+    Map<String, TraceView.Node> byId = new LinkedHashMap<>();
+    for (TraceView.Node n : view.nodes()) {
+      byId.put(n.txId(), n);
+    }
+    assertThat(byId.get("101").parentTxId()).isEqualTo("100");
+    assertThat(byId.get("102").parentTxId()).as("C's caller is B, not the root").isEqualTo("101");
+    assertThat(byId.get("101").callerStep()).isNotNull();
+    assertThat(byId.get("102").callerStep()).as("C has B's call as its caller step").isNotNull();
+    assertThat(byId.get("102").callerStep().elapsedMs()).isEqualTo(1010);
   }
 
   @Test

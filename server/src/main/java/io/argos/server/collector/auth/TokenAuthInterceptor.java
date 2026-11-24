@@ -36,7 +36,8 @@ import org.slf4j.LoggerFactory;
  *   <li>Accepted: the {@link AuthResult} (token id, app, prefix) goes into the {@code Context}.
  *   <li>Rejected data call: {@code UNAUTHENTICATED} with the trailer {@code argos-reject-reason}
  *       {@code TOKEN_INVALID|TOKEN_EXPIRED|TOKEN_REVOKED} (the contract vectors); the failure
- *       counts for the address ({@link IpAuthFailureLimiter}).
+ *       counts for the address ({@link IpAuthFailureLimiter}), which also records the audit event
+ *       {@code AGENT_AUTH_FAILED} (rate limited, queued: never blocks this thread).
  *   <li>Rejected {@code Session} call: the stream goes on to the session handler with the result,
  *       which answers the Hello with {@code ServerHello{rejected, TOKEN_*}} (11 §5 check 1); the
  *       failure counts here, once.
@@ -85,7 +86,7 @@ public final class TokenAuthInterceptor implements ServerInterceptor {
         metrics.rejected(STORE_UNAVAILABLE);
         logRejection(STORE_UNAVAILABLE, auth.tokenPrefix(), peer);
       } else {
-        limiter.recordFailure(peer);
+        limiter.recordFailure(peer, auth.tokenPrefix(), auth.verdict().logReason());
         metrics.rejected(auth.verdict().logReason());
         logRejection(auth.verdict().logReason(), auth.tokenPrefix(), peer);
       }

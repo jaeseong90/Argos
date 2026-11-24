@@ -479,6 +479,17 @@ public class ConfigChangeRepository {
         .findFirst();
   }
 
+  /**
+   * The user name of {@code userId}, empty for a deleted user (the audit actor of an outcome that
+   * arrives after the server forgot who applied the change, ADR-0010 C-239 (3)).
+   */
+  public Optional<String> username(UUID userId) {
+    return jdbc
+        .query("SELECT username FROM argos.users WHERE id = ?", (rs, n) -> rs.getString(1), userId)
+        .stream()
+        .findFirst();
+  }
+
   /** The instances of an app that are not archived, by id. */
   public List<InstanceRow> instancesOf(int appId) {
     return jdbc.query(

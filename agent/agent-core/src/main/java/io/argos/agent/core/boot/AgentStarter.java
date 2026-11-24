@@ -4,6 +4,7 @@ package io.argos.agent.core.boot;
 import io.argos.agent.bootstrap.AgentControl;
 import io.argos.agent.bootstrap.ArgosThread;
 import io.argos.agent.bootstrap.ContextStore;
+import io.argos.agent.core.command.CustomMethodPolicy;
 import io.argos.agent.core.config.AgentConfig;
 import io.argos.agent.core.config.ConfigInputs;
 import io.argos.agent.core.config.ConfigLoader;
@@ -164,6 +165,9 @@ public final class AgentStarter {
     Recording recording = Recording.create(config, counters, control, protection, info);
     running.recording = recording;
     installMasker(config);
+    // WO-18 (10 §6.10, SEC-25): the local custom methods policy, read by the custom module's
+    // matchers, exists before the agent builder (P6) sees the first class.
+    CustomMethodPolicy.installLocal(config);
     control.setCapture(config.capture());
     control.installTracer(recording.tracer());
     ClassLoader agentLoader = AgentStarter.class.getClassLoader();
@@ -229,6 +233,8 @@ public final class AgentStarter {
         });
     // WO-12: transaction.max-duration-ms (10 §6.7, §13.1) on every 1 s tick.
     watch.every(1, recording.maxDurationEnforcer());
+    // WO-19: slow stacks and the overhead monitor (10 §13.1), built on argos-watch when it starts.
+    watch.recording(recording.runtime(), config);
     final SelfDiagnosticsFile selfDiagnostics = selfDiagnosticsFile(config, diagnostics);
     if (selfDiagnostics != null) {
       final TracerImpl tracer = recording.tracerImpl();

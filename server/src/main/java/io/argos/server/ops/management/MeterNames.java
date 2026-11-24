@@ -26,6 +26,27 @@ public final class MeterNames {
    */
   public static final String RECONCILE_MISMATCH_MINUTES = "argos.reconcile.mismatch.minutes";
 
+  /**
+   * Gauge of the seconds until a listener's TLS certificate expires, tag {@code listener} ({@code
+   * argos_server_tls_cert_expiry_seconds{listener}}, 12 §9.4, 16 §3.3; {@code
+   * io.argos.server.ops.tls.CertReloader}, WO-28).
+   */
+  public static final String TLS_CERT_EXPIRY_SECONDS = "argos.server.tls.cert.expiry.seconds";
+
+  /**
+   * Alert gauge of the days until the gRPC certificate expires ({@code
+   * io.argos.server.alert.metric.SelfProvider#CERT_GAUGE}; WO-28): the server alert rule
+   * "certificate expiry" reads it; also exposed as {@code argos_server_tls_cert_expiry_days}.
+   */
+  public static final String TLS_CERT_EXPIRY_DAYS = "argos.server.tls.cert.expiry.days";
+
+  /**
+   * Counter of the self-metric batches ({@code metric}, {@code app_id = 0}) that could not be
+   * written ({@code argos_self_metrics_write_failures_total}, DSN-12-14; {@code
+   * io.argos.server.ops.selfmetrics.SelfMetricsRecorder}, WO-28).
+   */
+  public static final String SELF_METRICS_WRITE_FAILURES = "argos.self.metrics.write.failures";
+
   private static final Pattern NAME = Pattern.compile("argos(?:[._][a-z0-9]+)+");
 
   private MeterNames() {}

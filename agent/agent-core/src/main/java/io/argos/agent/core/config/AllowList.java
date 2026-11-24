@@ -14,13 +14,14 @@ import java.util.List;
  * segment {@code **} matches every remaining segment. A pattern written with the {@code argos.}
  * prefix ({@code argos.enabled} in SEC-23 and the 16 §5.5 example) means the key without it.
  *
- * <p>Default ({@link #DEFAULT}): the five patterns of SEC-23 chosen by ADR-0010 C-92.
+ * <p>Default ({@link #DEFAULT}): the 10 §15 list (ADR-0010 C-240 (4), widening the five SEC-23
+ * patterns of C-92).
  */
 public final class AllowList {
   /** At most this many patterns are kept (the {@code remote-config.allow} cap of the registry). */
   public static final int MAX_PATTERNS = 128;
 
-  /** The default list (ADR-0010 C-92). */
+  /** The default list (10 §15, ADR-0010 C-240 (4)). */
   public static final AllowList DEFAULT = of(AgentConfig.defaults().remoteConfigAllow());
 
   private final List<String> patterns;

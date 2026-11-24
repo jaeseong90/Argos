@@ -78,6 +78,7 @@ counter argos_agent_dictionary_entries_sent_total{}
 gauge argos_agent_transport_up{}
 gauge argos_agent_clock_offset_ms{}
 counter argos_agent_cpu_seconds_total{}
+counter argos_agent_stack_capture_seconds_total{}
 gauge argos_agent_queue_size{queue}
 gauge argos_agent_queue_bytes_estimated{queue}
 gauge argos_agent_heap_bytes_estimated{}

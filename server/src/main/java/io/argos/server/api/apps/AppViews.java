@@ -23,7 +23,13 @@ public final class AppViews {
    * @param instancesTotal instances that are not archived
    * @param instancesUp instances in {@code UP} or {@code WARN} of the instance state machine (12
    *     §4.2; the same count as {@code instances.up} of the overview)
-   * @param registrationPolicy {@code auto} or {@code approval}
+   * @param tokensActive the application's usable agent tokens: active, or rotating within their
+   *     grace, not revoked and not expired (a count only, WO-39)
+   * @param registrationPolicy {@code auto} or {@code approval}: the application's own policy, or
+   *     the environment default {@code argos.agent.auto-register.<env>} when it has none (ADR-0010
+   *     C-231 (7))
+   * @param registrationPolicyInherited true when {@code registrationPolicy} is the environment
+   *     default (the application sets none), false when it is the application's own
    * @param recommendedRulesApplied whether the recommended alert rules were applied
    * @param lastSeenAt the latest connection of its instances, or null
    * @param apdexTMs Apdex T
@@ -44,7 +50,21 @@ public final class AppViews {
       @ArgosUntrusted @Nullable String group,
       @JsonProperty("instances_total") int instancesTotal,
       @JsonProperty("instances_up") int instancesUp,
+      @Schema(
+              description =
+                  "The application's usable agent tokens: active, or rotating within their grace"
+                      + " period, neither revoked nor expired (05 §2.11 application list; a count"
+                      + " only, never a token or prefix).")
+          @JsonProperty("tokens_active")
+          int tokensActive,
       @JsonProperty("registration_policy") String registrationPolicy,
+      @Schema(
+              description =
+                  "True when registration_policy is the environment default"
+                      + " (argos.agent.auto-register.<env>) because the application sets none;"
+                      + " false when the application sets it (ADR-0010 C-231 (7)).")
+          @JsonProperty("registration_policy_inherited")
+          @Nullable Boolean registrationPolicyInherited,
       @JsonProperty("recommended_rules_applied") boolean recommendedRulesApplied,
       @JsonProperty("last_seen_at") @Nullable Instant lastSeenAt,
       @JsonProperty("apdex_t_ms") int apdexTMs,

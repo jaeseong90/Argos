@@ -184,8 +184,9 @@ tasks.named<Test>("integrationTest") {
   // ClickHouse, <= 5 GiB per container).
   maxParallelForks = 1
   // One JVM runs every class: Gradle's default 512 MiB ran out of heap once the WO-26 classes were
-  // added (Spring contexts of finished classes stay reachable until the JVM ends; a follow-up
-  // finds what holds them), so the test JVM gets 1.5 GiB.
+  // added, so the test JVM gets 1.5 GiB. WO-28 (C-231 (13)) found no leak: contexts of finished
+  // classes are held only softly (cleared under memory pressure) except the last server, which Log4j
+  // keeps through Spring Boot's SpringEnvironmentLookup until the next one starts.
   maxHeapSize = "1536m"
   // T-SV-002 (V001 + 1/100 generator data, then the next-version fixture scripts) is a nightly test
   // (ADR-0010 C-100): it runs only with -Pserver.nightly=true and is reported as skipped otherwise.

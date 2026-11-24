@@ -60,7 +60,8 @@ public final class StatsViews {
    * @param p95Ms p95
    * @param p99Ms p99
    * @param maxMs maximum
-   * @param apdex Apdex (satisfied + tolerating / 2) / count
+   * @param apdex Apdex (satisfied + tolerating / 2) / count of the non-BATCH transactions; null
+   *     without any (a BATCH service, D-20, ADR-0010 C-237 (8))
    * @param sumMs elapsed sum
    * @param sqlTimeRatio SQL time / elapsed
    * @param extTimeRatio outgoing call time / elapsed

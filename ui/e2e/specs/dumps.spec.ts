@@ -24,7 +24,7 @@ import { MISSING_DASH } from '../../src/utils/missing';
 import { expectNoCriticalA11y } from '../fixtures/a11y';
 import { commandFeedLog, stopCommandFeed } from '../fixtures/commandFeed';
 import { t } from '../fixtures/i18n';
-import { expect, test } from '../fixtures/stack';
+import { apiAs, expect, test } from '../fixtures/stack';
 import { expectUrl, horizontalOverflow } from '../fixtures/ui';
 import {
   COMMAND_BUTTONS,
@@ -64,6 +64,7 @@ import {
 import { trafficInstance } from '../required/instanceChecks';
 import { shopProblem, startShop } from '../stack/liveShop';
 import type { Role } from '../stack/manifest';
+import { retireInstancesNamed } from '../stack/retire';
 import { stopProcess } from '../stack/seed/traffic';
 import { httpGet } from '../stack/wait';
 
@@ -79,10 +80,17 @@ const NAMES_SHOWN = 10;
 /** Elements made of collected text if it were parsed as markup. */
 const INJECTED = 'img, script, svg[onload], iframe, a[href^="javascript"], form';
 
-// eslint-disable-next-line no-empty-pattern -- Playwright passes fixtures first; the hook uses none
-test.afterAll(async ({}, testInfo) => {
-  await testInfo.attach('command-feed.log', { body: commandFeedLog(), contentType: 'text/plain' });
-  await stopCommandFeed();
+test.afterAll(async ({ session, seed }, testInfo) => {
+  testInfo.setTimeout(3 * 60_000);
+  try {
+    // The stopped feed archives its instances (C-241 (7)): no instance_down stays FIRING.
+    await stopCommandFeed(() => apiAs(session, seed, 'operator'));
+  } finally {
+    await testInfo.attach('command-feed.log', {
+      body: commandFeedLog(),
+      contentType: 'text/plain',
+    });
+  }
 });
 
 test.describe('the operator', () => {
@@ -642,6 +650,8 @@ test.describe('the real agent', () => {
       } finally {
         await stopProcess(shop.child);
         await slow;
+        // C-241 (7): the stopped shop's instance never stays FIRING as instance_down.
+        await retireInstancesNamed(operator, appId, [DUMPS_30_INSTANCE]);
       }
     },
   );

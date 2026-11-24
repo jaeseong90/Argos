@@ -268,4 +268,84 @@ class RegistrationPolicyIT {
         .isEqualTo(1);
     assertThat(pending(app).get(0).attempts()).isEqualTo(2);
   }
+
+  private static void setPolicy(int appId, Boolean autoRegister) throws SQLException {
+    try (Connection c = env.connect(PgAccount.APP);
+        PreparedStatement ps =
+            c.prepareStatement("UPDATE argos.apps SET auto_register = ? WHERE id = ?")) {
+      ps.setObject(1, autoRegister);
+      ps.setInt(2, appId);
+      assertThat(ps.executeUpdate()).isEqualTo(1);
+    }
+  }
+
+  @Test
+  @Order(5)
+  @Tag("req:C-231")
+  @DisplayName(
+      "T-SV-043c the home app's registration policy wins over argos.agent.auto-register.<env>:"
+          + " approval refuses an env that registers by default, auto registers in env qa (off);"
+          + " a home app without a policy (NULL) follows the environment")
+  void appPolicyWinsOverEnvironment() throws Exception {
+    AgentTokens.IssuedToken approval = token("reg-own-approval");
+    setPolicy(approval.appId(), Boolean.FALSE);
+    try (FakeAgent a = agent(approval, "reg-own-approval", "staging")) {
+      notRegistered(a.connect());
+    }
+    assertThat(pending("reg-own-approval")).hasSize(1);
+    assertThat(
+            count(
+                "SELECT count(*) FROM argos.apps WHERE name = 'reg-own-approval' AND env ="
+                    + " 'staging'"))
+        .isZero();
+
+    AgentTokens.IssuedToken auto = token("reg-own-auto");
+    setPolicy(auto.appId(), Boolean.TRUE);
+    try (FakeAgent a = agent(auto, "reg-own-auto", "qa")) {
+      HelloResult r = a.connect();
+      assertThat(r.accepted()).as(r.toString()).isTrue();
+    }
+    assertThat(pending("reg-own-auto")).isEmpty();
+
+    AgentTokens.IssuedToken inherit = token("reg-inherit");
+    assertThat(
+            count(
+                "SELECT count(*) FROM argos.apps WHERE id = ? AND auto_register IS NULL",
+                inherit.appId()))
+        .as("a new app sets no policy (V013)")
+        .isEqualTo(1);
+    try (FakeAgent a = agent(inherit, "reg-inherit", "staging")) {
+      HelloResult r = a.connect();
+      assertThat(r.accepted()).as("staging registers by default: " + r).isTrue();
+    }
+    try (FakeAgent a = agent(inherit, "reg-inherit", "qa")) {
+      notRegistered(a.connect());
+    }
+
+    // The application views (GET /apps, /apps/{id}): the effective policy and whether it is the
+    // environment default (registration_policy_inherited).
+    io.argos.server.testing.auth.TestUsers.TestUser user =
+        new io.argos.server.testing.auth.TestUsers(env).create(io.argos.server.auth.Role.VIEWER);
+    io.argos.server.testing.auth.ApiTestClient viewer = server.client();
+    assertThat(viewer.login(user.username(), user.password()).status()).isEqualTo(200);
+    tools.jackson.databind.JsonNode own =
+        viewer.get("/api/v1/apps/" + approval.appId()).json().path("data");
+    assertThat(own.path("registration_policy").asString()).isEqualTo("approval");
+    assertThat(own.path("registration_policy_inherited").asBoolean()).isFalse();
+    tools.jackson.databind.JsonNode inherited =
+        viewer.get("/api/v1/apps/" + inherit.appId()).json().path("data");
+    assertThat(inherited.path("registration_policy").asString())
+        .as("prod registers by default: " + inherited)
+        .isEqualTo("auto");
+    assertThat(inherited.path("registration_policy_inherited").asBoolean()).isTrue();
+    int qaApp;
+    try (Connection c = env.connect(PgAccount.APP)) {
+      qaApp = AgentTokens.ensureApp(c, "reg-inherit-qa", "qa");
+    }
+    tools.jackson.databind.JsonNode qa = viewer.get("/api/v1/apps/" + qaApp).json().path("data");
+    assertThat(qa.path("registration_policy").asString())
+        .as("argos.agent.auto-register.qa=false: " + qa)
+        .isEqualTo("approval");
+    assertThat(qa.path("registration_policy_inherited").asBoolean()).isTrue();
+  }
 }

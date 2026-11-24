@@ -217,7 +217,7 @@ describe('required-elements files', () => {
     );
     // An owner whose items do not run yet (not in RUNNING_OWNERS) must name the coverage.
     expect(() =>
-      parseRequiredFile(bad('  - id: 2.0-1\n    title: abc\n    owner: WO-39'), 'common.yaml'),
+      parseRequiredFile(bad('  - id: 2.0-1\n    title: abc\n    owner: WO-60'), 'common.yaml'),
     ).toThrow(/coverage/);
     // An owner whose items run (WO-33 since its XLog screen) needs a route and an assertion.
     expect(() =>

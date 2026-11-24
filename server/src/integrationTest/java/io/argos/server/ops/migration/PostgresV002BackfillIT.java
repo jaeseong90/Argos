@@ -157,12 +157,14 @@ class PostgresV002BackfillIT {
       // (pending_registrations.home_app_id, C-155 (3), WO-22), V005 (reconcile_results) and V006
       // (service_apdex_overrides, both WO-27), V007 (alert engine) and V008 (alert channels, both
       // WO-25), V009 (alert_events.reason, WO-38) and V010 to V012 (agent token lifecycle, commands
-      // and config changes, app management, WO-26).
+      // and config changes, app management, WO-26) and the later ones (WO-28 and on): every bundled
+      // version after V001, in order (MigrationStartupIT.PG_VERSIONS).
+      List<String> later =
+          MigrationStartupIT.PG_VERSIONS.subList(1, MigrationStartupIT.PG_VERSIONS.size());
       assertThat(v002.applied())
           .extracting(PostgresMigrationPhase.Applied::version)
-          .containsExactly(
-              "002", "003", "004", "005", "006", "007", "008", "009", "010", "011", "012");
-      assertThat(v002.schemaVersion()).isEqualTo("012");
+          .containsExactlyElementsOf(later);
+      assertThat(v002.schemaVersion()).isEqualTo(later.get(later.size() - 1));
       TIMINGS.flyway("V001 + 2 users, 3 sessions -> start", v002);
     }
 

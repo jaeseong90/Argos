@@ -11,8 +11,9 @@ SELECT service_id AS sv,
        max(elapsed_ms) AS mx,
        sum(sql_time_ms) AS sq,
        sum(ext_time_ms) AS x,
-       countIf(elapsed_ms <= apdex_t_ms) AS sat,
-       countIf(elapsed_ms > apdex_t_ms AND elapsed_ms <= 4 * apdex_t_ms) AS tol,
+       countIf(kind != 'BATCH' AND elapsed_ms <= apdex_t_ms) AS sat,
+       countIf(kind != 'BATCH' AND elapsed_ms > apdex_t_ms AND elapsed_ms <= 4 * apdex_t_ms) AS tol,
+       countIf(kind != 'BATCH') AS ac,
        quantilesDDState(0.01, 0.5, 0.95, 0.99)(elapsed_ms) AS q
 FROM {db}.{p}xlog
 WHERE app_id = {app:UInt32} AND kind IN {kinds:Array(String)}

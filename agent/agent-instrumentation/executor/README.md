@@ -84,6 +84,25 @@ override that calls `super` runs the advice twice; the nested call is recognised
 
 ## Supported library versions
 
+### Version range and witness
+
+| Library | Supported range | Minimum verified | Maximum verified | Boundary tests |
+|---|---|---|---|---|
+| `java.util.concurrent` (JDK; `ThreadPerTaskExecutor` 21+) | JDK 8 to 25 | JDK 8 | JDK 25 | `test` on JDK 8, `testJdk11`, `testJdk17`, `testJdk21`, `testJdk25` (`ExecutorPropagationTest`, `CompletableFuturePropagationTest`, `ExecutorAdviceTest`, `JdkInternalsWitnessTest`) |
+| Spring Framework (`SimpleAsyncTaskExecutor`, the pools of `ThreadPoolTaskExecutor`/`ThreadPoolTaskScheduler`) | 5.3, 6.x, 7.x | 5.3.31 | 7.0.10 | `agent-testing` `async.AsyncPropagationTest` (shop-boot2 5.3.31 on JDK 8, shop-boot3 6.2.19 and shop-boot4 7.0.10 on JDK 21) |
+| Apache Tomcat (`org.apache.tomcat.util.threads.ThreadPoolExecutor`) | 9.0, 10.1, 11.0 | 9.0.83 | 11.0.27 | `async.AsyncPropagationTest` (the embedded Tomcat of the same three apps) |
+
+- Witness: none (`ExecutorModule` keeps the default witness, every class loader): the JDK classes
+  are on the core's JDK allow-list and exist in every JVM, and the Spring and Tomcat classes are
+  matched by exact name, so a loader without them is never matched. The JDK internals the advice
+  binds (constructor argument order, `tryFire(int)`, `ASYNC = 1`, 10 U-12) are checked instead by
+  `JdkInternalsWitnessTest` on every JDK of the range.
+- Run: `./gradlew :agent:agent-instrumentation:executor:check` (`test` and
+  `:agent:agent-instrumentation:executor:testJdk25` with the other JDKs); end to end
+  `./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot3@21,shop-boot4@21 --tests '*async*'`.
+
+### Details
+
 | Library | Versions | Witness |
 |---|---|---|
 | `java.util.concurrent` | JDK 8, 11, 17, 21, 25 (`ThreadPerTaskExecutor` 21+) | `JdkInternalsWitnessTest` (U-12) on every JDK: `CompletableFuture$AsyncSupply/AsyncRun(dep, fn)`, the six `Uni*` stages with `tryFire(int)` and `fn`, `UniCompletion.executor`, `ASYNC = 1`; `ForkJoinTask.doExec()`/`fork()`, the adapters (user task first), `ScheduledFutureTask` (inner, task second), `ThreadPerTaskExecutor$TaskRunner(executor, Runnable)`/`$ThreadBoundFuture(executor, Callable)` |

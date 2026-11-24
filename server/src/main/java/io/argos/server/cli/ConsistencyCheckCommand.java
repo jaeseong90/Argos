@@ -1,12 +1,14 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.server.cli;
 
+import io.argos.server.audit.AuditEvent;
 import io.argos.server.config.ArgosProperties;
 import io.argos.server.ops.migration.MigrationSource;
 import io.argos.server.ops.rollup.ConsistencyChecks;
 import io.argos.server.ops.rollup.Outcome;
 import io.argos.server.ops.rollup.ReconcileReport;
 import io.argos.server.ops.rollup.ReconcileService;
+import io.argos.server.ops.rollup.RollupAudit;
 import io.argos.server.storage.postgres.ops.ReconcileResultRepository.Row;
 import java.io.PrintStream;
 import java.time.Clock;
@@ -32,6 +34,10 @@ import tools.jackson.databind.node.ObjectNode;
  * "day", "error"}}. Exit codes: 0 when no rollup mismatch remains (none found, or all repaired;
  * D-12 differences are reported but never repaired), 1 when one remains or the check failed, 2 for
  * invalid arguments.
+ *
+ * <p>Audit (ADR-0010 C-220 (3)): one {@code CONSISTENCY_CHECKED} row per run (actor {@code
+ * argos-admin}; the nightly job records the same event with actor {@code system}), result {@code
+ * failure} with the reason when the check did not run ({@link RollupAudit}).
  */
 final class ConsistencyCheckCommand {
 
@@ -109,6 +115,15 @@ final class ConsistencyCheckCommand {
             false,
             Clock.systemUTC());
     if (outcome instanceof Outcome.Refused<ReconcileReport> refused) {
+      try (CliAudit audit = CliAudit.open(properties)) {
+        RollupAudit.refused(
+            audit.service(),
+            CliAudit.actor(),
+            AuditEvent.CONSISTENCY_CHECKED,
+            RollupAudit.day(options.day()),
+            RollupAudit.reason(refused.reason()),
+            RollupAudit.dayDetail(options.day(), List.of()));
+      }
       return fail(
           options,
           refused.message(),
@@ -117,6 +132,9 @@ final class ConsistencyCheckCommand {
           refused.reason() == Outcome.Reason.USAGE ? AdminCli.EXIT_USAGE : AdminCli.EXIT_FAILURE);
     }
     ReconcileReport report = ((Outcome.Done<ReconcileReport>) outcome).value();
+    try (CliAudit audit = CliAudit.open(properties)) {
+      RollupAudit.checked(audit.service(), CliAudit.actor(), report);
+    }
     if (options.json()) {
       out.println(report.json());
     } else {

@@ -1,0 +1,62 @@
+{
+  "title": "Search",
+  "inputLabel": "Search for an id or text",
+  "placeholder": "Transaction id, trace id, user:<id>, req:<id> or a service, SQL or instance name",
+  "submit": "Search",
+  "help": "Digits up to 20 are a transaction id, 32 hex digits a trace id. user: and req: search the selected time range (at most 24 hours). Other text searches service names, SQL and instances.",
+  "tooLong": "The search text is longer than {{bytes, number}} bytes. Shorten it.",
+  "start": {
+    "title": "Enter what to look for",
+    "description": "Type a transaction id, a trace id, user:<user id>, req:<request id> or part of a service, SQL or instance name, then press Enter."
+  },
+  "rangeRequired": {
+    "title": "Choose a time range of at most 24 hours",
+    "description": "User id and request id searches read the selected time range, which must be 24 hours or shorter. Pick a shorter range in the time range picker and search again."
+  },
+  "tooShort": {
+    "title": "Type a few more characters",
+    "description": "Text searches need at least {{count, number}} characters."
+  },
+  "empty": {
+    "title": "Nothing found",
+    "descriptionId": "No transaction or trace has this id in the kept data. Check the id, or open the XLog around the time it ran.",
+    "descriptionRange": "Nothing matched in the selected time range. Widen the range (at most 24 hours) or check the value.",
+    "descriptionText": "No service, SQL or instance name contains this text. Try a shorter part of the name."
+  },
+  "notCollected": {
+    "all": "User ids are not collected: every instance of this environment runs with the user id mode off. Turn on capture.user-id.mode in the agent configuration to search by user.",
+    "some": "{{off, number}} of {{total, number}} instances do not collect user ids (user id mode off); their transactions cannot be found by user id."
+  },
+  "caption": "Search results",
+  "column": {
+    "type": "Type",
+    "label": "Match",
+    "target": "Open"
+  },
+  "open": "Open",
+  "notOpenable": "No screen",
+  "kind": {
+    "tx": "Transaction id",
+    "trace": "Trace id",
+    "user": "User id (time range)",
+    "request": "Request id (time range)",
+    "text": "Text: services, SQL, instances",
+    "empty": "Enter an id or text"
+  },
+  "type": {
+    "tx": "Transaction",
+    "trace": "Trace",
+    "service": "Service",
+    "sql": "SQL",
+    "instance": "Instance",
+    "other": "Other"
+  },
+  "error": {
+    "rateLimited": "Too many searches. Wait a minute and search again.",
+    "rateLimitedRetry": "Too many searches. Search again in {{seconds, number}} s.",
+    "hashUnavailable": "This application stores hashed user ids and its salt cannot be read now. Try again later or ask an administrator to check the server.",
+    "rangeInvalid": "The time range is not valid for this search. Choose a range of at most 24 hours.",
+    "queryInvalid": "The search text is not valid for this kind of search. Check it and search again.",
+    "other": "The search failed. Try again."
+  }
+}

@@ -134,7 +134,7 @@ describe('required/overview.yaml (docs/05 §2.10)', () => {
     expect([...used].sort()).toEqual(Object.keys(OVERVIEW_CHECKS).sort());
   });
 
-  it('runs the alert list of WO-25 on /overview and names the owner of the part without data: disk and certificate expiry (WO-28)', () => {
+  it('runs the alert list of WO-25 and the server-measured disk and certificate expiry of WO-28 on /overview', () => {
     const others = spec.items.filter((i) => i.owner !== 'WO-31');
     expect(others.map((i) => `${i.id} ${i.owner}`)).toEqual(['2.10-4 WO-25', '2.10-4 WO-28']);
     expect(RUNNING_OWNERS.has('WO-25')).toBe(true);
@@ -147,10 +147,13 @@ describe('required/overview.yaml (docs/05 §2.10)', () => {
         .filter((i) => i.id === '2.10-4' && i.owner === 'WO-31')
         .flatMap((i) => i.assert.flatMap((a) => ('check' in a ? [a.check] : []))),
     ).toEqual(['overviewFiringPanel', 'overviewServerPanel']);
-    for (const item of others.filter((i) => !RUNNING_OWNERS.has(i.owner))) {
-      expect(item.owner).toBe('WO-28');
-      expect(item.coverage, `${item.id} names its coverage`).toMatch(/component tests/);
-    }
+    expect(RUNNING_OWNERS.has('WO-28')).toBe(true);
+    expect(
+      others
+        .filter((i) => i.owner === 'WO-28')
+        .map((i) => [i.route, i.assert.flatMap((a) => ('check' in a ? [a.check] : []))]),
+    ).toEqual([['/overview', ['overviewServerMeasured']]]);
+    expect(others.filter((i) => !RUNNING_OWNERS.has(i.owner))).toEqual([]);
   });
 
   it('opens fixed routes (no manifest variables) and titles follow T-E2E-overview-<n> <05 id> <title>', () => {

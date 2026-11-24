@@ -136,7 +136,11 @@ public final class KeySpec {
   private static final Pattern CUSTOM_METHOD =
       Pattern.compile(
           "[A-Za-z0-9_$.*?]{1,512}#[A-Za-z0-9_$*?<>]{1,256}"
-              + "(\\|(SQL|DBC|COMMIT|ROLLBACK|HTTP|METHOD|ASYNC|ERROR|STACK|MESSAGE)"
+              + "(\\|(true|false)"
+              // the step type suffix of the earlier format still parses, so that a local list
+              // ignores only that item (CustomMethodPolicy) and a push is rejected
+              // FORBIDDEN_PATTERN as a whole rather than INVALID_VALUE (ADR-0010 C-237 (5))
+              + "|\\|(SQL|DBC|COMMIT|ROLLBACK|HTTP|METHOD|ASYNC|ERROR|STACK|MESSAGE)"
               + "(\\|(true|false))?)?");
   private static final Pattern KEY_GLOB = Pattern.compile("[a-z0-9*][a-z0-9.*-]{0,255}");
   private static final Pattern HOST =
@@ -612,7 +616,7 @@ public final class KeySpec {
             USER_ID_SOURCE, value, "expected header:<name>, session:<attribute> or mdc:<key>");
       case CUSTOM_METHOD:
         return matches(
-            CUSTOM_METHOD, value, "expected <class glob>#<method glob>[|<step type>[|<bool>]]");
+            CUSTOM_METHOD, value, "expected <class glob>#<method glob>[|<as-transaction>]");
       case KEY_GLOB:
         return matches(KEY_GLOB, value, "expected a key glob such as sampling.* or log.level");
     }

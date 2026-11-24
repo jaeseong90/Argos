@@ -375,9 +375,10 @@ class TransactionSearchIT {
   @Tag("req:C-152")
   @Tag("req:C-163")
   @DisplayName(
-      "user_id: a plain-mode app finds the normalized value (control characters, spaces);"
-          + " without from/to the last hour is searched; a hashed-mode app answers 422"
-          + " user_id_hash_unavailable")
+      "user_id: a plain-mode app finds the normalized value (control characters, spaces); without"
+          + " from/to the last hour is searched; a hashed-mode app is searched by the salted HMAC"
+          + " of the id (WO-28 completes C-152: 200, none of the generator's hashes match a plain"
+          + " id under the app's own salt; positive case in UserIdSaltIT)")
   void userId() {
     JsonNode plain = search(body(Map.of("user_id", "  ali\u0007ce ")));
     assertThat(plain.path("meta").path("total").asLong()).isEqualTo(10);
@@ -399,10 +400,8 @@ class TransactionSearchIT {
         viewer.post(
             "/api/v1/apps/" + hashed.appId() + "/transactions/search",
             Map.of("filters", Map.of("user_id", "alice")));
-    assertThat(r.status()).as(r.toString()).isEqualTo(422);
-    assertThat(r.errorCode()).contains("filter_invalid");
-    assertThat(r.json().path("error").path("details").path(0).path("reason").asString())
-        .isEqualTo("user_id_hash_unavailable");
+    assertThat(r.status()).as(r.toString()).isEqualTo(200);
+    assertThat(r.json().path("meta").path("total").asLong()).isZero();
   }
 
   @Test

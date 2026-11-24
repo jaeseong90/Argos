@@ -103,6 +103,26 @@ class AgentLogAssertTest {
   }
 
   @Test
+  @DisplayName(
+      "T-AG-060 console: the MDC keys argos.trace_id/argos.tx_id printed by the application's"
+          + " pattern (10 §6.9) are not agent output; other [argos lines still fail")
+  void consoleMdcKeys() {
+    String mdc =
+        "2026-11-24 12:34:45.758  WARN [argos.trace_id=6b0505d52cfc8df6aea72b0500057a43,"
+            + " argos.tx_id=034a62117edd5000] 9996 --- [exec-10] o.s.w.s.PageNotFound : No mapping";
+    String txOnly = "2026-11-24 12:34:45.758  INFO [argos.tx_id=034a62117edd5000] 1 --- [x] a : b";
+    assertThat(AppOutput.agentMentions(List.of(mdc, txOnly))).isEmpty();
+    AgentLogAssert.assertQuietConsole(List.of(mdc, txOnly), List.of());
+    assertThat(
+            AppOutput.agentMentions(
+                List.of(
+                    "2026-11-24 12:34:45.758  WARN [argos-logger] 1 --- [x] a : b",
+                    "2026-11-24 12:34:45.758  WARN [argos.agent] 1 --- [x] a : b",
+                    "\tat io.argos.agent.core.Foo.bar(Foo.java:1)")))
+        .hasSize(3);
+  }
+
+  @Test
   @Tag("req:F-A15")
   @DisplayName(
       "18 §5.7 hasInjectedFault: exactly one announce WARN of the fault and module; a spec that"

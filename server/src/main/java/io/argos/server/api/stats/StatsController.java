@@ -86,7 +86,8 @@ public class StatsController {
               + " most 500 (default 100; meta.truncated when more exist). split_version=true: one"
               + " row per service and application version. compare_prev=true adds delta against the"
               + " previous range of the same length (count and p95_ms relative, error_rate"
-              + " absolute). Also as CSV (format=csv, tz)."
+              + " absolute). apdex counts HTTP and MESSAGE transactions only: a service with only BATCH"
+              + " transactions in the range has apdex null (D-20). Also as CSV (format=csv, tz)."
               + RANGE
               + IDS)
   @ArgosCsv

@@ -2,13 +2,20 @@
 package io.argos.server.audit;
 
 /**
- * Audit events (16 §11.1; names per ADR-0010 C-106 (7)). This is the subset that WO-24 emits:
- * authentication, users and roles, and the setup wizard. The full catalogue (tokens, applications,
- * alerts, commands, configuration changes, privacy, exports, system events), its snapshot test
- * against 16 §11.1 ({@code ST-80-1}) and the other sinks are WO-28's; new constants are added here
- * by the work order that emits them.
+ * The audit event catalogue (16 §11.1 and §5.7; names per ADR-0010 C-106 (7); final list of WO-28:
+ * 74 events, ADR-0010 C-231 (4), C-176 (1), C-220 (3)).
  *
- * <p>The {@code audit_logs.action} column holds {@link #name()}.
+ * <p>Differences from the 16 §11.1 table, pending its correction (fixed by {@code
+ * AuditCatalogTest}, T-SV-044a): {@code CONFIG_CHANGE_ROLLED_BACK} is not an event (a rollback is
+ * {@link #CONFIG_ROLLBACK}); {@link #EVENT_CREATED}, {@link #EVENT_DELETED}, {@link
+ * #RETENTION_EMERGENCY_DROP}, {@link #ROLLUP_REBUILT}, {@link #CONSISTENCY_CHECKED}, {@link
+ * #APDEX_REAPPLIED} and {@link #ADMIN_COMMAND_EXECUTED} are added. Every export of a list or a
+ * single record is {@link #EXPORT_CSV} with {@code format=csv|json} in its detail; there is no
+ * generic {@code EXPORT} name.
+ *
+ * <p>The catalogue is a public contract: the committed snapshot {@code audit-catalog.txt} (unit
+ * test resources) must change in the same change as this enum. The {@code audit_logs.action} column
+ * holds {@link #name()}.
  */
 public enum AuditEvent {
   // Authentication (16 §11.1 group 인증): target user, sid, ip, user agent
@@ -48,6 +55,20 @@ public enum AuditEvent {
   TOKEN_REVOKED,
   /** An agent token passed its expiry or rotation grace; its live sessions were closed (WO-26). */
   TOKEN_EXPIRED,
+  /**
+   * An agent presented a missing, unknown, revoked or expired token (ip, token prefix when one was
+   * given). Rate limited per (event, client address or prefix) to {@code
+   * argos.audit.agent-events-per-minute}; the suppressed count is in the next record (ADR-0010
+   * C-158 (1)).
+   */
+  AGENT_AUTH_FAILED,
+  /** A client address was blocked after repeated agent authentication failures (ip). */
+  AGENT_AUTH_BLOCKED,
+  /**
+   * An agent Hello was refused after authentication (the reason is the code: unsupported protocol,
+   * application not registered or pending approval, session limit, ...).
+   */
+  AGENT_SESSION_REJECTED,
 
   // Users and roles (16 §11.1 group 사용자·역할): target user
   /** A user was created (administration API, setup wizard or unattended setup). */
@@ -117,6 +138,14 @@ public enum AuditEvent {
   CONFIG_ROLLBACK,
   /** The kill switch was turned on ({@code enabled=false}) or off for an app's instances. */
   KILL_SWITCH,
+  /**
+   * A configuration change touched the custom method instrumentation keys of an application (16
+   * §5.7); recorded besides {@link #CONFIG_PUSH} once its instances answered (applied: success,
+   * refused: rejected; ADR-0010 C-238 (8)), with only those keys (before and after masked like
+   * {@link #CONFIG_PUSH}: class and method patterns) and {@code _outcome} (counts, per-instance
+   * status and rejection code).
+   */
+  CUSTOM_METHOD_CHANGED,
 
   // Configuration change control (16 §11.1 group 설정 변경 통제; WO-26 lane B): app, change id
   /** A configuration change was proposed (reason, diff); not applied yet. */
@@ -136,8 +165,33 @@ public enum AuditEvent {
   SENSITIVE_VIEW,
 
   // Exports (16 §11.1 group 내보내기; WO-23): view, filters, rows
-  /** A list was exported (14 §4.17, SEC-63): the view, the filter names and the row count. */
+  /**
+   * A list or a single record was exported (14 §4.17, SEC-63): the view, the filter names, the row
+   * count and {@code format=csv|json} (ADR-0010 C-176 (1)).
+   */
   EXPORT_CSV,
+  /** The audit log was queried ({@code GET /admin/audit}): the filters and the row count. */
+  AUDIT_LOG_VIEWED,
+  /** The audit log was exported ({@code GET /admin/audit/export}): the filters and the rows. */
+  AUDIT_LOG_EXPORTED,
+
+  // Privacy and retention (16 §11.1 group 개인정보·보존; WO-28)
+  /** The server's privacy defaults changed ({@code PUT /admin/settings/privacy}). */
+  PRIVACY_SETTING_CHANGED,
+  /** A retention period changed ({@code PUT /admin/settings/retention}): before and after. */
+  RETENTION_CHANGED,
+  /**
+   * The emergency retention dropped a daily partition because the disk was above the emergency
+   * ratio (13 §8): table, partition, disk ratio.
+   */
+  RETENTION_EMERGENCY_DROP,
+  /**
+   * A privacy deletion was requested: subject type, the SHA-256 of the value (never the value),
+   * range, job id.
+   */
+  PRIVACY_DELETE_REQUESTED,
+  /** A privacy deletion job ended: status, tables and rows affected. */
+  PRIVACY_DELETE_COMPLETED,
 
   // Alert rules, acknowledgements and mutes (16 §11.1 group 알림; WO-25): target rule or mute
   /** An alert rule was created (by hand, as a clone or from a template). */
@@ -169,5 +223,26 @@ public enum AuditEvent {
 
   // System (16 §11.1 group 시스템)
   /** The first administrator was created through the setup token or unattended setup (SEC-47). */
-  SETUP_COMPLETED
+  SETUP_COMPLETED,
+  /** A TLS certificate was reloaded (listener, new expiry), by the file watch or the API. */
+  TLS_RELOADED,
+  /** Stored secrets were re-encrypted with a new master key (key ids only, rows per table). */
+  MASTER_KEY_ROTATED,
+  /** The server finished starting (version). */
+  SERVER_STARTED,
+  /** A PostgreSQL or ClickHouse schema version was applied (store, version). */
+  MIGRATION_APPLIED,
+
+  // Operations (argos-admin and the nightly jobs; ADR-0010 C-220 (3))
+  /** Rollup partitions were rebuilt ({@code argos-admin rollup rebuild}): date, tables, digests. */
+  ROLLUP_REBUILT,
+  /** A consistency check ran (nightly job or {@code argos-admin consistency check}). */
+  CONSISTENCY_CHECKED,
+  /** Apdex T was re-applied to stored transactions ({@code argos-admin apdex reapply}). */
+  APDEX_REAPPLIED,
+  /**
+   * An {@code argos-admin} subcommand without an event of its own ran: target type {@code cli},
+   * target name the subcommand.
+   */
+  ADMIN_COMMAND_EXECUTED
 }

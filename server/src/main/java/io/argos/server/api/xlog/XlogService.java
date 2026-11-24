@@ -67,7 +67,6 @@ public class XlogService {
   private final AppDirectory directory;
   private final QuerySources sources;
   private final EventService events;
-  private final ArgosProperties.Retention retention;
 
   public XlogService(
       QueryExecutor executor,
@@ -81,7 +80,6 @@ public class XlogService {
     this.directory = directory;
     this.sources = sources;
     this.events = events;
-    this.retention = properties.retention();
   }
 
   /**
@@ -215,7 +213,7 @@ public class XlogService {
         .truncated(matched[0] > limit)
         .counts(shown, total)
         .sampling(sampled, "error OR slow OR cityHash64(tx_id) % " + n + " = 0")
-        .retentionExceeded(filter.from().isBefore(sources.now().minus(retention.xlog())))
+        .retentionExceeded(filter.from().isBefore(sources.now().minus(sources.xlogRetention())))
         .slowThresholdMs(slow)
         .outages(outages(filter))
         .build();
@@ -291,7 +289,7 @@ public class XlogService {
         .range(filter.from(), filter.to())
         .source(Source.RAW)
         .truncated(false)
-        .retentionExceeded(filter.from().isBefore(sources.now().minus(retention.xlog())))
+        .retentionExceeded(filter.from().isBefore(sources.now().minus(sources.xlogRetention())))
         .build();
   }
 

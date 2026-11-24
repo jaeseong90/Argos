@@ -40,6 +40,21 @@ getters.
 
 ## Supported library versions and getters (10 U-7)
 
+### Version range and witness
+
+| Library | Supported range | Minimum verified | Maximum verified | Boundary tests |
+|---|---|---|---|---|
+| HikariCP (`com.zaxxer:HikariCP`) | 4.0 to 7.0 | 4.0.3 | 7.0.2 | `test` on 4.0.3 (`PoolAdviceTest`, `PoolModuleTest`); end to end `agent-testing` `jdbc.PoolRegistryE2eTest` (shop-boot2 4.0.3, shop-boot3 6.3.3; shop-boot4 7.0.2 when `-Pagent.e2e` lists `shop-boot4@21`) |
+| Tomcat JDBC (`org.apache.tomcat:tomcat-jdbc`) | 9.0 to 11.0 | 9.0.83 | 11.0.27 | `test` on 9.0.83 (`PoolAdviceTest`); end to end `jdbc.PoolRegistryE2eTest` (shop-boot2 9.0.83, shop-boot3 10.1.55, shop-boot4 11.0.27) |
+| Commons DBCP 2 (`org.apache.commons:commons-dbcp2`) | 2.9 to 2.14 | 2.9.0 | 2.14.0 | `test` on 2.9.0 (`PoolAdviceTest`); end to end `jdbc.PoolRegistryE2eTest` (shop-boot2 2.9.0, shop-boot3 2.13.0, shop-boot4 2.14.0) |
+
+- Witness (`PoolModule.witness()`, resource lookup only), one of: `com.zaxxer.hikari.pool.HikariPool`,
+  `org.apache.tomcat.jdbc.pool.ConnectionPool`, `org.apache.commons.dbcp2.BasicDataSource`.
+- Run: `./gradlew :agent:agent-instrumentation:pool:test`; end to end
+  `./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot3@21,shop-boot4@21 --tests '*PoolRegistryE2eTest*'`.
+
+### Details
+
 Values are read with public getters through method handles of the pool's own class (public
 lookup moved to that class, so a second web application or a redeploy with its own copy of the
 library resolves its own types; found by `PoolAdviceTest.secondClassLoader` on Java 8). JMX and

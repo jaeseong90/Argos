@@ -2,6 +2,7 @@
 package io.argos.sample.batch.web;
 
 import io.argos.sample.batch.jobs.BatchJobs;
+import io.argos.sample.batch.jobs.DetachedRuns;
 import io.argos.sample.batch.quartz.QuartzRunTracker;
 import io.argos.sample.batch.scheduled.ScheduledStats;
 import io.argos.sample.common.catalog.BatchCatalog;
@@ -30,8 +31,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Manual triggers and state of the batch entry points (18 §4.2 last row): POST /batch/run/{job}
- * (Spring Batch, synchronous), POST /batch/quartz/{job} (fires a Quartz job now and waits for it),
- * GET /batch/scheduled (counters of the {@code @Scheduled} methods), GET /batch/jobs.
+ * (Spring Batch, synchronous; {@code ?detached=true} on a plain app thread, GET
+ * /batch/executions/{id}), POST /batch/quartz/{job} (fires a Quartz job now and waits for it), GET
+ * /batch/scheduled (counters of the {@code @Scheduled} methods), GET /batch/jobs.
  */
 @RestController
 @RequestMapping("/batch")
@@ -40,6 +42,7 @@ public class BatchController {
   private static final long QUARTZ_WAIT_MS = 30_000;
 
   private final BatchJobs batchJobs;
+  private final DetachedRuns detachedRuns;
   private final Scheduler scheduler;
   private final QuartzRunTracker quartzRuns;
   private final ScheduledStats scheduledStats;
@@ -47,21 +50,48 @@ public class BatchController {
 
   public BatchController(
       BatchJobs batchJobs,
+      DetachedRuns detachedRuns,
       Scheduler scheduler,
       QuartzRunTracker quartzRuns,
       ScheduledStats scheduledStats,
       JdbcTemplate jdbc) {
     this.batchJobs = batchJobs;
+    this.detachedRuns = detachedRuns;
     this.scheduler = scheduler;
     this.quartzRuns = quartzRuns;
     this.scheduledStats = scheduledStats;
     this.jdbc = jdbc;
   }
 
-  /** Runs a Spring Batch job to its end: 200 COMPLETED, 500 otherwise, 404 unknown job. */
+  /**
+   * Runs a Spring Batch job to its end: 200 COMPLETED, 500 otherwise, 404 unknown job. With {@code
+   * detached=true} the job runs on a new plain thread of the app instead ({@link DetachedRuns}):
+   * 202 with the run id, state at {@code GET /batch/executions/{id}}.
+   */
   @PostMapping("/run/{job}")
-  public ResponseEntity<Map<String, Object>> run(@PathVariable("job") String job)
+  public ResponseEntity<Map<String, Object>> run(
+      @PathVariable("job") String job,
+      @RequestParam(name = "detached", defaultValue = "false") boolean detached)
       throws JobExecutionException {
+    if (detached) {
+      if (!batchJobs.names().contains(job)) {
+        return notFound("Unknown Spring Batch job", batchJobs.names());
+      }
+      long runId =
+          detachedRuns.start(
+              job,
+              () ->
+                  batchJobs
+                      .run(job)
+                      .orElseThrow(() -> new IllegalStateException("job disappeared: " + job)));
+      Map<String, Object> body = new LinkedHashMap<>();
+      body.put("runId", runId);
+      body.put("job", job);
+      body.put("detached", true);
+      body.put("state", "RUNNING");
+      body.put("statusUrl", "/batch/executions/" + runId);
+      return ResponseEntity.status(HttpStatus.ACCEPTED).body(body);
+    }
     Optional<Map<String, Object>> summary = batchJobs.run(job);
     if (summary.isEmpty()) {
       return notFound("Unknown Spring Batch job", batchJobs.names());
@@ -69,6 +99,29 @@ public class BatchController {
     return ResponseEntity.status(
             BatchJobs.completed(summary.get()) ? HttpStatus.OK : HttpStatus.INTERNAL_SERVER_ERROR)
         .body(summary.get());
+  }
+
+  /**
+   * State of a detached run ({@code id} or {@code last}); {@code awaitMs} (≤ 60,000) waits for it
+   * to finish. 200 with {@code state} RUNNING, DONE (plus the execution summary) or FAILED; 404 for
+   * an unknown run.
+   */
+  @GetMapping("/executions/{id}")
+  public ResponseEntity<Map<String, Object>> execution(
+      @PathVariable("id") String id,
+      @RequestParam(name = "awaitMs", defaultValue = "0") long awaitMs)
+      throws InterruptedException {
+    if (awaitMs < 0 || awaitMs > BatchCatalog.MAX_AWAIT_MS) {
+      throw new IllegalArgumentException(
+          "awaitMs must be between 0 and " + BatchCatalog.MAX_AWAIT_MS);
+    }
+    Optional<Map<String, Object>> state = detachedRuns.describe(id, awaitMs);
+    if (state.isEmpty()) {
+      Map<String, Object> body = new LinkedHashMap<>();
+      body.put("error", "Unknown detached run");
+      return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+    }
+    return ResponseEntity.ok(state.get());
   }
 
   /**

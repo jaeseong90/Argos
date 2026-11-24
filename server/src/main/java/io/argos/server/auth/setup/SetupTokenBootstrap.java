@@ -48,7 +48,9 @@ import org.springframework.stereotype.Component;
  *       (30 minutes) and for one successful use. The operator gets it from {@linkplain #logLine
  *       exactly one log line} and from {@code auth.setup-token-file} ({@code conf/setup-token},
  *       0600 on POSIX). This process keeps only its SHA-256. After the time is up a restart issues
- *       a new one.
+ *       a new one, or {@code argos-admin setup-token regenerate} writes a new one to the same file
+ *       (17 §6.4): a file token that differs from the one in force, is owner-only and younger than
+ *       the lifetime (by its modification time) replaces it at the next check ({@link #isValid}).
  *   <li><b>Unattended</b>: {@code ARGOS_ADMIN_PASSWORD_FILE} ({@code argos.admin-password-file}),
  *       {@code ARGOS_ADMIN_USERNAME} ({@code argos.admin-username}, default {@value
  *       #DEFAULT_ADMIN_USERNAME}, as 17 §6.4 lists the file alone) and {@code ARGOS_IP_MODE}
@@ -148,7 +150,7 @@ public class SetupTokenBootstrap implements StartupPhase, Ordered {
 
   /** Whether {@code presented} is the token in force. An expired token is forgotten here. */
   public boolean isValid(@Sensitive String presented) {
-    Active current = active;
+    Active current = regenerated(active);
     if (current == null || presented == null) {
       return false;
     }
@@ -158,6 +160,55 @@ public class SetupTokenBootstrap implements StartupPhase, Ordered {
       return false;
     }
     return SecureTokens.constantTimeEquals(SecureTokens.sha256Hex(presented), current.hash());
+  }
+
+  /**
+   * The token of {@code argos-admin setup-token regenerate}: the file token when it differs from
+   * {@code current}, the file is owner-only (POSIX) and its modification time plus the lifetime is
+   * in the future; it becomes the token in force. Otherwise {@code current}.
+   */
+  private Active regenerated(Active current) {
+    Active next = fileToken(current);
+    if (next != null && !next.equals(current)) {
+      active = next;
+      LOG.info(
+          "A new setup token from argos.auth.setup-token-file is in force until {}",
+          next.expiresAt());
+    }
+    return next;
+  }
+
+  /**
+   * The token of the setup token file when it is a newer one than {@code current} (see {@link
+   * #regenerated}), else {@code current}. Never logs: it handles the token and its hash.
+   */
+  private Active fileToken(Active current) {
+    String configured = properties.auth().setupTokenFile();
+    if (configured == null || consumedHash != null) {
+      return current;
+    }
+    Path file = Paths.get(configured.strip());
+    try {
+      if (!Files.isRegularFile(file) || PrivateFiles.loosePermissions(file).isPresent()) {
+        return current;
+      }
+      Instant expiresAt =
+          Files.getLastModifiedTime(file).toInstant().plus(properties.auth().setupTokenTtl());
+      if (!clock.instant().isBefore(expiresAt)) {
+        return current;
+      }
+      String token = PrivateFiles.read(file, 256).strip();
+      if (!SecureTokens.looksLikeToken(token)) {
+        return current;
+      }
+      String hash = SecureTokens.sha256Hex(token);
+      if (current != null && SecureTokens.constantTimeEquals(hash, current.hash())) {
+        return current;
+      }
+      return new Active(hash, expiresAt);
+    } catch (IOException | RuntimeException e) {
+      return current;
+    }
   }
 
   /** Whether {@code presented} is the token that created the administrator. */
@@ -262,7 +313,8 @@ public class SetupTokenBootstrap implements StartupPhase, Ordered {
     List<PasswordPolicy.Reason> violations = policy.violations(password, username);
     if (!violations.isEmpty()) {
       throw new StartupPhaseException(
-          "The password in argos.admin-password-file does not satisfy the password policy (SEC-48): "
+          "The password in argos.admin-password-file does not satisfy the password policy (SEC-48):"
+              + " "
               + violations.stream().map(PasswordPolicy.Reason::code).toList());
     }
     String mode = properties.privacy().defaultIpMode().name().toLowerCase(Locale.ROOT);

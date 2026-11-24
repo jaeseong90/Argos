@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# docs/15 §9.12 "전역 검색" as data-driven E2E tests (docs/18 §13, DSN-18-10): how the input is
+# read while it is typed, an id lookup with one match opens it at once, a text search lists the
+# matches of GET /search asked the same question inside the test, and user id and request id
+# searches need a range of at most 24 h. The shared engine (specs/required.spec.ts) declares them
+# as T-E2E-search-<n> from 30 (specs/search.spec.ts uses 1 .. 8 for the end-to-end cases: trace id,
+# user id on the real agent, the not-collected hint, Ctrl+K). Checks: e2e/required/searchChecks.ts.
+screen: search
+title: Global search
+source: docs/15 §9.12
+first_number: 30
+items:
+  - id: 9.12-1
+    title: the input says how it is read (transaction id, trace id, user id, request id, text)
+    req: [F-U14]
+    owner: WO-39
+    coverage: component SearchPage.test.tsx and search.test.ts (planSearch table, 20 and 21 digits)
+    route: /search
+    assert:
+      - visible: search-input
+      - check: searchKindIndicator
+
+  - id: 9.12-2
+    title: a transaction id with one match opens its detail at once
+    req: [F-U14]
+    owner: WO-39
+    coverage: E2E T-E2E-search-1; component SearchPage.test.tsx
+    route: /search?q={tx.captured_sql_stack.tx_id}
+    assert:
+      - check: searchTxOpens
+
+  - id: 9.12-3
+    title: a text search lists the matching services, SQL and instances of GET /search
+    req: [F-U14, SEC-60]
+    owner: WO-39
+    coverage: E2E T-E2E-search-5; component SearchPage.test.tsx
+    route: /search
+    assert:
+      - check: searchTextResults
+
+  - id: 9.12-4
+    title: user id and request id searches need a range of at most 24 h
+    req: [F-U14]
+    owner: WO-39
+    coverage: E2E T-E2E-search-4; component search.test.ts (rangeFits)
+    route: /search?q=req:wo39-request&range=7d
+    assert:
+      - visible: search-range-required
+      - check: searchNoRequestWithoutRange

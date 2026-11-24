@@ -8,6 +8,7 @@ import io.argos.server.storage.api.BlockToken;
 import io.argos.server.storage.api.ClickHouseWriter;
 import io.argos.server.storage.api.EncodedRows;
 import io.argos.server.storage.api.Table;
+import io.argos.server.storage.query.ClickHouseErrors;
 import io.argos.server.wal.WalCoverage;
 import io.argos.server.wal.api.WalPosition;
 import io.argos.server.wal.api.WalRecordType;
@@ -59,6 +60,20 @@ import org.springframework.stereotype.Component;
  * them back later (WAL = spool). Metrics: {@code argos_writer_rows_total{table}}, {@code
  * argos_writer_inserts_total{table,result}}, {@code argos_writer_queue_rows{table}}, {@code
  * argos_ingest_lag_seconds} (receive → insert ack, p50/p99 and histogram, N-15).
+ *
+ * <p>WO-28 adds two things:
+ *
+ * <ul>
+ *   <li>Dead-letter (ADR-0010 C-158 (3)): when ClickHouse refuses the same block {@value
+ *       #DEAD_LETTER_ATTEMPTS} times with a code that refuses its content ({@link
+ *       ClickHouseErrors#deterministicInsertCode}), the block goes to the {@link DeadLetterStore}
+ *       and its intent is committed like an insert, so the WAL coverage moves on and the other
+ *       blocks and tables keep loading. Any other failure is retried without end, as before; a
+ *       writer without a store (tests) retries everything.
+ *   <li>Insert pause (F-S23, 13 §8): {@link #pauseInserts} stops taking blocks while the ClickHouse
+ *       disk is above the stop ratio; the queues fill, the dispatcher waits and the records stay in
+ *       the WAL (its bound and its drop accounting apply unchanged) until {@link #resumeInserts}.
+ * </ul>
  */
 @Component
 public final class ClickHouseBatchWriter implements ClickHouseWriter, WalCoverage, DisposableBean {
@@ -70,6 +85,9 @@ public final class ClickHouseBatchWriter implements ClickHouseWriter, WalCoverag
   static final long BACKOFF_MIN_MS = 1_000;
 
   static final long BACKOFF_MAX_MS = 30_000;
+
+  /** Deterministic refusals of one block before it goes to the dead-letter area (C-158 (3)). */
+  public static final int DEAD_LETTER_ATTEMPTS = 3;
 
   private static final Logger LOG = LoggerFactory.getLogger(ClickHouseBatchWriter.class);
 
@@ -84,11 +102,17 @@ public final class ClickHouseBatchWriter implements ClickHouseWriter, WalCoverag
   private final Timer lag;
   private volatile BlockInserter inserter;
   private volatile long backoffMinMs = BACKOFF_MIN_MS;
+  private volatile DeadLetterStore deadLetter;
+  private volatile boolean insertsPaused;
   private AutoCloseable ownedInserter;
 
   /** The bean of the server: {@code argos.writer.*}, {@code argos.clickhouse.*}. */
   @Autowired
-  public ClickHouseBatchWriter(ArgosProperties properties, WalWriter wal, MeterRegistry registry) {
+  public ClickHouseBatchWriter(
+      ArgosProperties properties,
+      WalWriter wal,
+      MeterRegistry registry,
+      DeadLetterStore deadLetter) {
     this(
         wal,
         properties.writer().flushIntervalMs(),
@@ -97,6 +121,7 @@ public final class ClickHouseBatchWriter implements ClickHouseWriter, WalCoverag
         properties.clickhouse(),
         registry,
         Clock.systemUTC());
+    this.deadLetter = deadLetter;
   }
 
   /**
@@ -152,6 +177,41 @@ public final class ClickHouseBatchWriter implements ClickHouseWriter, WalCoverag
   /** Shortens the retry backoff (tests of outages that must not wait 30 s between attempts). */
   public void setBackoffMinMs(long ms) {
     backoffMinMs = Math.max(1, ms);
+  }
+
+  /**
+   * Sets the dead-letter area (a writer built with the test constructor has none and retries every
+   * failure without end).
+   */
+  public void setDeadLetter(DeadLetterStore store) {
+    deadLetter = store;
+  }
+
+  /**
+   * Stops taking new blocks (F-S23: the ClickHouse disk is above the stop ratio); a block being
+   * inserted finishes. Records stay in the WAL until {@link #resumeInserts}.
+   */
+  public void pauseInserts() {
+    if (!insertsPaused) {
+      insertsPaused = true;
+      LOG.warn("ClickHouse inserts paused: data is kept in the WAL only until they resume");
+    }
+  }
+
+  /** Takes blocks again after {@link #pauseInserts}. */
+  public void resumeInserts() {
+    if (insertsPaused) {
+      insertsPaused = false;
+      LOG.info("ClickHouse inserts resumed: the WAL is loaded again");
+      for (TableWriter writer : writers.values()) {
+        writer.requestFlush();
+      }
+    }
+  }
+
+  /** Whether inserts are paused ({@link #pauseInserts}). */
+  public boolean insertsPaused() {
+    return insertsPaused;
   }
 
   /** Whether the threads run. */
@@ -376,6 +436,18 @@ public final class ClickHouseBatchWriter implements ClickHouseWriter, WalCoverag
 
   // --- internals ----------------------------------------------------------------------------
 
+  /** How {@code insertWithRetry} ended. */
+  enum Sent {
+    /** ClickHouse confirmed the insert. */
+    INSERTED,
+    /**
+     * ClickHouse refused the content; the block went to the dead-letter area (or was discarded).
+     */
+    DEAD_LETTERED,
+    /** The writer stopped first. */
+    STOPPED
+  }
+
   /** One queued item: the rows of one data record for one table, or a marker without rows. */
   private record Entry(WalPosition position, EncodedRows rows, long receivedMs) {
     int rowCount() {
@@ -527,6 +599,13 @@ public final class ClickHouseBatchWriter implements ClickHouseWriter, WalCoverag
           if (stopNow || (stopping && queue.isEmpty())) {
             return null;
           }
+          if (insertsPaused) {
+            if (stopping) {
+              return null; // 12 §3.9: what is queued stays in the WAL for the recovery
+            }
+            changed.await(1, TimeUnit.SECONDS);
+            continue;
+          }
           if (!queue.isEmpty()) {
             long ageMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - enqueuedAt.peekFirst());
             if (queued >= flushRows || flushRequested || stopping || ageMs >= flushIntervalMs) {
@@ -585,15 +664,18 @@ public final class ClickHouseBatchWriter implements ClickHouseWriter, WalCoverag
         for (Entry e : withRows) {
           data = data.concat(e.rows().rowBinary());
         }
-        if (!insertWithRetry(token, data, rowCount, false)) {
+        Sent sent = insertWithRetry(token, data, rowCount, false);
+        if (sent == Sent.STOPPED) {
           return; // stopping: the intent stays without a commit; recovery sends the block again
         }
         if (!commit(token, false)) {
           return;
         }
-        long now = clock.millis();
-        for (Entry e : withRows) {
-          lag.record(Math.max(0, now - e.receivedMs()), TimeUnit.MILLISECONDS);
+        if (sent == Sent.INSERTED) {
+          long now = clock.millis();
+          for (Entry e : withRows) {
+            lag.record(Math.max(0, now - e.receivedMs()), TimeUnit.MILLISECONDS);
+          }
         }
       }
       synchronized (this) {
@@ -629,13 +711,15 @@ public final class ClickHouseBatchWriter implements ClickHouseWriter, WalCoverag
     }
 
     /**
-     * Inserts until ClickHouse confirms; {@code false} when the writer stops first ({@code
-     * untilDone} ignores stopping: recovery has no time limit).
+     * Inserts until ClickHouse confirms, or until it refused the block's content {@value
+     * #DEAD_LETTER_ATTEMPTS} times and the block went to the dead-letter area; {@link Sent#STOPPED}
+     * when the writer stops first ({@code untilDone} ignores stopping: recovery has no time limit).
      */
-    boolean insertWithRetry(BlockToken token, ByteString data, int rowCount, boolean untilDone)
+    Sent insertWithRetry(BlockToken token, ByteString data, int rowCount, boolean untilDone)
         throws InterruptedException {
       long backoff = backoffMinMs;
       int attempt = 0;
+      int refusals = 0;
       long firstFailure = 0;
       while (true) {
         try {
@@ -649,18 +733,24 @@ public final class ClickHouseBatchWriter implements ClickHouseWriter, WalCoverag
                 attempt,
                 TimeUnit.MILLISECONDS.toSeconds(clock.millis() - firstFailure));
           }
-          return true;
+          return Sent.INSERTED;
         } catch (InterruptedException e) {
           if (untilDone) {
             throw e;
           }
           Thread.currentThread().interrupt();
-          return false;
+          return Sent.STOPPED;
         } catch (Exception e) {
           insertsFailed.increment();
           attempt++;
           if (attempt == 1) {
             firstFailure = clock.millis();
+          }
+          int code = ClickHouseErrors.deterministicInsertCode(e);
+          DeadLetterStore store = deadLetter;
+          if (code > 0 && store != null && ++refusals >= DEAD_LETTER_ATTEMPTS) {
+            store.store(table, token, data, rowCount, code);
+            return Sent.DEAD_LETTERED;
           }
           if (attempt == 1 || attempt % 10 == 0) {
             LOG.warn(
@@ -671,7 +761,7 @@ public final class ClickHouseBatchWriter implements ClickHouseWriter, WalCoverag
                 oneLine(e));
           }
           if (!untilDone && stopNow) {
-            return false;
+            return Sent.STOPPED;
           }
           backoff = sleepBackoff(backoff);
         }

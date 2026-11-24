@@ -74,17 +74,21 @@ class QueryTestDataIT {
     ClickHouseHttp ch = env.clickHouse(Account.READER);
 
     assertThat(data.xlogRows()).isGreaterThan(500_000);
+    // The generator's applications are 1..10; app_id 0 is the server's own metric series
+    // (DSN-12-14, WO-28), which the shared server writes every 5 seconds.
     for (Map.Entry<String, Long> e : data.rows().entrySet()) {
-      assertThat(scalar(ch, "SELECT count() FROM argos." + e.getKey() + " WHERE app_id <= 10"))
+      assertThat(
+              scalar(
+                  ch, "SELECT count() FROM argos." + e.getKey() + " WHERE app_id BETWEEN 1 AND 10"))
           .as(e.getKey())
           .isEqualTo(e.getValue())
           .isPositive();
     }
-    assertThat(scalar(ch, "SELECT sum(count) FROM argos.app_stat_1m WHERE app_id <= 10"))
+    assertThat(scalar(ch, "SELECT sum(count) FROM argos.app_stat_1m WHERE app_id BETWEEN 1 AND 10"))
         .isEqualTo(data.xlogRows());
-    assertThat(scalar(ch, "SELECT sum(count) FROM argos.app_stat_1h WHERE app_id <= 10"))
+    assertThat(scalar(ch, "SELECT sum(count) FROM argos.app_stat_1h WHERE app_id BETWEEN 1 AND 10"))
         .isEqualTo(data.xlogRows());
-    assertThat(scalar(ch, "SELECT sum(sql_count) FROM argos.xlog WHERE app_id <= 10"))
+    assertThat(scalar(ch, "SELECT sum(sql_count) FROM argos.xlog WHERE app_id BETWEEN 1 AND 10"))
         .isEqualTo(data.xlogSqlCount());
     assertThat(data.end().toEpochMilli() % 60_000).as("recent placement ends on a minute").isZero();
     assertThat(Duration.between(data.end(), Anchors.now())).isLessThan(Duration.ofHours(1));

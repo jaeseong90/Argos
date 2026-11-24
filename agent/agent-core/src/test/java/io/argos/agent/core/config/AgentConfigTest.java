@@ -48,9 +48,17 @@ class AgentConfigTest {
         .containsExactly(
             "sampling.**",
             "instrumentation.disabled",
-            "instrumentation.ignore-paths",
+            "instrumentation.ignore-*",
             "log.level",
-            "enabled");
+            "enabled",
+            "transaction.slow-stack.*",
+            "capture.error-message-max-length",
+            "capture.stack-depth",
+            "instrumentation.app-packages",
+            "async.step",
+            "active.snapshot-interval-seconds",
+            "metrics.interval-seconds",
+            "transaction.max-duration-ms");
     assertThat(config.instrumentationAppPackages()).isEmpty();
     assertThat(config.serverToken().isPresent()).isFalse();
     assertThat(config.missingRequired()).containsExactly("server.address", "app.name");

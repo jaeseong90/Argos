@@ -50,6 +50,21 @@ these ends an async transaction, exactly once (`TraceContext.markEnded`):
 
 ## Supported library versions
 
+### Version range and witness
+
+| Library | Supported range | Minimum verified | Maximum verified | Boundary tests |
+|---|---|---|---|---|
+| Apache Tomcat, javax.servlet 4.0 | 9.0 | 9.0.83 | 9.0.123 | `test` on JDK 8 (`ServletAsyncModuleTest`: matchers against `javax.servlet-api` 3.1.0); end to end `agent-testing` `servlet.StreamingTest` (shop-boot2, embedded 9.0.83) and `servlet.WarStreamingTest` (shop-war-javax, standalone 9.0.123) |
+| Apache Tomcat, jakarta.servlet 6.0 and 6.1 | 10.1, 11.0 | 10.1.55 | 11.0.27 | `test` (`ServletAsyncModuleTest`: `jakarta.servlet-api` 5.0.0); end to end `servlet.StreamingTest` (shop-boot3 10.1.55, shop-boot4 11.0.27) and `servlet.WarStreamingTest` (shop-war-jakarta 10.1.61 and 11.0.27) |
+
+- Witness (`ServletAsyncModule.witness()`, resource lookup only): `org.apache.catalina.core.AsyncContextImpl`
+  and `org.apache.catalina.connector.Request` (Tomcat only; on Jetty and Undertow the module stays
+  off and the servlet module's listener ends async requests).
+- Run: `./gradlew :agent:agent-instrumentation:servlet-async:test`; end to end
+  `./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot3@21,shop-war-javax@8,shop-war-jakarta@21 --tests '*Streaming*'`.
+
+### Details
+
 Compiled against `javax.servlet-api` 3.1.0 and `jakarta.servlet-api` 5.0.0 (`compileOnly`; the
 container's own classes are used at run time).
 

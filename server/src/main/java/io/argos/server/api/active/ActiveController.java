@@ -63,18 +63,21 @@ public class ActiveController {
   private final AppDirectory directory;
   private final AppAccessPolicy access;
   private final InstanceStates states;
+  private final ActiveThresholds thresholds;
 
   public ActiveController(
       SessionRegistry sessions,
       DictionaryNames names,
       AppDirectory directory,
       AppAccessPolicy access,
-      InstanceStates states) {
+      InstanceStates states,
+      ActiveThresholds thresholds) {
     this.sessions = sessions;
     this.names = names;
     this.directory = directory;
     this.access = access;
     this.states = states;
+    this.thresholds = thresholds;
   }
 
   /** The running transactions (14 §4.9). */
@@ -86,7 +89,8 @@ public class ActiveController {
           "The latest 5-second snapshot of every live agent session (memory). At most 2,000"
               + " items, longest first (meta.truncated). per_instance lists only the instances"
               + " with a live session, each with its instance state (UP, WARN, STALE, DOWN) as in"
-              + " GET /apps/{appId}/instances.")
+              + " GET /apps/{appId}/instances. default_thresholds_ms are the operator-wide default"
+              + " elapsed-colour thresholds of the screen (argos.ui.active-thresholds-ms).")
   @ArgosLimits(rowsMax = MAX_ITEMS)
   @ArgosSource({"memory:active_snapshots", "postgres:dictionary"})
   public ResponseEnvelope<ActiveTransactions> active(
@@ -198,7 +202,8 @@ public class ActiveController {
               kind(t.getKind()),
               Instant.ofEpochMilli(t.getStartTsMs())));
     }
-    return ResponseEnvelope.builder(new ActiveTransactions(newest, perInstance, items))
+    return ResponseEnvelope.builder(
+            new ActiveTransactions(newest, perInstance, items, thresholds.values()))
         .truncated(truncated)
         .counts(items.size(), pending.size())
         .build();

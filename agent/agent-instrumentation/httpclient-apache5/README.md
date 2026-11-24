@@ -10,6 +10,21 @@ Outgoing calls through the classic (blocking) Apache HttpClient 5.
 
 ## Supported library versions
 
+### Version range and witness
+
+| Library | Supported range | Minimum verified | Maximum verified | Boundary tests |
+|---|---|---|---|---|
+| `org.apache.httpcomponents.client5:httpclient5`, classic API | 5.x | 5.5.2 | 5.6.5 | `test` on 5.5.2 and `testHc5Latest` on 5.6.5 (`Apache5AdviceTest`, `HttpClientApache5ModuleTest`); end to end `agent-testing` `httpclient.HttpClientStepsTest` (shop-boot3 5.5.2 and shop-boot4 5.6.5 on JDK 21, `client=hc5`) |
+
+- Witness (`HttpClientApache5Module.witness()`, resource lookup only):
+  `org.apache.hc.client5.http.impl.classic.CloseableHttpClient`,
+  `org.apache.hc.core5.http.ClassicHttpRequest` and `org.apache.hc.core5.http.HttpHost`.
+- Run: `./gradlew :agent:agent-instrumentation:httpclient-apache5:check` (`test` and
+  `:agent:agent-instrumentation:httpclient-apache5:testHc5Latest`); end to end
+  `./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot3@21,shop-boot4@21 --tests '*httpclient*'`.
+
+### Details
+
 | Library | Range | Tested (module tests) |
 |---|---|---|
 | `org.apache.httpcomponents.client5:httpclient5`, classic API | 5.x | 5.5.2 (`test`), 5.6.5 (`testHc5Latest`) |

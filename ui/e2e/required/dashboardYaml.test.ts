@@ -4,8 +4,9 @@
 // 체크표" 2.3-1 .. 2.3-7) one to one, in order, with checks that exist in required/dashboardChecks.ts
 // and route variables of manifestVariables() (docs/18 §13, DSN-18-10). The WO-22 entries (outage
 // shading, real WebSocket server) run since the pair 7 wrap-up (ADR-0010 C-216 (2)), the WO-25
-// entry (firing alerts of the engine, the seed's real alert) since WO-25; the parts the seed cannot
-// show yet are fixme entries of their owners (real STALE/WARN tiles WO-39).
+// entry (firing alerts of the engine, the seed's real alert) since WO-25, and the WO-39 entry (real
+// WARN and STALE tiles of an agent of the check's own: kill switch on, then the agent stopped,
+// ADR-0010 C-217 (2)) since WO-39.
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,13 +84,18 @@ describe('required/dashboard.yaml (docs/05 §2.3)', () => {
     }
   });
 
-  it('runs the WO-22 entries (outage shading on the traffic app, real WS) and the WO-25 firing alerts, and names the owner of the part without data (STALE/WARN WO-39)', () => {
+  it('runs the WO-22 entries (outage shading on the traffic app, real WS), the WO-25 firing alerts and the WO-39 real STALE/WARN tiles', () => {
     expect(
       spec.items.filter((item) => item.owner !== 'WO-32').map((i) => `${i.id} ${i.owner}`),
     ).toEqual(['2.3-2 WO-22', '2.3-3 WO-39', '2.3-5 WO-25', '2.3-7 WO-22']);
     expect(RUNNING_OWNERS.has('WO-22')).toBe(true);
     expect(RUNNING_OWNERS.has('WO-25')).toBe(true);
-    expect(RUNNING_OWNERS.has('WO-39')).toBe(false);
+    expect(RUNNING_OWNERS.has('WO-39')).toBe(true);
+    const wo39 = spec.items.filter((i) => i.owner === 'WO-39');
+    expect(
+      wo39.map((i) => [i.id, i.assert.flatMap((a) => ('check' in a ? [a.check] : []))]),
+    ).toEqual([['2.3-3', ['dashboardWarnStaleLive']]]);
+    expect(Object.keys(DASHBOARD_CHECKS)).toContain('dashboardWarnStaleLive');
     const wo25 = spec.items.filter((i) => i.owner === 'WO-25');
     expect(
       wo25.map((i) => [i.id, i.route, i.assert.flatMap((a) => ('check' in a ? [a.check] : []))]),

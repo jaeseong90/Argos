@@ -8,7 +8,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
@@ -16,13 +18,19 @@ import java.util.regex.Pattern;
  * The fixed rules of {@code instrumentation.custom-methods} (SEC-25, 16 §5.6, 10 §6.10 "매처"): which
  * items are used and which classes an item may ever match. Immutable apart from the per-item match
  * count and disabled flag; thread-safe. WO-17 uses it to choose the classes of a remote
- * retransformation ({@link Retransformer}); WO-18 reuses it for the custom method matcher and
- * advice ({@link #current()}, {@link Item#matchesClass(String)}, {@link Item#countMatch()}).
+ * retransformation ({@link Retransformer}); WO-18's custom module reads {@link #current()} in its
+ * type and method matchers at every transformation ({@link Item#matchesClass(String)}, {@link
+ * Item#matchesMethod(String)}) and counts the classes it matches at load time ({@link
+ * Item#countClass(String)}).
  *
  * <ul>
- *   <li>An item is {@code <class glob>#<method glob>[|<STEP TYPE>[|<as-transaction>]]} ({@code
+ *   <li>An item is {@code <class glob>#<method glob>[|<as-transaction>]} ({@code
  *       KeySpec.Format.CUSTOM_METHOD}); globs: {@code *} within a package segment (any characters
- *       of a method name), {@code **} across segments, {@code ?} one character.
+ *       of a method name), {@code **} across segments, {@code ?} one character. The step is always
+ *       {@code METHOD} (16 §1.4). An item with a step type suffix of the earlier format ({@code
+ *       |SQL}, {@code |METHOD|true}, ...) is ignored ({@link Item#stepTypeSuffix()}, ADR-0010 C-237
+ *       (5)); a pushed value with such an item is rejected as a whole ({@link
+ *       #REASON_STEP_TYPE_SUFFIX}).
  *   <li>An item whose class glob starts with a forbidden prefix ({@link #FORBIDDEN_PREFIXES}:
  *       {@code java.}, {@code javax.}, {@code jakarta.}, {@code jdk.}, {@code sun.}, {@code
  *       com.sun.}, {@code io.argos.} (the agent's own and shaded classes), {@code net.bytebuddy.})
@@ -60,6 +68,16 @@ public final class CustomMethodPolicy {
   /** The {@code RejectedKey.message} reason of a pushed item with a forbidden prefix. */
   public static final String REASON_FORBIDDEN = "forbidden_pattern";
 
+  /**
+   * The {@code RejectedKey.message} reason of a pushed item with a step type suffix (ADR-0010 C-237
+   * (5); the key is rejected {@code FORBIDDEN_PATTERN} as a whole, like {@link #REASON_FORBIDDEN}).
+   */
+  public static final String REASON_STEP_TYPE_SUFFIX = "step_type_suffix";
+
+  /** The WARN and rejection text of an item with a step type suffix. */
+  public static final String STEP_TYPE_SUFFIX_TEXT =
+      "a step type suffix is not supported (custom methods always record METHOD steps)";
+
   private static final CustomMethodPolicy EMPTY =
       new CustomMethodPolicy(Collections.<Item>emptyList(), DEFAULT_MAX_CLASSES_PER_PATTERN);
 
@@ -67,13 +85,23 @@ public final class CustomMethodPolicy {
 
   private final List<Item> items;
   private final int maxClassesPerPattern;
+  private final List<String> rawItems;
 
-  private CustomMethodPolicy(List<Item> items, int maxClassesPerPattern) {
+  private CustomMethodPolicy(List<Item> items, int maxClassesPerPattern, List<String> rawItems) {
     this.items = Collections.unmodifiableList(items);
     this.maxClassesPerPattern = maxClassesPerPattern;
+    this.rawItems = rawItems;
   }
 
-  /** The policy of the configuration in force (empty until the remote wiring installed one). */
+  private CustomMethodPolicy(List<Item> items, int maxClassesPerPattern) {
+    this(items, maxClassesPerPattern, Collections.<String>emptyList());
+  }
+
+  /**
+   * The policy of the configuration in force: the local one from agent start ({@link
+   * #installLocal}, before the agent builder is installed, so that the custom module's matcher sees
+   * it for every class it is asked about), then the one of each accepted remote change.
+   */
   public static CustomMethodPolicy current() {
     return current;
   }
@@ -81,6 +109,33 @@ public final class CustomMethodPolicy {
   /** Makes {@code policy} the one {@link #current()} returns (null: the empty policy). */
   public static void install(CustomMethodPolicy policy) {
     current = policy == null ? EMPTY : policy;
+  }
+
+  /**
+   * Agent start (P5, before the agent builder): installs the policy of the local {@code
+   * instrumentation.custom-methods} and writes one WARN per ignored item (SEC-25, ADR-0010 C-235
+   * (2): a local value ignores only the forbidden item). Without items nothing is parsed. Returns
+   * the installed policy.
+   */
+  public static CustomMethodPolicy installLocal(AgentConfig config) {
+    List<String> local = config.instrumentationCustomMethods();
+    if (local == null || local.isEmpty()) {
+      install(null);
+      return EMPTY;
+    }
+    CustomMethodPolicy policy = of(config);
+    install(policy);
+    policy.warnIgnored("local configuration:");
+    return policy;
+  }
+
+  /**
+   * True when this policy was built from exactly {@code items} with {@code maxClassesPerPattern}
+   * (the remote wiring keeps the policy installed at start instead of resetting its counters).
+   */
+  public boolean isOf(List<String> items, int maxClassesPerPattern) {
+    List<String> other = items == null ? Collections.<String>emptyList() : items;
+    return rawItems.equals(other) && this.maxClassesPerPattern == Math.max(1, maxClassesPerPattern);
   }
 
   /** The policy of {@code config}'s {@code instrumentation.custom-methods}. */
@@ -102,7 +157,16 @@ public final class CustomMethodPolicy {
         parsed.add(Item.parse(i + 1, items.get(i), max));
       }
     }
-    return new CustomMethodPolicy(parsed, max);
+    List<String> raw =
+        items == null
+            ? Collections.<String>emptyList()
+            : Collections.unmodifiableList(new ArrayList<String>(items));
+    return new CustomMethodPolicy(parsed, max, raw);
+  }
+
+  /** True when the policy has no item at all (the custom module's matcher then costs nothing). */
+  public boolean isEmpty() {
+    return items.isEmpty();
   }
 
   /** Every item in configuration order, the ignored ones included. */
@@ -115,7 +179,7 @@ public final class CustomMethodPolicy {
     return maxClassesPerPattern;
   }
 
-  /** Items ignored for a forbidden prefix (or because they do not parse). */
+  /** Items ignored for a forbidden prefix or a step type suffix (or because they do not parse). */
   public int ignoredCount() {
     int n = 0;
     for (Item item : items) {
@@ -159,6 +223,27 @@ public final class CustomMethodPolicy {
     int hash = item.indexOf('#');
     String classGlob = (hash < 0 ? item : item.substring(0, hash)).trim();
     return forbiddenPrefixOfClass(classGlob);
+  }
+
+  /**
+   * True when {@code item} (a raw item string of {@code instrumentation.custom-methods}) carries a
+   * step type suffix of the earlier format: {@code <class>#<method>|<STEP TYPE>[|<bool>]}. The
+   * current format allows only {@code |true} or {@code |false} after the method glob (ADR-0010
+   * C-237 (5)).
+   */
+  public static boolean hasStepTypeSuffix(String item) {
+    if (item == null) {
+      return false;
+    }
+    String[] parts = item.trim().split("\\|", -1);
+    if (parts.length < 2) {
+      return false;
+    }
+    return parts.length > 2 || !isBoolean(parts[1].trim());
+  }
+
+  private static boolean isBoolean(String text) {
+    return "true".equalsIgnoreCase(text) || "false".equalsIgnoreCase(text);
   }
 
   /** True when no custom method item may ever match the class {@code className}. */
@@ -297,12 +382,17 @@ public final class CustomMethodPolicy {
   /** One WARN per item in {@code disabled} (16 §5.6). */
   public void warnDisabled(List<Item> disabled) {
     for (Item item : disabled) {
-      AgentLogger.warn(
-          "instrumentation.custom-methods item {} disabled: it matches more than {} classes"
-              + " (instrumentation.custom-methods.max-classes-per-pattern)",
-          item.position(),
-          maxClassesPerPattern);
+      warnDisabled(item);
     }
+  }
+
+  /** The WARN of one disabled item (16 §5.6): its position and the limit, never the item text. */
+  public static void warnDisabled(Item item) {
+    AgentLogger.warn(
+        "instrumentation.custom-methods item {} disabled: it matches more than {} classes"
+            + " (instrumentation.custom-methods.max-classes-per-pattern)",
+        item.position(),
+        item.maxClasses);
   }
 
   /**
@@ -311,22 +401,37 @@ public final class CustomMethodPolicy {
    */
   private static void warnItem(String origin, Item item) {
     String prefix = item.forbiddenPrefix();
+    String reason;
+    if (prefix != null) {
+      reason = "the class pattern starts with the forbidden prefix " + prefix;
+    } else if (item.stepTypeSuffix()) {
+      reason = STEP_TYPE_SUFFIX_TEXT;
+    } else {
+      reason = "not a valid <class glob>#<method glob> item";
+    }
     AgentLogger.warn(
         "{} {} item {} ignored: {}",
         origin,
         ConfigKeys.INSTRUMENTATION_CUSTOM_METHODS,
         item.position(),
-        prefix == null
-            ? "not a valid <class glob>#<method glob> item"
-            : "the class pattern starts with the forbidden prefix " + prefix);
+        reason);
   }
 
   /** One {@code instrumentation.custom-methods} item. */
   public static final class Item {
+    /** {@link #countClass}: counted, the item stays active. */
+    public static final int COUNTED = 0;
+
+    /** {@link #countClass}: the item is ignored or was disabled before this call. */
+    public static final int INACTIVE = 1;
+
+    /** {@link #countClass}: this call passed the limit and disabled the item. */
+    public static final int DISABLED_NOW = 2;
+
     private final int position;
     private final String classGlob;
     private final String methodGlob;
-    private final String stepType;
+    private final boolean stepTypeSuffix;
     private final boolean asTransaction;
     private final String forbiddenPrefix;
     private final boolean valid;
@@ -334,13 +439,20 @@ public final class CustomMethodPolicy {
     private final Pattern methodPattern;
     private final int maxClasses;
     private final AtomicInteger matched = new AtomicInteger();
-    private volatile boolean disabled;
+    private final AtomicBoolean disabled = new AtomicBoolean();
+
+    /**
+     * Interned names of the classes {@link #countClass} counted: at most {@code maxClasses + 1}
+     * (plus a few of a concurrent race), since nothing is added once the item is disabled.
+     */
+    private final Set<String> counted =
+        Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 
     private Item(
         int position,
         String classGlob,
         String methodGlob,
-        String stepType,
+        boolean stepTypeSuffix,
         boolean asTransaction,
         boolean valid,
         int maxClasses) {
@@ -348,11 +460,11 @@ public final class CustomMethodPolicy {
       this.maxClasses = maxClasses;
       this.classGlob = classGlob;
       this.methodGlob = methodGlob;
-      this.stepType = stepType;
+      this.stepTypeSuffix = stepTypeSuffix;
       this.asTransaction = asTransaction;
       this.valid = valid;
       this.forbiddenPrefix = forbiddenPrefixOfClass(classGlob);
-      boolean usable = valid && forbiddenPrefix == null;
+      boolean usable = valid && forbiddenPrefix == null && !stepTypeSuffix;
       this.classPattern = usable ? globToRegex(classGlob, true) : null;
       this.methodPattern = usable ? globToRegex(methodGlob, false) : null;
     }
@@ -363,15 +475,16 @@ public final class CustomMethodPolicy {
       int hash = parts[0].indexOf('#');
       if (hash <= 0 || hash == parts[0].length() - 1 || parts.length > 3) {
         String classGlob = hash < 0 ? parts[0] : parts[0].substring(0, hash);
-        return new Item(position, classGlob.trim(), "", "", false, false, maxClasses);
+        return new Item(position, classGlob.trim(), "", false, false, false, maxClasses);
       }
-      String stepType = parts.length > 1 ? parts[1].trim().toUpperCase(Locale.ROOT) : "METHOD";
-      boolean asTransaction = parts.length > 2 && "true".equalsIgnoreCase(parts[2].trim());
+      boolean suffix = hasStepTypeSuffix(item);
+      boolean asTransaction =
+          !suffix && parts.length == 2 && "true".equalsIgnoreCase(parts[1].trim());
       return new Item(
           position,
           parts[0].substring(0, hash).trim(),
           parts[0].substring(hash + 1).trim(),
-          stepType.isEmpty() ? "METHOD" : stepType,
+          suffix,
           asTransaction,
           true,
           maxClasses);
@@ -390,9 +503,12 @@ public final class CustomMethodPolicy {
       return methodGlob;
     }
 
-    /** The step type ({@code METHOD} by default). */
-    public String stepType() {
-      return stepType;
+    /**
+     * True for an item with a step type suffix of the earlier format ({@code |SQL}, {@code
+     * |METHOD|true}, ...): ignored, since the step is always {@code METHOD} (ADR-0010 C-237 (5)).
+     */
+    public boolean stepTypeSuffix() {
+      return stepTypeSuffix;
     }
 
     public boolean asTransaction() {
@@ -404,19 +520,19 @@ public final class CustomMethodPolicy {
       return forbiddenPrefix;
     }
 
-    /** Ignored: a forbidden prefix, or not a valid item. Never matches. */
+    /** Ignored: a forbidden prefix, a step type suffix, or not a valid item. Never matches. */
     public boolean ignored() {
-      return !valid || forbiddenPrefix != null;
+      return !valid || forbiddenPrefix != null || stepTypeSuffix;
     }
 
     /** Disabled for matching more classes than the per-item limit. Never matches afterwards. */
     public boolean disabled() {
-      return disabled;
+      return disabled.get();
     }
 
     /** Neither ignored nor disabled. */
     public boolean active() {
-      return !ignored() && !disabled;
+      return !ignored() && !disabled.get();
     }
 
     /**
@@ -437,9 +553,9 @@ public final class CustomMethodPolicy {
     }
 
     /**
-     * Counts one more matched class (WO-18's matcher, at class load); returns false, and disables
-     * the item, when the count passes {@code max-classes-per-pattern}. True for a still-active
-     * item. The caller warns once through {@link CustomMethodPolicy#warnDisabled}.
+     * Counts one more matched class without remembering which ({@link #countClass} counts each
+     * class once and is what the custom module uses); returns false, and disables the item, when
+     * the count passes {@code max-classes-per-pattern}. True for a still-active item.
      */
     public boolean countMatch() {
       if (!active()) {
@@ -452,17 +568,45 @@ public final class CustomMethodPolicy {
       return true;
     }
 
+    /**
+     * The class-load counter of the custom module's matcher (WO-18, 10 §6.10 "매처"): counts the
+     * class {@code className} once, however often it is matched (retransformation, several class
+     * loaders with the same name). Returns {@link #COUNTED} while the item stays active, {@link
+     * #DISABLED_NOW} exactly once, to the call that passed {@code max-classes-per-pattern} and
+     * disabled the item (the caller warns, {@link CustomMethodPolicy#warnDisabled(Item)}), and
+     * {@link #INACTIVE} for an ignored or already disabled item.
+     */
+    public int countClass(String className) {
+      if (!active() || className == null) {
+        return INACTIVE;
+      }
+      if (counted.contains(className) || !counted.add(className.intern())) {
+        return COUNTED;
+      }
+      if (matched.incrementAndGet() > maxClasses) {
+        return disable() ? DISABLED_NOW : INACTIVE;
+      }
+      return COUNTED;
+    }
+
+    /**
+     * The names {@link #countClass} counted (interned): after {@link #DISABLED_NOW}, the classes
+     * whose methods may carry this item's advice.
+     */
+    public List<String> countedClassNames() {
+      return new ArrayList<String>(counted);
+    }
+
     boolean classMatches(String className) {
       return classPattern != null && classPattern.matcher(className).matches();
     }
 
     /** Disables the item; true when this call did. */
     boolean disable() {
-      if (disabled || ignored()) {
+      if (ignored()) {
         return false;
       }
-      disabled = true;
-      return true;
+      return disabled.compareAndSet(false, true);
     }
   }
 

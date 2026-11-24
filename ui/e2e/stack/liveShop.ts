@@ -40,6 +40,11 @@ export interface ShopOptions {
    * Default: the seed's TRAFFIC_APP with the stack's agent.token.
    */
   readonly app?: { readonly name: string; readonly env: string; readonly tokenFile: string };
+  /**
+   * Another sample app jar to run instead of the stack's shop-boot3 copy (WO-18: shop-batch from
+   * sample-apps/shop-batch/build/sample-app). It must answer GET /api/version like the shop apps.
+   */
+  readonly jar?: string;
 }
 
 /** Why the shop cannot start here, or null. */
@@ -85,7 +90,7 @@ export async function startShop(runId: string, options: ShopOptions): Promise<Ru
       `-Dargos.app.instance=${options.instance}`,
       ...(options.jvmArgs ?? []),
       '-jar',
-      join(jarsDir(runId), 'shop-boot3.jar'),
+      options.jar ?? join(jarsDir(runId), 'shop-boot3.jar'),
       `--server.port=${String(port)}`,
       '--server.address=127.0.0.1',
     ],

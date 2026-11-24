@@ -15,6 +15,7 @@ import io.argos.server.auth.ArgosPrincipal;
 import io.argos.server.auth.ObjectAccessPolicy;
 import io.argos.server.auth.Role;
 import io.argos.server.secrets.EnvelopeCipher;
+import io.argos.server.secrets.SecretField;
 import io.argos.server.secrets.SecretUnavailableException;
 import io.argos.server.session.api.CommandResultSink;
 import io.argos.server.session.api.SessionEndListener;
@@ -862,7 +863,7 @@ public class CommandRouter implements CommandResultSink, SessionEndListener {
 
   /** The associated data of a result (16 §8.3, §5.3). */
   static String aad(UUID id) {
-    return EnvelopeCipher.aad("command_results", "body_enc", id.toString());
+    return SecretField.COMMAND_RESULT.aad(id.toString());
   }
 
   private void publish(InFlight c, String status, @Nullable String error, long now) {

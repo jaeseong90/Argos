@@ -11,6 +11,32 @@ made from a servlet application (F-A33, DSN-10-14).
 
 ## Supported library versions
 
+### Version range and witness
+
+| Library | Supported range | Minimum verified | Maximum verified | Boundary tests |
+|---|---|---|---|---|
+| `io.projectreactor.netty:reactor-netty-http` | 1.0 to 1.3 | 1.2.18 | 1.3.8 | `test` on 1.2.18 and `testReactorNetty13` on 1.3.8 (`ReactorNettyAdviceTest`, `HttpClientReactorNettyModuleTest`); end to end `agent-testing` `httpclient.WebClientModesTest` (shop-boot3 1.2.18 and shop-boot4 1.3.8 on JDK 21) |
+| `io.netty:netty-handler` (under Reactor Netty) | 4.1, 4.2 | 4.1.135.Final | 4.2.19.Final | the same tasks: `ReactorNettyAdviceTest` with Netty 4.1 (`test`) and 4.2 (`testReactorNetty13`) |
+
+- Witness (`HttpClientReactorNettyModule.witness()` = `ReactorNettyWitness`): the loader must see
+  `reactor.netty.http.client.HttpClient`; then the classes
+  `reactor.netty.http.client.HttpClientConnect$HttpClientHandler`,
+  `reactor.netty.http.client.HttpClientConnect$HttpObserver`,
+  `reactor.netty.http.client.HttpClientConfig`, `reactor.netty.http.client.HttpClientOperations`,
+  `reactor.netty.http.client.HttpClientRequest`, `reactor.netty.http.client.HttpClientResponse`,
+  `reactor.netty.http.client.HttpClientState`, `reactor.netty.Connection` and
+  `reactor.netty.ConnectionObserver$State` (resource lookup); then, read from the class files
+  without loading them, the members the advice binds: `HttpClientHandler(HttpClientConfig)`,
+  `HttpClientHandler.requestWithBody(HttpClientOperations)`, `boolean HttpClientHandler.test(Throwable)`,
+  the fields `HttpClientHandler.toURI` and `method`, `HttpObserver.onStateChange(Connection, State)`
+  and the field `HttpObserver.handler`. A missing member disables the module for that loader with
+  one WARN (see below).
+- Run: `./gradlew :agent:agent-instrumentation:httpclient-reactornetty:check` (`test` and
+  `:agent:agent-instrumentation:httpclient-reactornetty:testReactorNetty13`); end to end
+  `./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot3@21,shop-boot4@21 --tests '*httpclient*'`.
+
+### Details
+
 | Library | Range | Tested (module tests) |
 |---|---|---|
 | `io.projectreactor.netty:reactor-netty-http` | 1.0 to 1.3 | 1.2.18 with Netty 4.1 (`test`), 1.3.8 with Netty 4.2 (`testReactorNetty13`) |

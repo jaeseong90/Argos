@@ -46,6 +46,7 @@ import { activeState, STATE_LABEL_KEYS } from './labels';
 import {
   asOfSeconds,
   bandOf,
+  DEFAULT_THRESHOLDS,
   filterItems,
   instanceBands,
   itemKey,
@@ -58,7 +59,12 @@ import {
   type Thresholds,
 } from './model';
 import { instanceHref, RowActions } from './RowActions';
-import { readThresholds, writeThresholds } from './thresholdPreference';
+import {
+  operatorThresholds,
+  readStoredThresholds,
+  sameThresholds,
+  writeThresholds,
+} from './thresholdPreference';
 import { ThresholdSettings } from './ThresholdSettings';
 import { useActiveSnapshot } from './useActiveSnapshot';
 
@@ -103,11 +109,21 @@ export function ActivePage() {
   const snapshot = useActiveSnapshot(appId);
   const { shown, paused, setPaused, now, staleSeconds, polling, query } = snapshot;
 
-  const [thresholds, setThresholds] = useState<Thresholds>(readThresholds);
-  const applyThresholds = useCallback((next: Thresholds) => {
-    setThresholds(next);
-    writeThresholds(next);
-  }, []);
+  // The viewer's thresholds (this browser), else the operator default the REST snapshot carries
+  // (`default_thresholds_ms`, ADR-0010 C-225 (3)), else 1/3/8 s.
+  const operatorDefault = useMemo(
+    () => operatorThresholds(query.data?.data) ?? DEFAULT_THRESHOLDS,
+    [query.data],
+  );
+  const [stored, setStored] = useState<Thresholds | null>(readStoredThresholds);
+  const thresholds = stored ?? operatorDefault;
+  const applyThresholds = useCallback(
+    (next: Thresholds) => {
+      setStored(sameThresholds(next, operatorDefault) ? null : next);
+      writeThresholds(next, operatorDefault);
+    },
+    [operatorDefault],
+  );
 
   const data = shown?.data;
   const instances = data?.per_instance ?? EMPTY_INSTANCES;
@@ -311,7 +327,11 @@ export function ActivePage() {
         <section className="active-page__bars" aria-label={t('active:bars.label')}>
           <div className="active-page__bars-head">
             <BandLegend thresholds={thresholds} totals={bandTotals} />
-            <ThresholdSettings thresholds={thresholds} onApply={applyThresholds} />
+            <ThresholdSettings
+              thresholds={thresholds}
+              defaults={operatorDefault}
+              onApply={applyThresholds}
+            />
           </div>
           <InstanceBars
             instances={instances}

@@ -106,6 +106,23 @@ compiler. Instead:
 
 ## Supported library versions
 
+### Version range and witness
+
+| Library | Supported range | Minimum verified | Maximum verified | Boundary tests |
+|---|---|---|---|---|
+| `java.net.http.HttpClient` (implementation `jdk.internal.net.http`) | JDK 11 to 25 | JDK 11 | JDK 21 | `test` on JDK 11 and `testJdk21` (`Jdk11AdviceTest`, `Jdk11CompletionOrderTest`, `HttpClientJdk11ModuleTest`); `testJdk8` (`Jdk11ModuleOnJdk8Test`: the module stays disabled on JDK 8); end to end `agent-testing` `httpclient.HttpClientStepsTest` (shop-boot3 on JDK 21, `client=jdk11`) |
+
+- Witness (`HttpClientJdk11Module.witness()`, resource lookup only): `java.net.http.HttpClient`,
+  `jdk.internal.net.http.HttpClientImpl` and `jdk.internal.net.http.MultiExchange`; on JDK 8 none
+  of them exists and the module stays off.
+- Run: `./gradlew :agent:agent-instrumentation:httpclient-jdk11:check` (`test`,
+  `:agent:agent-instrumentation:httpclient-jdk11:testJdk8` and
+  `:agent:agent-instrumentation:httpclient-jdk11:testJdk21`); end to end
+  `./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot3@21 --tests '*httpclient*'`.
+- JDK 17 and 25 are inside the range but not run by these tasks (CI matrix, WO-50).
+
+### Details
+
 `java.net.http.HttpClient` of JDK 11-25 (HTTP/1.1 and HTTP/2 through the same `HttpClientImpl`
 and `MultiExchange`). Module tests run on JDK 11 and 21; JDK 8 is checked to keep the module
 disabled. `shop-boot3`/`shop-boot4` `/api/pay/{id}?client=jdk11` (also `mode=async`) run in the

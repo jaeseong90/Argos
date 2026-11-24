@@ -113,6 +113,9 @@ class ConfigKeyCatalogTest {
     if (type.equals("list<duration>")) {
       return Map.of(name + "[0]", "1s");
     }
+    if (type.equals("list<int>")) {
+      return Map.of(name + "[0]", "1");
+    }
     if (type.startsWith("list<")) {
       return Map.of(name + "[0]", "round-trip-value");
     }
@@ -192,6 +195,8 @@ class ConfigKeyCatalogTest {
             "argos.jwt-previous-key",
             "argos.master-key",
             "argos.metrics.token",
+            // WO-28: the audit retention account (argos_audit).
+            "argos.postgres.audit.password",
             "argos.postgres.owner.password",
             "argos.postgres.password",
             "argos.security.master-key.previous");

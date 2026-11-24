@@ -16,3 +16,5 @@ defineRequiredTests('active');
 defineRequiredTests('alerts');
 defineRequiredTests('instance');
 defineRequiredTests('dumps');
+defineRequiredTests('admin');
+defineRequiredTests('search');

@@ -581,11 +581,51 @@ ARGOS_MGMT_EXPOSE=true
 | `ARGOS_START_PERIOD` | `60s` | 기동 후 서버 health 검사 실패를 세기 전에 기다리는 시간 |
 | `ARGOS_LOG_LEVEL` | `INFO` | 서버 로그 레벨 |
 | `ARGOS_TZ_DISPLAY` | `UTC` | 알림 메시지에 쓰는 시간대(데이터는 항상 UTC로 저장) |
-| `ARGOS_RETENTION_XLOG_DAYS`, `ARGOS_RETENTION_PROFILE_DAYS`, `ARGOS_RETENTION_RAW_STAT_DAYS`, `ARGOS_RETENTION_METRIC_DAYS`, `ARGOS_RETENTION_ROLLUP_1M_DAYS`, `ARGOS_RETENTION_ROLLUP_1H_DAYS` | 30, 7, 14, 14, 90, 365 | 보존 일수. 이 버전에서는 `ARGOS_RETENTION_RAW_STAT_DAYS`와 `ARGOS_RETENTION_METRIC_DAYS`가 같아야 하며, 다르면 서버가 기동을 거부합니다 |
+| `ARGOS_RETENTION_XLOG_DAYS`, `ARGOS_RETENTION_PROFILE_DAYS`, `ARGOS_RETENTION_RAW_STAT_DAYS`, `ARGOS_RETENTION_METRIC_DAYS`, `ARGOS_RETENTION_ROLLUP_1M_DAYS`, `ARGOS_RETENTION_ROLLUP_1H_DAYS` | 30, 7, 14, 14, 90, 365 | 트랜잭션, 트랜잭션 단계, SQL·외부 호출 통계, 메트릭, 분·시간 롤업의 보존 일수([7.4절](#74-보존-감사-로그-마스터-키)). 관리 API로 정한 값이 이 값보다 우선합니다 |
 | `ARGOS_METRICS_ALLOW_CIDRS` | 루프백과 Docker 사설 대역 | 관리 포트에 허용하는 클라이언트 |
 | `ARGOS_SECURITY_COOKIE_SECURE` | `true` | `false`는 평문 HTTP로 잠깐 평가할 때만([5장](#ui-주소-정하기)) |
 
 비밀값은 `.env`에 넣지 않습니다. `secrets/`에 두고 파일로 컨테이너에 전달합니다.
+
+### 7.4 보존, 감사 로그, 마스터 키
+
+**보존 변경.** `.env`의 `ARGOS_RETENTION_*` 변수를 고치고 서버를 재기동하거나(`sudo ./argos-compose.sh
+compose up -d server`), 관리 API(`PUT /api/v1/admin/settings/retention`)로 값을 정합니다. API로 정한 값은
+PostgreSQL에 남아 기동할 때마다 `.env`보다 우선합니다. 보존을 늘리면 즉시 적용되며 데이터를 다시 쓰지 않습니다.
+줄이려면 확인(`"confirm": true`)이 필요하고, 서버는 새 보존 밖이 된 날을 백그라운드에서 분당 최대 10개 파티션씩
+지우며 감사 로그(`RETENTION_CHANGED`)에 남깁니다. 테이블별 보존, 가장 오래된 날, 크기를 보거나 재기동 없이 설정값을
+적용하려면 서버 컨테이너에서 서버 명령줄을 실행합니다.
+
+```
+sudo ./argos-compose.sh compose exec -e JAVA_TOOL_OPTIONS= server java -Xmx256m   -cp @/opt/argos/app/jib-classpath-file io.argos.server.ServerApplication admin retention show
+```
+
+(`retention apply`는 적용과 삭제를 즉시 합니다. `--json`을 붙이면 기계가 읽는 출력입니다.)
+
+**감사 로그 보존.** 서버는 감사 로그를 `argos.retention.audit`(기본 365일) 동안 보관하며, 90일보다 짧으면 기동을
+거부합니다. 매일 서버 시각 04:30에 도는 작업이 별도 PostgreSQL 계정 `argos_audit`(`secrets/pg_audit_password`)로
+다음 달 파티션을 만들고 그보다 오래된 달을 통째로 지웁니다. 서버의 런타임 계정은 감사 행을 추가할 수만 있고 바꾸거나
+지울 수 없으며, 데이터베이스 자체가 90일이 안 된 감사 행의 삭제를 거부합니다.
+
+**비상 보존 단축.** ClickHouse 디스크가 90% 차면 서버는 가장 오래된 일 파티션을 오래된 데이터부터(트랜잭션 단계,
+그다음 메트릭·통계, 그다음 트랜잭션) 1분에 하루 파티션 하나씩 지워 85% 아래로 내립니다. 오늘 데이터와 롤업은
+지우지 않습니다. 지울 때마다 감사 로그(`RETENTION_EMERGENCY_DROP`), `retention_emergency` 이벤트,
+`argos_retention_emergency_drops_total`에 남습니다. 95%부터는 ClickHouse 쓰기를 멈추고 디스크가 93% 아래로 내려올
+때까지 데이터를 WAL에 보관합니다(`argos.wal.max-bytes`까지). 디스크 회수에는 10분 넘게 걸릴 수 있습니다. 그 전에
+디스크를 늘리거나 보존을 줄이십시오.
+
+**dead-letter 블록.** ClickHouse가 스키마·타입·파싱 오류로 세 번 거부한 데이터 블록은 `argos-data` 볼륨의
+`/data/dead-letter`로 옮겨지고(디렉터리 0700, 파일 0600, 기본 최대 1GiB, `argos.writer.dead-letter.max-bytes`)
+서버는 다음 데이터를 계속 적재합니다. 그 행은 서버 드롭으로 셉니다(`argos_collector_dropped_total{reason="dead_letter"}`,
+서버 드롭 알림, 수집 상태 패널). `GET /api/v1/admin/storage/health`에 블록 수와 바이트가 나옵니다. 파일에는 수집
+데이터가 들어 있고 자동으로 지워지지 않습니다. 서버 로그(블록마다 한 줄, ClickHouse 오류 코드 포함)에서 원인을 찾고,
+필요하면 `INSERT INTO argos.<table> FORMAT RowBinaryWithNamesAndTypes`로 다시 적재한 뒤 지우십시오.
+
+**마스터 키.** `secrets/master_key`가 없거나, 32바이트 키(hex 64자 또는 base64)가 아니거나, 그룹·다른 사용자가
+읽을 수 있으면(POSIX 파일 시스템) 서버가 기동을 거부합니다. Windows 파일 시스템에서는 권한을 검사할 수 없어 검사를
+건너뛰었다는 로그만 남깁니다. 이 키는 PostgreSQL의 알림 채널 설정, 웹훅 서명 키, 명령 결과, 애플리케이션 솔트를
+암호화합니다. 백업과 함께, 그러나 다른 곳에 보관하십시오. 키 없는 PostgreSQL 백업은 읽을 수 없습니다. 키 교체 절차는
+관리 명령 안내서(`argos-admin secrets rekey`)에 있습니다.
 
 ## 8. 리버스 프록시(443 HTTPS)
 
@@ -822,6 +862,7 @@ JVM 옵션 하나를 더해 애플리케이션을 시작하세요. Java 8 애플
 | 파일 모드를 검사할 수 없다는 경고 | 파일이 POSIX 모드가 없는 파일 시스템(Windows, NTFS)에 있습니다. 지원하는 운영 구성이 아닙니다. Linux 파일 시스템에 설치하세요 |
 | 에이전트가 TLS나 인증서 오류를 기록 | `server.address`가 인증서의 이름에 없거나, `server.tls.ca-file`이 그 인증서에 서명한 CA가 아닙니다 |
 | `token create`가 종료 코드 4로 끝남 | 애플리케이션에 이미 활성 에이전트 토큰이 5개 있습니다 |
+| 서버가 기동 중 `argos.master-key-file` 메시지를 남기고 끝남 | `secrets/master_key`가 없거나 형식이 틀렸거나 권한이 `0600`이 아닙니다(Linux Docker Engine에서는 소유자 `10001`). 백업에서 키를 복원하십시오. 기존 설치에 새 키를 만들면 저장된 비밀값을 더는 읽을 수 없습니다([7.4절](#74-보존-감사-로그-마스터-키)) |
 | `token create`가 server 서비스가 실행 중이 아니거나 healthy가 아니라고 함 | 스택을 시작하고(`sudo ./argos-compose.sh up`) `sudo ./argos-compose.sh status`에서 server가 healthy가 될 때까지 기다리세요. 토큰은 실행 중인 서버가 발급합니다 |
 
 ## 12. 이 버전에 없는 기능

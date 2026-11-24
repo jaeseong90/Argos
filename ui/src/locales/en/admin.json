@@ -1,0 +1,688 @@
+{
+  "common": {
+    "cancel": "Cancel",
+    "working": "Working…",
+    "actions": "Actions",
+    "yes": "Yes",
+    "no": "No",
+    "application": "Application",
+    "chooseApplication": "Choose an application",
+    "once": {
+      "tokenTitle": "New agent token",
+      "passwordTitle": "Initial password",
+      "notice": "Copy it now: it will not be shown again. Argos stores only a hash.",
+      "tokenLabel": "Agent token",
+      "passwordLabel": "Initial password",
+      "copy": "Copy",
+      "copied": "Copied to the clipboard.",
+      "copyFailed": "Could not copy. Select the text and copy it yourself.",
+      "noExpiry": "This token does not expire.",
+      "expires": "Expires {{time}}.",
+      "passwordChange": "Give it to the user over a private channel. They choose their own password at the first login.",
+      "previousValid": "The previous token keeps working until {{time}}.",
+      "store": "Save it in the token file on each host (permissions 0600), never in argos-agent.yml or a repository.",
+      "close": "I have copied it"
+    }
+  },
+  "apps": {
+    "title": "Applications",
+    "readOnly": "Read only: changes need the administrator role.",
+    "search": "Name",
+    "instancesUp": "{{up, number}} up / {{total, number}}",
+    "rulesApplied": "Applied",
+    "rulesNotApplied": "Not applied",
+    "rulesFailed": "The application was saved, but the recommended alert rules could not be applied. Open it again and retry.",
+    "deleted": "Application deleted: {{tokens, number}} tokens revoked, {{sessions, number}} agent sessions closed, {{rules, number}} alert rules deleted. Collected data stays until its retention ends.",
+    "column": {
+      "name": "Name",
+      "env": "Environment",
+      "group": "Group",
+      "instances": "Instances",
+      "tokens": "Tokens",
+      "registration_policy": "Registration",
+      "recommended_rules": "Recommended rules",
+      "last_seen": "Last received"
+    },
+    "policy": {
+      "inherit": "Environment default",
+      "auto": "Automatic",
+      "approval": "Approval",
+      "inheritedMark": "(environment default)"
+    },
+    "action": {
+      "new": "New application",
+      "edit": "Edit",
+      "delete": "Delete",
+      "install": "Install guide"
+    },
+    "empty": {
+      "title": "No applications yet.",
+      "description": "An administrator registers the first one, or agents register their application when they connect.",
+      "descriptionAdmin": "Create an application, then follow its install guide to attach the agent."
+    },
+    "noMatch": {
+      "title": "No application matches this name.",
+      "description": "Change or clear the name filter."
+    },
+    "delete": {
+      "title": "Delete application",
+      "impact": "Every agent token of the application is revoked and its agents disconnect within 5 seconds, its alert rules are deleted and its instances archived. Collected data stays until its retention ends.",
+      "typeName": "Type the application name to confirm:",
+      "ok": "Delete application"
+    },
+    "editor": {
+      "createTitle": "New application",
+      "editTitle": "Edit application",
+      "save": "Save",
+      "groupHelp": "Groups the application on the overview. Leave empty for none.",
+      "apdex": "Apdex T (ms)",
+      "apdexHelp": "Requests up to T are satisfied, up to 4T tolerated. A change applies to new transactions only.",
+      "policyInherited": "The current policy is the environment's default (argos.agent.auto-register.<env>). Saving a policy sets it for this application.",
+      "recommendedRules": "Apply the recommended alert rules",
+      "rulesApplied": "The recommended alert rules are applied.",
+      "exists": "An application with this name and environment exists already.",
+      "invalid": {
+        "name": "Enter a name of 1 to 128 characters without control characters.",
+        "env": "Enter an environment of 1 to 32 characters without control characters.",
+        "group": "The group has at most 64 characters, without control characters.",
+        "apdex": "Apdex T is a whole number of milliseconds from 1 to 65535."
+      }
+    }
+  },
+  "pending": {
+    "title": "Pending registrations",
+    "description": "Agents of an application that is not registered yet, in an environment that does not register automatically. Approve to create the application and issue its token; the agents connect on their next retry.",
+    "approve": "Approve",
+    "reject": "Reject",
+    "approveTitle": "Approve registration",
+    "approveImpact": "Creates the application and issues one agent token, shown once. Agents of the request connect on their next retry.",
+    "rejectTitle": "Reject registration",
+    "rejectImpact": "Removes the request. The agent keeps retrying, so it comes back unless the agent is stopped or reconfigured.",
+    "noToken": "The application was created, but it has 5 active tokens already, so no token was issued. Revoke one on the Tokens screen and issue a new one.",
+    "column": {
+      "name_env": "Name · environment",
+      "host": "Host",
+      "first_attempt": "First attempt",
+      "last_attempt": "Last attempt",
+      "attempts": "Attempts"
+    },
+    "empty": {
+      "title": "No registration is waiting.",
+      "description": "Agents of unregistered applications appear here when their environment asks for approval."
+    }
+  },
+  "instances": {
+    "title": "Instances",
+    "tabList": "Instances",
+    "tabCollection": "Collection health",
+    "showArchived": "Archived instances",
+    "autoArchive": "Instances without a connection for {{days, number}} days are archived automatically; a reconnect lists them again. Only archived instances can be deleted.",
+    "column": {
+      "state": "State",
+      "name": "Instance",
+      "agent_version": "Agent version",
+      "config_hash": "Configuration hash",
+      "last_heartbeat": "Last heartbeat",
+      "drops": "Drops (24 h)",
+      "clock_skew": "Clock offset",
+      "modules_disabled": "Disabled modules",
+      "ip_mode": "IP capture"
+    },
+    "compatOld": "Outdated",
+    "compatUnsupported": "Not supported",
+    "drift": "differs",
+    "noModulesDisabled": "None",
+    "ipMode": {
+      "full": "Full",
+      "masked": "Masked",
+      "off": "Off"
+    },
+    "archive": "Archive",
+    "archiveConnected": "Only an instance that is not connected can be archived.",
+    "archiveTitle": "Archive instance",
+    "archiveImpact": "Hides the instance from the instance list. Its data stays; a reconnect lists it again.",
+    "delete": "Delete",
+    "deleteTitle": "Delete instance",
+    "deleteImpact": "Deletes the archived instance and its command history. Its events and collected data stay until their retention ends.",
+    "noApp": {
+      "title": "No application yet.",
+      "description": "Register an application on the Applications screen, then attach an agent."
+    },
+    "empty": {
+      "title": "No instance of this application.",
+      "description": "Attach the agent with the install guide of the application; its instances appear here when they connect."
+    },
+    "emptyArchived": {
+      "title": "No archived instance.",
+      "description": "Instances are archived after 7 days without a connection, or by an operator."
+    }
+  },
+  "collection": {
+    "title": "Collection health ranking",
+    "sortBy": "Rank by",
+    "help": "Totals over the selected time range. A dash means no source, not zero.",
+    "column": {
+      "name": "Instance",
+      "drops": "Agent drops",
+      "lag_s": "Ingest lag",
+      "skew_ms": "Clock offset",
+      "excluded": "Excluded requests"
+    },
+    "empty": {
+      "title": "No instance reported collection data in this range.",
+      "description": "Widen the time range, or check that the agents are connected."
+    }
+  },
+  "tokens": {
+    "title": "Agent tokens",
+    "help": "Agents authenticate with a token of their application. A badge marks tokens that expire within {{days, number}} days.",
+    "issue": "Issue token",
+    "rotate": "Rotate",
+    "revoke": "Revoke",
+    "column": {
+      "prefix": "Token",
+      "created_by": "Issued by",
+      "created_at": "Issued",
+      "expires_at": "Expires",
+      "last_used_at": "Last used",
+      "instances_using": "Live sessions",
+      "state": "State"
+    },
+    "createdBySystem": "Server",
+    "noExpiry": "Never",
+    "expiring": "Expires soon",
+    "graceUntil": "old token valid until",
+    "state": {
+      "active": "Active",
+      "rotating": "Rotating",
+      "revoked": "Revoked",
+      "expired": "Expired"
+    },
+    "empty": {
+      "title": "No token for this application.",
+      "description": "Issue a token and save it in the token file of each host before attaching the agent."
+    },
+    "issueTitle": "Issue agent token",
+    "issueImpact": "A new token for this application. It is shown once; Argos keeps only its hash.",
+    "expiresDays": "Expires in (days)",
+    "rotateTitle": "Rotate token",
+    "rotateImpact": "Issues a new token, shown once. The current token keeps working for {{days, number}} days so that you can replace it on every host.",
+    "revokeTitle": "Revoke token",
+    "revokeImpact_one": "The token stops working at once. Its {{count, number}} live agent session ends within 5 seconds.",
+    "revokeImpact_other": "The token stops working at once. Its {{count, number}} live agent sessions end within 5 seconds.",
+    "revokeSessions_one": "{{count, number}} live agent session ends immediately.",
+    "revokeSessions_other": "{{count, number}} live agent sessions end immediately.",
+    "reason": "Reason (required, kept in the audit log)"
+  },
+  "install": {
+    "title": "Install guide:",
+    "close": "Close",
+    "copy": "Copy",
+    "copied": "Copied.",
+    "copyFailed": "Could not copy. Select the text and copy it yourself.",
+    "tokenTitle": "1. Token file",
+    "token": "Save the application's agent token in {{file}} on each host (owner only, permissions 0600). The token is never part of these snippets.",
+    "tokensLink": "Issue a token",
+    "addressNote": "The collector address is the host this browser reached, port 9100. If agents reach Argos through another address (proxy, NAT), use that one; the token issue answer shows the configured address.",
+    "javaagentTitle": "2. JVM options",
+    "javaagentHelp": "Add these options to the application's JVM, for example in JAVA_OPTS.",
+    "ymlTitle": "Or: argos-agent.yml",
+    "ymlHelp": "Put the settings in argos-agent.yml next to the agent jar and start the JVM with {{line}}.",
+    "checkTitle": "3. Check before you start",
+    "checkHelp": "Runs on the host without attaching to the application: configuration, token file, collector connection and supported libraries.",
+    "compatTitle": "Compatibility",
+    "compat": "Supported JDKs, servers, frameworks and drivers: section \"Compatibility targets (1.0)\" of README.md in the Argos distribution, and docs/agent-config.md for every agent setting.",
+    "canaryTitle": "Canary rollout",
+    "canary": {
+      "one": "Attach the agent to one instance first.",
+      "selfDiag": "Check that its self-diagnosis reports no error and it is UP on the Instances screen.",
+      "compare": "Compare its response time and error rate with an instance without the agent for a while.",
+      "rollout": "Then roll out to the remaining instances."
+    }
+  },
+  "users": {
+    "title": "Users",
+    "search": "User name",
+    "create": "New user",
+    "column": {
+      "username": "User name",
+      "roles": "Role",
+      "enabled": "Enabled",
+      "locked": "Locked",
+      "must_change_password": "Must change password",
+      "pii": "Personal data",
+      "created_at": "Created"
+    },
+    "role": {
+      "viewer": "Viewer",
+      "operator": "Operator",
+      "admin": "Administrator"
+    },
+    "lockedUntil": "until",
+    "piiView": "Can view",
+    "piiAdminOnly": "Administrators only",
+    "enable": "Enable",
+    "disable": "Disable",
+    "revokeSessions": "End sessions",
+    "unlock": "Unlock",
+    "resetPassword": "Set password",
+    "delete": "Delete",
+    "selfDelete": "You cannot delete or disable your own account.",
+    "empty": {
+      "title": "No users.",
+      "description": "Create a user with the role they need."
+    },
+    "noMatch": {
+      "title": "No user matches this name.",
+      "description": "Change or clear the name filter."
+    },
+    "createTitle": "New user",
+    "createImpact": "Argos generates an initial password, shown once. Give it to the user privately.",
+    "mustChange": "The user must change the password at the first login",
+    "roleTitle": "Change role",
+    "roleImpact": "The user becomes {{role}}. Their sessions end now and the new role applies at the next login.",
+    "roleOk": "Apply",
+    "enableTitle": "Enable user",
+    "enableImpact": "The user can log in again.",
+    "disableTitle": "Disable user",
+    "disableImpact": "The user cannot log in, and their sessions end now.",
+    "piiTitle": "Personal data permission",
+    "piiGrantImpact": "The administrator can view full bind parameters; every view is audited.",
+    "piiRevokeImpact": "The administrator can no longer view full bind parameters.",
+    "sessionsImpact": "Every session of the user ends now; open pages return to the login.",
+    "unlockImpact": "Lifts the lockout after failed logins.",
+    "resetImpact": "Sets a new password the user must change at the next login. Their sessions end now.",
+    "newPassword": "New password",
+    "passwordHelp": "At least {{min, number}} characters; the server also refuses common passwords.",
+    "deleteTitle": "Delete user",
+    "deleteImpact": "The account is anonymised and disabled and its sessions end. The audit log keeps its name. The last administrator cannot be deleted."
+  },
+  "about": {
+    "title": "About Argos",
+    "serverVersion": "Server version",
+    "commit": "Commit",
+    "uiVersion": "UI version",
+    "protocol": "Agent protocol version",
+    "uptime": "Server uptime",
+    "supportPolicy": "Support policy",
+    "supportPolicyAt": "See",
+    "noSupportPolicy": "Not given by this build.",
+    "versionMismatch": "The UI and the server report different versions. Reload the page; if it stays, the server serves an older UI build.",
+    "agentVersions": "Agent versions in use",
+    "agentVersion": "Agent version",
+    "unknownVersion": "Not reported",
+    "instances": "Instances",
+    "noAgents": {
+      "title": "No agent is registered.",
+      "description": "Attach an agent with the install guide of an application."
+    }
+  },
+  "licenses": {
+    "title": "Open-source licenses",
+    "description": "Third-party components shipped with the server, the UI and the agent, as this build lists them.",
+    "part": {
+      "server": "Server",
+      "ui": "Web UI",
+      "agent": "Agent"
+    },
+    "column": {
+      "name": "Component",
+      "version": "Version",
+      "license": "License"
+    },
+    "emptyTitle": "No third-party component listed.",
+    "emptyDescription": "This part lists no component.",
+    "truncated": "The list is longer than shown; see the NOTICE file of the distribution for all of it.",
+    "notIncluded": "Not included in this build.",
+    "unreadable": "This build's list could not be read.",
+    "next": "Release builds include the list. Until then, see the NOTICE and LICENSE files of the distribution and the THIRD-PARTY notices inside the agent jar."
+  },
+  "config": {
+    "title": "Configuration changes",
+    "empty": {
+      "noAppsTitle": "No applications yet",
+      "noAppsDescription": "Register an application under Applications and connect an agent, then change its configuration here.",
+      "chooseTitle": "Choose an application",
+      "chooseDescription": "Pick the application whose agents you want to configure.",
+      "noInstancesTitle": "No instances",
+      "noInstancesDescription": "No agent of this application has connected yet. Start one with the install guide, then change its configuration here."
+    },
+    "changeStatus": {
+      "previewed": "Previewed",
+      "applying": "Applying",
+      "applied": "Applied",
+      "superseded": "Superseded",
+      "unknown": "Unknown"
+    },
+    "resultStatus": {
+      "applied": "Applied",
+      "partial": "Partly applied",
+      "rejected": "Rejected",
+      "offline": "No answer",
+      "pending": "Not connected",
+      "unknown": "Unknown"
+    },
+    "driftReason": {
+      "notAllowed": "not allowed there",
+      "rejected": "rejected by the agent",
+      "pending": "not delivered yet",
+      "configHash": "configuration differs",
+      "unknown": "differs"
+    },
+    "kind": {
+      "config": "Configuration",
+      "revert": "Revert",
+      "killSwitch": "Kill switch",
+      "unknown": "Other"
+    },
+    "error": {
+      "keyNotAllowed": "No target instance allows {{key}} to be changed remotely. Change it in the local argos-agent.yml, or add it to remote-config.allow there first.",
+      "unknownKey": "{{key}} is not an agent configuration key. Check the spelling.",
+      "immutableKey": "{{key}} can only be changed in the local argos-agent.yml.",
+      "invalidValue": "The value of {{key}} is not valid for this key. Check its type and range.",
+      "reduceMasking": "{{key}} would drop a mask pattern the server holds. Mask patterns can only be added remotely.",
+      "killSwitchKey": "Use the kill switch section to turn instrumentation off or on.",
+      "invalidState": "This change was already applied or replaced by a newer one. Refresh the history.",
+      "rateLimited": "Too many changes. Wait a moment and try again.",
+      "forbidden": "Only administrators can change the configuration.",
+      "other": "The change failed. Try again."
+    },
+    "problem": {
+      "noChanges": "Enter a new value for at least one key.",
+      "tooManyKeys": "At most 64 keys per change.",
+      "noTargets": "Choose at least one instance.",
+      "tooManyTargets": "At most 100 instances per change.",
+      "reasonRequired": "Enter the reason for the change.",
+      "reasonTooLong": "The reason is longer than 1 KB."
+    },
+    "current": {
+      "title": "Current configuration",
+      "caption": "Current configuration of the reference instance",
+      "reference": "Effective configuration of",
+      "offline": "offline",
+      "column": {
+        "key": "Key",
+        "value": "Value",
+        "source": "Source",
+        "drift": "Instances that differ",
+        "change": "New value"
+      },
+      "localHint": "Set by the agent's own file, environment or default; the server does not see it.",
+      "source": {
+        "server": "Server",
+        "local": "Local agent"
+      },
+      "newValue": "New value of {{key}}",
+      "unsetPlaceholder": "Remove the server value",
+      "unset": "Remove",
+      "lockedLocal": "Change it in the local argos-agent.yml",
+      "lockedKillSwitch": "Use the kill switch below",
+      "lockedHelp": "Locked keys are not in every instance's remote-config.allow: change them in the local argos-agent.yml.",
+      "hashDrift_one": "{{count}} instance runs a configuration that differs from the others:",
+      "hashDrift_other": "{{count}} instances run a configuration that differs from the others:"
+    },
+    "reason": {
+      "label": "Reason (required)",
+      "help": "Recorded with the change and in the audit log, at most 1 KB."
+    },
+    "targets": {
+      "label": "Apply to",
+      "all_one": "Every instance ({{count}})",
+      "all_other": "Every instance ({{count}})",
+      "some": "Chosen instances"
+    },
+    "preview": "Preview the change",
+    "diff": {
+      "title": "Review the change",
+      "caption": "Values before and after the change",
+      "key": "Key",
+      "before": "Before",
+      "after": "After",
+      "none": "(none)",
+      "removed": "(removed)",
+      "apply": "Apply",
+      "targetsAll": "Applies to every instance of the application.",
+      "targetsSome_one": "Applies to {{count}} chosen instance.",
+      "targetsSome_other": "Applies to {{count}} chosen instances.",
+      "rejected": "These instances do not allow some keys remotely and will not get them:"
+    },
+    "results": {
+      "title": "Results by instance",
+      "caption": "Result of the change on each instance",
+      "status": "State",
+      "kind": "Kind",
+      "reason": "Reason",
+      "requestedAt": "Requested",
+      "appliedAt": "Applied",
+      "waiting": "Waiting for the agents to answer…",
+      "notApplied": "This change was previewed but not applied.",
+      "noTargets": "The change had no target instance.",
+      "column": {
+        "instance": "Instance",
+        "status": "Result",
+        "rejectedKeys": "Rejected keys",
+        "appliedAt": "Applied",
+        "error": "Error"
+      }
+    },
+    "revert": {
+      "action": "Revert to the previous configuration",
+      "title": "Revert this change?",
+      "impact": "The values the server held before this change are pushed to the same instances at once. Keys it did not hold before are removed from the server configuration; agents keep the pushed value until their restart or a reload.",
+      "ok": "Revert"
+    },
+    "history": {
+      "title": "Change history",
+      "caption": "Configuration changes of the application, newest first",
+      "column": {
+        "requestedAt": "Requested",
+        "kind": "Kind",
+        "status": "State",
+        "keys": "Keys",
+        "reason": "Reason",
+        "requestedBy": "By",
+        "open": "Results"
+      },
+      "open": "Show results",
+      "more": "Show older changes",
+      "emptyTitle": "No changes yet",
+      "emptyDescription": "Changes made here or with the kill switch appear in this list."
+    }
+  },
+  "killSwitch": {
+    "title": "Kill switch",
+    "stateOn": "The kill switch is on: the agents of this application do not trace.",
+    "stateOff": "The kill switch is off: the agents trace normally.",
+    "scope": "Instances",
+    "scopeAll_one": "Every instance ({{count}})",
+    "scopeAll_other": "Every instance ({{count}})",
+    "action": "Action",
+    "actionOn": "Stop tracing (kill switch on)",
+    "actionOff": "Resume tracing (kill switch off)",
+    "turnOn": "Turn the kill switch on",
+    "turnOff": "Turn the kill switch off",
+    "confirmOnTitle": "Stop tracing?",
+    "confirmOffTitle": "Resume tracing?",
+    "scopeAllImpact_one": "Every instance of the application ({{count}}):",
+    "scopeAllImpact_other": "Every instance of the application ({{count}}):",
+    "scopeOneImpact": "The instance",
+    "impactOn": "its agent stops tracing at once (no transactions, SQL or profiles are recorded); the application keeps running unchanged; metrics and the session stay; the instance shows WARN until the kill switch is turned off.",
+    "impactOff": "its agent resumes tracing at once and the WARN state clears.",
+    "result": "Kill switch: {{status}}",
+    "audited": "Recorded in the audit log."
+  },
+  "privacy": {
+    "title": "Privacy",
+    "mode": {
+      "full": "Full",
+      "masked": "Masked",
+      "off": "Off",
+      "plain": "Plain",
+      "hashed": "Hashed",
+      "whitelist": "Allow list",
+      "partial": "Partial",
+      "unknown": "Unknown"
+    },
+    "modes": {
+      "title": "Capture modes by instance",
+      "help": "What each instance actually runs; the agent's local setting wins over the server default.",
+      "chooseApp": "Choose an application to see the modes of its instances.",
+      "caption": "Capture modes of each instance",
+      "emptyTitle": "No instances",
+      "emptyDescription": "No agent of this application has connected yet.",
+      "column": {
+        "instance": "Instance",
+        "ip": "Client IP",
+        "userId": "User id",
+        "queryString": "Query string",
+        "sqlParam": "SQL parameters"
+      }
+    },
+    "settings": {
+      "title": "Server default",
+      "ipMode": "Default client IP mode",
+      "save": "Save",
+      "sourceSettings": "Set in the setup or here",
+      "sourceConfig": "From the server configuration",
+      "help": "Agents with a local capture.remote-ip keep theirs; nothing is pushed to running agents.",
+      "saved": "Saved. It applies to agents that connect without a local setting."
+    },
+    "delete": {
+      "title": "Delete a person's data",
+      "help": "Deletes the raw transactions and profiles of one user id or client address. The value is sent once and not kept on this page.",
+      "kind": "Delete by",
+      "kindUserId": "User id",
+      "kindIp": "Client IP",
+      "valueUserId": "User id",
+      "valueIp": "IP address",
+      "app": "Application",
+      "allApps": "Every application",
+      "from": "From",
+      "to": "To",
+      "rangeHelp": "At most {{days, number}} days per request.",
+      "submit": "Request deletion",
+      "confirmTitle": "Delete this data?",
+      "confirmImpact": "The raw transactions and profiles of this {{kind}} in the range are deleted. Rollups are not changed. This cannot be undone.",
+      "confirmOk": "Delete",
+      "problem": {
+        "valueRequired": "Enter the value to delete.",
+        "valueTooLong": "The value is longer than 1 KB.",
+        "ipInvalid": "Enter an IPv4 or IPv6 address.",
+        "rangeRequired": "Enter the start and end of the range.",
+        "rangeOrder": "The end must be after the start.",
+        "rangeTooLong": "The range is longer than 30 days. Split the request."
+      },
+      "error": {
+        "rateLimited": "At most 5 deletion requests an hour. Try again later.",
+        "valueInvalid": "The server refused the value. Check it and try again.",
+        "appNotFound": "The application no longer exists. Choose another one.",
+        "queueFull": "Too many deletions are running. Try again in a few minutes.",
+        "other": "The request failed. Try again."
+      }
+    },
+    "job": {
+      "status": {
+        "queued": "Queued",
+        "running": "Running",
+        "done": "Done",
+        "failed": "Failed",
+        "unknown": "Unknown"
+      }
+    },
+    "notice": {
+      "ipMaskedScope": "Some instances store masked addresses: for them the whole /24 (IPv4) or /48 (IPv6) network of the address matched, so rows of other clients in that network were deleted too.",
+      "interruptedByRestart": "The server restarted while the job ran. Request the deletion again.",
+      "other": "Note: {{code}}"
+    },
+    "jobs": {
+      "title": "Deletion jobs",
+      "caption": "Deletion jobs requested on this page",
+      "emptyTitle": "No deletion requested",
+      "emptyDescription": "Jobs you request appear here with their progress.",
+      "column": {
+        "createdAt": "Requested",
+        "kind": "By",
+        "status": "State",
+        "tables": "Partitions done",
+        "rows": "Rows",
+        "warnings": "Warnings",
+        "finishedAt": "Finished"
+      }
+    }
+  },
+  "retention": {
+    "title": "Data retention",
+    "help": "How many days each kind of data is kept. A shorter value drops older data at the next TTL run.",
+    "field": {
+      "xlog": "Transactions (XLog)",
+      "profile": "Profiles",
+      "statRaw": "Statistics (raw)",
+      "metricRaw": "Metrics (raw)",
+      "rollup1m": "Rollups (1 minute)",
+      "rollup1h": "Rollups (1 hour)"
+    },
+    "source": {
+      "settings": "Set here",
+      "config": "Server configuration"
+    },
+    "invalid": "Every value must be a whole number of days from {{min, number}} to {{max, number}}.",
+    "save": "Save retention",
+    "reset": "Discard",
+    "pendingDrops_one": "{{count}} partition outside the retention waits to be dropped.",
+    "pendingDrops_other": "{{count}} partitions outside the retention wait to be dropped.",
+    "applied_one": "Saved and applied. {{count}} partition is dropped in the background.",
+    "applied_other": "Saved and applied. {{count}} partitions are dropped in the background.",
+    "notApplied": "Saved. The new retention applies at the next server start or with argos-admin retention apply.",
+    "confirmTitle": "Shorten the retention?",
+    "confirmImpact": "Data older than the new retention of {{fields}} is dropped and cannot be recovered.",
+    "confirmCheck": "I understand that this data is deleted.",
+    "confirmOk": "Shorten"
+  },
+  "audit": {
+    "title": "Audit log",
+    "caption": "Audit records, newest first",
+    "filters": "Audit log filters",
+    "filter": {
+      "actor": "Actor",
+      "action": "Action",
+      "targetType": "Target type",
+      "targetId": "Target id"
+    },
+    "apply": "Apply filters",
+    "clear": "Clear filters",
+    "export": "Export CSV",
+    "exporting": "Exporting…",
+    "exportRateLimited": "At most 10 exports a minute. Try again shortly.",
+    "exportRetry": "At most 10 exports a minute. Try again in {{seconds, number}} s.",
+    "more": "Show older records",
+    "show": "Details",
+    "hide": "Hide",
+    "detailTitle": "Record details",
+    "reason": "Reason:",
+    "before": "Before",
+    "after": "After",
+    "emptyTitle": "No audit records",
+    "emptyDescription": "Nothing was recorded in the selected time range. Widen the range.",
+    "emptyFiltered": "No record matches the filters in this time range. Clear a filter or widen the range.",
+    "column": {
+      "ts": "Time",
+      "actor": "Actor",
+      "ip": "IP",
+      "action": "Action",
+      "target": "Target",
+      "result": "Result",
+      "requestId": "Request id",
+      "details": "Details"
+    },
+    "actorType": {
+      "user": "User",
+      "agent": "Agent",
+      "system": "System"
+    },
+    "result": {
+      "success": "Success",
+      "failure": "Failure",
+      "rejected": "Rejected"
+    }
+  }
+}

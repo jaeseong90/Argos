@@ -10,8 +10,9 @@ SELECT service_id AS sv,
        max(max_elapsed_ms) AS mx,
        sum(sum_sql_time_ms) AS sq,
        sum(sum_ext_time_ms) AS x,
-       sum(apdex_satisfied) AS sat,
-       sum(apdex_tolerating) AS tol,
+       sumIf(apdex_satisfied, kind != 'BATCH') AS sat,
+       sumIf(apdex_tolerating, kind != 'BATCH') AS tol,
+       sumIf(count, kind != 'BATCH') AS ac,
        quantilesDDMergeState(0.01, 0.5, 0.95, 0.99)(q_elapsed) AS q
 FROM {db}.{p}{rollup:service_stat_1h}
 WHERE app_id = {app:UInt32} AND kind IN {kinds:Array(String)}

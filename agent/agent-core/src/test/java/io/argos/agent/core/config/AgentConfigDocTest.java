@@ -134,11 +134,13 @@ class AgentConfigDocTest {
             .as(where + " warning: " + warning)
             .isTrue();
       }
-      if (text.contains("transaction.slow-stack.*")) {
-        // the extension example of remote-config.allow is read as a list, not ignored
+      if (text.contains("instrumentation.exclude-classes")) {
+        // the extension example of remote-config.allow is read as a list, not ignored: the
+        // default patterns it repeats and the key it adds (C-240 (4))
         assertThat(loaded.config().remoteConfigAllow())
             .as(where)
-            .contains("transaction.slow-stack.*", "capture.error-message-max-length");
+            .containsAll(AllowList.DEFAULT.patterns())
+            .contains("instrumentation.exclude-classes");
         extension = true;
       }
     }

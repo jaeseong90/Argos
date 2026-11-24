@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import type enActive from '../locales/en/active.json';
+import type enAdmin from '../locales/en/admin.json';
 import type enAlerts from '../locales/en/alerts.json';
 import enAuth from '../locales/en/auth.json';
 import type enCommands from '../locales/en/commands.json';
@@ -7,6 +8,7 @@ import enCommon from '../locales/en/common.json';
 import type enDashboard from '../locales/en/dashboard.json';
 import type enInstance from '../locales/en/instance.json';
 import type enOverview from '../locales/en/overview.json';
+import type enSearch from '../locales/en/search.json';
 import enShell from '../locales/en/shell.json';
 import type enStats from '../locales/en/stats.json';
 import type enTrace from '../locales/en/trace.json';
@@ -62,6 +64,8 @@ interface LazyCatalogs {
   alerts: typeof enAlerts;
   instance: typeof enInstance;
   commands: typeof enCommands;
+  admin: typeof enAdmin;
+  search: typeof enSearch;
 }
 
 /** Screen namespaces, loaded with the route that renders them (routeNamespaces.ts). */
@@ -78,6 +82,8 @@ export const lazyNamespaces = [
   'alerts',
   'instance',
   'commands',
+  'admin',
+  'search',
 ] as const satisfies readonly LazyNamespace[];
 
 /** English source catalogs of every namespace: the typed keys of i18next.d.ts. */

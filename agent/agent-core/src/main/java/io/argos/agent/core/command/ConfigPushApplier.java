@@ -416,8 +416,10 @@ public final class ConfigPushApplier {
 
   /**
    * SEC-25, 16 §5.6: a remote {@code instrumentation.custom-methods} with an item whose class
-   * pattern starts with a forbidden prefix is rejected ({@code forbidden_pattern}) as a whole; the
-   * message names the item position and the prefix, never the item text. Null when acceptable.
+   * pattern starts with a forbidden prefix is rejected ({@code forbidden_pattern}) as a whole, and
+   * so is one with an item that carries a step type suffix ({@code step_type_suffix}, ADR-0010
+   * C-237 (5)), both {@code FORBIDDEN_PATTERN}; the message names the item position and the prefix,
+   * never the item text. Null when acceptable.
    */
   static String forbiddenCustomMethods(String key, AgentConfig candidate) {
     if (!ConfigKeys.INSTRUMENTATION_CUSTOM_METHODS.equals(key)) {
@@ -432,6 +434,12 @@ public final class ConfigPushApplier {
             + (i + 1)
             + " starts with the forbidden prefix "
             + prefix;
+      }
+      if (CustomMethodPolicy.hasStepTypeSuffix(items.get(i))) {
+        return CustomMethodPolicy.REASON_STEP_TYPE_SUFFIX
+            + ": item "
+            + (i + 1)
+            + " has a step type suffix (custom methods always record METHOD steps)";
       }
     }
     return null;

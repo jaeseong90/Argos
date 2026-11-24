@@ -30,8 +30,7 @@ import {
 } from '../../../test/renderApp';
 import enAuth from '../../locales/en/auth.json';
 import koAuth from '../../locales/ko/auth.json';
-
-import { javaagentOptions } from './SetupFirstApp';
+import { javaagentOptions } from '../admin/install/javaagent';
 
 const FIND = { timeout: 5000 };
 /** A token of the server's shape (argos_ + 43 base64url characters); a test value. */
@@ -61,7 +60,10 @@ afterEach(() => {
   uninstallApiStub();
 });
 
-function issuedBody(expiresAt: string | null = '2027-11-23T00:00:00.000Z') {
+function issuedBody(
+  expiresAt: string | null = '2027-11-23T00:00:00.000Z',
+  collectorAddress: string | null = null,
+) {
   return envelope(
     {
       token_id: '0b6f0c9e-5d1c-4a43-9a51-6f1b8f1d2c3e', // gitleaks:allow (test fixture, not a real token)
@@ -71,6 +73,7 @@ function issuedBody(expiresAt: string | null = '2027-11-23T00:00:00.000Z') {
       expires_at: expiresAt,
       rotated_token_id: null,
       grace_until: null,
+      collector_address: collectorAddress,
     },
     {},
     201,
@@ -144,6 +147,8 @@ describe('C-168 (2) setup wizard first application (docs/15 §9.11)', () => {
     expect(snippet).toHaveTextContent('-Dargos.server.token-file=/opt/argos-agent/token');
     expect(snippet).toHaveTextContent('-Dargos.app.name=order-api');
     expect(snippet).toHaveTextContent('-Dargos.app.env=stage');
+    // No argos.collector.public-address on the server: the browser's host and port 9100.
+    expect(snippet).toHaveTextContent('-Dargos.server.address=localhost:9100');
     expect(snippet.textContent).not.toContain(TOKEN);
 
     await user.click(screen.getByTestId('setup-first-app-copy'));
@@ -180,6 +185,20 @@ describe('C-168 (2) setup wizard first application (docs/15 §9.11)', () => {
     expect(await screen.findByTestId('setup-first-app-token-expiry', {}, FIND)).toHaveTextContent(
       enAuth.setup.firstApp.tokenNoExpiry,
     );
+  });
+
+  it('C-231 (9) the snippet uses the collector address of the token response (argos.collector.public-address)', async () => {
+    stub.on('POST /api/v1/apps', () => envelope(appBody(7, 'order-api', 'prod'), {}, 201));
+    stub.on(TOKEN_ROUTE, () => issuedBody(undefined, 'collector.example.com:443'));
+    const { user } = await toFirstApp();
+    await register(user, 'order-api');
+    const snippet = await screen.findByTestId('setup-first-app-snippet', {}, FIND);
+    expect(snippet).toHaveTextContent('-Dargos.server.address=collector.example.com:443');
+    expect(snippet.textContent).not.toContain('localhost:9100');
+    expect(javaagentOptions('a', 'b', 'h', '  [::1]:9443 ')).toContain(
+      '-Dargos.server.address=[::1]:9443',
+    );
+    expect(javaagentOptions('a', 'b', 'h', '')).toContain('-Dargos.server.address=h:9100');
   });
 
   it('C-168 (2) is skippable: the finish keeps the token create command hint (C-173)', async () => {

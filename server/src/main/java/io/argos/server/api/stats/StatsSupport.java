@@ -36,12 +36,10 @@ public class StatsSupport {
 
   private final TimeQueries queries;
   private final DictionaryNames dictionary;
-  private final ArgosProperties.Retention retention;
 
   public StatsSupport(TimeQueries queries, DictionaryNames dictionary, ArgosProperties properties) {
     this.queries = queries;
     this.dictionary = dictionary;
-    this.retention = properties.retention();
   }
 
   /** The queries. */
@@ -91,17 +89,17 @@ public class StatsSupport {
 
   /** The raw retention of xlog. */
   public Duration xlogRetention() {
-    return retention.xlog();
+    return queries.sources().xlogRetention();
   }
 
   /** The raw retention of profile_step. */
   public Duration profileRetention() {
-    return retention.profile();
+    return queries.sources().profileRetention();
   }
 
   /** The raw retention of the statistics. */
   public Duration statRetention() {
-    return retention.stat();
+    return queries.sources().statRetention();
   }
 
   /**

@@ -537,6 +537,27 @@ describe('dashboard: states (docs/15 §7, 05 §2.0-8)', () => {
     );
     expect(screen.getByTestId('dashboard-tile-tps')).toHaveAttribute('data-value', 'null');
     expect(screen.getByTestId('dashboard-chart-heap-gc')).toBeInTheDocument();
+    // Viewers cannot open the instance administration: the note stays text (C-211 (2)).
+    expect(screen.queryByTestId('dashboard-empty-excluded-link')).toBeNull();
+  });
+
+  it('C-211 (2) the "N excluded" note links operators to the collection ranking with the same range', async () => {
+    answerDashboard({ count: 0 });
+    signedIn(stub, { roles: ['operator'] });
+    const app = renderApp(`/apps/1/dashboard?${RANGE_QUERY}&env=prod`);
+    addDashboardCatalogs();
+    await screen.findByTestId('dashboard-page', {}, FIND);
+    await ready();
+    const link = await screen.findByTestId('dashboard-empty-excluded-link', {}, FIND);
+    expect(link).toHaveTextContent('1,204 requests excluded in this range');
+    const href = new URL(link.getAttribute('href') ?? '', 'http://localhost');
+    expect(href.pathname).toBe('/admin/instances');
+    expect(href.searchParams.get('tab')).toBe('collection');
+    expect(href.searchParams.get('app')).toBe('1');
+    expect(href.searchParams.get('from')).toBe(FROM_ISO);
+    expect(href.searchParams.get('to')).toBe(TO_ISO);
+    expect(href.searchParams.get('env')).toBe('prod');
+    expect(app.url()).toContain('/apps/1/dashboard');
   });
 
   it('T-UI-006 renders in Korean from the dashboard catalog', async () => {

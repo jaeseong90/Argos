@@ -41,6 +41,7 @@ io.argos.agent.core.boot.TransformRecorder$1
 io.argos.agent.core.boot.TransformRecorder$2
 io.argos.agent.core.boot.WatchThread
 io.argos.agent.core.boot.WatchThread$1
+io.argos.agent.core.command.CustomMethodPolicy
 io.argos.agent.core.config.AgentConfig
 io.argos.agent.core.config.ConfigInputs
 io.argos.agent.core.config.ConfigKeys
@@ -131,6 +132,9 @@ io.argos.agent.instrumentation.api.TypeInstrumentation
 io.argos.agent.instrumentation.api.TypeTransformer
 io.argos.agent.instrumentation.api.Witness
 io.argos.agent.instrumentation.api.Witness$1
+io.argos.agent.instrumentation.custom.CustomMatchers$Types
+io.argos.agent.instrumentation.custom.CustomMethodInstrumentation
+io.argos.agent.instrumentation.custom.CustomModule
 io.argos.agent.instrumentation.executor.ExecutorInstrumentations
 io.argos.agent.instrumentation.executor.ExecutorInstrumentations$ApplicationTasks
 io.argos.agent.instrumentation.executor.ExecutorInstrumentations$AsyncTasks
@@ -166,8 +170,17 @@ io.argos.agent.instrumentation.httpclient.reactornetty.ReactorNettyWitness
 io.argos.agent.instrumentation.httpclient.reactornetty.ReactorNettyWitness$UnsupportedVersionException
 io.argos.agent.instrumentation.jdbc.JdbcInstrumentation
 io.argos.agent.instrumentation.jdbc.JdbcModule
+io.argos.agent.instrumentation.logging.LoggingModule
+io.argos.agent.instrumentation.logging.LoggingModule$1
+io.argos.agent.instrumentation.logging.LoggingModule$2
+io.argos.agent.instrumentation.logging.LoggingModule$3
 io.argos.agent.instrumentation.pool.PoolInstrumentation
 io.argos.agent.instrumentation.pool.PoolModule
+io.argos.agent.instrumentation.scheduler.SchedulerModule
+io.argos.agent.instrumentation.scheduler.SchedulerModule$BatchSteps
+io.argos.agent.instrumentation.scheduler.SchedulerModule$Named
+io.argos.agent.instrumentation.scheduler.SchedulerModule$QuartzJobs
+io.argos.agent.instrumentation.scheduler.SchedulerModule$ScheduledRunnables
 io.argos.agent.instrumentation.servlet.ContainerResponseInstrumentation
 io.argos.agent.instrumentation.servlet.JakartaFilterAdvice
 io.argos.agent.instrumentation.servlet.JakartaServletAdvice

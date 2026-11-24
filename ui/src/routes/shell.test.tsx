@@ -73,12 +73,13 @@ async function shellAt(path: string, roles: string[] = ['viewer']) {
 
 describe('shell: route tree and placeholders (docs/15 §3.1)', () => {
   it('renders the shell: top bar, side menu and the placeholder of a later screen', async () => {
-    // /alerts got its screen (WO-38); the administration screens are still placeholders (WO-39).
-    await shellAt('/admin/apps', ['admin']);
+    // The administration screens got their components (WO-39); the application map (F-U11) is
+    // still a placeholder.
+    await shellAt('/apps/1/map', ['admin']);
     expect(screen.getByTestId('topbar')).toBeInTheDocument();
     expect(screen.getByTestId('side-menu')).toBeInTheDocument();
     const pending = await screen.findByTestId('route-pending', {}, FIND);
-    expect(pending).toHaveAttribute('data-owner', 'WO-39');
+    expect(pending).toHaveAttribute('data-owner', 'F-U11 (S)');
     // Placeholders show no data: only the empty state with the next action.
     expect(within(pending).getByTestId('empty-state')).toBeInTheDocument();
     expect(screen.getByTestId('time-range-picker')).toBeInTheDocument();

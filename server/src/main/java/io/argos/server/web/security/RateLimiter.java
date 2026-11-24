@@ -62,6 +62,12 @@ public class RateLimiter {
   /** Keys per bucket kind: users of heavy requests. */
   static final int MAX_HEAVY_KEYS = 10_000;
 
+  /** Keys per bucket kind: users of privacy deletions. */
+  static final int MAX_PRIVACY_KEYS = 1_000;
+
+  /** Privacy deletion requests per user and hour (16 §7.13, ADR-0010 C-136 (2)). */
+  public static final int PRIVACY_DELETES_PER_HOUR = 5;
+
   private final Map<RateLimitBucket, Limit> limits;
   private final Map<RateLimitBucket, Cache<String, Bucket>> buckets =
       new EnumMap<>(RateLimitBucket.class);
@@ -106,7 +112,8 @@ public class RateLimiter {
   /**
    * The limits of the enforced buckets from {@code argos.ratelimit.*}: login, refresh and setup per
    * address and minute; CSP reports per address and minute; the general API per session and second
-   * with its burst capacity; heavy requests per user and minute.
+   * with its burst capacity; heavy requests per user and minute; privacy deletions per user and
+   * hour (fixed, 16 §7.13).
    */
   public static Map<RateLimitBucket, Limit> limits(ArgosProperties.RateLimit settings) {
     Map<RateLimitBucket, Limit> limits = new LinkedHashMap<>();
@@ -130,6 +137,13 @@ public class RateLimiter {
     limits.put(
         RateLimitBucket.HEAVY,
         new Limit(perMinuteHeavy, perMinuteHeavy, Duration.ofMinutes(1), MAX_HEAVY_KEYS));
+    limits.put(
+        RateLimitBucket.PRIVACY_DELETE,
+        new Limit(
+            PRIVACY_DELETES_PER_HOUR,
+            PRIVACY_DELETES_PER_HOUR,
+            Duration.ofHours(1),
+            MAX_PRIVACY_KEYS));
     return limits;
   }
 

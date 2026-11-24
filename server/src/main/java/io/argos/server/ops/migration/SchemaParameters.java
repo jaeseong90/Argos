@@ -23,16 +23,19 @@ import java.util.regex.Pattern;
  *       argos.retention.profile}, {@code rollup-1m-days} = {@code argos.retention.rollup-1m},
  *       {@code rollup-1h-days} = {@code argos.retention.rollup-1h};
  *   <li>{@code raw-days} (the tables {@code metric}, {@code sql_stat_raw} and {@code ext_stat_raw})
- *       = {@code argos.retention.stat} = {@code argos.retention.metric}: V001 has one retention for
- *       the three tables, so the two keys must be equal, otherwise the start is refused (reported
- *       to the PM as a design conflict of 12 §10 and V001);
+ *       = {@code argos.retention.metric}: V001 has one placeholder for the three tables. The two
+ *       keys {@code argos.retention.stat} and {@code argos.retention.metric} may differ (WO-28,
+ *       ADR-0010 C-112 key split): a new table is created with the metric retention and the
+ *       retention step that follows the migration ({@code io.argos.server.ops.retention}) sets
+ *       {@code sql_stat_raw} and {@code ext_stat_raw} to the stat retention with {@code MODIFY
+ *       TTL};
  *   <li>every value is a whole number of days, at least one day.
  * </ul>
  *
  * The values are applied when a table is created; changing the retention of an existing table
- * ({@code MODIFY TTL}) is WO-28 (ADR-0010 C-99). Because the checksum is computed before the
- * environment placeholders are substituted (C-56), another database name, prefix or retention never
- * changes a checksum.
+ * ({@code MODIFY TTL}) is the retention step of WO-28 (ADR-0010 C-99). Because the checksum is
+ * computed before the environment placeholders are substituted (C-56), another database name,
+ * prefix or retention never changes a checksum.
  *
  * @param database database name ({@code {db}})
  * @param tablePrefix table name prefix ({@code {p}})
@@ -90,27 +93,25 @@ public record SchemaParameters(
   public static SchemaParameters from(ArgosProperties properties) {
     ArgosProperties.ClickHouse clickhouse = properties.clickhouse();
     ArgosProperties.Retention retention = properties.retention();
-    int stat = days("argos.retention.stat", retention.stat());
+    // Validated although the template has no placeholder of its own for it (key split, C-112).
+    days("argos.retention.stat", retention.stat());
     int metric = days("argos.retention.metric", retention.metric());
-    if (stat != metric) {
-      throw new IllegalArgumentException(
-          "argos.retention.stat ("
-              + stat
-              + "d) and argos.retention.metric ("
-              + metric
-              + "d) must be equal: the ClickHouse schema has one raw retention for metric,"
-              + " sql_stat_raw and ext_stat_raw");
-    }
     Map<String, Integer> days = new LinkedHashMap<>();
     days.put("xlog-days", days("argos.retention.xlog", retention.xlog()));
     days.put("profile-days", days("argos.retention.profile", retention.profile()));
-    days.put("raw-days", stat);
+    days.put("raw-days", metric);
     days.put("rollup-1m-days", days("argos.retention.rollup-1m", retention.rollup1m()));
     days.put("rollup-1h-days", days("argos.retention.rollup-1h", retention.rollup1h()));
     return new SchemaParameters(clickhouse.database(), clickhouse.tablePrefix(), days);
   }
 
-  private static int days(String key, Duration value) {
+  /**
+   * Whole days of a retention value.
+   *
+   * @throws IllegalArgumentException when the value is not a whole number of days between 1 and
+   *     36500
+   */
+  public static int days(String key, Duration value) {
     if (value == null
         || value.isNegative()
         || value.isZero()

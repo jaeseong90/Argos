@@ -388,6 +388,19 @@ test.describe('setup wizard first application', () => {
           `-Dargos.app.name=${name}`,
         );
         await expect(page.getByTestId('setup-first-app-snippet')).not.toContainText(token);
+        // ADR-0010 C-231 (9): the collector address is the server's argos.collector.public-address
+        // from the token response, else the host this browser reached the server on, port 9100.
+        const issuedBody = (await issuedResponse.json()) as {
+          data: { collector_address?: string | null };
+        };
+        const publicAddress = issuedBody.data.collector_address ?? null;
+        const expectedAddress =
+          publicAddress !== null && publicAddress.trim() !== ''
+            ? publicAddress.trim()
+            : `${new URL(page.url()).hostname}:9100`;
+        await expect(page.getByTestId('setup-first-app-snippet')).toContainText(
+          `-Dargos.server.address=${expectedAddress}`,
+        );
         // docs/15 §13: no horizontal page scroll at 1366x768 with the token and options shown.
         await page.setViewportSize({ width: 1366, height: 768 });
         const wide = await horizontalOverflow(page);
@@ -495,6 +508,82 @@ test.describe('own sessions', () => {
       // The browser's own session goes on.
       await page.reload();
       await expect(page.getByTestId('account-page')).toBeVisible();
+    },
+  );
+});
+
+test.describe('setup wizard bootstrap (UI part of T-SEC-47)', () => {
+  test.use({ role: null });
+
+  test(
+    'T-SEC-47 (UI) with an administrator the wizard is closed; a missing or used setup token is refused with the token message; the IP address step is required (masked by default, three modes explained)',
+    {
+      tag: '@security',
+      annotation: [
+        { type: 'req', description: 'SEC-47' },
+        {
+          type: 'note',
+          description:
+            'The closed wizard is the real server (an administrator exists: /setup/status answers needs_setup false). The token refusals route /setup/status and /setup/admin only (needs_setup, 403 of a used token); the server half is SetupBootstrapSecurityTest (ADR-0010 C-126, C-168 (2)).',
+        },
+      ],
+    },
+    async ({ page }) => {
+      // The real server: an administrator exists, so the wizard is closed.
+      await page.goto('/setup');
+      await expect(page.getByTestId('setup-not-found')).toBeVisible();
+      await expect(page.getByText(t('auth:setup.notFoundTitle'))).toBeVisible();
+      await expect(page.getByTestId('setup-wizard')).toHaveCount(0);
+      // Routed: the wizard open, a used token refused (403) by the setup call.
+      let adminCalls = 0;
+      let lastBody: unknown = null;
+      await page.route('**/api/v1/setup/status', (route) =>
+        route.fulfill({ json: enveloped({ needs_setup: true, server_version: 'e2e' }) }),
+      );
+      await page.route('**/api/v1/setup/admin', (route) => {
+        adminCalls += 1;
+        lastBody = route.request().postDataJSON() as unknown;
+        return route.fulfill({
+          status: 403,
+          json: {
+            error: {
+              code: 'forbidden',
+              message: 'The setup token is not valid',
+              request_id: 'e2e-setup-route',
+            },
+          },
+        });
+      });
+      await page.goto('/setup');
+      await expect(page.getByTestId('setup-wizard')).toBeVisible();
+      // No token: refused before any request.
+      await page.getByTestId('setup-next').click();
+      await expect(page.getByTestId('setup-error')).toHaveText(t('auth:setup.token.required'));
+      await page.getByTestId('setup-token-input').fill('e2e-used-setup-token');
+      await page.getByTestId('setup-next').click();
+      await page.getByTestId('setup-admin-username').fill('e2e-setup');
+      await page.getByTestId('setup-admin-password').fill('e2e-setup-password-0');
+      await page.getByTestId('setup-admin-confirm').fill('e2e-setup-password-0');
+      await page.getByTestId('setup-next').click();
+      // The IP address step comes before the administrator is created (C-126).
+      await expect(page.getByTestId('setup-ip-mode')).toBeVisible();
+      expect(adminCalls, 'nothing sent before the IP address step').toBe(0);
+      for (const mode of ['full', 'masked', 'off'] as const) {
+        await expect(page.getByTestId(`setup-ip-mode-${mode}`)).toBeVisible();
+        await expect(page.getByTestId('setup-ip-mode')).toContainText(
+          t(`auth:setup.ipMode.${mode}Help`),
+        );
+      }
+      await expect(page.getByTestId('setup-ip-mode-masked')).toBeChecked();
+      await page.getByTestId('setup-create').click();
+      // The used token: back on the token step with the token message.
+      await expect(page.getByTestId('setup-error')).toHaveText(t('auth:setup.error.token'));
+      await expect(page.getByTestId('setup-token-input')).toBeVisible();
+      expect(adminCalls).toBe(1);
+      expect(lastBody, 'the IP mode is part of the setup request').toMatchObject({
+        username: 'e2e-setup',
+        ip_mode: 'masked',
+      });
     },
   );
 });

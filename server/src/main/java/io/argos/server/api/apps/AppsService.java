@@ -6,7 +6,9 @@ import io.argos.server.api.dashboard.TimeQueries;
 import io.argos.server.api.error.ApiException;
 import io.argos.server.api.query.QueryLimits;
 import io.argos.server.api.query.SourcePlan;
+import io.argos.server.config.ArgosProperties;
 import io.argos.server.session.AgentSession;
+import io.argos.server.session.SessionSettings;
 import io.argos.server.storage.postgres.catalog.CatalogRepository;
 import io.argos.server.storage.postgres.catalog.CatalogRepository.AppRecord;
 import io.argos.server.storage.postgres.catalog.CatalogRepository.InstanceRecord;
@@ -52,9 +54,15 @@ public class AppsService {
   private final InstanceStates states;
   private final MetricKeys metrics;
   private final TimeQueries queries;
+  private final Map<String, Boolean> autoRegisterDefaults;
 
   public AppsService(
-      CatalogRepository catalog, InstanceStates states, MetricKeys metrics, TimeQueries queries) {
+      CatalogRepository catalog,
+      InstanceStates states,
+      MetricKeys metrics,
+      TimeQueries queries,
+      ArgosProperties properties) {
+    this.autoRegisterDefaults = properties.agent().autoRegister();
     this.catalog = catalog;
     this.states = states;
     this.metrics = metrics;
@@ -66,10 +74,14 @@ public class AppsService {
    * ids of all of them are read in one query for their up counts.
    */
   public List<AppViews.App> views(List<AppRecord> apps) {
+    List<Integer> appIds = apps.stream().map(AppRecord::id).toList();
     Map<Integer, List<Integer>> ids =
-        catalog.instanceIdsByApp(
-            apps.stream().map(AppRecord::id).toList(), InstanceStates.SUMMARY_INSTANCES_MAX);
-    return apps.stream().map(a -> view(a, ids.getOrDefault(a.id(), List.of()), null)).toList();
+        catalog.instanceIdsByApp(appIds, InstanceStates.SUMMARY_INSTANCES_MAX);
+    Map<Integer, Integer> tokens = catalog.activeTokenCounts(appIds, queries.now());
+    return apps.stream()
+        .map(
+            a -> view(a, ids.getOrDefault(a.id(), List.of()), tokens.getOrDefault(a.id(), 0), null))
+        .toList();
   }
 
   /**
@@ -81,11 +93,16 @@ public class AppsService {
         catalog
             .instanceIdsByApp(List.of(a.id()), InstanceStates.SUMMARY_INSTANCES_MAX)
             .getOrDefault(a.id(), List.of());
-    return view(a, ids, kinds(a.id()));
+    int tokens = catalog.activeTokenCounts(List.of(a.id()), queries.now()).getOrDefault(a.id(), 0);
+    return view(a, ids, tokens, kinds(a.id()));
   }
 
-  /** {@code instancesUp}: the instances in {@code UP} or {@code WARN} ({@link InstanceStates}). */
-  private AppViews.App view(AppRecord a, List<Integer> instanceIds, List<String> kinds) {
+  /**
+   * {@code instancesUp}: the instances in {@code UP} or {@code WARN} ({@link InstanceStates});
+   * {@code tokensActive}: the usable agent tokens ({@link CatalogRepository#activeTokenCounts}).
+   */
+  private AppViews.App view(
+      AppRecord a, List<Integer> instanceIds, int tokensActive, List<String> kinds) {
     return new AppViews.App(
         a.id(),
         a.name(),
@@ -93,7 +110,9 @@ public class AppsService {
         a.group(),
         a.instancesTotal(),
         states.summarize(instanceIds).up(),
-        a.autoRegister() ? "auto" : "approval",
+        tokensActive,
+        effectiveAutoRegister(a) ? "auto" : "approval",
+        a.autoRegister() == null,
         a.recommendedRulesApplied(),
         a.lastSeenAt(),
         a.apdexTMs(),
@@ -102,6 +121,15 @@ public class AppsService {
         a.registeredFromAppId(),
         kinds,
         a.appPackages());
+  }
+
+  /**
+   * The registration policy that applies to the application: its own ({@code apps.auto_register}),
+   * else the environment default {@code argos.agent.auto-register.<env>} (ADR-0010 C-231 (7)).
+   */
+  private boolean effectiveAutoRegister(AppRecord a) {
+    Boolean own = a.autoRegister();
+    return own != null ? own : SessionSettings.autoRegisters(autoRegisterDefaults, a.env());
   }
 
   /**

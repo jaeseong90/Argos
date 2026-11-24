@@ -20,6 +20,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -451,5 +452,77 @@ class ApdexReapplyIT {
     }
     assertThat(stamps(appA, day1, SERVICE_A)).containsExactly(List.of("500"));
     assertThat(digests()).isEqualTo(now);
+  }
+
+  @Test
+  @Order(5)
+  @DisplayName(
+      "T-SV-019d every apdex reapply run is audited: APDEX_REAPPLIED success with the range and"
+          + " the rows re-stamped (actor argos-admin, target app), failure for the refused runs")
+  void audited() throws Exception {
+    List<String> rows = auditRows("APDEX_REAPPLIED");
+    assertThat(rows).contains("system argos-admin app " + appA + " success null");
+    assertThat(rows)
+        .contains(
+            "system argos-admin app 999999 failure failure",
+            "system argos-admin app " + appA + " failure usage",
+            "system argos-admin app " + appA + " failure busy");
+    long perDay = 2L * MINUTES * ELAPSED.length;
+    assertThat(auditAfter("APDEX_REAPPLIED"))
+        .anySatisfy(
+            a ->
+                assertThat(a)
+                    .contains("\"from\": \"" + day2 + "\"")
+                    .contains("\"to\": \"" + day3 + "\"")
+                    .contains("\"rows_changed\": " + (2 * perDay)));
+  }
+
+  /**
+   * The audit rows of {@code action}, oldest first, as {@code "<actor_type> <actor_name>
+   * <target_type> <target_id> <result> <reason>"} (ADR-0010 C-220 (3)).
+   */
+  private static List<String> auditRows(String action) throws Exception {
+    List<String> rows = new ArrayList<>();
+    try (Connection c = env.connect(PgAccount.APP);
+        PreparedStatement ps =
+            c.prepareStatement(
+                "SELECT actor_type, actor_name, target_type, target_id, result, reason FROM"
+                    + " argos.audit_logs WHERE action = ? ORDER BY ts, id")) {
+      ps.setString(1, action);
+      try (ResultSet rs = ps.executeQuery()) {
+        while (rs.next()) {
+          rows.add(
+              rs.getString(1)
+                  + " "
+                  + rs.getString(2)
+                  + " "
+                  + rs.getString(3)
+                  + " "
+                  + rs.getString(4)
+                  + " "
+                  + rs.getString(5)
+                  + " "
+                  + rs.getString(6));
+        }
+      }
+    }
+    return rows;
+  }
+
+  /** The {@code after} JSON of the audit rows of {@code action}, oldest first. */
+  private static List<String> auditAfter(String action) throws Exception {
+    List<String> rows = new ArrayList<>();
+    try (Connection c = env.connect(PgAccount.APP);
+        PreparedStatement ps =
+            c.prepareStatement(
+                "SELECT after::text FROM argos.audit_logs WHERE action = ? ORDER BY ts, id")) {
+      ps.setString(1, action);
+      try (ResultSet rs = ps.executeQuery()) {
+        while (rs.next()) {
+          rows.add(String.valueOf(rs.getString(1)));
+        }
+      }
+    }
+    return rows;
   }
 }

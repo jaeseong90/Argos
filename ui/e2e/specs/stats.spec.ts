@@ -20,8 +20,9 @@
 //     image only, e2e:docker).
 //   - T-E2E-stats-37: agent-classified TIMEOUT and CONNECT_FAIL of the traffic agent's hop calls in
 //     the external statistics (WO-16, ADR-0010 C-223 (7)), DOM = API.
-//   - T-E2E-stats-38..39, T-E2E-errors-4: test.fixme for what has no data or screen yet, each
-//     naming its owner.
+//   - T-E2E-errors-4 (T-ACPT-13): a new group of real agent data has a non-empty representative
+//     stack and its top frame, both = API (WO-19, ADR-0010 C-222 (1)).
+//   - T-E2E-stats-38..39: test.fixme for what has no data or screen yet, each naming its owner.
 //
 // Every expected value comes from the API asked inside the test; no fixed dates or ids; retries 0;
 // the page hooks of fixtures/stack.ts (XSS, console, CSP, origins) run after each test.
@@ -487,10 +488,10 @@ test(
       fresh.map((g) => g.group_id),
       'new groups',
     );
-    // The first new group with a representative stack, else the first new group. The agent sends
-    // no ERROR step stack yet (Tracer.stepStack has no caller), so the stack store
-    // (ErrorGroupStackFiller, WO-27) has nothing to keep on real data; T-E2E-errors-4 (fixme) holds
-    // the non-empty case. The panel always equals the API's sample_stack, empty included.
+    // The first new group with a representative stack, else the first new group (the stack store,
+    // ErrorGroupStackFiller of WO-27, fills a group's stack from the agent's ERROR step a little
+    // after the group appears; T-E2E-errors-4 waits for the non-empty case). The panel always
+    // equals the API's sample_stack, empty included.
     let found: ErrorGroup | undefined;
     for (const candidate of fresh) {
       const candidateDetail = await apiStatsDetail(api, 'errors', appId, candidate.group_id, q);
@@ -856,19 +857,101 @@ test.fixme(
   },
 );
 
-test.fixme(
-  'T-E2E-errors-4 T-ACPT-13: a new error group from real agent data shows a non-empty representative stack',
-  {
-    annotation: [
-      ...req('F-U07', 'S-13', '05-2.5-5'),
-      {
-        type: 'fixme',
-        description:
-          'needs ERROR step stacks from the agent (capture.stack-depth, Tracer.stepStack has no caller yet; owner WO-19, ADR-0010 C-222 (1)); the server keeps the first stack of a group (ErrorGroupStackFiller, WO-27, ErrorGroupStackIT); until then: T-E2E-errors-1 asserts the panel equals the API sample_stack (empty on the seed)',
-      },
-    ],
-  },
-  () => {
-    // Owner to be assigned (fixme annotation): no agent instrumentation records an ERROR step stack.
+// ---------------------------------------------------------------------------------------------
+// T-E2E-errors-4 (T-ACPT-13): the representative stack of real agent data (WO-19, C-222 (1))
+// ---------------------------------------------------------------------------------------------
+
+test(
+  'T-E2E-errors-4 T-ACPT-13: a new error group from real agent data shows a non-empty representative stack (= API sample_stack) and its top frame in the list (= API top_frame)',
+  { annotation: req('F-U07', 'S-13', '05-2.5-5', 'F-A08') },
+  async ({ page, seed, apiAs }, testInfo) => {
+    // The server fills the representative stack of a group from the first ERROR step with frames
+    // every 60 s (ErrorGroupStackFiller, WO-27): the poll below waits up to 3 minutes for it.
+    test.setTimeout(6 * MINUTE);
+    const api = await apiAs(ORACLE_ROLE);
+    // The traffic app: its exceptions (seed.*.error, seed.xss.error) came through the real agent,
+    // which records one ERROR step with up to capture.stack-depth frames per exception and the
+    // first application frame as error_top_frame_id (WO-19).
+    const appId = seed.traffic.app_id;
+    const { start: from, end: to } = seed.traffic.range;
+    const listPath = statsPath(appId, 'errors', from, to, { new: '1' });
+    const q = listQueryOf(listPath);
+    let chosen: { group: ErrorGroup; stack: readonly string[] } | null = null;
+    let checked = 0;
+    await expect
+      .poll(
+        async () => {
+          const fresh = (await apiStatsList(api, 'errors', appId, { ...q, new_only: true })).data;
+          checked = fresh.length;
+          chosen = null;
+          // Prefer a group with a top frame (an application frame of the shop), else any with a
+          // stack.
+          for (const group of fresh) {
+            const detail = await apiStatsDetail(api, 'errors', appId, group.group_id, q);
+            const stack = detail.sample_stack ?? [];
+            if (stack.length > 0 && (chosen === null || group.top_frame !== null)) {
+              chosen = { group, stack };
+              if (group.top_frame !== null) {
+                break;
+              }
+            }
+          }
+          return chosen !== null;
+        },
+        {
+          message:
+            'a new error group of the traffic app with a non-empty sample_stack (ERROR step stacks of the agent, filled by the server every 60 s)',
+          timeout: 3 * MINUTE,
+          intervals: [10_000],
+        },
+      )
+      .toBe(true);
+    const found = chosen as { group: ErrorGroup; stack: readonly string[] } | null;
+    if (found === null) {
+      throw new Error('no new error group with a representative stack');
+    }
+    const { group } = found;
+
+    // The list: the group's top frame cell = the API's top_frame (the agent's first application
+    // frame, line-free; empty when the stack has none).
+    await page.goto(listPath);
+    await expectStatsState(page, LIST_ROOT.errors);
+    const table = statsTable(page, LIST_ROOT.errors);
+    const rows = (await apiStatsList(api, 'errors', appId, listQueryOf(page.url()))).data;
+    const listed = rows.find((r) => r.group_id === group.group_id);
+    expect(listed, `group ${group.group_id} in the new list of the page's question`).toBeDefined();
+    const topFrame = listed?.top_frame ?? null;
+    const topCell = tableRow(table, group.group_id).first().locator('[data-column="top_frame"]');
+    // A null top frame shows the table's empty mark.
+    await expect(topCell, 'top frame cell = API top_frame').toHaveText(topFrame ?? '—');
+
+    // The detail: the representative stack panel = the API's sample_stack, frame by frame.
+    await openRow(table, group.group_id);
+    await expectUrl(
+      page,
+      (s) => s.path === `/apps/${String(appId)}/stats/errors/${group.group_id}`,
+      'the group detail',
+    );
+    await expectStatsState(page, DETAIL_ROOT.errors);
+    const detail = await apiStatsDetail(
+      api,
+      'errors',
+      appId,
+      group.group_id,
+      listQueryOf(page.url()),
+    );
+    const sample = detail.sample_stack ?? [];
+    expect(sample.length, 'sample_stack of the page question').toBeGreaterThan(0);
+    const panel = page.getByTestId(DETAIL_ROOT.errors).getByTestId('stats-error-stack');
+    await expect(panel, 'the representative stack panel').toBeVisible();
+    const frames = panel.getByTestId('transaction-frame');
+    await expect(frames).toHaveCount(sample.length);
+    expect((await frames.allTextContents()).map(squash), 'stack frames = sample_stack').toEqual(
+      sample.map(squash),
+    );
+    testInfo.annotations.push({
+      type: 'T-E2E-errors-4',
+      description: `${String(checked)} new groups; group ${group.group_id} ${String(group.error_class)}; top_frame ${String(topFrame)}; stack frames ${String(sample.length)}, first ${String(sample[0])}`,
+    });
   },
 );

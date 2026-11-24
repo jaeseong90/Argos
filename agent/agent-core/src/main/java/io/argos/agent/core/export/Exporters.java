@@ -2,6 +2,7 @@
 package io.argos.agent.core.export;
 
 import io.argos.agent.core.config.AgentConfig;
+import io.argos.agent.core.config.AppVersion;
 import io.argos.agent.core.log.AgentLogger;
 import java.io.File;
 import java.util.Locale;
@@ -93,7 +94,9 @@ public final class Exporters {
             FILE_MAX_MB * 1024L * 1024L,
             context.dictionary(),
             context.config().appEnv(),
-            context.config().appVersion());
+            // app.version, else the main jar's Implementation-Version (T-AG-066); left out when
+            // there is none. Created on argos-sender, so the manifest read is off premain.
+            AppVersion.of(context.config()).valueOrNull());
       }
       if (name.equals(GRPC)) {
         return createByClassName(GRPC_FACTORY_CLASS, context);

@@ -54,6 +54,18 @@ On the **REQUEST** dispatch only, while the transaction's name is not fixed yet:
 
 ## Supported library versions
 
+### Version range and witness
+
+| Library | Supported range | Minimum verified | Maximum verified | Boundary tests |
+|---|---|---|---|---|
+| Spring Framework (`org.springframework:spring-webmvc`) | 5.3, 6.x, 7.x | 5.3.31 | 7.0.10 | `test` on JDK 8 (`SpringWebMvcHelperTest`, `SpringWebMvcModuleTest`, with a stand-in `HandlerMethod`); end to end `agent-testing` `servlet.SpringPatternTest` (shop-boot2 5.3.31 on JDK 8, shop-boot3 6.2.19 and shop-boot4 7.0.10 on JDK 21) and `servlet.WarContextPrefixTest` (shop-war-jakarta) |
+
+- Witness (`SpringWebMvcModule.witness()`, resource lookup only): `org.springframework.web.servlet.HandlerAdapter`.
+- Run: `./gradlew :agent:agent-instrumentation:spring-webmvc:test`; end to end
+  `./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot3@21,shop-boot4@21 --tests '*SpringPatternTest*'`.
+
+### Details
+
 | Framework | Verified (integration, WO-12) | Target range |
 |---|---|---|
 | Spring Framework 5.3 (javax) | Spring Boot 2.7 (`shop-boot2`, JDK 8), standalone Tomcat 9 (`shop-war-javax`, JDK 8) | 5.3 |

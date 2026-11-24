@@ -20,6 +20,7 @@ import io.argos.server.config.ServerBuild;
 import io.argos.server.ingest.api.ApdexProvider;
 import io.argos.server.ingest.api.DictionaryIntake;
 import io.argos.server.ingest.api.IngestPipeline;
+import io.argos.server.ops.tls.CertReloader;
 import io.argos.server.session.AgentVersionRange;
 import io.argos.server.session.CachingSessionStore;
 import io.argos.server.session.HelloService;
@@ -43,7 +44,6 @@ import io.argos.server.storage.postgres.token.AgentTokenRepository;
 import io.argos.server.wal.api.WalWriter;
 import io.grpc.ServerInterceptors;
 import io.micrometer.core.instrument.MeterRegistry;
-import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.concurrent.Executors;
@@ -304,15 +304,16 @@ public class CollectorConfiguration {
       SessionRegistry registry,
       CollectorState state,
       CollectorMetrics metrics,
-      Clock clock) {
+      Clock clock,
+      ObjectProvider<CertReloader> certificates) {
     ArgosProperties.Collector c = properties.collector();
+    CertReloader tls = certificates.getIfAvailable(() -> CertReloader.standalone(properties));
     return new CollectorLifecycle(
         c.bind(),
         c.port(),
         c.maxMessageBytes(),
         c.tls().enabled(),
-        Path.of(c.tls().certFile()),
-        Path.of(c.tls().keyFile()),
+        tls::grpcContext,
         c.allowPlaintext(),
         ServerInterceptors.interceptForward(
             AgentServiceDefinition.of(service, sessions, c.maxMessageBytes()),

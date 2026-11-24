@@ -98,10 +98,15 @@ public class AppAdminService {
    * @param env environment (validated)
    * @param group group, or null
    * @param apdexTMs Apdex T
-   * @param autoRegister registration policy {@code auto}
+   * @param autoRegister registration policy {@code auto} (true), {@code approval} (false), or null
+   *     for none (the environment default applies, ADR-0010 C-231 (7))
    */
   public record NewApp(
-      String name, String env, @Nullable String group, int apdexTMs, boolean autoRegister) {}
+      String name,
+      String env,
+      @Nullable String group,
+      int apdexTMs,
+      @Nullable Boolean autoRegister) {}
 
   /**
    * The change of a {@code PATCH /apps/{appId}}; null fields stay as they are.
@@ -182,7 +187,7 @@ public class AppAdminService {
       before.put("group", app.group());
       after.put("group", change.group());
     }
-    if (change.autoRegister() != null && change.autoRegister() != app.autoRegister()) {
+    if (change.autoRegister() != null && !change.autoRegister().equals(app.autoRegister())) {
       before.put("registration_policy", policy(app.autoRegister()));
       after.put("registration_policy", policy(change.autoRegister()));
     }
@@ -412,7 +417,8 @@ public class AppAdminService {
     return catalog.app(id).orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
   }
 
-  private static String policy(boolean autoRegister) {
-    return autoRegister ? "auto" : "approval";
+  /** The audit value of a policy: {@code auto}, {@code approval}, or {@code inherit} for none. */
+  private static String policy(@Nullable Boolean autoRegister) {
+    return autoRegister == null ? "inherit" : autoRegister ? "auto" : "approval";
   }
 }

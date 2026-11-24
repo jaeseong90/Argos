@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import javax.sql.DataSource;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
@@ -115,7 +116,9 @@ public class CatalogRepository {
    * @param group {@code app_group}, or null
    * @param apdexTMs Apdex T
    * @param slowThresholdMs the XLog slow threshold
-   * @param autoRegister registration policy {@code auto} (true) or {@code approval}
+   * @param autoRegister registration policy {@code auto} (true) or {@code approval} (false), or
+   *     null when the application sets none (the environment default applies, V013, ADR-0010 C-231
+   *     (7))
    * @param recommendedRulesApplied whether the recommended alert rules were applied
    * @param createdAt creation time
    * @param registeredFromAppId the home app of an environment variant (C-155), or null
@@ -131,7 +134,7 @@ public class CatalogRepository {
       String group,
       int apdexTMs,
       int slowThresholdMs,
-      boolean autoRegister,
+      @Nullable Boolean autoRegister,
       boolean recommendedRulesApplied,
       Instant createdAt,
       Integer registeredFromAppId,
@@ -342,6 +345,58 @@ public class CatalogRepository {
   }
 
   /**
+   * The usable agent tokens of each of {@code appIds} at {@code now} (an application without one is
+   * absent), in one grouped statement (14 §4.3 {@code tokens_active}, WO-39): {@code ACTIVE}, or
+   * {@code GRACE} (rotating) before {@code grace_until}, not revoked and not past {@code
+   * expires_at}; the collector's verdict ({@code AgentTokenStore} counts the same way).
+   */
+  public Map<Integer, Integer> activeTokenCounts(Collection<Integer> appIds, Instant now) {
+    Map<Integer, Integer> out = new LinkedHashMap<>();
+    if (appIds.isEmpty()) {
+      return out;
+    }
+    Timestamp at = Timestamp.from(now);
+    query(
+            "token-counts",
+            "SELECT app_id, count(*) FROM argos.agent_tokens WHERE app_id = ANY(?)"
+                + " AND revoked_at IS NULL"
+                + " AND (status = 'ACTIVE' OR (status = 'GRACE' AND grace_until > ?))"
+                + " AND (expires_at IS NULL OR expires_at > ?) GROUP BY app_id",
+            ps -> {
+              ps.setArray(1, ps.getConnection().createArrayOf("int4", appIds.toArray()));
+              ps.setTimestamp(2, at);
+              ps.setTimestamp(3, at);
+            },
+            (rs, n) -> new int[] {rs.getInt(1), rs.getInt(2)})
+        .forEach(r -> out.put(r[0], r[1]));
+    return out;
+  }
+
+  /**
+   * The agent versions of the instances that are not archived (of applications that are not
+   * deleted) with their instance counts, the most common first, at most {@code limit} versions; an
+   * instance without a stored version counts under a null version ({@code GET /about}, O-R12).
+   */
+  public List<VersionCount> agentVersionCounts(int limit) {
+    return query(
+        "agent-versions",
+        "SELECT i.agent_version, count(*) AS n FROM argos.instances i"
+            + " JOIN argos.apps a ON a.id = i.app_id AND a.deleted_at IS NULL"
+            + " WHERE i.archived_at IS NULL GROUP BY i.agent_version"
+            + " ORDER BY n DESC, i.agent_version NULLS LAST LIMIT ?",
+        ps -> ps.setInt(1, limit),
+        (rs, n) -> new VersionCount(rs.getString(1), rs.getLong(2)));
+  }
+
+  /**
+   * An agent version and the instances that run it.
+   *
+   * @param version {@code instances.agent_version}, or null when the agent reported none
+   * @param count instances
+   */
+  public record VersionCount(@Nullable String version, long count) {}
+
+  /**
    * The ids of the instances that are not archived of each of {@code appIds} (an application
    * without one is absent), ascending, at most {@code limit} ids in all.
    */
@@ -526,7 +581,7 @@ public class CatalogRepository {
         rs.getString(4),
         rs.getInt(5),
         rs.getInt(6),
-        rs.getBoolean(7),
+        (Boolean) rs.getObject(7),
         rs.getBoolean(8),
         instant(rs, 9),
         (Integer) rs.getObject(10),

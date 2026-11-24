@@ -162,6 +162,51 @@ class HarnessPartsTest {
   }
 
   @Test
+  @Tag("req:DSN-18-15")
+  @DisplayName(
+      "T-AG-064g C-240 (3) the harness turns the CPU guard off (argos.test.overhead-monitor=off)"
+          + " only for runs that assume sampling.profile.normal-rate=1.0; an explicit value and"
+          + " runs without the harness defaults keep theirs")
+  void overheadMonitorOffOnlyForFullProfileRate() throws Exception {
+    Path jar = Files.createFile(dir.resolve("app.jar"));
+    Jdk jdk = new Jdk(21, Path.of("java"));
+    Path work = dir.resolve("run");
+    List<String> full =
+        AppLauncher.of(SampleApp.fromArtifact(jar), jdk)
+            .withAgent(dir.resolve("argos-agent.jar"), Map.of())
+            .agentConfig("sampling.profile.normal-rate", "1.0")
+            .command(work);
+    assertThat(full).contains("-Dargos.test.overhead-monitor=off");
+    List<String> sampled =
+        AppLauncher.of(SampleApp.fromArtifact(jar), jdk)
+            .withAgent(dir.resolve("argos-agent.jar"), Map.of())
+            .agentConfig("sampling.profile.normal-rate", "0.5")
+            .command(work);
+    assertThat(sampled).noneMatch(o -> o.contains("test.overhead-monitor"));
+    List<String> defaults =
+        AppLauncher.of(SampleApp.fromArtifact(jar), jdk)
+            .withAgent(dir.resolve("argos-agent.jar"), Map.of())
+            .command(work);
+    assertThat(defaults).noneMatch(o -> o.contains("test.overhead-monitor"));
+    List<String> explicit =
+        AppLauncher.of(SampleApp.fromArtifact(jar), jdk)
+            .withAgent(dir.resolve("argos-agent.jar"), Map.of())
+            .agentConfig("sampling.profile.normal-rate", "1")
+            .agentConfig("test.overhead-monitor", "on")
+            .command(work);
+    assertThat(explicit)
+        .contains("-Dargos.test.overhead-monitor=on")
+        .doesNotContain("-Dargos.test.overhead-monitor=off");
+    List<String> release =
+        AppLauncher.of(SampleApp.fromArtifact(jar), jdk)
+            .withAgent(dir.resolve("argos-agent.jar"), Map.of())
+            .harnessDefaults(false)
+            .agentConfig("sampling.profile.normal-rate", "1.0")
+            .command(work);
+    assertThat(release).noneMatch(o -> o.contains("test.overhead-monitor"));
+  }
+
+  @Test
   @DisplayName(
       "agent settings: -Dargos.<key> in order, argos-agent.yml nested and quoted, no argos."
           + " prefix")

@@ -147,25 +147,66 @@ public final class StepBuffer {
    */
   public int start(
       int stepType, long name, long target, long startNanos, int parentSeq, Thread thread) {
-    int seq;
-    while (true) {
-      int n = next.get();
-      if ((n & SEALED) != 0) {
-        return -1;
-      }
-      if (n >= maxSteps) {
-        seq = -1;
-        break;
-      }
-      if (next.compareAndSet(n, n + 1)) {
-        seq = n;
-        break;
-      }
+    int seq = reserve();
+    if (seq == SEALED_RESERVE) {
+      return -1;
     }
     total.incrementAndGet();
     if (seq < 0) {
       return startSummary(stepType, name, startNanos);
     }
+    return record(seq, stepType, name, target, startNanos, parentSeq, thread);
+  }
+
+  /**
+   * Opens a step like {@link #start} but only as a recorded step: returns -1, without counting or
+   * summarizing anything, when the buffer is sealed or already in summary mode (all {@code
+   * max-steps} slots taken). The slow-stack sampler's {@code STACK} steps (10 §13.1, WO-19), which
+   * the agent adds on its own thread, use it: a sample is worth nothing as a summary entry.
+   */
+  public int startRecorded(
+      int stepType, long name, long target, long startNanos, int parentSeq, Thread thread) {
+    if (summary.get() != null) {
+      return -1;
+    }
+    int seq = reserve();
+    if (seq < 0) {
+      return -1;
+    }
+    total.incrementAndGet();
+    return record(seq, stepType, name, target, startNanos, parentSeq, thread);
+  }
+
+  /** {@link #reserve()} of a sealed buffer. */
+  private static final int SEALED_RESERVE = Integer.MIN_VALUE;
+
+  /**
+   * The next sequence number, -1 when every recorded slot is taken (summary mode), or {@link
+   * #SEALED_RESERVE}.
+   */
+  private int reserve() {
+    while (true) {
+      int n = next.get();
+      if ((n & SEALED) != 0) {
+        return SEALED_RESERVE;
+      }
+      if (n >= maxSteps) {
+        return -1;
+      }
+      if (next.compareAndSet(n, n + 1)) {
+        return n;
+      }
+    }
+  }
+
+  private int record(
+      int seq,
+      int stepType,
+      long name,
+      long target,
+      long startNanos,
+      int parentSeq,
+      Thread thread) {
     Chunk chunk = chunkFor(seq, true);
     int i = seq - chunk.start;
     chunk.type[i] = stepType;

@@ -51,7 +51,10 @@ items:
     title: STALE (yellow) and WARN (orange border) instance tiles
     req: [F-U01, F-S28]
     owner: WO-39
-    coverage: T-UI-008 component tests of the instance tiles (UP, STALE, DOWN, WARN colours with StatusBadge, the seven WARN reasons as text, ADR-0010 C-216 (2)); the server's warn_reasons in ClockSkewIT (T-ACC-02); the 2.3-3 check above compares every tile's state and WARN reasons with GET /dashboard; the seeded stack has no instance that stays STALE or WARN (the seed agent stops after the outage seed), a kill switch from the admin screen of WO-39 makes one (PM decision pending)
+    coverage: real agent of the check's own (ADR-0010 C-217 (2)) - the kill switch makes it WARN kill_switch, stopping it makes it STALE, each tile = GET /dashboard; also T-E2E-admin-22 (WARN through the admin screen) and T-E2E-admin-24 (STALE after the token is revoked); T-UI-008 component tests of the tiles (UP, STALE, DOWN, WARN colours, the seven WARN reasons as text)
+    route: /overview
+    assert:
+      - check: dashboardWarnStaleLive
 
   - id: 2.3-4
     title: instance comparison table with its columns, sorting and the server's outlier highlights, the instance value filters the dashboard

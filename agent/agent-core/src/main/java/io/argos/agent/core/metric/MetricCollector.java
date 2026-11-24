@@ -273,6 +273,11 @@ public final class MetricCollector {
     if (cpu != null) {
       registry.counter(AGENT_CPU, cpu);
     }
+    if (tracer != null) {
+      // WO-19: the slow-stack sampler's cost (10 §11, §13.1), seconds with sub-second resolution.
+      registry.counter(
+          AgentCounters.STACK_CAPTURE_SECONDS, tracer.counters().stackCaptureSeconds());
+    }
     if (runtime != null) {
       try {
         Map<String, Long> gauges = runtime.selfValues();

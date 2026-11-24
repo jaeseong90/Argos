@@ -38,9 +38,12 @@ final class RemoteConfigRuns {
   static final String BOOT3 = "shop-boot3";
   static final String BOOT2 = "shop-boot2";
 
-  /** The C-92 default allow list as a {@code -Dargos.remote-config.allow} value. */
+  /** The default allow list (10 §15, C-240 (4)) as a {@code -Dargos.remote-config.allow} value. */
   static final String DEFAULT_ALLOW =
-      "sampling.**, instrumentation.disabled, instrumentation.ignore-paths, log.level, enabled";
+      "sampling.**, instrumentation.disabled, instrumentation.ignore-*, log.level, enabled,"
+          + " transaction.slow-stack.*, capture.error-message-max-length, capture.stack-depth,"
+          + " instrumentation.app-packages, async.step, active.snapshot-interval-seconds,"
+          + " metrics.interval-seconds, transaction.max-duration-ms";
 
   static final Duration APPLY_WAIT = Duration.ofSeconds(30);
 

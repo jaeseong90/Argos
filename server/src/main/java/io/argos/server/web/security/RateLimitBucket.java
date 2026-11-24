@@ -14,8 +14,9 @@ import java.util.Locale;
  * <p>Enforced since WO-24: {@link #AUTH}, {@link #CSP_REPORT} (per client address, {@link
  * IpRateLimitFilter}), {@link #API} (per session, {@link UserRateLimitFilter}) and {@link #HEAVY}
  * (per user, handlers annotated {@link RateLimited @RateLimited(HEAVY)}, {@link
- * RateLimitInterceptor}). The other values name the buckets of later work orders, which enforce
- * them where their requests are handled; {@link #enforcedByWebLayer()} is false for them.
+ * RateLimitInterceptor}); since WO-28 also {@link #PRIVACY_DELETE} (per user). The other values
+ * name the buckets of later work orders, which enforce them where their requests are handled;
+ * {@link #enforcedByWebLayer()} is false for them.
  */
 public enum RateLimitBucket {
 
@@ -48,8 +49,12 @@ public enum RateLimitBucket {
   /** Command requests per instance and user (14 §2.7, SEC-24): enforced by WO-26. */
   COMMAND(false),
 
-  /** The privacy delete API (16 §7.13): enforced by WO-28. */
-  PRIVACY_DELETE(false),
+  /**
+   * The privacy delete API ({@code POST /api/v1/admin/privacy/deletions}, 16 §7.13, ADR-0010 C-136
+   * (2)): {@value RateLimiter#PRIVACY_DELETES_PER_HOUR} per user and hour (WO-28), for handlers
+   * annotated {@code @RateLimited(PRIVACY_DELETE)}.
+   */
+  PRIVACY_DELETE(true),
 
   /** WebSocket subscription changes per connection (14 §2.7, 16 §7.13): enforced by WO-22. */
   WS_SUBSCRIBE(false);

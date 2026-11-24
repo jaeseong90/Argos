@@ -26,6 +26,12 @@ public final class ShopCatalog {
   /** Marker the app logs at GET /api/mdc-log. */
   public static final String MDC_LOG_MARKER = "mdc-log";
 
+  /**
+   * MDC key that {@code GET /api/mdc-log?user=<id>} sets for its log line (the user id source
+   * {@code capture.user-id.source: mdc:user}, ADR-0010 C-125 (3)).
+   */
+  public static final String MDC_USER_KEY = "user";
+
   /** Message of GET /api/error-500 (18 §4.2, D-21 message masking). */
   public static final String ERROR_500_MESSAGE = "order 42 not found for kim@example.test";
 
@@ -224,7 +230,9 @@ public final class ShopCatalog {
     e.add(
         CatalogEntry.get("mdc-log", "/api/mdc-log")
             .check(Check.logContains(MDC_LOG_MARKER))
-            .purpose("One log line; F-A20 MDC injection")
+            .purpose(
+                "One log line; F-A20 MDC injection (?clear=true: MDC.clear() first, ?async=true:"
+                    + " from the app executor, ?user=: the user MDC key, ?tag=: echoed)")
             .build());
     e.add(
         CatalogEntry.get("version", "/api/version")

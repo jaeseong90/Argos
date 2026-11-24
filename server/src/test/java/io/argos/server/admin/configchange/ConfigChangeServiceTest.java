@@ -403,6 +403,100 @@ class ConfigChangeServiceTest {
 
   @Test
   @DisplayName(
+      "T-SEC-80c (WO-28, 16 §5.7, C-238 (8)) a change of instrumentation.custom-methods is also"
+          + " CUSTOM_METHOD_CHANGED once its instances answered, with the custom method keys and"
+          + " the outcome only, by the applying user; other changes are not")
+  @SuppressWarnings("unchecked")
+  void customMethodChanged() {
+    UUID id = UUID.randomUUID();
+    Map<String, String> after = new LinkedHashMap<>();
+    after.put("instrumentation.custom-methods", "[{\"pattern\":\"com.shop.Order#*\"}]");
+    after.put("log.level", "DEBUG");
+    ChangeRow row = change(id, Map.of(), after, ConfigChangeRepository.PREVIEWED, null);
+    when(repository.find(id)).thenReturn(Optional.of(row));
+    when(repository.markApplying(eq(id), any(), any())).thenReturn(true);
+    when(repository.instancesOf(APP)).thenReturn(List.of(new InstanceRow(1, APP, "a", List.of())));
+    AgentSession live = session(1, "instrumentation.**", "log.level");
+    when(sessions.find(1)).thenReturn(Optional.of(live));
+    when(messenger.pushConfig(anyInt(), any())).thenReturn(true);
+    when(repository.result(eq(id), anyInt())).thenReturn(Optional.empty());
+
+    service.apply(admin, actor(admin), id);
+    verify(audit).record(eq(AuditEvent.CONFIG_PUSH), any(), any(), any(), any(), any());
+    verify(audit, org.mockito.Mockito.never())
+        .record(eq(AuditEvent.CUSTOM_METHOD_CHANGED), any(), any(), any(), any(), any());
+
+    // The agent's answer completes the change: now CUSTOM_METHOD_CHANGED with the outcome.
+    when(repository.result(id, 1))
+        .thenReturn(
+            Optional.of(
+                new ResultRow(
+                    id,
+                    1,
+                    ConfigChangeRepository.PENDING,
+                    List.of(),
+                    List.of(),
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    Instant.EPOCH)));
+    when(repository.completeIfDone(id)).thenReturn(true);
+    List<String> keys = List.of("instrumentation.custom-methods", "log.level");
+    when(repository.results(id))
+        .thenReturn(
+            List.of(
+                new ResultRow(
+                    id,
+                    1,
+                    ConfigChangeRepository.RESULT_APPLIED,
+                    keys,
+                    List.of(),
+                    null,
+                    null,
+                    5,
+                    Instant.EPOCH,
+                    null,
+                    Instant.EPOCH)));
+    service.handleResult(
+        1,
+        ConfigApplyResult.newBuilder().setChangeId(id.toString()).addAllAppliedKeys(keys).build(),
+        1_000L);
+
+    ArgumentCaptor<Actor> who = ArgumentCaptor.forClass(Actor.class);
+    ArgumentCaptor<io.argos.server.audit.AuditResult> outcome =
+        ArgumentCaptor.forClass(io.argos.server.audit.AuditResult.class);
+    ArgumentCaptor<Map<String, ?>> custom = ArgumentCaptor.forClass(Map.class);
+    verify(audit)
+        .record(
+            eq(AuditEvent.CUSTOM_METHOD_CHANGED),
+            who.capture(),
+            any(),
+            outcome.capture(),
+            any(),
+            custom.capture());
+    assertThat(custom.getValue()).containsOnlyKeys("instrumentation.custom-methods", "_outcome");
+    assertThat((Map<String, Object>) custom.getValue().get("_outcome"))
+        .containsEntry("applied", 1)
+        .containsEntry("rejected_by_agent", 0);
+    assertThat(outcome.getValue()).isEqualTo(io.argos.server.audit.AuditResult.success());
+    assertThat(who.getValue().type()).isEqualTo(Actor.Type.USER);
+
+    UUID plain = UUID.randomUUID();
+    ChangeRow other =
+        change(
+            plain, Map.of(), Map.of("log.level", "INFO"), ConfigChangeRepository.PREVIEWED, null);
+    when(repository.find(plain)).thenReturn(Optional.of(other));
+    when(repository.markApplying(eq(plain), any(), any())).thenReturn(true);
+    when(repository.result(eq(plain), anyInt())).thenReturn(Optional.empty());
+    service.apply(admin, actor(admin), plain);
+    verify(audit, org.mockito.Mockito.times(1))
+        .record(eq(AuditEvent.CUSTOM_METHOD_CHANGED), any(), any(), any(), any(), any());
+  }
+
+  @Test
+  @DisplayName(
       "T-SV-042g ServerHello.config carries the server-held values whose keys the Hello's allow"
           + " list names (never an immutable key) and resolves the instance's pending results")
   void helloConfig() {

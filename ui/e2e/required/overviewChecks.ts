@@ -1191,8 +1191,8 @@ export async function shownServer(
 /**
  * 2.10-4: the collection server panel equals `server.*` of the answer: ingest lag, sessions and
  * channel failures of the last 24 hours (the alert engine's final failed deliveries, WO-25) are
- * values, disk and certificate expiry (WO-28) are null until measured and read "Not available",
- * never 0. The channel failures shown also equal a GET /overview the check asks itself.
+ * values, disk and certificate expiry (WO-28) read "Not available" while the server has not measured
+ * them (null), never 0. The channel failures shown also equal a GET /overview the check asks itself.
  */
 export const overviewServerPanel: OverviewCheck = async ({ page, testInfo, apiAs }) => {
   const recorder = recordOverview(page);
@@ -1223,6 +1223,45 @@ export const overviewServerPanel: OverviewCheck = async ({ page, testInfo, apiAs
     )
     .toBe(true);
   testInfo.annotations.push({ type: 'overview-server', description: JSON.stringify(server) });
+};
+
+/**
+ * 2.10-4 (WO-28): disk usage and certificate expiry are measured by the server itself (DSN-12-14,
+ * `argos_server_disk_usage_ratio{mount}`, `argos_server_tls_cert_expiry_seconds`). The stack's
+ * server has a write-ahead log and ClickHouse disks, so `server.disk_usage_ratio` is a ratio and
+ * the panel shows it; its collector runs without TLS (stack.ts), so there is no certificate and
+ * `server.cert_expiry_days` stays null, read "Not available", never 0.
+ */
+export const overviewServerMeasured: OverviewCheck = async ({ page, testInfo }) => {
+  const recorder = recordOverview(page);
+  await openOverview(page, '/overview');
+  await expect(page.getByTestId('overview-server-panel')).toBeVisible();
+  await expect
+    .poll(() => recorder.last().body.data.server.disk_usage_ratio, {
+      message: 'server.disk_usage_ratio is measured by the server (storage health job, 1 min)',
+      timeout: 90_000,
+    })
+    .toEqual(expect.any(Number));
+  await expect
+    .poll(async () => serverMismatches(await shownServer(page), recorder.last().body.data.server), {
+      message: 'server panel = server.* of the latest answer',
+      timeout: 20_000,
+    })
+    .toEqual([]);
+  const server = recorder.last().body.data.server;
+  const ratio = server.disk_usage_ratio ?? Number.NaN;
+  expect(ratio, 'a used ratio of the server disks').toBeGreaterThan(0);
+  expect(ratio, 'a used ratio of the server disks').toBeLessThanOrEqual(1);
+  const disk = page.getByTestId('overview-server-disk');
+  await expect(disk).not.toContainText(t('overview:panel.server.notAvailable'));
+  expect(server.cert_expiry_days, 'no collector certificate on the stack (TLS off)').toBeNull();
+  await expect(page.getByTestId('overview-server-cert-expiry')).toHaveText(
+    t('overview:panel.server.notAvailable'),
+  );
+  testInfo.annotations.push({
+    type: 'overview-server-measured',
+    description: JSON.stringify(server),
+  });
 };
 
 /**
@@ -1380,6 +1419,7 @@ export const OVERVIEW_CHECKS: Readonly<Record<string, OverviewCheck>> = {
   overviewFiringPanel,
   overviewFiringAlerts,
   overviewServerPanel,
+  overviewServerMeasured,
   overviewOpensDashboard,
   overviewThirtyRowsFit,
 };

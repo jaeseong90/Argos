@@ -4,6 +4,8 @@ package io.argos.server.admin.command;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.argos.proto.v1.Command;
+import io.argos.proto.v1.CommandResult;
+import io.argos.proto.v1.CommandStatus;
 import io.argos.proto.v1.CommandType;
 import io.argos.proto.v1.ServerMessage;
 import io.argos.server.auth.Role;
@@ -329,6 +331,7 @@ class CommandRoutingIT {
     agent.cancelSession();
     JsonNode expired = awaitStatus(operator, id, "expired");
     assertThat(expired.path("error").asString()).isEqualTo("session_ended");
+    assertExpiredRow(id, "session_ended", agent.instanceId());
 
     Awaitility.await()
         .atMost(WAIT.toMillis(), TimeUnit.MILLISECONDS)
@@ -344,5 +347,53 @@ class CommandRoutingIT {
     ApiResponse unknown =
         operator.post("/api/v1/instances/987654/commands", "{\"type\":\"thread_dump\"}");
     assertThat(unknown.status()).as(unknown.toString()).isEqualTo(404);
+  }
+
+  @Test
+  @DisplayName(
+      "T-SV-041 / T-SEC-80c a command whose TTL ran out on the agent (ttl_s measured from the"
+          + " agent's receive time, 16 §5.2: the agent answers EXPIRED instead of running it) ends"
+          + " expired with error agent_expired, no result stored, and an audit_logs row"
+          + " COMMAND_EXPIRED (system actor, result success, reason agent_expired)")
+  void agentTtlExpiryIsAudited() throws Exception {
+    FakeAgent agent =
+        agent(
+            "ttl",
+            c ->
+                List.of(
+                    CommandResult.newBuilder()
+                        .setCommandId(c.getCommandId())
+                        .setStatus(CommandStatus.EXPIRED)
+                        .setChunkIndex(0)
+                        .setChunkCount(1)
+                        .setError("Command TTL elapsed before it ran")
+                        .build()));
+    UUID id = request(operator, agent.instanceId(), "{\"type\":\"thread_dump\"}");
+    JsonNode expired = awaitStatus(operator, id, "expired");
+    assertThat(expired.path("error").asString()).isEqualTo("agent_expired");
+    assertThat(storedResult(id)).isEmpty();
+    assertExpiredRow(id, "agent_expired", agent.instanceId());
+  }
+
+  /** The {@code COMMAND_EXPIRED} row of a command: system actor, success with the reason. */
+  private static void assertExpiredRow(UUID id, String reason, int instanceId) {
+    Awaitility.await()
+        .atMost(WAIT.toMillis(), TimeUnit.MILLISECONDS)
+        .pollInterval(100, TimeUnit.MILLISECONDS)
+        .untilAsserted(
+            () -> {
+              List<AuditLog.Row> rows = new ArrayList<>();
+              for (AuditLog.Row row : AuditLog.rows(env, "COMMAND_EXPIRED")) {
+                if (id.toString().equals(row.targetId())) {
+                  rows.add(row);
+                }
+              }
+              assertThat(rows).hasSize(1);
+              AuditLog.Row row = rows.get(0);
+              assertThat(row.actorType()).isEqualTo("system");
+              assertThat(row.result()).isEqualTo("success");
+              assertThat(row.reason()).isEqualTo(reason);
+              assertThat(row.after()).matches("(?s).*\"instance_id\":\\s*" + instanceId + "\\b.*");
+            });
   }
 }

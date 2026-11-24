@@ -1,5 +1,6 @@
 # Transformed-class baseline (18 §5.6, DSN-18-05, T-AG-005): <class> <modules> <loader>
 # shop-boot4 on JDK 21 with virtual threads. Re-record: ./gradlew :agent:agent-testing:integrationTest -Pagent.baseline.record=true; review the diff in the PR.
+ch.qos.logback.classic.spi.LoggingEvent logging org.springframework.boot.loader.launch.LaunchedClassLoader
 com.mysql.cj.jdbc.AbandonedConnectionCleanupThread executor org.springframework.boot.loader.launch.LaunchedClassLoader
 com.zaxxer.hikari.HikariDataSource jdbc org.springframework.boot.loader.launch.LaunchedClassLoader
 com.zaxxer.hikari.pool.HikariPool pool org.springframework.boot.loader.launch.LaunchedClassLoader

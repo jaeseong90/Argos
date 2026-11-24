@@ -3,7 +3,6 @@ package io.argos.server.collector;
 
 import io.argos.proto.v1.CloseReason;
 import io.argos.proto.v1.SessionClose;
-import io.argos.server.collector.grpc.CollectorTls;
 import io.argos.server.collector.grpc.GrpcCollectorServer;
 import io.argos.server.session.SessionRegistry;
 import io.grpc.ServerServiceDefinition;
@@ -11,9 +10,9 @@ import io.grpc.ServerStreamTracer;
 import io.grpc.Status;
 import io.netty.handler.ssl.SslContext;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
@@ -53,8 +52,7 @@ public final class CollectorLifecycle implements SmartLifecycle, DisposableBean 
   private final int port;
   private final int maxMessageBytes;
   private final boolean tlsEnabled;
-  private final Path certFile;
-  private final Path keyFile;
+  private final Supplier<SslContext> tlsContext;
   private final boolean allowPlaintext;
   private final ServerServiceDefinition service;
   private final ServerStreamTracer.Factory tracer;
@@ -68,8 +66,8 @@ public final class CollectorLifecycle implements SmartLifecycle, DisposableBean 
    * @param port {@code argos.collector.port} (0 = a free port, tests)
    * @param maxMessageBytes {@code argos.collector.max-message-bytes}
    * @param tlsEnabled {@code argos.collector.tls.enabled}
-   * @param certFile {@code argos.collector.tls.cert-file}
-   * @param keyFile {@code argos.collector.tls.key-file}
+   * @param tlsContext the TLS context of the listener when TLS is on ({@code
+   *     io.argos.server.ops.tls.CertReloader#grpcContext}, reloadable; WO-28)
    * @param allowPlaintext {@code argos.collector.allow-plaintext}
    * @param service the intercepted {@code AgentService}
    * @param tracer stream tracer of the listener, or {@code null}
@@ -82,8 +80,7 @@ public final class CollectorLifecycle implements SmartLifecycle, DisposableBean 
       int port,
       int maxMessageBytes,
       boolean tlsEnabled,
-      Path certFile,
-      Path keyFile,
+      Supplier<SslContext> tlsContext,
       boolean allowPlaintext,
       ServerServiceDefinition service,
       ServerStreamTracer.Factory tracer,
@@ -94,8 +91,7 @@ public final class CollectorLifecycle implements SmartLifecycle, DisposableBean 
     this.port = port;
     this.maxMessageBytes = maxMessageBytes;
     this.tlsEnabled = tlsEnabled;
-    this.certFile = Objects.requireNonNull(certFile, "certFile");
-    this.keyFile = Objects.requireNonNull(keyFile, "keyFile");
+    this.tlsContext = Objects.requireNonNull(tlsContext, "tlsContext");
     this.allowPlaintext = allowPlaintext;
     this.service = Objects.requireNonNull(service, "service");
     this.tracer = tracer;
@@ -114,7 +110,7 @@ public final class CollectorLifecycle implements SmartLifecycle, DisposableBean 
     if (server != null) {
       throw new IllegalStateException("The gRPC collector listener is already started");
     }
-    SslContext ssl = tlsEnabled ? CollectorTls.serverContext(certFile, keyFile) : null;
+    SslContext ssl = tlsEnabled ? tlsContext.get() : null;
     GrpcCollectorServer created =
         new GrpcCollectorServer(bind, port, maxMessageBytes, service, ssl, tracer);
     created.start();

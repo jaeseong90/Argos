@@ -158,6 +158,25 @@ describe('services list: request and rows (docs/14 §4.8, 05 §2.5-1)', () => {
     // Service percentiles merge DD sketches: no estimated badge (C-14).
     expect(screen.queryByTestId('estimated-badge')).toBeNull();
   });
+
+  it('T-UI-007 a BATCH service has no Apdex (D-20, C-237 (8)): the server null is the dash, an HTTP row keeps its value', async () => {
+    stub.on(LIST, () =>
+      envelope([
+        serviceRow({ service_id: '41', service: untrusted('BATCH nightlyReport'), apdex: null }),
+        serviceRow({ service_id: '42', service: untrusted('GET /api/orders'), apdex: 0.5 }),
+      ]),
+    );
+    await open(`${RANGE_QUERY}&kind=ALL`);
+    await ready();
+    expect(lastQuery()).toMatchObject({ kind: 'ALL' });
+    const batch = within(cell('41', 'apdex')).getByTestId('stats-value');
+    expect(batch).toHaveAttribute('data-missing', 'true');
+    expect(batch).toHaveAttribute('data-value', '');
+    expect(batch).toHaveTextContent('—');
+    const http = within(cell('42', 'apdex')).getByTestId('stats-value');
+    expect(http).toHaveAttribute('data-value', '0.5');
+    expect(http).not.toHaveTextContent('—');
+  });
 });
 
 describe('services list: sort, Top N, filters, CSV (T-UI-004)', () => {

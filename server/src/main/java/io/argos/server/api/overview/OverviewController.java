@@ -51,7 +51,10 @@ public class OverviewController {
               + " alerts_firing_total the rows of GET /overview/alerts with the same env (server"
               + " self alerts included), both from the alert engine now (ADR-0010 C-212 (2));"
               + " server.channel_failures_24h counts the deliveries that failed in the last 24 h;"
-              + " server.disk_usage_ratio and server.cert_expiry_days are null until WO-28.")
+              + " server.disk_usage_ratio is the largest used ratio of the write-ahead log and"
+              + " ClickHouse disks and server.cert_expiry_days the days until the collector's TLS"
+              + " certificate expires, each null until the server has measured it (no TLS: no"
+              + " certificate).")
   @ArgosLimits(rowsMax = OverviewService.MAX_APPS, timeoutS = 10)
   @ArgosSource({
     "xlog",

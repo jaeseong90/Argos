@@ -2,6 +2,7 @@
 package io.argos.sample.batch.web;
 
 import io.argos.sample.batch.jobs.BatchJobs;
+import io.argos.sample.batch.jobs.ProductPrices;
 import io.argos.sample.batch.scheduled.ScheduledStats;
 import io.argos.sample.common.SampleConfig;
 import io.argos.sample.common.datasource.SampleDataSource;
@@ -40,6 +41,7 @@ public class ShopController {
   private final TaskScheduler taskScheduler;
   private final ScheduledStats scheduledStats;
   private final BatchJobs batchJobs;
+  private final ProductPrices prices;
   private final JdbcTemplate jdbc;
 
   public ShopController(
@@ -51,6 +53,7 @@ public class ShopController {
       TaskScheduler taskScheduler,
       ScheduledStats scheduledStats,
       BatchJobs batchJobs,
+      ProductPrices prices,
       JdbcTemplate jdbc) {
     this.shop = shop;
     this.config = config;
@@ -60,6 +63,7 @@ public class ShopController {
     this.taskScheduler = taskScheduler;
     this.scheduledStats = scheduledStats;
     this.batchJobs = batchJobs;
+    this.prices = prices;
     this.jdbc = jdbc;
   }
 
@@ -97,6 +101,7 @@ public class ShopController {
                     request.getServletContext().getServerInfo(),
                     request.getContextPath())));
     info.put("batchJobs", batchJobs.names());
+    info.put("batchPerItemSql", prices.perItemSql());
     info.put("taskScheduler", taskScheduler.getClass().getSimpleName());
     info.put("scheduledVirtualThreads", scheduledStats.lastRunVirtual());
     info.put("quartzScheduler", quartz.getSchedulerName());

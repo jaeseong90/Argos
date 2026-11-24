@@ -34,7 +34,19 @@ Tomcat registry, which reads its getters for the 10 §11 `tomcat_threads_*` and
   (re-sent when a session is re-established). The development self-diagnostics file lists the
   connectors (`connectors`).
 
-## Supported versions
+## Supported library versions
+
+### Version range and witness
+
+| Library | Supported range | Minimum verified | Maximum verified | Boundary tests |
+|---|---|---|---|---|
+| Apache Tomcat (`AbstractEndpoint`, embedded and standalone) | 9.0, 10.1, 11.0 | 9.0.83 | 11.0.27 | `test` on 9.0.83 (`TomcatAdviceTest`, `TomcatModuleTest`); end to end `agent-testing` `jdbc.PoolRegistryE2eTest` (shop-boot2 9.0.83, shop-boot3 10.1.55; shop-boot4 11.0.27 when `-Pagent.e2e` lists `shop-boot4@21`) |
+
+- Witness (`TomcatModule.witness()`, resource lookup only): `org.apache.tomcat.util.net.AbstractEndpoint`.
+- Run: `./gradlew :agent:agent-instrumentation:tomcat:test`; end to end
+  `./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot3@21,shop-boot4@21 --tests '*PoolRegistryE2eTest*'`.
+
+### Details
 
 | Tomcat | Embedded (Spring Boot) | Standalone | Checked by |
 |---|---|---|---|

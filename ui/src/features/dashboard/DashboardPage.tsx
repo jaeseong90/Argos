@@ -10,7 +10,7 @@
 // opens the XLog around that time. All shared state is URL state (DashboardQ).
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 
 import { mergeMarkers } from '../../api/alertMarkers';
 import { errorInfo } from '../../api/errors';
@@ -25,10 +25,12 @@ import { PartialBanner } from '../../components/PartialBanner';
 import { SafeText } from '../../components/SafeText';
 import { useRegisterFilterLabels } from '../../routes/filterLabels';
 import { useAppId } from '../../routes/navigation';
+import { useCan } from '../../state/permissions';
 import { endsNow } from '../../state/timeRange';
 import { DashboardQ } from '../../state/urlState';
 import { useTimeRange } from '../../state/useTimeRange';
 import { useUrlState } from '../../state/useUrlState';
+import { collectionRankingUrl } from '../admin/collection/links';
 
 import { DashboardCharts, panelElementId } from './charts/DashboardCharts';
 import type { PanelId } from './charts/panels';
@@ -56,6 +58,8 @@ export function DashboardPage() {
   const appId = appIdOrNull ?? 0;
   const navigate = useNavigate();
   const { state, set } = useUrlState(DashboardQ);
+  // The collection ranking (/admin/instances) is for operators and administrators (C-211 (2)).
+  const canOpenCollection = useCan('admin.view');
   const time = useTimeRange(DashboardQ);
   const dispatch = time.dispatch;
 
@@ -200,10 +204,20 @@ export function DashboardPage() {
               data-testid="dashboard-empty"
             />
             {excluded !== null && excluded > 0 ? (
-              // Requests the agent's exclusion rules turned away (D-19, 05 §2.0-8); the collection
-              // panel lists the reasons (the ranking screen with its link comes with WO-39).
+              // Requests the agent's exclusion rules turned away (D-19, 05 §2.0-8). Operators and
+              // administrators follow it to the collection health ranking of the instance screen
+              // (ADR-0010 C-211 (2), same range); viewers cannot open that screen and see text.
               <p className="dashboard-page__excluded" data-testid="dashboard-empty-excluded">
-                {t('dashboard:page.empty.excluded', { count: excluded })}
+                {canOpenCollection && appIdOrNull !== null ? (
+                  <Link
+                    to={collectionRankingUrl(appIdOrNull, state)}
+                    data-testid="dashboard-empty-excluded-link"
+                  >
+                    {t('dashboard:page.empty.excluded', { count: excluded })}
+                  </Link>
+                ) : (
+                  t('dashboard:page.empty.excluded', { count: excluded })
+                )}
               </p>
             ) : null}
           </div>

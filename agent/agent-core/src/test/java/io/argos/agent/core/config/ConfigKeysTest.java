@@ -105,7 +105,10 @@ class ConfigKeysTest {
     {"commands.thread-dump.max-bytes", "1048576", "N"},
     {
       "remote-config.allow",
-      "sampling.**, instrumentation.disabled, instrumentation.ignore-paths, log.level, enabled",
+      "sampling.**, instrumentation.disabled, instrumentation.ignore-*, log.level, enabled,"
+          + " transaction.slow-stack.*, capture.error-message-max-length, capture.stack-depth,"
+          + " instrumentation.app-packages, async.step, active.snapshot-interval-seconds,"
+          + " metrics.interval-seconds, transaction.max-duration-ms",
       "-"
     },
     {"log.level", "INFO", "Y"},
@@ -142,11 +145,14 @@ class ConfigKeysTest {
             "debug.transform-list",
             "test.exporter",
             "test.faults",
-            "test.selfdiag-file");
+            "test.selfdiag-file",
+            "test.overhead-monitor");
     assertThat(byName.get("debug.transform-log").kind()).isEqualTo(KeySpec.Kind.DIAGNOSTIC);
     assertThat(byName.get("debug.transform-list").kind()).isEqualTo(KeySpec.Kind.DIAGNOSTIC);
     assertThat(byName.get("debug.transform-timing").kind()).isEqualTo(KeySpec.Kind.DIAGNOSTIC);
-    for (String test : Arrays.asList("test.exporter", "test.faults", "test.selfdiag-file")) {
+    for (String test :
+        Arrays.asList(
+            "test.exporter", "test.faults", "test.selfdiag-file", "test.overhead-monitor")) {
       assertThat(byName.get(test).kind()).as(test).isEqualTo(KeySpec.Kind.TEST);
       assertThat(ConfigKeys.isTestOnly(test)).isTrue();
     }
@@ -273,7 +279,11 @@ class ConfigKeysTest {
     assertThat(proxies.check("300.1.1.1")).isNotNull();
 
     KeySpec custom = ConfigKeys.spec(ConfigKeys.INSTRUMENTATION_CUSTOM_METHODS);
+    assertThat(custom.check("com.example.*Service#*|true, com.example.Job#run")).isNull();
+    // the step type suffix of the earlier format still parses (CustomMethodPolicy ignores the
+    // item locally, a push is rejected FORBIDDEN_PATTERN), C-237 (5)
     assertThat(custom.check("com.example.*Service#*|METHOD|false, com.example.Job#run")).isNull();
+    assertThat(custom.check("com.example.Job#run|maybe")).isNotNull();
     assertThat(custom.check("com.example.Job")).isNotNull();
     assertThat(custom.check("com.example.Job#run|NOPE")).isNotNull();
 

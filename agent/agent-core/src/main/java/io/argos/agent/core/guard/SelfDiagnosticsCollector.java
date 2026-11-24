@@ -30,6 +30,8 @@ import java.util.Map;
  *       10 §10.3; the pool also holds the application's direct buffers, so it is an upper bound of
  *       the agent's use);
  *   <li>{@code premain_ms}: start of premain to the start banner (P8);
+ *   <li>{@code stack_capture_seconds_total}, {@code stack_captures_total}: the cost and count of
+ *       the slow-stack sampler (10 §13.1, WO-19, {@link AgentCounters#addStackCapture});
  *   <li>every counter of {@link AgentCounters}, {@value #LOG_DROPPED}, {@value
  *       #LIBRARY_LOG_SUPPRESSED} and the extra counter source (the transport's self metrics, {@code
  *       TransportCounters}, which the transport adds from {@code argos-sender}), and the state and
@@ -125,6 +127,7 @@ public final class SelfDiagnosticsCollector {
     if (direct != null) {
       builder.directMemoryBytes(direct);
     }
+    builder.stackCapture(counters.stackCaptureSeconds(), counters.stackCaptures());
     double premain = premainMillis;
     if (!Double.isNaN(premain)) {
       builder.premainMs(premain);
@@ -153,7 +156,7 @@ public final class SelfDiagnosticsCollector {
   }
 
   /** CPU seconds of the live agent threads, or null when the JVM does not measure them. */
-  static Double agentThreadsCpuSeconds() {
+  public static Double agentThreadsCpuSeconds() {
     try {
       ThreadMXBean bean = ManagementFactory.getThreadMXBean();
       if (!bean.isThreadCpuTimeSupported() || !bean.isThreadCpuTimeEnabled()) {
@@ -192,7 +195,7 @@ public final class SelfDiagnosticsCollector {
   }
 
   /** The live threads of the JVM (bounded). */
-  static Thread[] liveThreads() {
+  public static Thread[] liveThreads() {
     ThreadGroup root = Thread.currentThread().getThreadGroup();
     while (root != null && root.getParent() != null) {
       root = root.getParent();

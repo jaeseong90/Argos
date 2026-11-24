@@ -1,0 +1,679 @@
+{
+  "common": {
+    "cancel": "취소",
+    "working": "처리 중…",
+    "actions": "작업",
+    "yes": "예",
+    "no": "아니요",
+    "application": "애플리케이션",
+    "chooseApplication": "애플리케이션 선택",
+    "once": {
+      "tokenTitle": "새 에이전트 토큰",
+      "passwordTitle": "초기 비밀번호",
+      "notice": "지금 복사하세요. 다시 볼 수 없습니다. Argos는 해시만 저장합니다.",
+      "tokenLabel": "에이전트 토큰",
+      "passwordLabel": "초기 비밀번호",
+      "copy": "복사",
+      "copied": "클립보드에 복사했습니다.",
+      "copyFailed": "복사하지 못했습니다. 직접 선택해 복사하세요.",
+      "noExpiry": "이 토큰은 만료되지 않습니다.",
+      "expires": "{{time}}에 만료됩니다.",
+      "passwordChange": "사용자에게 비공개 경로로 전달하세요. 첫 로그인 때 자기 비밀번호로 바꿉니다.",
+      "previousValid": "이전 토큰은 {{time}}까지 계속 동작합니다.",
+      "store": "각 호스트의 토큰 파일(권한 0600)에 저장하세요. argos-agent.yml이나 저장소에 두지 마세요.",
+      "close": "복사했습니다"
+    }
+  },
+  "apps": {
+    "title": "애플리케이션",
+    "readOnly": "읽기 전용: 변경하려면 관리자 역할이 필요합니다.",
+    "search": "이름",
+    "instancesUp": "정상 {{up, number}} / {{total, number}}",
+    "rulesApplied": "적용됨",
+    "rulesNotApplied": "미적용",
+    "rulesFailed": "애플리케이션은 저장했지만 권장 알림 규칙을 적용하지 못했습니다. 다시 열어 재시도하세요.",
+    "deleted": "애플리케이션을 삭제했습니다: 토큰 {{tokens, number}}개 폐기, 에이전트 세션 {{sessions, number}}개 종료, 알림 규칙 {{rules, number}}개 삭제. 수집 데이터는 보존 기간이 끝날 때까지 남습니다.",
+    "column": {
+      "name": "이름",
+      "env": "환경",
+      "group": "그룹",
+      "instances": "인스턴스",
+      "tokens": "토큰",
+      "registration_policy": "등록 정책",
+      "recommended_rules": "권장 규칙",
+      "last_seen": "마지막 수신"
+    },
+    "policy": {
+      "inherit": "환경 기본값",
+      "auto": "자동",
+      "approval": "승인",
+      "inheritedMark": "(환경 기본값)"
+    },
+    "action": {
+      "new": "새 애플리케이션",
+      "edit": "편집",
+      "delete": "삭제",
+      "install": "설치 안내"
+    },
+    "empty": {
+      "title": "아직 애플리케이션이 없습니다.",
+      "description": "관리자가 첫 애플리케이션을 등록하거나, 에이전트가 접속할 때 애플리케이션을 등록합니다.",
+      "descriptionAdmin": "애플리케이션을 만들고 설치 안내에 따라 에이전트를 붙이세요."
+    },
+    "noMatch": {
+      "title": "이 이름과 맞는 애플리케이션이 없습니다.",
+      "description": "이름 필터를 바꾸거나 지우세요."
+    },
+    "delete": {
+      "title": "애플리케이션 삭제",
+      "impact": "이 애플리케이션의 에이전트 토큰을 모두 폐기하고 에이전트는 5초 안에 끊깁니다. 알림 규칙은 삭제되고 인스턴스는 보관됩니다. 수집 데이터는 보존 기간이 끝날 때까지 남습니다.",
+      "typeName": "확인을 위해 애플리케이션 이름을 입력하세요:",
+      "ok": "애플리케이션 삭제"
+    },
+    "editor": {
+      "createTitle": "새 애플리케이션",
+      "editTitle": "애플리케이션 편집",
+      "save": "저장",
+      "groupHelp": "전체 현황에서 애플리케이션을 묶습니다. 없으면 비워 두세요.",
+      "apdex": "Apdex T(ms)",
+      "apdexHelp": "T 이하 요청은 만족, 4T 이하는 허용입니다. 변경은 새 트랜잭션부터 적용됩니다.",
+      "policyInherited": "지금 정책은 환경 기본값(argos.agent.auto-register.<env>)입니다. 정책을 저장하면 이 애플리케이션에 고정됩니다.",
+      "recommendedRules": "권장 알림 규칙 적용",
+      "rulesApplied": "권장 알림 규칙이 적용되어 있습니다.",
+      "exists": "같은 이름과 환경의 애플리케이션이 이미 있습니다.",
+      "invalid": {
+        "name": "제어 문자 없이 1~128자 이름을 입력하세요.",
+        "env": "제어 문자 없이 1~32자 환경을 입력하세요.",
+        "group": "그룹은 제어 문자 없이 64자 이하입니다.",
+        "apdex": "Apdex T는 1~65535 사이의 정수(ms)입니다."
+      }
+    }
+  },
+  "pending": {
+    "title": "승인 대기",
+    "description": "자동 등록하지 않는 환경에서 아직 등록되지 않은 애플리케이션의 에이전트입니다. 승인하면 애플리케이션을 만들고 토큰을 발급하며, 에이전트는 다음 재시도에 접속합니다.",
+    "approve": "승인",
+    "reject": "거부",
+    "approveTitle": "등록 승인",
+    "approveImpact": "애플리케이션을 만들고 에이전트 토큰 하나를 발급합니다(한 번만 표시). 요청한 에이전트는 다음 재시도에 접속합니다.",
+    "rejectTitle": "등록 거부",
+    "rejectImpact": "요청을 지웁니다. 에이전트가 계속 재시도하므로 에이전트를 멈추거나 설정을 바꾸지 않으면 다시 나타납니다.",
+    "noToken": "애플리케이션은 만들었지만 활성 토큰이 이미 5개라 토큰을 발급하지 않았습니다. 토큰 화면에서 하나를 폐기한 뒤 새로 발급하세요.",
+    "column": {
+      "name_env": "이름 · 환경",
+      "host": "호스트",
+      "first_attempt": "첫 시도",
+      "last_attempt": "마지막 시도",
+      "attempts": "시도 횟수"
+    },
+    "empty": {
+      "title": "승인 대기 중인 등록이 없습니다.",
+      "description": "환경이 승인을 요구하면 미등록 애플리케이션의 에이전트가 여기에 나타납니다."
+    }
+  },
+  "instances": {
+    "title": "인스턴스",
+    "tabList": "인스턴스",
+    "tabCollection": "수집 상태",
+    "showArchived": "보관된 인스턴스",
+    "autoArchive": "{{days, number}}일 동안 접속하지 않은 인스턴스는 자동으로 보관되며, 다시 접속하면 목록에 돌아옵니다. 보관된 인스턴스만 삭제할 수 있습니다.",
+    "column": {
+      "state": "상태",
+      "name": "인스턴스",
+      "agent_version": "에이전트 버전",
+      "config_hash": "설정 해시",
+      "last_heartbeat": "마지막 heartbeat",
+      "drops": "유실(24시간)",
+      "clock_skew": "시간 오차",
+      "modules_disabled": "비활성 모듈",
+      "ip_mode": "IP 수집"
+    },
+    "compatOld": "구버전",
+    "compatUnsupported": "호환 불가",
+    "drift": "불일치",
+    "noModulesDisabled": "없음",
+    "ipMode": {
+      "full": "전체",
+      "masked": "마스킹",
+      "off": "수집 안 함"
+    },
+    "archive": "보관",
+    "archiveConnected": "접속하지 않은 인스턴스만 보관할 수 있습니다.",
+    "archiveTitle": "인스턴스 보관",
+    "archiveImpact": "인스턴스를 목록에서 숨깁니다. 데이터는 남고, 다시 접속하면 목록에 돌아옵니다.",
+    "delete": "삭제",
+    "deleteTitle": "인스턴스 삭제",
+    "deleteImpact": "보관된 인스턴스와 명령 이력을 삭제합니다. 이벤트와 수집 데이터는 보존 기간이 끝날 때까지 남습니다.",
+    "noApp": {
+      "title": "아직 애플리케이션이 없습니다.",
+      "description": "애플리케이션 화면에서 애플리케이션을 등록한 뒤 에이전트를 붙이세요."
+    },
+    "empty": {
+      "title": "이 애플리케이션의 인스턴스가 없습니다.",
+      "description": "애플리케이션의 설치 안내로 에이전트를 붙이면 접속한 인스턴스가 여기에 나타납니다."
+    },
+    "emptyArchived": {
+      "title": "보관된 인스턴스가 없습니다.",
+      "description": "7일 동안 접속하지 않거나 운영자가 보관하면 여기에 나타납니다."
+    }
+  },
+  "collection": {
+    "title": "수집 상태 순위",
+    "sortBy": "순위 기준",
+    "help": "선택한 기간의 합계입니다. '—'는 0이 아니라 출처 없음입니다.",
+    "column": {
+      "name": "인스턴스",
+      "drops": "에이전트 유실",
+      "lag_s": "적재 지연",
+      "skew_ms": "시간 오차",
+      "excluded": "제외된 요청"
+    },
+    "empty": {
+      "title": "이 기간에 수집 데이터를 보고한 인스턴스가 없습니다.",
+      "description": "기간을 넓히거나 에이전트 접속을 확인하세요."
+    }
+  },
+  "tokens": {
+    "title": "에이전트 토큰",
+    "help": "에이전트는 애플리케이션의 토큰으로 인증합니다. {{days, number}}일 안에 만료되는 토큰에는 배지가 붙습니다.",
+    "issue": "토큰 발급",
+    "rotate": "회전",
+    "revoke": "폐기",
+    "column": {
+      "prefix": "토큰",
+      "created_by": "발급자",
+      "created_at": "발급",
+      "expires_at": "만료",
+      "last_used_at": "마지막 사용",
+      "instances_using": "활성 세션",
+      "state": "상태"
+    },
+    "createdBySystem": "서버",
+    "noExpiry": "없음",
+    "expiring": "만료 임박",
+    "graceUntil": "이전 토큰 유효:",
+    "state": {
+      "active": "활성",
+      "rotating": "회전 중",
+      "revoked": "폐기됨",
+      "expired": "만료됨"
+    },
+    "empty": {
+      "title": "이 애플리케이션의 토큰이 없습니다.",
+      "description": "에이전트를 붙이기 전에 토큰을 발급해 각 호스트의 토큰 파일에 저장하세요."
+    },
+    "issueTitle": "에이전트 토큰 발급",
+    "issueImpact": "이 애플리케이션의 새 토큰입니다. 한 번만 표시되며 Argos는 해시만 보관합니다.",
+    "expiresDays": "만료(일)",
+    "rotateTitle": "토큰 회전",
+    "rotateImpact": "새 토큰을 발급합니다(한 번만 표시). 모든 호스트에서 바꿀 수 있도록 지금 토큰은 {{days, number}}일 동안 계속 동작합니다.",
+    "revokeTitle": "토큰 폐기",
+    "revokeImpact_other": "토큰은 즉시 동작을 멈춥니다. 활성 에이전트 세션 {{count, number}}개가 5초 안에 종료됩니다.",
+    "revokeSessions_other": "활성 에이전트 세션 {{count, number}}개가 즉시 종료됩니다.",
+    "reason": "사유(필수, 감사 로그에 남음)"
+  },
+  "install": {
+    "title": "설치 안내:",
+    "close": "닫기",
+    "copy": "복사",
+    "copied": "복사했습니다.",
+    "copyFailed": "복사하지 못했습니다. 직접 선택해 복사하세요.",
+    "tokenTitle": "1. 토큰 파일",
+    "token": "애플리케이션의 에이전트 토큰을 각 호스트의 {{file}}에 저장하세요(소유자만, 권한 0600). 아래 스니펫에는 토큰이 들어가지 않습니다.",
+    "tokensLink": "토큰 발급",
+    "addressNote": "수집 서버 주소는 이 브라우저가 접속한 호스트의 9100 포트입니다. 에이전트가 다른 주소(프록시·NAT)로 접속하면 그 주소를 쓰세요. 토큰 발급 응답에 설정된 주소가 나옵니다.",
+    "javaagentTitle": "2. JVM 옵션",
+    "javaagentHelp": "애플리케이션 JVM에 이 옵션을 더하세요(예: JAVA_OPTS).",
+    "ymlTitle": "또는 argos-agent.yml",
+    "ymlHelp": "설정을 에이전트 jar 옆 argos-agent.yml에 두고 JVM을 {{line}}로 시작하세요.",
+    "checkTitle": "3. 시작 전 점검",
+    "checkHelp": "애플리케이션에 붙지 않고 호스트에서 실행합니다: 설정, 토큰 파일, 수집 서버 연결, 지원 라이브러리.",
+    "compatTitle": "호환성",
+    "compat": "지원 JDK·서버·프레임워크·드라이버: Argos 배포본 README.md의 \"Compatibility targets (1.0)\" 절, 에이전트 설정 전체는 docs/agent-config.md.",
+    "canaryTitle": "카나리 적용",
+    "canary": {
+      "one": "먼저 인스턴스 하나에만 에이전트를 붙입니다.",
+      "selfDiag": "자가 진단에 오류가 없고 인스턴스 화면에서 정상인지 확인합니다.",
+      "compare": "에이전트 없는 인스턴스와 응답시간·에러율을 한동안 비교합니다.",
+      "rollout": "그다음 나머지 인스턴스에 적용합니다."
+    }
+  },
+  "users": {
+    "title": "사용자",
+    "search": "사용자명",
+    "create": "새 사용자",
+    "column": {
+      "username": "사용자명",
+      "roles": "역할",
+      "enabled": "활성",
+      "locked": "잠금",
+      "must_change_password": "비밀번호 변경 필요",
+      "pii": "개인정보",
+      "created_at": "생성"
+    },
+    "role": {
+      "viewer": "조회자",
+      "operator": "운영자",
+      "admin": "관리자"
+    },
+    "lockedUntil": "해제 시각",
+    "piiView": "열람 가능",
+    "piiAdminOnly": "관리자만",
+    "enable": "활성화",
+    "disable": "비활성화",
+    "revokeSessions": "세션 종료",
+    "unlock": "잠금 해제",
+    "resetPassword": "비밀번호 설정",
+    "delete": "삭제",
+    "selfDelete": "자기 계정은 삭제하거나 비활성화할 수 없습니다.",
+    "empty": {
+      "title": "사용자가 없습니다.",
+      "description": "필요한 역할로 사용자를 만드세요."
+    },
+    "noMatch": {
+      "title": "이 이름과 맞는 사용자가 없습니다.",
+      "description": "이름 필터를 바꾸거나 지우세요."
+    },
+    "createTitle": "새 사용자",
+    "createImpact": "Argos가 초기 비밀번호를 만들어 한 번만 보여 줍니다. 사용자에게 비공개로 전달하세요.",
+    "mustChange": "첫 로그인 때 비밀번호를 바꾸게 함",
+    "roleTitle": "역할 변경",
+    "roleImpact": "사용자가 {{role}}이(가) 됩니다. 지금 세션이 끝나고 다음 로그인부터 새 역할이 적용됩니다.",
+    "roleOk": "적용",
+    "enableTitle": "사용자 활성화",
+    "enableImpact": "사용자가 다시 로그인할 수 있습니다.",
+    "disableTitle": "사용자 비활성화",
+    "disableImpact": "사용자는 로그인할 수 없고 지금 세션이 끝납니다.",
+    "piiTitle": "개인정보 권한",
+    "piiGrantImpact": "이 관리자는 바인드 파라미터 원문을 볼 수 있고, 열람은 모두 감사됩니다.",
+    "piiRevokeImpact": "이 관리자는 더 이상 바인드 파라미터 원문을 볼 수 없습니다.",
+    "sessionsImpact": "사용자의 모든 세션이 지금 끝나고 열린 화면은 로그인으로 돌아갑니다.",
+    "unlockImpact": "로그인 실패로 걸린 잠금을 풉니다.",
+    "resetImpact": "사용자가 다음 로그인 때 바꿔야 하는 새 비밀번호를 설정합니다. 지금 세션이 끝납니다.",
+    "newPassword": "새 비밀번호",
+    "passwordHelp": "{{min, number}}자 이상. 흔한 비밀번호는 서버가 거부합니다.",
+    "deleteTitle": "사용자 삭제",
+    "deleteImpact": "계정을 익명화·비활성화하고 세션을 끝냅니다. 감사 로그에는 이름이 남습니다. 마지막 관리자는 삭제할 수 없습니다."
+  },
+  "about": {
+    "title": "Argos 정보",
+    "serverVersion": "서버 버전",
+    "commit": "커밋",
+    "uiVersion": "UI 버전",
+    "protocol": "에이전트 프로토콜 버전",
+    "uptime": "서버 가동 시간",
+    "supportPolicy": "지원 정책",
+    "supportPolicyAt": "문서:",
+    "noSupportPolicy": "이 빌드에는 없습니다.",
+    "versionMismatch": "UI와 서버의 버전이 다릅니다. 새로 고침하고, 계속되면 서버가 예전 UI 빌드를 제공하고 있는 것입니다.",
+    "agentVersions": "사용 중인 에이전트 버전",
+    "agentVersion": "에이전트 버전",
+    "unknownVersion": "보고 없음",
+    "instances": "인스턴스",
+    "noAgents": {
+      "title": "등록된 에이전트가 없습니다.",
+      "description": "애플리케이션의 설치 안내로 에이전트를 붙이세요."
+    }
+  },
+  "licenses": {
+    "title": "오픈소스 라이선스",
+    "description": "서버·UI·에이전트와 함께 배포되는 서드파티 구성 요소(이 빌드의 목록)입니다.",
+    "part": {
+      "server": "서버",
+      "ui": "웹 UI",
+      "agent": "에이전트"
+    },
+    "column": {
+      "name": "구성 요소",
+      "version": "버전",
+      "license": "라이선스"
+    },
+    "emptyTitle": "나열된 서드파티 구성 요소가 없습니다.",
+    "emptyDescription": "이 부분에는 구성 요소가 없습니다.",
+    "truncated": "목록이 표시한 것보다 깁니다. 전체는 배포본의 NOTICE 파일을 보세요.",
+    "notIncluded": "이 빌드에 포함되지 않았습니다.",
+    "unreadable": "이 빌드의 목록을 읽지 못했습니다.",
+    "next": "릴리스 빌드에는 목록이 포함됩니다. 그전에는 배포본의 NOTICE·LICENSE 파일과 에이전트 jar 안의 서드파티 고지를 보세요."
+  },
+  "config": {
+    "title": "설정 변경",
+    "empty": {
+      "noAppsTitle": "아직 애플리케이션이 없습니다",
+      "noAppsDescription": "애플리케이션 메뉴에서 애플리케이션을 등록하고 에이전트를 연결한 뒤 여기서 설정을 바꾸세요.",
+      "chooseTitle": "애플리케이션을 선택하세요",
+      "chooseDescription": "설정을 바꿀 에이전트의 애플리케이션을 고르세요.",
+      "noInstancesTitle": "인스턴스가 없습니다",
+      "noInstancesDescription": "이 애플리케이션의 에이전트가 아직 접속하지 않았습니다. 설치 안내로 에이전트를 시작한 뒤 여기서 설정을 바꾸세요."
+    },
+    "changeStatus": {
+      "previewed": "미리보기",
+      "applying": "적용 중",
+      "applied": "적용됨",
+      "superseded": "대체됨",
+      "unknown": "알 수 없음"
+    },
+    "resultStatus": {
+      "applied": "적용",
+      "partial": "일부 적용",
+      "rejected": "거부",
+      "offline": "응답 없음",
+      "pending": "미접속",
+      "unknown": "알 수 없음"
+    },
+    "driftReason": {
+      "notAllowed": "원격 변경 불허",
+      "rejected": "에이전트가 거부",
+      "pending": "아직 전달 안 됨",
+      "configHash": "설정이 다름",
+      "unknown": "다름"
+    },
+    "kind": {
+      "config": "설정",
+      "revert": "되돌리기",
+      "killSwitch": "킬 스위치",
+      "unknown": "기타"
+    },
+    "error": {
+      "keyNotAllowed": "대상 인스턴스 중 {{key}}의 원격 변경을 허용하는 곳이 없습니다. 로컬 argos-agent.yml에서 바꾸거나 먼저 그곳의 remote-config.allow에 추가하세요.",
+      "unknownKey": "{{key}}는 에이전트 설정 키가 아닙니다. 철자를 확인하세요.",
+      "immutableKey": "{{key}}는 로컬 argos-agent.yml에서만 바꿀 수 있습니다.",
+      "invalidValue": "{{key}}에 맞지 않는 값입니다. 형식과 범위를 확인하세요.",
+      "reduceMasking": "{{key}} 변경이 서버가 가진 마스킹 패턴을 지웁니다. 마스킹 패턴은 원격으로 추가만 할 수 있습니다.",
+      "killSwitchKey": "계측을 끄고 켜는 것은 킬 스위치 영역에서 하세요.",
+      "invalidState": "이 변경은 이미 적용되었거나 더 새로운 변경으로 대체되었습니다. 이력을 새로 고치세요.",
+      "rateLimited": "변경 요청이 너무 많습니다. 잠시 뒤 다시 시도하세요.",
+      "forbidden": "설정 변경은 관리자만 할 수 있습니다.",
+      "other": "변경에 실패했습니다. 다시 시도하세요."
+    },
+    "problem": {
+      "noChanges": "하나 이상의 키에 새 값을 입력하세요.",
+      "tooManyKeys": "한 번에 최대 64개 키까지 바꿀 수 있습니다.",
+      "noTargets": "인스턴스를 하나 이상 선택하세요.",
+      "tooManyTargets": "한 번에 최대 100개 인스턴스까지 바꿀 수 있습니다.",
+      "reasonRequired": "변경 사유를 입력하세요.",
+      "reasonTooLong": "사유가 1KB를 넘습니다."
+    },
+    "current": {
+      "title": "현재 설정",
+      "caption": "기준 인스턴스의 현재 설정",
+      "reference": "유효 설정 기준 인스턴스",
+      "offline": "오프라인",
+      "column": {
+        "key": "키",
+        "value": "값",
+        "source": "출처",
+        "drift": "다른 인스턴스",
+        "change": "새 값"
+      },
+      "localHint": "에이전트 자체 파일·환경 변수·기본값으로 정해지며 서버는 알 수 없습니다.",
+      "source": {
+        "server": "서버",
+        "local": "로컬 에이전트"
+      },
+      "newValue": "{{key}}의 새 값",
+      "unsetPlaceholder": "서버 값 제거",
+      "unset": "제거",
+      "lockedLocal": "로컬 argos-agent.yml에서만 변경",
+      "lockedKillSwitch": "아래 킬 스위치를 사용",
+      "lockedHelp": "잠긴 키는 모든 인스턴스의 remote-config.allow에 없는 키입니다. 로컬 argos-agent.yml에서 바꾸세요.",
+      "hashDrift_other": "인스턴스 {{count}}개가 다른 인스턴스와 다른 설정으로 실행 중입니다:"
+    },
+    "reason": {
+      "label": "사유(필수)",
+      "help": "변경과 감사 로그에 기록됩니다. 최대 1KB."
+    },
+    "targets": {
+      "label": "적용 대상",
+      "all_other": "모든 인스턴스({{count}}개)",
+      "some": "선택한 인스턴스"
+    },
+    "preview": "변경 미리보기",
+    "diff": {
+      "title": "변경 내용 확인",
+      "caption": "변경 전후 값",
+      "key": "키",
+      "before": "변경 전",
+      "after": "변경 후",
+      "none": "(없음)",
+      "removed": "(제거)",
+      "apply": "적용",
+      "targetsAll": "애플리케이션의 모든 인스턴스에 적용합니다.",
+      "targetsSome_other": "선택한 인스턴스 {{count}}개에 적용합니다.",
+      "rejected": "다음 인스턴스는 일부 키의 원격 변경을 허용하지 않아 그 키를 받지 않습니다:"
+    },
+    "results": {
+      "title": "인스턴스별 결과",
+      "caption": "인스턴스마다의 변경 결과",
+      "status": "상태",
+      "kind": "종류",
+      "reason": "사유",
+      "requestedAt": "요청 시각",
+      "appliedAt": "적용 시각",
+      "waiting": "에이전트 응답을 기다리는 중…",
+      "notApplied": "미리보기만 하고 적용하지 않은 변경입니다.",
+      "noTargets": "대상 인스턴스가 없던 변경입니다.",
+      "column": {
+        "instance": "인스턴스",
+        "status": "결과",
+        "rejectedKeys": "거부된 키",
+        "appliedAt": "적용 시각",
+        "error": "오류"
+      }
+    },
+    "revert": {
+      "action": "이전 설정으로 되돌리기",
+      "title": "이 변경을 되돌릴까요?",
+      "impact": "이 변경 전에 서버가 가진 값을 같은 인스턴스에 바로 보냅니다. 이전에 서버가 갖고 있지 않던 키는 서버 설정에서 지워지며, 에이전트는 재기동이나 설정 다시 읽기 전까지 보낸 값을 유지합니다.",
+      "ok": "되돌리기"
+    },
+    "history": {
+      "title": "변경 이력",
+      "caption": "애플리케이션의 설정 변경, 최근 순",
+      "column": {
+        "requestedAt": "요청 시각",
+        "kind": "종류",
+        "status": "상태",
+        "keys": "키",
+        "reason": "사유",
+        "requestedBy": "요청자",
+        "open": "결과"
+      },
+      "open": "결과 보기",
+      "more": "이전 변경 더 보기",
+      "emptyTitle": "아직 변경이 없습니다",
+      "emptyDescription": "여기서 하거나 킬 스위치로 한 변경이 이 목록에 나타납니다."
+    }
+  },
+  "killSwitch": {
+    "title": "킬 스위치",
+    "stateOn": "킬 스위치가 켜져 있습니다: 이 애플리케이션의 에이전트가 추적하지 않습니다.",
+    "stateOff": "킬 스위치가 꺼져 있습니다: 에이전트가 정상적으로 추적합니다.",
+    "scope": "인스턴스",
+    "scopeAll_other": "모든 인스턴스({{count}}개)",
+    "action": "동작",
+    "actionOn": "추적 중지(킬 스위치 켜기)",
+    "actionOff": "추적 재개(킬 스위치 끄기)",
+    "turnOn": "킬 스위치 켜기",
+    "turnOff": "킬 스위치 끄기",
+    "confirmOnTitle": "추적을 멈출까요?",
+    "confirmOffTitle": "추적을 다시 시작할까요?",
+    "scopeAllImpact_other": "애플리케이션의 모든 인스턴스({{count}}개):",
+    "scopeOneImpact": "인스턴스",
+    "impactOn": "에이전트가 즉시 추적을 멈춥니다(트랜잭션·SQL·프로파일을 기록하지 않음). 애플리케이션은 그대로 실행되고 메트릭과 세션은 유지되며, 킬 스위치를 끌 때까지 인스턴스가 WARN으로 표시됩니다.",
+    "impactOff": "에이전트가 즉시 추적을 다시 시작하고 WARN 상태가 풀립니다.",
+    "result": "킬 스위치: {{status}}",
+    "audited": "감사 로그에 기록되었습니다."
+  },
+  "privacy": {
+    "title": "개인정보",
+    "mode": {
+      "full": "전체",
+      "masked": "마스킹",
+      "off": "수집 안 함",
+      "plain": "원문",
+      "hashed": "해시",
+      "whitelist": "허용 목록",
+      "partial": "일부",
+      "unknown": "알 수 없음"
+    },
+    "modes": {
+      "title": "인스턴스별 수집 모드",
+      "help": "각 인스턴스가 실제로 적용 중인 값입니다. 에이전트 로컬 설정이 서버 기본값보다 우선합니다.",
+      "chooseApp": "애플리케이션을 선택하면 인스턴스별 모드가 보입니다.",
+      "caption": "인스턴스마다의 수집 모드",
+      "emptyTitle": "인스턴스가 없습니다",
+      "emptyDescription": "이 애플리케이션의 에이전트가 아직 접속하지 않았습니다.",
+      "column": {
+        "instance": "인스턴스",
+        "ip": "클라이언트 IP",
+        "userId": "사용자 ID",
+        "queryString": "쿼리 문자열",
+        "sqlParam": "SQL 파라미터"
+      }
+    },
+    "settings": {
+      "title": "서버 기본값",
+      "ipMode": "클라이언트 IP 기본 모드",
+      "save": "저장",
+      "sourceSettings": "설치 마법사 또는 여기서 설정함",
+      "sourceConfig": "서버 설정 파일 값",
+      "help": "로컬에 capture.remote-ip가 있는 에이전트는 그 값을 유지합니다. 실행 중인 에이전트에는 아무것도 보내지 않습니다.",
+      "saved": "저장했습니다. 로컬 설정 없이 접속하는 에이전트에 적용됩니다."
+    },
+    "delete": {
+      "title": "개인 데이터 삭제",
+      "help": "사용자 ID 하나 또는 클라이언트 주소 하나의 원본 트랜잭션과 프로파일을 지웁니다. 입력값은 한 번만 보내고 이 화면에 남기지 않습니다.",
+      "kind": "삭제 기준",
+      "kindUserId": "사용자 ID",
+      "kindIp": "클라이언트 IP",
+      "valueUserId": "사용자 ID",
+      "valueIp": "IP 주소",
+      "app": "애플리케이션",
+      "allApps": "모든 애플리케이션",
+      "from": "시작",
+      "to": "끝",
+      "rangeHelp": "요청 하나에 최대 {{days, number}}일입니다.",
+      "submit": "삭제 요청",
+      "confirmTitle": "이 데이터를 삭제할까요?",
+      "confirmImpact": "범위 안의 이 {{kind}}의 원본 트랜잭션과 프로파일을 삭제합니다. 집계(롤업)는 바뀌지 않습니다. 되돌릴 수 없습니다.",
+      "confirmOk": "삭제",
+      "problem": {
+        "valueRequired": "삭제할 값을 입력하세요.",
+        "valueTooLong": "값이 1KB를 넘습니다.",
+        "ipInvalid": "IPv4 또는 IPv6 주소를 입력하세요.",
+        "rangeRequired": "범위의 시작과 끝을 입력하세요.",
+        "rangeOrder": "끝은 시작보다 뒤여야 합니다.",
+        "rangeTooLong": "범위가 30일을 넘습니다. 요청을 나누세요."
+      },
+      "error": {
+        "rateLimited": "삭제 요청은 시간당 최대 5건입니다. 나중에 다시 시도하세요.",
+        "valueInvalid": "서버가 값을 거부했습니다. 확인 후 다시 시도하세요.",
+        "appNotFound": "애플리케이션이 더 이상 없습니다. 다른 애플리케이션을 고르세요.",
+        "queueFull": "진행 중인 삭제가 너무 많습니다. 몇 분 뒤 다시 시도하세요.",
+        "other": "요청에 실패했습니다. 다시 시도하세요."
+      }
+    },
+    "job": {
+      "status": {
+        "queued": "대기",
+        "running": "진행 중",
+        "done": "완료",
+        "failed": "실패",
+        "unknown": "알 수 없음"
+      }
+    },
+    "notice": {
+      "ipMaskedScope": "일부 인스턴스는 주소를 마스킹해 저장합니다. 그 인스턴스에서는 주소의 /24(IPv4) 또는 /48(IPv6) 네트워크 전체가 일치해 같은 네트워크의 다른 클라이언트 행도 삭제되었습니다.",
+      "interruptedByRestart": "작업 중 서버가 재기동되었습니다. 삭제를 다시 요청하세요.",
+      "other": "참고: {{code}}"
+    },
+    "jobs": {
+      "title": "삭제 작업",
+      "caption": "이 화면에서 요청한 삭제 작업",
+      "emptyTitle": "요청한 삭제가 없습니다",
+      "emptyDescription": "요청한 작업이 진행 상황과 함께 여기에 나타납니다.",
+      "column": {
+        "createdAt": "요청 시각",
+        "kind": "기준",
+        "status": "상태",
+        "tables": "완료한 파티션",
+        "rows": "행 수",
+        "warnings": "경고",
+        "finishedAt": "완료 시각"
+      }
+    }
+  },
+  "retention": {
+    "title": "데이터 보존",
+    "help": "데이터 종류마다 보존하는 일수입니다. 값을 줄이면 다음 TTL 실행 때 오래된 데이터가 지워집니다.",
+    "field": {
+      "xlog": "트랜잭션(XLog)",
+      "profile": "프로파일",
+      "statRaw": "통계(원본)",
+      "metricRaw": "메트릭(원본)",
+      "rollup1m": "집계(1분)",
+      "rollup1h": "집계(1시간)"
+    },
+    "source": {
+      "settings": "여기서 설정함",
+      "config": "서버 설정 파일 값"
+    },
+    "invalid": "모든 값은 {{min, number}}~{{max, number}}의 정수 일수여야 합니다.",
+    "save": "보존 기간 저장",
+    "reset": "취소",
+    "pendingDrops_other": "보존 기간 밖의 파티션 {{count}}개가 삭제를 기다리고 있습니다.",
+    "applied_other": "저장하고 적용했습니다. 파티션 {{count}}개를 백그라운드에서 삭제합니다.",
+    "notApplied": "저장했습니다. 새 보존 기간은 다음 서버 기동 때 또는 argos-admin retention apply로 적용됩니다.",
+    "confirmTitle": "보존 기간을 줄일까요?",
+    "confirmImpact": "{{fields}}의 새 보존 기간보다 오래된 데이터가 삭제되며 복구할 수 없습니다.",
+    "confirmCheck": "이 데이터가 삭제된다는 것을 이해했습니다.",
+    "confirmOk": "줄이기"
+  },
+  "audit": {
+    "title": "감사 로그",
+    "caption": "감사 기록, 최근 순",
+    "filters": "감사 로그 필터",
+    "filter": {
+      "actor": "행위자",
+      "action": "행위",
+      "targetType": "대상 종류",
+      "targetId": "대상 ID"
+    },
+    "apply": "필터 적용",
+    "clear": "필터 지우기",
+    "export": "CSV 내보내기",
+    "exporting": "내보내는 중…",
+    "exportRateLimited": "내보내기는 분당 최대 10회입니다. 잠시 뒤 다시 시도하세요.",
+    "exportRetry": "내보내기는 분당 최대 10회입니다. {{seconds, number}}초 뒤 다시 시도하세요.",
+    "more": "이전 기록 더 보기",
+    "show": "자세히",
+    "hide": "접기",
+    "detailTitle": "기록 상세",
+    "reason": "사유:",
+    "before": "변경 전",
+    "after": "변경 후",
+    "emptyTitle": "감사 기록이 없습니다",
+    "emptyDescription": "선택한 시간 범위에 기록이 없습니다. 범위를 넓히세요.",
+    "emptyFiltered": "이 시간 범위에 필터와 일치하는 기록이 없습니다. 필터를 지우거나 범위를 넓히세요.",
+    "column": {
+      "ts": "시각",
+      "actor": "행위자",
+      "ip": "IP",
+      "action": "행위",
+      "target": "대상",
+      "result": "결과",
+      "requestId": "요청 ID",
+      "details": "상세"
+    },
+    "actorType": {
+      "user": "사용자",
+      "agent": "에이전트",
+      "system": "시스템"
+    },
+    "result": {
+      "success": "성공",
+      "failure": "실패",
+      "rejected": "거부"
+    }
+  }
+}

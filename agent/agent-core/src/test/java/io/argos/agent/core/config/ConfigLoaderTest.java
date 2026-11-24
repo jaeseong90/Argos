@@ -279,6 +279,8 @@ class ConfigLoaderTest {
             "    - step-type: SQL",
             "    - pattern: com.example.X#y",
             "      color: blue",
+            "    - pattern: com.example.Batch#run",
+            "      as-transaction: true",
             "  disabled: jdbc, executor",
             "sampling:",
             "  profile:",
@@ -295,7 +297,11 @@ class ConfigLoaderTest {
     assertThat(config.instrumentationIgnoreMethods()).isEmpty();
     assertThat(config.instrumentationCustomMethods())
         .containsExactly(
-            "com.example.service.*Service#*|METHOD|true", "com.example.Job#run", "com.example.X#y");
+            // step-type stays a suffix, so the policy ignores that item alone (C-237 (5))
+            "com.example.service.*Service#*|METHOD|true",
+            "com.example.Job#run",
+            "com.example.X#y",
+            "com.example.Batch#run|true");
     assertThat(config.instrumentationDisabled()).containsExactly("jdbc", "executor");
     assertThat(config.slowThresholdMs()).isEqualTo(800);
     assertThat(config.slowThresholdMs("GET /orders/{id}")).isEqualTo(2000);
@@ -312,7 +318,7 @@ class ConfigLoaderTest {
                 + " item ignored",
             "instrumentation.custom-methods item 4 (argos-agent.yml line 6): unknown field"
                 + " 'color' ignored",
-            "unknown configuration key 'capture.http-headers.a' (argos-agent.yml line 23)"
+            "unknown configuration key 'capture.http-headers.a' (argos-agent.yml line 25)"
                 + " ignored");
   }
 
@@ -385,6 +391,37 @@ class ConfigLoaderTest {
         .containsExactly(
             "unknown configuration key 'testing.anything' (-Dargos.testing.anything) ignored",
             "unknown environment variable ARGOS_TESTING_FOO ignored");
+  }
+
+  @Test
+  @Tag("req:DSN-18-15")
+  @DisplayName(
+      "T-AG-064g C-240 (3) test.overhead-monitor: a release build drops it from every source with"
+          + " the T-BLD-010 WARN and keeps the CPU guard on; a development build reads off; an"
+          + " invalid value keeps the default on")
+  void overheadMonitorTestKeyIsDevelopmentOnly() throws Exception {
+    Map<String, String> props = required("argos.test.overhead-monitor", "off");
+    LoadedConfig release = load(null, props, none(), true);
+    assertThat(release.warnings())
+        .containsExactly(
+            "test-only settings ignored in a release build (T-BLD-010):"
+                + " [-Dargos.test.overhead-monitor]");
+    assertThat(release.config().testOverheadMonitorOff()).isFalse();
+    assertThat(release.effective().source("test.overhead-monitor")).isEqualTo(Source.DEFAULT);
+    LoadedConfig fromEnv = load(null, required(), map("ARGOS_TEST_OVERHEAD_MONITOR", "off"), true);
+    assertThat(fromEnv.config().testOverheadMonitorOff()).isFalse();
+    assertThat(fromEnv.warnings()).hasSize(1);
+    assertThat(fromEnv.warnings().get(0)).contains("ARGOS_TEST_OVERHEAD_MONITOR");
+
+    LoadedConfig development = load(null, props, none(), false);
+    assertThat(development.warnings()).isEmpty();
+    assertThat(development.config().testOverheadMonitorOff()).isTrue();
+    assertThat(development.effective().source("test.overhead-monitor"))
+        .isEqualTo(Source.SYSTEM_PROPERTY);
+    LoadedConfig invalid =
+        load(null, required("argos.test.overhead-monitor", "disabled"), none(), false);
+    assertThat(invalid.config().testOverheadMonitorOff()).isFalse();
+    assertThat(invalid.warnings()).hasSize(1);
   }
 
   @Test

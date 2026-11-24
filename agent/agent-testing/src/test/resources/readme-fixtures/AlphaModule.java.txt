@@ -1,0 +1,24 @@
+package org.example.alpha.instrumentation;
+
+/** Fixture of ModuleReadmeLintTest (not compiled): a module with a witness of two classes. */
+public final class AlphaModule implements InstrumentationModule {
+  static final String PACKAGE = "org.example.alpha";
+
+  /** The client class: a constant built from another constant. */
+  static final String CLIENT = PACKAGE + ".Client";
+
+  @Override
+  public String id() {
+    return "alpha";
+  }
+
+  @Override
+  public ElementMatcher<ClassLoader> witness() {
+    return Witness.hasClassesNamed(CLIENT, "org.example.alpha.Request");
+  }
+
+  @Override
+  public List<TypeInstrumentation> types() {
+    return Collections.emptyList();
+  }
+}

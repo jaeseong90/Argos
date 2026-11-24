@@ -762,9 +762,151 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   and on while the session and metrics continue. Custom method patterns that start with a forbidden
   prefix (`java.`, `io.argos.` and others) are ignored, a pattern matching more than 500 classes is
   disabled, and a change retransforms at most 50 classes once per minute.
+- Batch transactions: Spring `@Scheduled` methods (Spring 5.3 to 7.0), Quartz jobs (2.3 to 2.5)
+  and Spring Batch steps (4.3 to 5.2) are recorded as transactions of kind `BATCH`
+  (`BATCH <class>#<method>` without proxy suffixes, `BATCH <group>.<name>`, `BATCH <job>.<step>`),
+  kept apart from the HTTP statistics, Apdex and throughput. A job started inside another
+  transaction is a `METHOD` step of it, and a chunk step with more steps than
+  `sampling.profile.max-steps` is folded into summary entries instead of one step per item.
+- Log correlation: log events created inside a transaction carry `argos.trace_id` and
+  `argos.tx_id` in their MDC copy (Logback 1.2 to 1.5, Log4j 1.2 and reload4j, Log4j 2 with the
+  garbage-free thread context map), also after the application's `MDC.clear()`, on executor
+  threads of the transaction and through Logback's `AsyncAppender`.
+- `capture.user-id.source: mdc:<key>` reads the user id from the MDC of the transaction's log
+  events; a transaction without such an event is counted as `mdc_absent`.
+- Custom method steps: `instrumentation.custom-methods` items record a `METHOD` step per call
+  (`Class#method`, once through proxies), and `as-transaction: true` items begin a `BATCH`
+  transaction when the thread has none. Items are applied from the first class loaded after the
+  agent starts, a pattern over the class limit stops recording at once, and a pushed value with a
+  forbidden item is rejected as a whole while a local one ignores only that item.
+- Server metric `argos_ch_memory_tracking_bytes`: the memory the ClickHouse server tracks now
+  (`system.metrics` `MemoryTracking`), read by the storage health job every minute.
+- `instrumentation.app-packages` is derived from the main class when unset (`Start-Class`,
+  `Main-Class` or the command line, top two package levels) and shown in the effective
+  configuration and self-diagnostics.
+- Sample app `shop-batch`: `POST /batch/run/{job}?detached=true` runs a job on its own thread and
+  `GET /batch/executions/{id}` reports it; `SAMPLE_BATCH_PER_ITEM_SQL=true` runs one query per
+  item. The shop apps' `/api/mdc-log` takes `clear`, `async`, `user` and `tag`.
+- Slow transaction stacks: a transaction running longer than its slow threshold gets `STACK`
+  steps sampled by the agent's watch thread (at most 10 threads per second, 5 samples per
+  transaction 3 seconds apart, 64 frames, `class.method(file:line)`; one batched JMX call for
+  platform threads, `Thread.getStackTrace()` for virtual threads). The cost is counted in
+  `argos_agent_stack_capture_seconds_total` and the self-diagnostics, and the sampler turns itself
+  off after ten cycles in a row over 50 ms.
+- Error stacks: an exception that ends a transaction adds an `ERROR` step with up to 30 frames
+  (`capture.stack-depth`) and sends its first application frame (`instrumentation.app-packages`,
+  without the line number) as `error_top_frame_id`, so error groups get a representative stack and
+  top frame from real agent data. `instrumentation.app-packages` now applies while the agent runs.
+- `java -jar argos-agent.jar --check [--config <file>] [--json] [--classpath <dir|jar>...]`: a
+  pre-flight check of the configuration, token, DNS/TCP/TLS connection, session start, clock
+  offset, JDK, library compatibility of the application's class path and log directory, as a table
+  or one JSON object, with exit code 0 (no failure), 1 (a failure) or 2 (usage error). Tokens are
+  shown as `argos_****`; the check registers an instance named `<instance>-check` and ends it at
+  once with `AgentBye`.
+- `app.version` defaults to the `Implementation-Version` of the jar or WAR started with
+  `java -jar`; it is sent in the session start and in JSONL records.
+- Agent self-throttling: while the agent's threads use more than 1 % of the host's CPU in a
+  minute, the profile `normal-rate` is halved and the event `SELF_CPU_HIGH` is sent; the rate
+  returns after five calm minutes.
+
+- Audit log API: `GET /api/v1/admin/audit` (administrators; time range, actor, action and target
+  filters, cursor paging) and `GET /api/v1/admin/audit/export` (CSV, at most 10,000 rows); both
+  reads are themselves audited. The event catalogue has 74 names; administration, configuration,
+  command, token, login, agent authentication (`AGENT_AUTH_FAILED`, `AGENT_AUTH_BLOCKED`,
+  `AGENT_SESSION_REJECTED`, rate-limited per address), migration and server start events are
+  recorded. `argos.audit.sinks` adds JSON Lines files (`file:<path>`, rolled at 100 MiB, 10 files)
+  and RFC 5424 syslog over UDP, TCP or TLS next to PostgreSQL; records PostgreSQL does not take go
+  to `argos.audit.fallback-file`. Audit partitions are created ahead and dropped after
+  `argos.retention.audit` (at least 90 days, also enforced in the database).
+- Privacy deletion: `POST /api/v1/admin/privacy/deletions` with `user_id` or `ip`, `from`, `to`
+  and optional `app_id` in the JSON body queues a job (at most 30 days per request, 5 requests per hour per administrator) that deletes the
+  matching raw transactions and profile steps (plain and hashed user ids, masked addresses
+  included) and reports its state, tables and deleted rows at
+  `GET /api/v1/admin/privacy/jobs/{jobId}`. The target value is stored only as a SHA-256 digest.
+- Retention settings: `GET/PUT /api/v1/admin/settings/retention` shows the effective retention per
+  table and its source and changes it (shortening needs `confirm`); the server applies TTL changes
+  at start, on change and with `argos-admin retention apply`, without rewriting parts on an
+  extension. `GET/PUT /api/v1/admin/settings/privacy` changes the default client address mode.
+- Emergency retention: from 90 % ClickHouse disk use the server drops one daily raw partition per
+  minute (profile steps first, then metrics and statement statistics, then transactions; never
+  today's partition or rollups) until use is below 85 %, records each drop as an event and an
+  audit row, pauses inserts at 95 % (the write-ahead log keeps the data) and resumes at 93 %.
+- Storage status: `GET /api/v1/admin/storage/health` reports parts, delayed inserts, free disk,
+  query p99, the last TTL run, emergency retention and the dead-letter area;
+  `GET /api/v1/server/health` reports disk use and certificate expiry. The server writes its own
+  metrics every 5 seconds as application 0 for the collection status screen, and the
+  `argos_ch_*`, `argos_server_disk_usage_ratio`, `argos_retention_emergency_drops_total`,
+  `argos_writer_dead_letter_*`, `argos_audit_*` and `argos_privacy_jobs` series are exposed on the
+  authenticated `/actuator/prometheus`.
+- Dead-letter area: a block ClickHouse rejects three times with a schema or format error is moved
+  to `argos.writer.dead-letter.dir` (owner-only files, at most 1 GiB, never deleted
+  automatically) in a format that can be inserted again, and its rows are counted as
+  `argos_collector_dropped_total{reason="dead_letter"}`.
+- Collector TLS: the certificate and key reload without a restart when the files change
+  (`argos.collector.tls.reload.watch`), through `POST /api/v1/admin/tls/reload` or
+  `argos-admin tls reload`; open connections keep their session. Encrypted PKCS#8 keys are read
+  with `argos.collector.tls.key-password-file`. `argos_server_tls_cert_expiry_seconds` feeds the
+  certificate expiry alert template.
+- `argos-admin` commands: `migrate`, `config effective|check`,
+  `cleanup instances|dictionary|commands`, `token issue|revoke|rotate`,
+  `setup-token regenerate`, `tls reload`, `retention show|apply`, `secrets rekey` (alias
+  `master-key rotate`), `bundle` and `version`, all with `--json` and audited
+  (`docs/ops/admin-cli.md`). `argos-admin bundle` writes a diagnostic archive (owner-only) with
+  masked logs and configuration, schema history, ClickHouse system tables and instance and token
+  summaries.
+- Hashed user ids: each application has a random user id salt, sent to agents in the session
+  start, so `capture.user-id.mode: hashed` works, and user id search finds hashed rows from the
+  plain value.
+- `argos.collector.public-address` sets the collector address shown in the first-application
+  step of the setup wizard (default: the browser's host and port 9100).
+- Rollup rebuild, consistency checks and Apdex reapply write the audit events `ROLLUP_REBUILT`,
+  `CONSISTENCY_CHECKED` and `APDEX_REAPPLIED`; `argos.ops.reconcile.enabled=false` turns the
+  nightly consistency job off.
+- Administration screens under `/admin`: applications (create, edit, delete, install guide with
+  the `-javaagent` options, `argos-agent.yml`, the `--check` command and a canary checklist),
+  pending agent registrations (approve with a token shown once, or refuse), instances (archive,
+  delete archived ones, compatibility and configuration drift markers) with a collection status
+  ranking tab (dropped data, ingest lag, clock skew, excluded transactions), agent tokens (issue
+  with an expiry shown once, rotate with a 7-day grace, revoke with the number of sessions it
+  ends, expiry warnings), configuration changes (current effective configuration, required
+  reason, diff preview, targets, per-instance results with refused keys, history, revert) and the
+  kill switch behind a confirmation dialog, privacy (per-instance capture modes, default IP mode,
+  deletion requests with job status, retention settings), users and roles (create with an initial
+  password shown once, roles, sessions, unlock), the audit log with filters and a server CSV
+  export, and version and open source license pages. Menus follow the role matrix; every screen
+  is a lazy route chunk.
+- Global search at `/search`: a transaction id or trace id opens the record directly, `user:`
+  and `req:` search the selected range (up to 24 hours), other text lists matches, and a user
+  search with no result says when user id capture is off.
+- `GET /api/v1/about` (server version, commit, protocol version, agent version counts, uptime)
+  and `GET /api/v1/about/licenses` (server, UI and agent third-party lists; a section reports
+  `not_generated` when the build carries no list).
+- `App.tokens_active` in the applications API, and `default_thresholds_ms` in
+  `GET /apps/{appId}/active` from the new `argos.ui.active-thresholds-ms` setting (default
+  1000, 3000, 8000 ms): the active transactions screen uses it unless the viewer set their own.
+- The dashboard's "N excluded" note links operators and administrators to the collection status
+  ranking.
 
 ### Changed
 
+- Privacy deletion requests carry the user id or client address in the JSON body of
+  `POST /api/v1/admin/privacy/deletions`. The query-string form
+  `DELETE /api/v1/admin/privacy/subjects?user_id=|ip=...` is removed (404), so the value no longer
+  reaches the access logs of the server or of a proxy. The admin privacy screen uses the new
+  request.
+- Agent: the default `remote-config.allow` names the keys a collector may change safely while the
+  agent runs: `sampling.**`, `instrumentation.disabled`, `instrumentation.ignore-*`, `log.level`,
+  `enabled`, `transaction.slow-stack.*`, `capture.error-message-max-length`, `capture.stack-depth`,
+  `instrumentation.app-packages`, `async.step`, `active.snapshot-interval-seconds`,
+  `metrics.interval-seconds` and `transaction.max-duration-ms`. Keys that widen what is collected
+  still need the local list. Write a local list to keep the earlier five patterns.
+- Agent: the context stores (task, connection and request state attached to application objects)
+  share one bound of 100,000 entries, about 7 MiB, besides the 100,000 entries per store; an entry
+  over it is dropped and counted.
+- Error groups: the fingerprint now includes the top application frame the agent sends, so the
+  groups of an error recorded by an older agent split once after the agent upgrade, and again when
+  `instrumentation.app-packages` changes. A redeploy that only moves lines keeps its groups.
+- Agent `STACK` steps carry line numbers (`class.method(file:line)`).
 - `ARGOS_HTTP_BIND` and `ARGOS_GRPC_BIND` are host-side publish addresses of the Compose
   installation and no longer server settings: the server listens on every interface unless
   `server.address` or `argos.collector.bind` sets another address.
@@ -845,6 +987,27 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   container instead of writing PostgreSQL directly: the server's token service creates the token,
   keeps the limit of 5 active tokens and writes the audit row. Without `--expires-days` the token
   now expires after 365 days (previously never).
+- `argos.retention.stat-days` and `argos.retention.metric-days` may differ.
+- An application's registration policy is optional: when it is not set, agents' automatic
+  registration follows `argos.agent.auto-register.<env>`; applications created without a policy
+  and existing applications with `approval` inherit the environment default, and the API returns
+  `registration_policy_inherited`.
+- User id search on applications with hashed user ids no longer answers 422.
+- Instance down alerts are resolved as `target_gone` when the instance is archived or deleted.
+- `instrumentation.custom-methods` items no longer take a step type: an item is
+  `<class glob>#<method glob>[|<as-transaction>]` (yml: `pattern` and `as-transaction`) and always
+  records a `METHOD` step. An item in the earlier format with a step type (`|SQL`, `|METHOD|true`,
+  `step-type:` in the yml) is ignored with one warning while the other items apply; a pushed value
+  with such an item is rejected as a whole (`FORBIDDEN_PATTERN`, `step_type_suffix`).
+- Service statistics give batch transactions no Apdex: a service with only `BATCH` transactions
+  has `apdex` null in `GET /api/v1/apps/{appId}/services/stats` (shown as "—"), and a service's
+  Apdex counts only its non-batch transactions with `kind=ALL`.
+- `CUSTOM_METHOD_CHANGED` is audited when a remote change of the custom methods is answered:
+  `success` by the applying user when an agent applied it, `rejected` when every agent or the
+  server refused it, with the per-instance outcome.
+- The agent configuration guide explains that Log4j 2's default thread context maps get no
+  correlation keys and how to turn on the garbage-free map
+  (`-Dlog4j2.garbagefree.threadContextMap=true`).
 
 ### Removed
 
@@ -854,6 +1017,10 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
 
 ### Fixed
 
+- Trace view: a callee whose caller started in the same millisecond as an earlier transaction of
+  the trace (a caller and its first callee) is placed under its real caller with its caller step.
+  The parent span id of the incoming traceparent now decides whenever the trace holds that
+  transaction; the time overlap is the fallback.
 - The overview's firing alerts panel draws only as many alerts as fit next to the application table
   and links the rest as "+N more" to the alert history, so the overview no longer scrolls at
   1366x768 when many alerts fire.
@@ -891,6 +1058,17 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
 - A JDK `HttpClient.sendAsync` step is closed before the application's future completes on every
   JDK, also when the JDK completes the exchange's dependents in first-in order (JDK 21+).
 - On Java 8 the agent's shutdown wait no longer depends on the wall clock.
+- A pushed custom methods change that is refused (`retransform_limit`) no longer logs the
+  "item disabled" WARN; the WARN follows only an applied change.
+- The realtime `overview` status now uses the same instance basis as `GET /overview` and
+  `GET /apps`: every instance that is not archived counts, an untracked one as down, and archived
+  instances are left out.
+- After the retention settings change (`PUT /admin/settings/retention`), the query API's raw,
+  1-minute and 1-hour retention boundaries (`retention_exceeded`) follow the new values without
+  a server restart.
+- The `CUSTOM_METHOD_CHANGED` audit row names the administrator who applied the configuration
+  change, read from the stored change, also when the agent's result arrives after the server
+  forgot the pending change.
 
 ### Security
 
@@ -937,13 +1115,21 @@ Every pull request adds a line under `## [Unreleased]` (in the matching `Added`,
   address with certificate and host name verification, redirects are never followed and response
   bodies are never shown or stored. Channel targets, recipients and webhook signing keys are stored
   encrypted with the master key (AES-256-GCM envelopes; the previous key still decrypts) and
-  returned masked. Without a master key the server starts and channel changes answer
-  409 `secret_unavailable`. Plaintext SMTP is refused unless `argos.alert.smtp.insecure` is set,
+  returned masked. Plaintext SMTP is refused unless `argos.alert.smtp.insecure` is set,
   which logs a warning at startup.
 - Agent tokens are stored only as SHA-256 hashes with a 14-character prefix, returned once with
   `Cache-Control: no-store` and never logged; the revoke reason is not written to the audit log.
   Remote command results are encrypted at rest (AES-256-GCM envelopes) and their bodies never
   logged; their identifiers are random UUIDs and other users' results answer 403. Remote
   configuration keys outside an instance's `remote-config.allow` are never pushed to it.
+- The server refuses to start without a usable master key: missing, malformed, or (on POSIX)
+  readable by group or others unless `argos.security.master-key.permissive` is set, which warns
+  at every start; on Windows the file permission cannot be checked and the operator restricts it.
+  `argos-admin secrets rekey` re-encrypts alert channel settings, webhook signing keys, command
+  results and user id salts under the current or a new key and records `MASTER_KEY_ROTATED`.
+- The runtime database account cannot update, delete or truncate audit rows, and audit partitions
+  younger than 90 days cannot be dropped. Audit records, logs and privacy jobs never contain the
+  deletion target, and the diagnostic bundle masks tokens, passwords, the master key, channel URLs
+  and the metrics token.
 
 [Unreleased]: https://github.com/argos-apm/argos/commits/main

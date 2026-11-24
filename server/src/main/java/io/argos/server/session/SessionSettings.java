@@ -69,8 +69,19 @@ public record SessionSettings(
         HELLO_TIMEOUT);
   }
 
-  /** Whether an unknown app of {@code env} is registered automatically (12 §4.4). */
+  /**
+   * Whether an unknown app of {@code env} is registered automatically by the environment default
+   * (12 §4.4); an app's own policy wins over it (ADR-0010 C-231 (7), {@link HelloService}).
+   */
   public boolean autoRegisters(String env) {
+    return autoRegisters(autoRegister, env);
+  }
+
+  /**
+   * {@link #autoRegisters(String)} of a map of {@code argos.agent.auto-register} ({@code default}
+   * for other environments, true without it).
+   */
+  public static boolean autoRegisters(Map<String, Boolean> autoRegister, String env) {
     Boolean value = autoRegister.get(env);
     if (value == null) {
       value = autoRegister.get(env.toLowerCase(Locale.ROOT));

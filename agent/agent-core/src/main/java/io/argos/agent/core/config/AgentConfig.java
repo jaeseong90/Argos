@@ -319,7 +319,10 @@ public final class AgentConfig {
     return getString(ConfigKeys.APP_INSTANCE);
   }
 
-  /** {@code app.version}, or null (the jar manifest at start). */
+  /**
+   * {@code app.version} as configured, or null. The version in force (else the main jar's {@code
+   * Implementation-Version}) is {@link AppVersion#of(AgentConfig)}, read off the premain thread.
+   */
   public String appVersion() {
     return getString(ConfigKeys.APP_VERSION);
   }
@@ -460,7 +463,7 @@ public final class AgentConfig {
     return getList(ConfigKeys.INSTRUMENTATION_IGNORE_METHODS);
   }
 
-  /** Items {@code <class glob>#<method glob>[|<STEP TYPE>[|<as-transaction>]]} (10 §6.10). */
+  /** Items {@code <class glob>#<method glob>[|<as-transaction>]} (10 §6.10, ADR-0010 C-237 (5)). */
   public List<String> instrumentationCustomMethods() {
     return getList(ConfigKeys.INSTRUMENTATION_CUSTOM_METHODS);
   }
@@ -469,9 +472,21 @@ public final class AgentConfig {
     return getInt(ConfigKeys.INSTRUMENTATION_CUSTOM_METHODS_MAX_CLASSES);
   }
 
-  /** {@code instrumentation.app-packages}; empty when unset (computed from the main class). */
+  /**
+   * {@code instrumentation.app-packages} as configured; empty when unset ({@link #appPackages()}
+   * then infers the packages from the main class).
+   */
   public List<String> instrumentationAppPackages() {
     return getList(ConfigKeys.INSTRUMENTATION_APP_PACKAGES);
+  }
+
+  /**
+   * The application packages in force (U-20): the configured value, else the packages inferred from
+   * the main class ({@link AppPackages}; reads a jar manifest once per JVM, so not on the premain
+   * thread).
+   */
+  public AppPackages appPackages() {
+    return AppPackages.of(this);
   }
 
   public int instrumentationServiceDictionaryMax() {
@@ -667,6 +682,14 @@ public final class AgentConfig {
   /** {@code test.selfdiag-file}, or null (development builds only, C-95). */
   public String testSelfdiagFile() {
     return getString(ConfigKeys.TEST_SELFDIAG_FILE);
+  }
+
+  /**
+   * True when {@code test.overhead-monitor=off} (development builds only, ADR-0010 C-240 (3)): the
+   * {@code OverheadMonitor} does not run, so the profile {@code normal-rate} is never halved.
+   */
+  public boolean testOverheadMonitorOff() {
+    return "off".equals(getString(ConfigKeys.TEST_OVERHEAD_MONITOR));
   }
 
   @Override

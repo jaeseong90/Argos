@@ -1,0 +1,15 @@
+package org.example.alpha.instrumentation;
+
+/** Fixture of ModuleReadmeLintTest (not compiled): a witness class with its own constants. */
+final class DelegateWitness extends ElementMatcher.Junction.AbstractBase<ClassLoader> {
+  static final String CLIENT_CLASS = "org.example.alpha.Client";
+
+  private final ElementMatcher<ClassLoader> client = Witness.hasClassesNamed(CLIENT_CLASS);
+  private final ElementMatcher<ClassLoader> classes =
+      Witness.hasClassesNamed(DelegatingModule.HANDLER, "org.example.alpha.State", UNKNOWN_NAME);
+
+  @Override
+  public boolean matches(ClassLoader loader) {
+    return client.matches(loader) && classes.matches(loader);
+  }
+}

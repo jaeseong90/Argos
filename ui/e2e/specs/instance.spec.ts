@@ -37,7 +37,7 @@ import {
 import { installPageHooks } from '../fixtures/fixtures';
 import { t } from '../fixtures/i18n';
 import { shellMasks } from '../fixtures/screenshots';
-import { expect, stackPageHookOptions, test } from '../fixtures/stack';
+import { apiAs, expect, stackPageHookOptions, test } from '../fixtures/stack';
 import { expectShell, expectUrl, horizontalOverflow, sameTime, state } from '../fixtures/ui';
 import { envDumpOf, selfDiagnosisOf } from '../required/dumpsChecks';
 import {
@@ -109,13 +109,17 @@ async function latestOrRun(api: ApiSession, instanceId: number, type: string): P
   return run.commandId;
 }
 
-// eslint-disable-next-line no-empty-pattern -- Playwright passes fixtures first; the hook uses none
-test.afterAll(async ({}, testInfo) => {
-  const log = commandFeedLog();
-  if (log !== '') {
-    await testInfo.attach('command-feed.log', { body: log, contentType: 'text/plain' });
+test.afterAll(async ({ session, seed }, testInfo) => {
+  testInfo.setTimeout(3 * 60_000);
+  try {
+    // The stopped feed archives its instances (C-241 (7)): no instance_down stays FIRING.
+    await stopCommandFeed(() => apiAs(session, seed, 'operator'));
+  } finally {
+    const log = commandFeedLog();
+    if (log !== '') {
+      await testInfo.attach('command-feed.log', { body: log, contentType: 'text/plain' });
+    }
   }
-  await stopCommandFeed();
 });
 
 test(
@@ -547,11 +551,12 @@ test(
     const target = trafficInstance(seed);
     // The seed's collection outage (e2e/stack/seed/outage.ts) freezes this agent's gRPC path on
     // purpose, so its queues drop while cut: T-ACPT-07 judges normal operation, the traffic range
-    // up to the minute of the cut.
+    // up to the cut itself. ADR-0010 C-236 (4): cut_at as it is, never cut down to the minute (a
+    // range under a minute had no drop sum at all).
     const outage = seed.outage;
     const cutMs =
       outage !== null && outage.instance_id === target.instanceId
-        ? Math.floor(Date.parse(outage.cut_at) / MINUTE) * MINUTE
+        ? Date.parse(outage.cut_at)
         : null;
     const to =
       cutMs !== null && cutMs < Date.parse(target.to)

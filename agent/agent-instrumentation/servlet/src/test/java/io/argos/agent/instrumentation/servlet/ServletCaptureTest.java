@@ -368,7 +368,9 @@ class ServletCaptureTest {
             .build());
     FakeHttp.Request mdc = FakeHttp.Request.of(helper.api);
     assertThat(run(helper, mdc).userId()).isNull();
-    assertThat(counters.userIdSkipped(AgentCounters.USER_ID_SKIPPED_MDC_UNSUPPORTED)).isEqualTo(1);
+    assertThat(counters.userIdSkipped(AgentCounters.USER_ID_SKIPPED_MDC_ABSENT))
+        .as("no log event carried the key (C-125 (3))")
+        .isEqualTo(1);
     assertThat(mdc.calls).doesNotContain("getSession");
   }
 }

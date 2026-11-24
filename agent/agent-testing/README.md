@@ -69,7 +69,10 @@ try (RunningApp app =
   (the required keys of 10 §4.3 P4, so a normal run logs no configuration WARN), `log.dir`,
   `debug.transform-list`, `debug.transform-log`, `test.selfdiag-file=<workDir>/out/selfdiag.json`
   (ADR-0010 C-95), `test.exporter=file:<workDir>/out` (unless a collector is set), then the
-  test's settings, all as `-Dargos.<key>`. `agentConfigFile(true)` also writes `argos-agent.yml`
+  test's settings, all as `-Dargos.<key>`. A run whose settings set
+  `sampling.profile.normal-rate` to 1.0 also gets `test.overhead-monitor=off` unless it sets that
+  key itself (ADR-0010 C-240 (3)): the agent's CPU guard would otherwise halve the rate on a host
+  with few cores. `agentConfigFile(true)` also writes `argos-agent.yml`
   and passes `-Dargos.config` (the agent's own bounded YAML subset parser, WO-10).
   `harnessDefaults(false)` passes only the test's own settings (and the collector's, below).
 - Collector (`collector(fakeCollector)`, 18 §5.2): the agent sends through its default `grpc`
@@ -374,6 +377,56 @@ e2e:stack --grep "WO-17"`, needs a host JVM, skipped inside `e2e:docker`).
   `[wo17-n25]`, `[wo17-retransform]`, `[wo17-killswitch]` and `[c233]` lines in the results'
   `system-out`; logs as `build/reports/agent-e2e/wo17-*` and `c233-<app>-jdk<N>-{vt,platform}-agent.log`.
   Timings on a shared machine are references only.
+
+## Slow stacks, error stacks, `--check`, tags and premain time (WO-19, 10 §9.1, §13, §15)
+
+The release agent jar; every class below is part of the default `integrationTest` (shop-boot3@21
+and the attach JDKs), and each runs alone with its package filter.
+
+```
+./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot3@21 \
+  --tests '*slowstack*' --tests '*errorstack*' --tests '*check*' --tests '*tags*'
+./gradlew :agent:agent-testing:integrationTest --tests '*PremainTimeAttachTest*'
+./gradlew :agent:agent-testing:test --tests '*ModuleReadmeLint*'           # unit test, part of check
+```
+
+- `slowstack.SlowStackE2eTest` (T-AG-064, F-A19; shop-boot3 entries on JDK 21+, platform and
+  `SAMPLE_VT=true` runs): 15 concurrent `GET /api/slow?ms=5000` over gRPC; every transaction has
+  STACK steps, at most 10 samples per one-second cycle, samples of one transaction at least
+  `interval-ms` apart, at most 64 frames, and the capture cost in the self-diagnostics and the
+  `argos_agent_stack_capture_seconds_total` metric. Unit tests: `core.watch.SlowStackWatcherTest`
+  (T-AG-064a..e: one batched `getThreadInfo` per cycle, limits, cost, self-disable after 10 cycles
+  over 50 ms), `SlowStackVirtualThreadTest` and `VirtualThreadStackCostTest` (`testJdk21`/`25`,
+  `[wo19-u13]` reference cost), `OverheadMonitorTest` (T-AG-064f).
+- `errorstack.ErrorStackE2eTest` (T-AG-059a..d proposed, F-A08; each shop-boot2/3 entry):
+  `GET /api/error-500` gives one ERROR step of at most 30 frames and `error_top_frame_id` of the
+  first `io.argos.sample` frame (line-free); a `sendError` 500 gives neither. Unit tests
+  `core.trace.ErrorStepTest`, `TopFrameTest`, `core.command.AppPackagesPushTest`,
+  `core.transport.ErrorFrameAssemblerTest`. The server side is `ui/e2e/specs/stats.spec.ts`
+  T-E2E-errors-4 (`pnpm -C ui e2e:stack --grep "T-E2E-errors"`).
+- `check.CheckCliTest` (T-AG-068, F-A27): `java -jar <release jar> --check` against a TLS
+  FakeCollector: success exit 0 (one `-check` session and its `AgentBye`), refused token exit 1,
+  untrusted CA exit 1, 2 s clock offset WARN exit 0, nothing listening exit 1, usage error exit 2,
+  `--version`, `--classpath` with the shop-boot3 jar, `--json` (one object); no token in the
+  output. The 8u242 case needs `-Pagent.jdk8u242=<JRE>` (else skipped). Unit test
+  `core.check.CheckCommandTest` (T-AG-068a).
+- `tags.AppTagsTest` (T-AG-066a..d, F-A21, F-A25; shop-boot3@21): the hello's `app_version` is
+  the jar manifest's `0.0.0-SNAPSHOT`, `-Dargos.app.version` wins, `app.env` unset is `default`
+  with one WARN, and every JSONL record carries `env` and `version`.
+- `attach.PremainTimeAttachTest` (T-NFR-30, N-30; each attach JDK): exactly one start banner
+  (`started in N ms`), N <= 500 (best of at most 3 runs on a shared machine), nothing else from
+  the agent on stdout or stderr. The N-30 verdict belongs to the dedicated bench machine.
+- `readme.ModuleReadmeLintTest` (unit test, T-BLD-017 proposed, O-Q05): every instrumentation
+  module README (except `api`) has the "Version range and witness" table (minimum and maximum
+  verified versions, existing boundary test classes), the module's `witness()` classes and
+  existing `:agent:` tasks; each violation fixture in `src/test/resources/readme-fixtures` is
+  caught.
+- `agent-core` `integrationTest` `ContextStoreFootprintTest` (C-120 (3)): bytes per
+  `ContextStore` entry (`[c120-contextstore]`).
+- Evidence: `[wo19-slowstack]`, `[wo19-errorstack]`, `[wo19-check]`, `[wo19-tags]`,
+  `[wo19-premain]` and `[wo19-readme]` lines in the results' `system-out`; logs as
+  `build/reports/agent-e2e/wo19-*`. [matrix-parameters.md](matrix-parameters.md) maps the 18 §6.1
+  matrix ranges (T-MX) to these switches and suites for the matrix runner (WO-50).
 
 ## FakeCollector (`collector`, 18 §5.3)
 

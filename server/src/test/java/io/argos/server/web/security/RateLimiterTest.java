@@ -166,7 +166,8 @@ class RateLimiterTest {
     RateLimiter limiter = defaults();
     for (RateLimitBucket bucket :
         new RateLimitBucket[] {
-          RateLimitBucket.COMMAND, RateLimitBucket.PRIVACY_DELETE, RateLimitBucket.WS_SUBSCRIBE
+          // PRIVACY_DELETE is enforced since WO-28 (5 per user and hour, C-136 (2)).
+          RateLimitBucket.COMMAND, RateLimitBucket.WS_SUBSCRIBE
         }) {
       assertThat(bucket.enforcedByWebLayer()).isFalse();
       assertThat(limiter.enforces(bucket)).isFalse();
@@ -175,6 +176,22 @@ class RateLimiterTest {
       assertThat(limiter.trackedKeys(bucket)).isZero();
     }
     assertThat(RateLimitBucket.CSP_REPORT.scope()).isEqualTo("csp_report");
+  }
+
+  @Test
+  @DisplayName("C-136 (2): the privacy deletion bucket allows 5 requests per user and hour")
+  void privacyDeleteBucket() {
+    RateLimiter limiter = defaults();
+    assertThat(RateLimitBucket.PRIVACY_DELETE.enforcedByWebLayer()).isTrue();
+    assertThat(limiter.limit(RateLimitBucket.PRIVACY_DELETE))
+        .isEqualTo(new RateLimiter.Limit(5, 5, Duration.ofHours(1), RateLimiter.MAX_PRIVACY_KEYS));
+    for (int i = 0; i < 5; i++) {
+      assertThat(limiter.tryConsume(RateLimitBucket.PRIVACY_DELETE, "user:a").allowed()).isTrue();
+    }
+    RateLimiter.Decision sixth = limiter.tryConsume(RateLimitBucket.PRIVACY_DELETE, "user:a");
+    assertThat(sixth.allowed()).isFalse();
+    assertThat(sixth.retryAfterSeconds()).isBetween(1L, 720L);
+    assertThat(limiter.tryConsume(RateLimitBucket.PRIVACY_DELETE, "user:b").allowed()).isTrue();
   }
 
   @Test

@@ -80,7 +80,8 @@ class HelloPathsIT {
 
   @Test
   @DisplayName(
-      "11 §5 check 1: unknown, missing, expired and revoked tokens: UNAUTHENTICATED TOKEN_*, retry 300 (C-140)")
+      "11 §5 check 1: unknown, missing, expired and revoked tokens: UNAUTHENTICATED TOKEN_*, retry"
+          + " 300 (C-140)")
   void check1() {
     String app = app();
     collector.token(app, "prod");
@@ -131,7 +132,8 @@ class HelloPathsIT {
 
   @Test
   @DisplayName(
-      "11 §5 check 3: a plaintext connection while allow-plaintext=false is PLAINTEXT_NOT_ALLOWED, retry 0")
+      "11 §5 check 3: a plaintext connection while allow-plaintext=false is PLAINTEXT_NOT_ALLOWED,"
+          + " retry 0")
   void check3() {
     String app = app();
     String token = collector.token(app, "prod").token();
@@ -152,7 +154,8 @@ class HelloPathsIT {
 
   @Test
   @DisplayName(
-      "11 §5 check 4: protocol 2 is PROTOCOL_UNSUPPORTED, agent 9.0.0 AGENT_VERSION_TOO_NEW, retry 0")
+      "11 §5 check 4: protocol 2 is PROTOCOL_UNSUPPORTED, agent 9.0.0 AGENT_VERSION_TOO_NEW, retry"
+          + " 0")
   void check4() {
     String app = app();
     String token = collector.token(app, "prod").token();
@@ -302,8 +305,8 @@ class HelloPathsIT {
   @Test
   @Tag("req:C-155")
   @DisplayName(
-      "C-155 (5) after a token rotation (old token GRACE, new token ACTIVE) the new token reaches the"
-          + " variant the old one registered: the same app and instance")
+      "C-155 (5) after a token rotation (old token GRACE, new token ACTIVE) the new token reaches"
+          + " the variant the old one registered: the same app and instance")
   void rotationKeepsVariants() throws Exception {
     String app = app();
     AgentTokens.IssuedToken old = collector.token(app, "prod");
@@ -438,7 +441,8 @@ class HelloPathsIT {
 
   @Test
   @DisplayName(
-      "T-SV-014 11 §5 check 6: instances per app and new sessions per minute: INSTANCE_LIMIT / RATE_LIMITED, retry 60")
+      "T-SV-014 11 §5 check 6: instances per app and new sessions per minute: INSTANCE_LIMIT /"
+          + " RATE_LIMITED, retry 60")
   @Tag("req:SEC-14")
   void check6() {
     String app = app();
@@ -556,7 +560,8 @@ class HelloPathsIT {
 
   @Test
   @DisplayName(
-      "11 §5 check 7: a second Hello of the instance replaces the open session (REPLACED); the old ids are SESSION_REQUIRED")
+      "11 §5 check 7: a second Hello of the instance replaces the open session (REPLACED); the old"
+          + " ids are SESSION_REQUIRED")
   void check7() {
     String app = app();
     String token = collector.token(app, "prod").token();
@@ -587,7 +592,8 @@ class HelloPathsIT {
 
   @Test
   @DisplayName(
-      "11 §5 an accepted Hello writes the instances row (identity and metadata, no state) and reuses it")
+      "11 §5 an accepted Hello writes the instances row (identity and metadata, no state) and"
+          + " reuses it")
   void instanceRow() throws Exception {
     String app = app();
     AgentTokens.IssuedToken issued = collector.token(app, "prod");
@@ -596,7 +602,11 @@ class HelloPathsIT {
       HelloResult r = a.connect();
       assertThat(r.accepted()).isTrue();
       instanceId = r.hello().getInstanceId();
-      assertThat(r.hello().getUserIdSalt().isEmpty()).as("C-125").isTrue();
+      // This harness wires no salt source (CollectorConfiguration only): the Hello carries an empty
+      // salt and is still accepted. The full server sends the app's 32-byte salt (C-125 (2),
+      // WO-28):
+      // UserIdSaltIT.
+      assertThat(r.hello().getUserIdSalt().isEmpty()).as("C-125, harness").isTrue();
       assertThat(r.hello().getConfigMap()).isEmpty();
     }
     try (Connection c = env.connect(PgAccount.APP);

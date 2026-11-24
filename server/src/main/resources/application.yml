@@ -161,6 +161,11 @@ argos:
       key-file: ${ARGOS_TLS_KEY_FILE:conf/tls/server.key}
   privacy:
     default-ip-mode: ${ARGOS_IP_MODE:masked}
+  ui:
+    # Operator-wide default elapsed-colour thresholds of the active transactions screen in ms:
+    # three positive ascending values (ADR-0010 C-225 (3)). A viewer's own choice in the browser
+    # wins; a wrong value logs a WARN and the default applies.
+    active-thresholds-ms: 1000,3000,8000
   retention:
     xlog: ${ARGOS_RETENTION_XLOG_DAYS:30}d
     profile: ${ARGOS_RETENTION_PROFILE_DAYS:7}d

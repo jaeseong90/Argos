@@ -29,8 +29,12 @@ import javax.crypto.spec.SecretKeySpec;
  *       WO-26/WO-28) the user id is <b>not</b> recorded, never sent in plain text instead: counted
  *       as {@code argos_agent_user_id_skipped_total{reason="no_salt"}} with one WARN; once a salt
  *       arrives the ids are hashed from that request on.
- *   <li>Source {@code mdc:<key>}: not supported until WO-18; nothing is recorded, counted as {@code
- *       reason="mdc_unsupported"} with one WARN.
+ *   <li>Source {@code mdc:<key>} (ADR-0010 C-125 (3), WO-18): the logging module reads the key from
+ *       the MDC of each log event the transaction creates (Logback, Log4j 2, Log4j 1.2) and hands
+ *       the value to {@code Tracer.setUserId}; the first usable value decides, with the rules
+ *       above. A transaction that ends without one (no log event carried the key, or the logging
+ *       module is off) records no user id and counts {@code reason="mdc_absent"} ({@link #atEnd}),
+ *       without a WARN: most transactions of an application log nothing.
  * </ul>
  *
  * <p>The salt stays in memory (the session's copy and the key of the cached {@link Mac}); it is
@@ -85,14 +89,6 @@ public final class UserIds {
     if (mode != CaptureConfig.USER_ID_PLAIN && mode != CaptureConfig.USER_ID_HASHED) {
       return;
     }
-    if (CaptureConfig.USER_ID_SOURCE_MDC.equals(capture.userIdSourceType())) {
-      tx.decideUserId(null);
-      counters.incUserIdSkipped(AgentCounters.USER_ID_SKIPPED_MDC_UNSUPPORTED);
-      AgentLogger.warnOnce(
-          "user-id.mdc",
-          "capture.user-id.source mdc:<key> is not supported yet (WO-18); no user id is recorded");
-      return;
-    }
     String value = sanitize(raw, capture.userIdMaxLength());
     if (value == null) {
       return;
@@ -109,6 +105,23 @@ public final class UserIds {
           "user-id.no-salt",
           "capture.user-id.mode is hashed but the collector sent no user id salt; user ids are not"
               + " recorded until it does");
+    }
+  }
+
+  /**
+   * At the end of {@code tx}: with {@code capture.user-id.source: mdc:<key>} and a mode that
+   * records user ids, a transaction that no log event gave a usable value counts {@code
+   * argos_agent_user_id_skipped_total{reason="mdc_absent"}} (ADR-0010 C-125 (3)). Other sources
+   * count nothing here.
+   */
+  void atEnd(Transaction tx, CaptureConfig capture) {
+    if (tx.userIdDecided()
+        || !CaptureConfig.USER_ID_SOURCE_MDC.equals(capture.userIdSourceType())) {
+      return;
+    }
+    int mode = capture.userIdMode();
+    if (mode == CaptureConfig.USER_ID_PLAIN || mode == CaptureConfig.USER_ID_HASHED) {
+      counters.incUserIdSkipped(AgentCounters.USER_ID_SKIPPED_MDC_ABSENT);
     }
   }
 

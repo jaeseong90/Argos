@@ -145,10 +145,26 @@ public class ConfigChangeService
   /** {@code rejected[].by}: the agent's {@code ConfigApplyResult}. */
   static final String BY_AGENT = "agent";
 
+  /** The custom method instrumentation key (docs/agent-config.md, 16 §5.7). */
+  static final String CUSTOM_METHODS_KEY = "instrumentation.custom-methods";
+
   private static final Set<String> MASK_PATTERN_KEYS =
       Set.of("capture.mask-patterns", "commands.env-dump.mask-patterns");
   private static final int LOCKS = 64;
   private static final int AUDIT_INSTANCES = 100;
+
+  /**
+   * Who applied a change of the custom method keys and what it set (masked), from the apply until
+   * its outcome is audited ({@code CUSTOM_METHOD_CHANGED}, ADR-0010 C-238 (8)); bounded by the
+   * changes in progress (one apply at a time per app). After a restart the outcome is audited with
+   * the user recorded on the change ({@code applied_by}, else {@code requested_by}; ADR-0010 C-239
+   * (3)) and the stored before and after values (masked).
+   */
+  private final Map<UUID, CustomAudit> customAudits = new ConcurrentHashMap<>();
+
+  private record CustomAudit(
+      Actor actor, Target target, Map<String, Object> before, Map<String, Object> after) {}
+
   private static final JsonMapper JSON = JsonMapper.builder().build();
   private static final Logger LOG = LoggerFactory.getLogger(ConfigChangeService.class);
 
@@ -753,6 +769,173 @@ public class ConfigChangeService
         AuditResult.success(),
         before,
         after);
+    rememberCustomMethods(actor, row, app, before, after);
+  }
+
+  private static boolean isCustomMethodsKey(String key) {
+    return key.equals(CUSTOM_METHODS_KEY) || key.startsWith(CUSTOM_METHODS_KEY + ".");
+  }
+
+  /**
+   * Keeps the actor and the custom method keys (masked) of a change that sets them, for {@link
+   * #auditCustomMethods} at its outcome.
+   */
+  private void rememberCustomMethods(
+      Actor actor,
+      ChangeRow row,
+      AppRow app,
+      Map<String, Object> before,
+      Map<String, Object> after) {
+    Map<String, Object> customBefore = new LinkedHashMap<>();
+    Map<String, Object> customAfter = new LinkedHashMap<>();
+    for (String key : row.after().keySet()) {
+      if (isCustomMethodsKey(key)) {
+        customBefore.put(key, before.get(key));
+        customAfter.put(key, after.get(key));
+      }
+    }
+    if (!customAfter.isEmpty()) {
+      customAudits.put(
+          row.id(), new CustomAudit(actor, target(row.id(), app), customBefore, customAfter));
+    }
+  }
+
+  /**
+   * 16 §5.7 {@code CUSTOM_METHOD_CHANGED} (ADR-0010 C-238 (8)): besides {@code CONFIG_PUSH}, the
+   * outcome of a change (or revert) of the custom method keys ({@value #CUSTOM_METHODS_KEY} and its
+   * sub-keys) once its instances answered: {@code success} when an instance applied the key and
+   * none rejected it, {@code success} with reason {@code partial} when some did each, {@code
+   * rejected} ({@code rejected_by_agent} or {@code rejected_by_server}) when every answer rejected
+   * it, and {@code failure} {@code not_applied} when no instance answered (offline, pending). The
+   * detail holds those keys (masked like {@code CONFIG_PUSH}) and {@code _outcome}: the counts and,
+   * per instance (at most {@value #AUDIT_INSTANCES}), the status and the rejection code, never
+   * values.
+   */
+  private void auditCustomMethods(ChangeRow row, List<ResultRow> results) {
+    Set<String> keys = new LinkedHashSet<>();
+    row.after().keySet().stream()
+        .filter(ConfigChangeService::isCustomMethodsKey)
+        .forEach(keys::add);
+    if (keys.isEmpty()) {
+      return;
+    }
+    CustomAudit pending = customAudits.remove(row.id());
+    Map<String, Object> before = new LinkedHashMap<>();
+    Map<String, Object> after = new LinkedHashMap<>();
+    if (pending != null) {
+      before.putAll(pending.before());
+      after.putAll(pending.after());
+    } else {
+      for (String key : keys) {
+        before.put(key, ConfigValueMasking.mask(key, row.before().get(key)));
+        after.put(key, ConfigValueMasking.mask(key, jsonNull(row.after().get(key))));
+      }
+    }
+    int applied = 0;
+    int byAgent = 0;
+    int byServer = 0;
+    int other = 0;
+    Map<String, Object> instances = new LinkedHashMap<>();
+    for (ResultRow r : results) {
+      boolean rejected = r.rejectedKeys().stream().anyMatch(keys::contains);
+      boolean took = !rejected && r.appliedKeys().stream().anyMatch(keys::contains);
+      String code = rejected ? customRejectionCode(r.rejectedJson(), keys) : null;
+      if (took) {
+        applied++;
+      } else if (rejected && code != null && !code.startsWith(BY_SERVER + ":")) {
+        byAgent++;
+      } else if (rejected) {
+        byServer++;
+      } else {
+        other++;
+      }
+      if (instances.size() < AUDIT_INSTANCES) {
+        Map<String, Object> one = new LinkedHashMap<>();
+        one.put("status", took ? "applied" : rejected ? "rejected" : r.status());
+        if (code != null) {
+          one.put("code", code);
+        }
+        instances.put(Integer.toString(r.instanceId()), one);
+      }
+    }
+    Map<String, Object> outcome = new LinkedHashMap<>();
+    outcome.put("applied", applied);
+    outcome.put("rejected_by_agent", byAgent);
+    outcome.put("rejected_by_server", byServer);
+    outcome.put("not_applied", other);
+    outcome.put("instances", instances);
+    after.put("_outcome", outcome);
+    AuditResult result;
+    if (applied > 0) {
+      result = byAgent + byServer == 0 ? AuditResult.success() : AuditResult.success("partial");
+    } else if (byAgent > 0) {
+      result = AuditResult.rejected("rejected_by_agent");
+    } else if (byServer > 0) {
+      result = AuditResult.rejected("rejected_by_server");
+    } else {
+      result = AuditResult.failure("not_applied");
+    }
+    try {
+      audit.record(
+          AuditEvent.CUSTOM_METHOD_CHANGED,
+          pending == null ? storedActor(row) : pending.actor(),
+          pending == null ? storedTarget(row) : pending.target(),
+          result,
+          before,
+          after);
+    } catch (RuntimeException e) {
+      LOG.debug("An audit record failed: {}", e.getClass().getSimpleName());
+    }
+  }
+
+  /**
+   * The actor of a custom method outcome whose apply this service no longer remembers (a restart,
+   * ADR-0010 C-239 (3)): the user recorded on the change, {@code applied_by} or else {@code
+   * requested_by}, with the name read now (the id as the name for a deleted user); the system only
+   * when the change names nobody or the user cannot be read.
+   */
+  private Actor storedActor(ChangeRow row) {
+    UUID user = row.appliedBy() != null ? row.appliedBy() : row.requestedBy();
+    if (user == null) {
+      return Actor.system();
+    }
+    try {
+      return Actor.user(user, repository.username(user).orElse(user.toString()), null);
+    } catch (RuntimeException e) {
+      LOG.debug("The applying user could not be read: {}", e.getClass().getSimpleName());
+      return Actor.system();
+    }
+  }
+
+  /**
+   * The target of a custom method outcome: as at apply, {@code config_change} with the app name.
+   */
+  private Target storedTarget(ChangeRow row) {
+    String app = null;
+    try {
+      app = repository.app(row.appId()).map(AppRow::name).orElse(null);
+    } catch (RuntimeException e) {
+      LOG.debug("The application could not be read: {}", e.getClass().getSimpleName());
+    }
+    return new Target("config_change", row.id().toString(), app);
+  }
+
+  /**
+   * The rejection code of the first custom method key in {@code rejectedJson}: the agent's code
+   * ({@code forbidden_pattern}, {@code limit_exceeded}, ...) or {@code server:<code>} for a key the
+   * instance's allow list does not name; {@code server:not_allowed} without an entry.
+   */
+  private static @Nullable String customRejectionCode(
+      @Nullable String rejectedJson, Set<String> keys) {
+    if (rejectedJson != null && !rejectedJson.isBlank()) {
+      for (JsonNode n : JSON.readTree(rejectedJson)) {
+        if (keys.contains(n.path("key").asString())) {
+          String code = n.path("code").asString();
+          return BY_SERVER.equals(n.path("by").asString()) ? BY_SERVER + ":" + code : code;
+        }
+      }
+    }
+    return BY_SERVER + ":not_allowed";
   }
 
   private void event(ChangeRow row, AppRow app, UUID userId, Instant now) {
@@ -1025,6 +1208,7 @@ public class ConfigChangeService
     } catch (RuntimeException e) {
       LOG.debug("An audit record failed: {}", e.getClass().getSimpleName());
     }
+    auditCustomMethods(row, results);
   }
 
   // --- Hello -----------------------------------------------------------------------------------

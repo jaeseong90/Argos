@@ -4,6 +4,7 @@ package io.argos.agent.core.command;
 import io.argos.agent.bootstrap.AgentControl;
 import io.argos.agent.bootstrap.ModuleHealth;
 import io.argos.agent.core.config.AgentConfig;
+import io.argos.agent.core.config.AppPackages;
 import io.argos.agent.core.config.ConfigKeys;
 import io.argos.agent.core.config.HttpSettings;
 import io.argos.agent.core.config.KeySpec;
@@ -51,8 +52,12 @@ import java.util.TreeSet;
  *   <li>{@code metrics.interval-seconds}, {@code active.snapshot-interval-seconds}: read by {@code
  *       argos-metrics} from the configuration in force at each tick;
  *   <li>{@code transaction.max-duration-ms}: the {@code argos-watch} enforcer;
- *   <li>{@code transaction.slow-stack.*}: kept in the snapshot only (the slow stack sampler is
- *       WO-19).
+ *   <li>{@code instrumentation.app-packages}: {@code TracerImpl.setAppPackages}, the packages of
+ *       {@code error_top_frame_id} for errors that end afterwards (WO-19, C-237 (6));
+ *   <li>{@code transaction.slow-stack.*}: read by the {@code argos-watch} slow-stack sampler from
+ *       the configuration in force at each 1 s tick ({@code core.watch.SlowStackWatcher}, WO-19); a
+ *       remote {@code transaction.slow-stack.enabled=true} also re-enables a sampler that disabled
+ *       itself over its cost budget.
  * </ul>
  *
  * Every other key is read once at agent start: {@link #appliesAtRunTime} is false and the apply
@@ -132,6 +137,7 @@ public final class RuntimeApplier {
         || key.equals(ConfigKeys.METRICS_INTERVAL_SECONDS)
         || key.equals(ConfigKeys.ACTIVE_SNAPSHOT_INTERVAL_SECONDS)
         || key.equals(ConfigKeys.TRANSACTION_MAX_DURATION_MS)
+        || key.equals(ConfigKeys.INSTRUMENTATION_APP_PACKAGES)
         || key.startsWith("transaction.slow-stack.");
   }
 
@@ -189,6 +195,10 @@ public final class RuntimeApplier {
     }
     if (tracer != null && changed.contains(ConfigKeys.MAX_STEPS)) {
       tracer.setMaxSteps(next.maxSteps());
+    }
+    if (tracer != null && changed.contains(ConfigKeys.INSTRUMENTATION_APP_PACKAGES)) {
+      // An empty value goes back to the packages inferred from the main class.
+      tracer.setAppPackages(AppPackages.of(next).packages());
     }
     if (changed.contains(ConfigKeys.LOG_LEVEL)) {
       AgentLogger.setLevel(next.logLevel());

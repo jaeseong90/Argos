@@ -11,7 +11,9 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Weak-key identity map behind {@link ContextStore}: lock-free reads and writes (a {@link
  * ConcurrentHashMap} of weak identity keys), stale entries removed on writes and by {@link
- * ContextStore#expungeAll()}, bounded by {@link ContextStore#maxEntries()}.
+ * ContextStore#expungeAll()}, bounded by {@link ContextStore#maxEntries()} and by the shared budget
+ * of all stores ({@link ContextStore#totalMaxEntries()}, C-240 (6)): every stored entry holds one
+ * unit of that budget until it is removed or expunged.
  */
 final class WeakContextStore<K, V> extends ContextStore<K, V> {
   /** Stale entries removed per write at most, so a write never does unbounded work. */
@@ -47,12 +49,15 @@ final class WeakContextStore<K, V> extends ContextStore<K, V> {
         return;
       }
     }
-    if (size.get() >= ContextStore.maxEntries()) {
+    if (size.get() >= ContextStore.maxEntries() || !ContextStore.reserveShared()) {
       dropped.incrementAndGet();
       return;
     }
     if (map.put(new WeakKey(key, queue), value) == null) {
       size.incrementAndGet();
+    } else {
+      // A concurrent put stored the key first: this one replaced it and holds no new entry.
+      ContextStore.releaseShared();
     }
   }
 
@@ -64,6 +69,7 @@ final class WeakContextStore<K, V> extends ContextStore<K, V> {
     V removed = map.remove(new LookupKey(key));
     if (removed != null) {
       size.decrementAndGet();
+      ContextStore.releaseShared();
     }
     return removed;
   }
@@ -79,12 +85,13 @@ final class WeakContextStore<K, V> extends ContextStore<K, V> {
       return null;
     }
     expunge(EXPUNGE_PER_WRITE);
-    if (size.get() >= ContextStore.maxEntries()) {
+    if (size.get() >= ContextStore.maxEntries() || !ContextStore.reserveShared()) {
       dropped.incrementAndGet();
       return created;
     }
     V raced = map.putIfAbsent(new WeakKey(key, queue), created);
     if (raced != null) {
+      ContextStore.releaseShared();
       return raced;
     }
     size.incrementAndGet();
@@ -114,6 +121,7 @@ final class WeakContextStore<K, V> extends ContextStore<K, V> {
       }
       if (map.remove(stale) != null) {
         size.decrementAndGet();
+        ContextStore.releaseShared();
       }
     }
   }

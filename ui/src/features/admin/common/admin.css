@@ -1,0 +1,240 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* Administration screens (docs/15 §9.10, §13, WO-39): title with actions, toolbar, panels, forms,
+   badges, the install drawer. One vertical scroll; the page never scrolls sideways at 1366 px
+   (tables scroll inside their own box, toolbars and action groups wrap). */
+.admin-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  min-width: 0;
+}
+
+.admin-page__header,
+.admin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2, 8px) var(--space-4, 16px);
+  min-width: 0;
+}
+
+.admin-toolbar {
+  justify-content: flex-start;
+}
+
+.admin-page__title {
+  margin: 0;
+  font-size: var(--fs-lg, 15px);
+  font-weight: 600;
+}
+
+.admin-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  min-width: 0;
+  padding: var(--space-3, 12px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius, 6px);
+  background: var(--color-bg);
+}
+
+.admin-panel__title {
+  margin: 0;
+  font-size: var(--fs-md, 13px);
+  font-weight: 600;
+}
+
+.admin-muted {
+  color: var(--color-text-muted);
+}
+
+.admin-note {
+  margin: 0;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.admin-warning {
+  margin: 0;
+  padding: var(--space-2, 8px);
+  border-radius: var(--radius, 6px);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  overflow-wrap: anywhere;
+}
+
+.admin-error {
+  margin: 0;
+  color: var(--color-error-text);
+  overflow-wrap: anywhere;
+}
+
+.admin-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1, 4px);
+}
+
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 4px);
+  min-width: 0;
+}
+
+.admin-field__label {
+  font-weight: 600;
+}
+
+.admin-field__help {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm, 12px);
+}
+
+.admin-field--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.admin-input,
+.admin-select {
+  min-height: 28px;
+  padding: 0 var(--space-2, 8px);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius, 6px);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  max-width: 100%;
+}
+
+.admin-input--mono {
+  font-family: var(--font-mono, monospace);
+}
+
+.admin-badge {
+  display: inline-block;
+  padding: 0 var(--space-1, 4px);
+  border-radius: var(--radius, 6px);
+  font-size: var(--fs-sm, 12px);
+  white-space: nowrap;
+}
+
+.admin-badge--warn {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+}
+
+.admin-badge--error {
+  background: var(--color-error-bg);
+  color: var(--color-error-text);
+}
+
+.admin-badge--info {
+  background: var(--color-info-bg);
+  color: var(--color-info-text);
+}
+
+.admin-drift {
+  font-weight: 600;
+  color: var(--color-warning-text);
+}
+
+.admin-tabs {
+  display: inline-flex;
+  gap: var(--space-1, 4px);
+}
+
+.admin-tab {
+  padding: var(--space-1, 4px) var(--space-3, 12px);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius, 6px);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.admin-tab--on {
+  border-color: var(--color-primary);
+  background: var(--color-selected);
+  color: var(--color-primary-text);
+  font-weight: 600;
+}
+
+.admin-secret {
+  width: 100%;
+  font-family: var(--font-mono, monospace);
+}
+
+.admin-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 4px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-checklist label {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--space-2, 8px);
+}
+
+.admin-dl {
+  display: grid;
+  grid-template-columns: minmax(120px, max-content) minmax(0, 1fr);
+  gap: var(--space-1, 4px) var(--space-3, 12px);
+  margin: 0;
+}
+
+.admin-dl dt {
+  color: var(--color-text-muted);
+}
+
+.admin-dl dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Install guide drawer (05 §2.11-7): a side panel over the page, below the shell's popups. */
+.admin-drawer__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  justify-content: flex-end;
+  background: rgb(0 0 0 / 30%);
+}
+
+.admin-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  width: min(640px, 100%);
+  height: 100%;
+  padding: var(--space-4, 16px);
+  overflow-y: auto;
+  background: var(--color-bg);
+  box-shadow: -2px 0 8px rgb(0 0 0 / 15%);
+}
+
+.admin-drawer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2, 8px);
+}
+
+.admin-drawer__title {
+  margin: 0;
+  font-size: var(--fs-lg, 15px);
+  font-weight: 600;
+}

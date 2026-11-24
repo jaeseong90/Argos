@@ -57,7 +57,7 @@ public class AppsController {
               + " case-insensitive substring of the name (at most 1 KB)."
               + STATE_NOTE)
   @ArgosLimits(rowsMax = AppsService.MAX_APPS)
-  @ArgosSource({"postgres:apps", "postgres:instances", "memory:sessions"})
+  @ArgosSource({"postgres:apps", "postgres:instances", "postgres:agent_tokens", "memory:sessions"})
   public ResponseEnvelope<List<AppViews.App>> list(
       @RequestParam(value = "env", required = false) String env,
       @RequestParam(value = "group", required = false) String group,
@@ -79,7 +79,13 @@ public class AppsController {
               + " in the last 7 days (service_stat_1h; null when ClickHouse cannot answer)."
               + STATE_NOTE)
   @ArgosLimits(timeoutS = CatalogRepository.STATEMENT_TIMEOUT_S)
-  @ArgosSource({"postgres:apps", "postgres:instances", "memory:sessions", "service_stat_1h"})
+  @ArgosSource({
+    "postgres:apps",
+    "postgres:instances",
+    "postgres:agent_tokens",
+    "memory:sessions",
+    "service_stat_1h"
+  })
   public ResponseEnvelope<AppViews.App> get(@PathVariable("appId") int appId) {
     return ResponseEnvelope.of(apps.appDetail(scope.app(appId)));
   }

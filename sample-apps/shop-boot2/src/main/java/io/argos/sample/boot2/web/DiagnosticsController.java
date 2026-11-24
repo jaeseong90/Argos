@@ -14,15 +14,16 @@ import io.argos.sample.common.diag.ThreadDumpTarget;
 import io.argos.sample.common.http.OutboundClient;
 import java.io.IOException;
 import java.time.Clock;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import javax.servlet.ServletContext;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.boot.SpringBootVersion;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -107,11 +108,52 @@ public class DiagnosticsController {
     return result;
   }
 
+  /**
+   * One log line for F-A20 MDC injection (18 §4.2): {@code clear=true} calls {@code MDC.clear()}
+   * first, {@code async=true} logs from the app's scheduler executor (a task the agent propagates),
+   * {@code user=<id>} puts the {@link ShopCatalog#MDC_USER_KEY} MDC key for the line (the {@code
+   * capture.user-id.source: mdc:user} source), {@code tag=} (letters, digits and dashes, at most
+   * 40) is printed in the line so that a test finds it.
+   */
   @GetMapping("/api/mdc-log")
-  public Map<String, Object> mdcLog() {
-    log.info(
-        "{} order={} message=sample log line for MDC injection", ShopCatalog.MDC_LOG_MARKER, 42);
-    return Collections.<String, Object>singletonMap("logged", true);
+  public Map<String, Object> mdcLog(
+      @RequestParam(name = "clear", defaultValue = "false") boolean clear,
+      @RequestParam(name = "async", defaultValue = "false") boolean async,
+      @RequestParam(name = "user", required = false) String user,
+      @RequestParam(name = "tag", defaultValue = "none") String tag)
+      throws Exception {
+    String mode = async ? "async" : clear ? "clear" : "plain";
+    String safeTag = tag.matches("[A-Za-z0-9-]{1,40}") ? tag : "invalid";
+    if (clear) {
+      MDC.clear();
+    }
+    Runnable line =
+        () -> {
+          if (user != null) {
+            MDC.put(ShopCatalog.MDC_USER_KEY, user);
+          }
+          try {
+            log.info(
+                "{} mode={} tag={} order={} message=sample log line for MDC injection",
+                ShopCatalog.MDC_LOG_MARKER,
+                mode,
+                safeTag,
+                42);
+          } finally {
+            if (user != null) {
+              MDC.remove(ShopCatalog.MDC_USER_KEY);
+            }
+          }
+        };
+    if (async) {
+      executors.scheduler().submit(line).get(10, TimeUnit.SECONDS);
+    } else {
+      line.run();
+    }
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("logged", true);
+    result.put("mode", mode);
+    return result;
   }
 
   /** User id from {@code ?id=} into a session attribute, and from the X-User-Id header. */

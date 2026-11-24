@@ -16,16 +16,24 @@ class RemoteConfigContractTest {
   @Test
   @Tag("req:SEC-23")
   @DisplayName(
-      "C-92/C-118: the default allow list is the five SEC-23 patterns, sampling.** reaches every"
+      "C-240 (4)/C-118: the default allow list is the 10 §15 list, sampling.** reaches every"
           + " sampling key; argos.enabled = enabled")
   void defaultAllowList() {
     assertThat(AllowList.DEFAULT.patterns())
         .containsExactly(
             "sampling.**",
             "instrumentation.disabled",
-            "instrumentation.ignore-paths",
+            "instrumentation.ignore-*",
             "log.level",
-            "enabled");
+            "enabled",
+            "transaction.slow-stack.*",
+            "capture.error-message-max-length",
+            "capture.stack-depth",
+            "instrumentation.app-packages",
+            "async.step",
+            "active.snapshot-interval-seconds",
+            "metrics.interval-seconds",
+            "transaction.max-duration-ms");
     assertThat(AllowList.DEFAULT.matches("enabled")).isTrue();
     assertThat(AllowList.DEFAULT.matches("argos.enabled")).isTrue();
     assertThat(AllowList.DEFAULT.matches("log.level")).isTrue();
@@ -35,7 +43,10 @@ class RemoteConfigContractTest {
     assertThat(AllowList.DEFAULT.matches("sampling.profile.slow-threshold-ms")).isTrue();
     assertThat(AllowList.DEFAULT.matches("sampling.profile.slow-threshold-ms.services.shop"))
         .isTrue();
-    assertThat(AllowList.DEFAULT.matches("instrumentation.ignore-extensions")).isFalse();
+    assertThat(AllowList.DEFAULT.matches("instrumentation.ignore-extensions")).isTrue();
+    assertThat(AllowList.DEFAULT.matches("transaction.slow-stack.enabled")).isTrue();
+    assertThat(AllowList.DEFAULT.matches("instrumentation.custom-methods")).isFalse();
+    assertThat(AllowList.DEFAULT.matches("instrumentation.exclude-classes")).isFalse();
     assertThat(AllowList.DEFAULT.matches("capture.sql-parameters")).isFalse();
     assertThat(AllowList.DEFAULT.matches("server.address")).isFalse();
     assertThat(AllowList.of(Arrays.asList("argos.enabled", " ", "log.level")).patterns())

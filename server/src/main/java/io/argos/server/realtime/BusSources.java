@@ -2,6 +2,7 @@
 package io.argos.server.realtime;
 
 import io.argos.server.api.active.ActiveTransactions;
+import io.argos.server.api.apps.InstanceStates;
 import io.argos.server.api.query.QueryLimits.TxKind;
 import io.argos.server.session.AgentSession;
 import io.argos.server.storage.query.lookup.AppDirectory;
@@ -28,6 +29,16 @@ interface BusSources {
 
   /** The state of an instance ({@code UP}, {@code STALE}, {@code DOWN}, {@code WARN}). */
   String state(int instanceId);
+
+  /**
+   * The status and up count of each of {@code appIds} on the basis of the REST API ({@code GET
+   * /overview}, {@code GET /apps}: every instance that is not archived, {@link
+   * InstanceStates#summarize}; ADR-0010 C-218 (3)), or null when the sources cannot answer (then
+   * the bus falls back to its own session and state-change view).
+   */
+  default Map<Integer, InstanceStates.Summary> summaries(Collection<Integer> appIds) {
+    return null;
+  }
 
   /** The {@code active} payload of an application for one subscription (14 §4.9). */
   ActiveTransactions active(int appId, TxKind kinds, Set<Integer> instances);

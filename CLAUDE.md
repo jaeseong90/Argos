@@ -129,6 +129,38 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
                                                   # KillSwitchRemoteTest(T-AG-043·C-231 (4) Hello config), RetransformLimitTest(T-AG-046), CustomMethodPolicyE2eTest(T-SEC-25). 이 노트북 위 조합 약 8.5분(에이전트 jar 빌드 후).
                                                   # 결과 줄 [wo17-u2]·[wo17-n25]·[wo17-vt]·[wo17-env]·[wo17-selfdiag]·[wo17-roundtrip]·[wo17-retransform]·[wo17-killswitch]는 결과 XML system-out, 로그 build/reports/agent-e2e/wo17-*.
                                                   # C-233 (6) VT 첫 DBC 대상: --tests '*VirtualThreadDbTargetTest'(약 40초, [c233]). 서버 왕복은 pnpm -C ui e2e:stack --grep "WO-17"
+./gradlew :agent:agent-instrumentation:scheduler:check :agent:agent-instrumentation:logging:check :agent:agent-instrumentation:custom:check
+                                                  # WO-18 모듈 시험(실제 라이브러리 + 실제 tracer, holder agent): scheduler test(JDK 8: Spring 5.3·Quartz 2.3.2·Batch 4.3)·testModern(JDK 17: Spring 6.2·
+                                                  # Quartz 2.5·Batch 5.2)·testSpring7(JDK 17: Spring 7.0, @Scheduled·Quartz), logging test(JDK 8: Logback 1.2·Log4j 2.17.2·Log4j 1.2.17)·testModern
+                                                  # (JDK 17: Logback 1.5·Log4j 2.25·reload4j 1.2.26, [wo18-u13] Log4j2 주입기 시그니처·frozen 여부), custom test(JDK 8)·testJdk21. 합계 약 1.5분
+./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-batch@17,shop-batch@21,shop-boot3@21,shop-boot2@8 --tests '*batch*' --tests '*logging*' --tests '*custom*' --tests '*CustomMethodPolicy*' --tests '*SeedLogTest*'
+                                                  # WO-18 스위트. batch(패키지 io.argos.agent.testing.batch, shop-batch 조합만, 기본 매트릭스에는 없어 사유와 skip): T-AG-058 BatchTransactionsTest
+                                                  # (@Scheduled 3종·Quartz 2종·분리 실행 Spring Batch step = BATCH, 항목당 SQL 20,000건 요약 모드, HTTP 안 동기 실행은 METHOD step, JDK 21+는 vt 1회),
+                                                  # T-ACC-20·T-AG-036 BatchStatsTest(SqlStat kind 분리, Quartz job store 폴링 SQL은 sql_outside_tx), T-SEC-26 BatchSeedLogTest. 앱 스위치는
+                                                  # shop-batch POST /batch/run/{job}?detached=true(앱이 만든 Thread → BATCH, GET /batch/executions/{id|last}?awaitMs=)와 SAMPLE_BATCH_PER_ITEM_SQL=true.
+                                                  # logging(io.argos.agent.testing.logging): T-AG-065 MdcInjectionTest(shop-boot3@21·shop-boot2@8 Logback /api/mdc-log ?clear·?async, Spring 없는
+                                                  # 픽스처 src/loggingFixture → build/logging-fixture/<log4j2|log4j1|reload4j>/), C-125 (3) MdcUserIdTest(mdc:<key> plain·hashed·mdc_absent),
+                                                  # T-SEC-26 MdcSeedLogTest(1만 요청). custom(io.argos.agent.testing.custom): T-SEC-25 CustomMethodStepsTest(SAMPLE_DRIVER_WRAPPER의 example.jdbcwrapper
+                                                  # 대상 METHOD step, 로컬 금지 항목 WARN·원격 FORBIDDEN_PATTERN·제거 push 재변환·500 상한, [wo18-u20]). 결과 줄 [wo18-batch]·[wo18-u19]·[wo18-mdc]·
+                                                  # [wo18-log4j2]·[wo18-userid]·[wo18-seedlog]·[wo18-custom]은 결과 XML system-out, 로그 build/reports/agent-e2e/wo18-*
+./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot3@21 --tests '*slowstack*' --tests '*errorstack*' --tests '*check*' --tests '*tags*'
+                                                  # WO-19 스위트(기본 integrationTest에도 포함, 기본은 shop-boot3@21·부착 JDK 8·21, agent-testing README "Slow stacks ..." 절):
+                                                  # slowstack.SlowStackE2eTest(T-AG-064, shop-boot3만: /api/slow?ms=5000 동시 15건 → STACK step, 사이클당 ≤ 10·tx당 ≤ 5·3초 간격·64프레임,
+                                                  # JDK 21+는 SAMPLE_VT 실행 추가, 비용 자가 진단·argos_agent_stack_capture_seconds_total, 약 1분),
+                                                  # errorstack.ErrorStackE2eTest(T-AG-059a~d 제안: /api/error-500 ERROR step 1개 ≤ 30프레임 + 줄 번호 없는 error_top_frame_id, sendError는 없음),
+                                                  # check.CheckCliTest(T-AG-068: 실제 jar --check 대 TLS FakeCollector, 정상 0·토큰 거부 1·미신뢰 CA 1·시계 2초 WARN 0·연결 불가 1·사용법 2·
+                                                  # --classpath·--json, 8u242는 -Pagent.jdk8u242=<JRE>, 약 2.5분), tags.AppTagsTest(T-AG-066a~d: 매니페스트 app_version·-Dargos.app.version 우선·
+                                                  # env 없음 default + WARN·JSONL env/version), attach.PremainTimeAttachTest(T-NFR-30: 부착 JDK마다 배너 1줄 started in ≤ 500ms(공유 머신은 최대 3회 중 최솟값,
+                                                  # INVALID 참고값, N-30 판정은 전용 장비)·그 밖 stdout/stderr 0). 결과 줄 [wo19-slowstack]·[wo19-errorstack]·[wo19-check]·[wo19-tags]·[wo19-premain]은
+                                                  # 결과 XML system-out, 로그 build/reports/agent-e2e/wo19-*. 단위: core.watch(SlowStackWatcherTest T-AG-064a~e, OverheadMonitorTest T-AG-064f),
+                                                  # core.trace ErrorStepTest·TopFrameTest, core.check CheckCommandTest(T-AG-068a), core.config AppVersionTest. VT 스택 비용 [wo19-u13]은 :agent:agent-core:testJdk21·25
+./gradlew :agent:agent-testing:test --tests '*ModuleReadmeLint*'   # 계측 모듈 README 린트(T-BLD-017 제안, 03 §3.1, check 포함, 1초 미만): 각 README 'Supported library versions'의
+                                                  # 'Version range and witness' 표(최소·최대 검증 버전·경계 시험 클래스 존재), witness = 모듈 소스 witness(), :agent: 태스크 존재, [wo19-readme].
+                                                  # 위반 픽스처 src/test/resources/readme-fixtures. 새 모듈·witness 변경·시험 클래스 이름 변경 때 README도 고친다
+./gradlew :agent:agent-core:integrationTest --tests '*ContextStoreFootprint*'   # C-120 (3) ContextStore 항목당 바이트(포크 JVM 클래스 히스토그램, 약 5초, [c120-contextstore])
+java -jar agent/agent-dist/build/libs/argos-agent-<버전>.jar --check [--config <yml>] [--json] [--classpath <dir|jar>...]
+                                                  # 설치 전 점검(10 §13.3, docs/agent-config.md "Pre-flight check"): 설정·토큰·DNS/TCP/TLS·hello·시계·JDK·클래스패스 호환성·로그 디렉터리/토큰 파일 표
+                                                  # (또는 JSON 1개), 종료 코드 0(FAIL 없음)·1(FAIL)·2(사용법 오류). 토큰은 argos_****. 수집기에 '<instance|host>-check' 인스턴스를 등록하고 곧바로 AgentBye
 ./gradlew :agent:agent-testing:integrationTest --tests '*transport*' -Pagent.jdk8u252=<JRE> -Pagent.jdk8u242=<JRE>
                                                   # gRPC 전송(WO-11) 대 FakeCollector: T-AG-071·067, T-ACC-02a·06a, T-SEC-06·07a·08c, T-NFR-26a, C-74 증명(T-BLD-004a), C-75, T-BLD-011·011a(실행 시점 프록시 미사용),
                                                   # 세션 반응(ConnectionTransportTest: 백오프당 TCP 접속·DNS 조회 1회, 해석 불가 주소 WARN 분당 1회, 영구 거부·REPLACED 뒤 연결·argos-io 해제, Ack.throttle).
@@ -155,6 +187,18 @@ java -jar server/build/libs/argos-server-<버전>.jar admin apdex reapply --app 
 java -jar server/build/libs/argos-server-<버전>.jar admin token create --app <name> --env <env> [--expires-days <n>] [--actor <name>] [--json]
                                                   # 에이전트 토큰 발급(WO-26, C-173 (4)): 서버 TokenService로(앱이 없으면 생성, 앱당 활성 5개, SHA-256 해시 + 14자 접두사만 저장, 감사 TOKEN_ISSUED),
                                                   # 기본 만료 365일(1~3650). 토큰은 stdout에 1회. 종료 코드 0 성공, 1 실패, 2 인자 오류, 4 활성 토큰 한도. argos-compose.sh token create가 서버 컨테이너 안에서 이것을 실행
+java -jar server/build/libs/argos-server-<버전>.jar admin <command> ... [--json]
+                                                  # argos-admin 17 §4.4 전부(WO-28, docs/ops/admin-cli.md, 사용법 admin help): migrate, config effective [--changed]|check, cleanup instances|dictionary|commands,
+                                                  # token issue(= token create)|revoke (--id|--prefix) --reason|rotate [--grace-days], setup-token regenerate(관리자 없을 때만, 0600 파일), tls reload [--wait s]
+                                                  # (<data>/tls/reload.request를 서버가 5초마다 확인), retention show|apply(PG settings 값이 설정 파일보다 우선, MODIFY TTL·보존 밖 DROP),
+                                                  # secrets rekey [--new-key <path>] [--batch n](별칭 master-key rotate --new-key-file, 채널·서명 키·명령 결과·앱 user_id 솔트 재암호화, MASTER_KEY_ROTATED),
+                                                  # bundle [--since 24h|7d] [--out dir] [--log-dir dir](argos-diag-<host>-<ts>.tar.gz 0600, 토큰·비밀번호·마스터 키·채널 URL 마스킹), version.
+                                                  # stdout은 결과(--json이면 JSON 1개, 실패 {command,error,code}), stderr는 메시지. 종료 코드 0/1/2/4. version 외 전부 감사(전용 이벤트 없으면 ADMIN_COMMAND_EXECUTED,
+                                                  # rollup·consistency·apdex는 ROLLUP_REBUILT·CONSISTENCY_CHECKED·APDEX_REAPPLIED, C-220 (3)), 감사 싱크는 서버와 같은 argos.audit.sinks(PG가 죽으면 폴백 파일).
+                                                  # 서버는 마스터 키(argos.master-key-file)가 없거나 형식이 틀리거나 POSIX에서 그룹·타인 읽기 가능하면 KEYS 단계에서 기동 거부(C-226 (2)),
+                                                  # argos.security.master-key.permissive=true는 권한 검사만 건너뛰고 매 기동 WARN, Windows는 검사 불가 INFO 1줄. 시험 서버는 ServerTestEnvironment.springProperties()의 TestMasterKey.
+                                                  # 감사 싱크 argos.audit.sinks: postgres(필수), file:<path>(JSONL 100MiB×10, 0600), syslog://h:514(UDP)·syslog+tcp://·syslog+tls://(RFC 5424, SD-ID argos@32473),
+                                                  # 실패 기록은 argos.audit.fallback-file, argos.retention.audit ≥ 90일(V014가 DB에서도 90일 안 DROP 거부)
 ./gradlew :server:integrationTest                 # 서버 기동 순서·설정·관리 포트·PG/CH 마이그레이션·DB 권한(실제 PostgreSQL 16·ClickHouse 26.8, Testcontainers),
                                                   # WO-21 수집 경로(collector·ingest·e2e: FakeAgent → gRPC → WAL → ClickHouse, T-SV-010은 bootJar 자식 JVM 강제 종료 2회,
                                                   # T-ACC-13 (c) ClickHouse 3분 중단 2종(ingest 수준·gRPC 종단) 포함, WO-23 조회 API 포함 약 22분. bootJar를 먼저 빌드한다).
@@ -198,6 +242,19 @@ java -jar server/build/libs/argos-server-<버전>.jar admin token create --app <
                                                   # ConfigPushScaleIT(T-SV-031 FakeAgent 50개 설정·킬 스위치 결과 집계 ≤ 10초, [T-SV-031] 줄, 노트북 값은 참고), ApprovalQueueIT(승인 대기 API).
                                                   # --tests '*AppsAdminIT' --tests '*EventsWriteIT' --tests '*SelfSessionsIT'(약 1분): 앱 생성·수정·삭제·app_packages·서비스 Apdex 오버라이드,
                                                   # POST/DELETE /events(쿠키 또는 앱 토큰 Bearer), 내 세션 목록·종료·사용자 삭제. 실제 에이전트의 명령·ConfigPush 왕복은 WO-17 몫(FakeAgent 훅 onCommand·onConfigPush)
+                                                  # WO-28 감사·개인정보·보존·저장소·자기 메트릭·CLI: --tests 'io.argos.server.audit.*'(AuditSinksIT JSONL·syslog UDP/TCP 가짜 수신기·PG 폴백, AuditApiIT 필터·커서·CSV,
+                                                  # AgentAuditIT 에이전트 감사 3종 레이트 제한, 약 1분), 'io.argos.server.privacy.*'(PrivacyDeletionIT plain·hashed·IP 삭제 → system.mutations 폴링·상태·429·
+                                                  # PRIVACY_SETTING_CHANGED, UserIdSaltIT ServerHello 솔트·hashed 검색, MutationDurationIT T-ST-054 @Tag slow 생성기 ci 하루 파티션 삭제 소요 약 4분
+                                                  # → server/build/reports/privacy/mutation-timing.md, 참고값), 'io.argos.server.ops.retention.*'(RetentionApplyIT T-ST-040 MODIFY TTL·confirm·CLI, AuditPartitionJobIT 90일 하한),
+                                                  # 'io.argos.server.ops.storage.*'와 'io.argos.server.storage.DeadLetterIT'(StorageHealthIT, EmergencyRetentionIT: 개발 전용 argos.testing.disk-usage-file로 사용률 주입 →
+                                                  # 0.9 DROP 13 §8 순서·0.85 멈춤·0.95 삽입 정지·0.93 재개, DeadLetterIT 결정적 거부 3회 → 0600 영역, [wo28-emergency]·[wo28-dead-letter], 약 35초),
+                                                  # 'io.argos.server.ops.management.*'(SelfMetricsIT /actuator/prometheus 12 §9.4 이름 전수·metric app_id=0 5초 격자), 'io.argos.server.cli.*'(AdminCliOpsIT·AdminCliSecretsIT
+                                                  # 서브커맨드별 --json·종료 코드·감사 행, 약 30초), session.RegistrationPolicyIT(앱 정책 > env 기본, C-231 (7)), alert.AlertInstanceStateIT(보관·삭제 → target_gone)
+                                                  # WO-39 관리 화면용 서버 가산: --tests '*RetentionQueryBoundaryIT' --tests 'io.argos.server.api.about.*'(각 약 12~15초) = T-ST-040g(보존 PUT 뒤 재기동 없이
+                                                  # retention_exceeded 경계 변화, C-238 (3)), T-API-013a(GET /about·/about/licenses, 목록 파일 META-INF/argos/licenses/<part>.json 없으면 not_generated).
+                                                  # session.OverviewStateIT T-SV-022a(WS overview status = REST 기준, C-218 (3)), ConfigChangeIT(C-239 (3) CUSTOM_METHOD_CHANGED 행위자 = applied_by).
+                                                  # 설정 argos.ui.active-thresholds-ms(기본 1000,3000,8000, 양수 3개 오름차순 아니면 WARN 1줄 + 기본값)는 GET /apps/{id}/active의 default_thresholds_ms(REST 전용,
+                                                  # 화면은 뷰어 localStorage > 이 값 > 1/3/8초, C-225 (3), T-API-013c)
 ./gradlew :server:generateOpenApi                 # docs/api/openapi.yaml 재생성(생성본, 손 편집 금지, C-28). 컨트롤러·DTO를 바꾸면 돌리고 함께 커밋한다(빌드 버전과 무관, info.version v1).
                                                   # :server:contractTest(check 포함)가 커밋본 = 생성본, 14 §2.9 린트(JUnit, Spectral 없음, C-151), 저장소 조회 operation의 x-argos-limits,
                                                   # 커밋본 스펙의 권한 매트릭스(T-API-010), oasdiff 네거티브(T-API-002, Docker)를 검사한다. 서버 jar를 다시 만들 수 있어 서버 통합 실행 중에는 돌리지 않는다.
@@ -249,6 +306,10 @@ test/storage/bench/bench-server.sh start          # 저장소 PoC 벤치용 단�
                                                   # WO-26(io.argos.server.security.{token,command,configchange}, 약 5분): AgentTokenSecurityTest(T-SEC-01~05 앱 범위·해시만·로그 0·no-store·만료·유예·폐기 ≤ 5초·
                                                   # 세션 61번째·IP 인증 실패 21번째 RESOURCE_EXHAUSTED), CommandSecurityTest(T-SEC-21 3역할 × 5명령 실제 로그인 세션, T-SEC-50 타인 결과 403·UUIDv4,
                                                   # T-SEC-22 command_results 평문·센티널 0, T-SEC-24 TTL·COOLDOWN), ConfigChangeSecurityTest(T-SEC-23 서버 측 하드 캡: 허용 밖 키는 그 인스턴스에 푸시 안 함)
+                                                  # WO-28(io.argos.server.security.{audit,secrets,tls,diagnostics}): AuditSecurityTest(T-SEC-81 열 전수, T-SEC-82 argos_app UPDATE·DELETE·TRUNCATE 42501·syslog 형식),
+                                                  # ChannelAuditSecurityTest(CHANNEL_* 행), MasterKeySecurityTest(T-SEC-52c 키 없음·형식 오류·0644 기동 거부(비POSIX는 사유 skip), T-SEC-52d·22b rekey 뒤
+                                                  # PG 평문 0·새 kid·이전 키 제거 후 열람), CertReloadSecurityTest(T-SEC-09a~d 만료 게이지·cert 규칙 FIRING·파일 교체 무중단 리로드·key-password-file·reload API·watch=false),
+                                                  # DiagnosticBundleSecurityTest(T-SEC-06g 심은 토큰·비밀번호·마스터 키·웹훅 URL·메트릭 토큰 → 풀어 낸 번들 grep 0)
                                                   # 웹 계층 스텁 매트릭스(Docker 없음)는 :server:contractTest → permission-matrix.md. 두 Gradle 실행이 같은 :server:securityTest를 동시에 돌리면 결과 파일이 깨진다
 java server/scripts/GeneratePasswordDenylist.java # 비밀번호 금지 목록 해시 재생성(개발 도구, SecLists 10k를 고정 커밋·SHA-256으로 내려받음, 출처 NOTICE)
                                                   # → server/src/main/resources/security/password-denylist.sha256. 빌드·실행 시에는 아무것도 내려받지 않는다
@@ -269,7 +330,7 @@ test/bench/bench-run.sh ... --exporter grpc --collector HOST:PORT --agent-config
 test/bench/bench.sh <load|startup|report|publish> ...   # 벤치 하네스 직접 실행(k6는 test/bench/fetch-k6.sh). 사용법 test/bench/README.md
 ./gradlew traceabilityReport                      # 요구 → 테스트 ID → 테스트 → 마지막 결과 → build/reports/traceability.md·.json(테스트 실행 없음, test/README.md 6장)
 ./gradlew :sample-apps:<app>:sampleSmoke          # 샘플 앱을 에이전트 없이 기동해 엔드포인트 카탈로그 검증(전 변형, check 미포함).
-                                                  # 1개 변형은 sampleSmoke<Variant>, 루트 sampleSmoke는 54변형 전부. -Psample.startupRuns=5는 기동 중앙값.
+                                                  # 1개 변형은 sampleSmoke<Variant>, 루트 sampleSmoke는 55변형 전부. -Psample.startupRuns=5는 기동 중앙값.
                                                   # 스위치(sample-apps/README.md): SAMPLE_DB=h2|postgres|mysql|mariadb|mssql|oracle(mariadb·mssql·oracle 드라이버는 shop-boot3만, WO-13),
                                                   # SAMPLE_POOL=hikari|tomcat|dbcp2, SAMPLE_ROUTING_DS, SAMPLE_DRIVER_WRAPPER(C-40 위임 래퍼 5번째 층), SAMPLE_SECOND_POOL(풀 2개·재기동)
 ./gradlew :sample-apps:<app>:sampleAppJar         # 실행 jar → sample-apps/<app>/build/sample-app/<app>.jar (WAR 앱은 :war)
@@ -318,6 +379,9 @@ pnpm -C ui e2e:stack --grep "WO-17"               # 실제 에이전트 ↔ 실�
                                                   # 호스트 JVM 21로 자체 앱 e2e-wo17(인스턴스 wo17-cmd, SAMPLE_VT·센티널 비밀값, 토큰은 psql로 만든 secrets/wo17-agent.token)을 띄워 WO-26 REST로 명령·설정 변경·킬 스위치를 보낸다.
                                                   # jar 5개 전제, JVM 없는 e2e:docker 안에서는 전부 skip(CI 이미지 결과는 사람 확인). [wo17-n25]는 콘솔·annotation, 로그 .stack/<run>/logs/wo17-cmd-shop-boot3.log·wo17-cmd-agent/.
                                                   # 이 노트북 시험 약 2분 + 스택 기동·시드 약 2~4분. liveShop.ts를 바꾸면 --grep "T-E2E-active|T-E2E-099|T-E2E-async"도 함께
+pnpm -C ui e2e:stack --grep "T-ACC-20|T-AG-058"   # 배치(WO-18) 부분 실행: batch.spec이 shop-batch + 에이전트를 별도 앱 e2e-wo18-batch로 띄워(분리 실행 + 항목당 SQL + HTTP 1,000건)
+                                                  # T-ACC-20 (stack)(kind=HTTP 통계·대시보드에 배치 없음, kind=BATCH 따로)·T-AG-058 (stack)(XLog kind=BATCH 점, 상세 요약 모드 SUMMARY 행 = API).
+                                                  # jar 5개 + :sample-apps:shop-batch:sampleAppJar 전제, JVM 없는 e2e:docker 안에서는 skip. 스택 기동·시드 포함 약 3분
 pnpm -C ui e2e:stack --grep "T-E2E-instance|T-E2E-053"   # 인스턴스 상세(WO-37) 부분 실행(약 3분, 스택 기동·시드 포함, jar 5개 + :server:activeFeedJar 전제): instance.spec·required/instance.yaml
                                                   # (헤더·차트·환경 탭·링크 = 페이지가 받은 응답과 같은 질문의 API, 실제 에이전트 인스턴스 e2e-shop-1), 역할별 환경 탭은 명령 피더(앱 e2e-cmd)
                                                   # 시각 기준 instance-*.png(T-E2E-instance-40~43)는 e2e:docker 전용. T-E2E-053·055a 플레이스홀더 대상은 /apps/:id/map
@@ -327,6 +391,12 @@ pnpm -C ui e2e:stack --grep "T-E2E-dumps|T-E2E-active"   # 명령 탭·스레드
                                                   # 시각 기준 dumps-*.png(T-E2E-dumps-40·41)는 e2e:docker 전용
 pnpm -C ui e2e:stack --grep "T-E2E-05[78] "       # 설정 마법사 첫 앱 단계·내 세션(WO-26) 부분 실행(스택 기동·시드 약 4.5분 + 시험 수 초): T-E2E-057(첫 앱 등록·토큰 1회 표시·no-store·Bearer 이벤트 쓰기,
                                                   # 끝나면 앱 삭제, /setup/status·/setup/admin만 page.route), T-E2E-058(/account 내 세션 목록·다른 세션 즉시 종료 → 그 세션 401)
+pnpm -C ui e2e:stack --grep "T-E2E-admin|T-E2E-search|T-E2E-roles|T-SEC-47"   # 관리·검색 화면(WO-39) 부분 실행(시험 약 4.5분 + 스택 기동·시드 2~4분, jar 5개 + :server:activeFeedJar 전제):
+                                                  # admin.spec(T-E2E-admin-20~29 직렬: UI 앱 생성 → 설치 안내 = 클립보드 → 토큰 1회 모달 원문으로 실제 에이전트(liveShop, 호스트 JVM) UP, 닫은 뒤 DOM·스토리지·URL 부재,
+                                                  # 설정 diff·결과·되돌리기, 킬 스위치 확인 취소 요청 0 → WARN 타일, 승인 정책 앱 토큰으로 피더를 다른 env로 접속시켜 승인·거부(APP_MISMATCH 때문에 이름이 아니라 env 변형),
+                                                  # 회전·폐기 → STALE/DOWN, 사용자·감사 CSV·개인정보 삭제 done·수집 상태 순위·about/licenses)·required/admin.yaml(T-E2E-admin-1~13)·search.spec(T-E2E-search-1~8)·
+                                                  # required/search.yaml(30~33)·roles.spec(T-E2E-roles-1~3, 16 §7.10 기대표)·auth.spec T-SEC-47 (UI). [wo39-n25] 줄은 콘솔·annotation(노트북 값은 INVALID).
+                                                  # 대시보드 2.3-3 실데이터 WARN/STALE(C-217 (2), T-E2E-dashboard-5)은 --grep "STALE \(yellow\)". 호스트 JVM 시험은 e2e:docker 안에서 skip, 시각 기준 admin-*.png(40~43)는 e2e:docker 전용
 pnpm -C ui e2e:stack --grep "T-E2E-alerts|T-E2E-09[67] |T-E2E-dashboard|T-E2E-overview" # 알림 패널(WO-25) 부분 실행: 시드 (e)가 주 앱에 실제 FIRING 알림을 만들고(seed/alerts.ts, 매니페스트 alert, timings.seed_alert_s),
                                                   # T-E2E-alerts-1·2(대시보드·전체 현황 패널 = 페이지가 받은 응답, 링크 /alerts?…&alert=<event_id>)·-3(권장 템플릿 규칙 적용, 템플릿 part 중복 없음),
                                                   # T-E2E-096·097, required 2.3-5·2.10-4. 스택 서버에 마스터 키가 없어 채널은 만들지 않는다(409 secret_unavailable). 규칙 창이 1h라 재사용 스택은 적재 1시간 뒤 알림이 풀린다

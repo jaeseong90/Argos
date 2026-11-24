@@ -273,9 +273,10 @@ class AlertChannelSecurityTest {
     try (Connection c = SecuritySuiteAccess.environment().connect(PgAccount.APP);
         PreparedStatement ps =
             c.prepareStatement(
-                "INSERT INTO argos.notification_channels (id, name, type, config_enc, config_masked,"
-                    + " enabled, created_at, updated_at) VALUES (?, 'stale', 'slack', ?,"
-                    + " '{\"target\":\"https://169.254.169.254/****\"}'::jsonb, TRUE, now(), now())")) {
+                "INSERT INTO argos.notification_channels (id, name, type, config_enc,"
+                    + " config_masked, enabled, created_at, updated_at) VALUES (?, 'stale',"
+                    + " 'slack', ?, '{\"target\":\"https://169.254.169.254/****\"}'::jsonb, TRUE,"
+                    + " now(), now())")) {
       ps.setObject(1, id);
       ps.setBytes(2, envelope.getBytes(StandardCharsets.UTF_8));
       ps.executeUpdate();
@@ -460,19 +461,28 @@ class AlertChannelSecurityTest {
 
   @Test
   @DisplayName(
-      "T-SEC-52 without a master key a channel cannot be created: 409 secret_unavailable (WO-25"
-          + " assumption; the start refusal is WO-28's)")
+      "T-SEC-52 without a master key the server does not start (ADR-0010 C-226 (2), WO-28; replaces"
+          + " WO-25's 409 secret_unavailable of a server running without one)")
   void noMasterKey() {
-    ArgosTestServer plain = SecuritySuiteAccess.server();
-    SecuritySuiteAccess.resetLimits(plain);
-    Map<String, Object> body = new LinkedHashMap<>();
-    body.put("type", "email");
-    body.put("name", "no-key");
-    body.put("target", "ops@example.test");
-    ApiResponse r =
-        SecuritySuiteAccess.client(plain, "admin").post("/api/v1/alerts/channels", body);
-    assertThat(r.status()).as(r.toString()).isEqualTo(409);
-    assertThat(r.errorCode()).contains("secret_unavailable");
+    Map<String, Object> p = new LinkedHashMap<>();
+    p.put(masterKey.property(), dir.resolve("no-such-master.key").toString());
+    Throwable failure = null;
+    try {
+      SecuritySuiteAccess.start(p).close();
+    } catch (RuntimeException e) {
+      failure = e;
+    }
+    assertThat(failure).as("the start must fail").isNotNull();
+    io.argos.server.bootstrap.StartupAbortedException aborted = null;
+    for (Throwable t = failure; t != null; t = t.getCause()) {
+      if (t instanceof io.argos.server.bootstrap.StartupAbortedException a) {
+        aborted = a;
+      }
+    }
+    assertThat(aborted).as(String.valueOf(failure)).isNotNull();
+    assertThat(aborted.phase()).isEqualTo(io.argos.server.bootstrap.PhaseOrder.KEYS);
+    assertThat(aborted.step()).isEqualTo("master-key");
+    assertThat(aborted.getExitCode()).isEqualTo(1);
   }
 
   @Test

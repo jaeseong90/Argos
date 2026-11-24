@@ -1,10 +1,12 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.server.session;
 
+import com.google.protobuf.ByteString;
 import io.argos.proto.ProtocolVersion;
 import io.argos.proto.v1.AgentHello;
 import io.argos.proto.v1.RejectReason;
 import io.argos.proto.v1.ServerHello;
+import io.argos.server.audit.AgentAuditEvents;
 import io.argos.server.collector.CollectorCalls;
 import io.argos.server.collector.CollectorMetrics;
 import io.argos.server.collector.CollectorState;
@@ -22,6 +24,7 @@ import io.grpc.Status;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -76,13 +79,14 @@ import org.slf4j.LoggerFactory;
  * <p>Token scope (ADR-0010 C-155): an agent token reaches its home app and the environment variants
  * that Hellos of the home app's tokens registered automatically ({@code
  * apps.registered_from_app_id}), never an app that an administrator or another app's token created
- * for the same name. A missing (name, env) is registered as a variant of the home app while {@code
- * auto-register.<env>} is on and the home app has fewer than {@value #MAX_APP_VARIANTS} variants;
- * the count holds under concurrent Hellos on any number of servers (the home app's row is locked,
- * {@link SessionStore#createVariantApp}). A refusal at the cap is counted as {@code
- * app_variant_limit}. The environment is never cut: one above 32 bytes is refused by the Hello caps
- * like any string above its cap. Token rotation keeps the home app, so the new token reaches the
- * same variants.
+ * for the same name. A missing (name, env) is registered as a variant of the home app while the
+ * home app's registration policy is {@code auto} (or it has none and {@code auto-register.<env>} is
+ * on: {@link RegistrationPolicySource}, ADR-0010 C-231 (7)) and the home app has fewer than {@value
+ * #MAX_APP_VARIANTS} variants; the count holds under concurrent Hellos on any number of servers
+ * (the home app's row is locked, {@link SessionStore#createVariantApp}). A refusal at the cap is
+ * counted as {@code app_variant_limit}. The environment is never cut: one above 32 bytes is refused
+ * by the Hello caps like any string above its cap. Token rotation keeps the home app, so the new
+ * token reaches the same variants.
  *
  * <p>Approval queue (12 §4.4, F-S30, WO-22): a Hello refused {@code APP_NOT_REGISTERED} by check 5
  * (automatic registration off for the environment, or the home app at its variant cap) is queued in
@@ -96,7 +100,8 @@ import org.slf4j.LoggerFactory;
  * versions, the accepted agent range, the server time (first clock estimate, 11 §9), the intervals,
  * the configured {@code Limits}, the {@code config} of the {@link HelloConfigSource} (WO-26: the
  * values the server holds for the app within the Hello's {@code remote_config_allow}, 12 §6.2) and
- * an empty {@code user_id_salt} (ADR-0010 C-125).
+ * the app's {@code user_id_salt} ({@link SaltSource}, 16 §6.3, ADR-0010 C-125 (2), WO-28: created
+ * on first use; empty when it cannot be read, which does not refuse the session).
  *
  * <p>Check 6 and the registration run under a per-app lock, so that two Hellos of one app cannot
  * both pass the instance count.
@@ -154,6 +159,11 @@ public final class HelloService {
   private final AtomicLong lastPendingWarn = new AtomicLong(Long.MIN_VALUE);
   private final AtomicLong lastConfigWarn = new AtomicLong(Long.MIN_VALUE);
   private volatile HelloConfigSource configSource = HelloConfigSource.NONE;
+  private volatile AgentAuditEvents audit = AgentAuditEvents.NONE;
+  private volatile SaltSource salts = SaltSource.NONE;
+  private volatile boolean saltsWired;
+  private volatile RegistrationPolicySource policies = RegistrationPolicySource.NONE;
+  private final AtomicLong lastSaltWarn = new AtomicLong(Long.MIN_VALUE);
   private final SessionStore store;
   private final SessionRegistry registry;
   private final SessionSettings settings;
@@ -194,11 +204,107 @@ public final class HelloService {
   /**
    * Runs the checks for {@code hello} and, when it passes, registers a session on {@code stream}.
    *
+   * <p>A refusal after the token check passed (checks 2 to 6, the Hello caps) is recorded as the
+   * audit event {@code AGENT_SESSION_REJECTED} with the refusal code (queued, rate limited per
+   * token prefix; ADR-0010 C-158 (1)); token refusals are {@code AGENT_AUTH_FAILED} of the token
+   * interceptor, and the shutdown and database-unavailable answers are not audited.
+   *
    * @param auth the token check of the call ({@code null} counts as a missing token)
    * @param plaintext whether the call arrived without TLS (11 §5 check 3 is decided from the
    *     transport; {@code AgentHello.plaintext} is informational only)
    */
   public HelloOutcome accept(
+      AgentHello hello, AuthResult auth, boolean plaintext, SessionStream stream) {
+    HelloOutcome outcome = decide(hello, auth, plaintext, stream);
+    if (!outcome.accepted() && auth != null && auth.accepted()) {
+      auditRejection(hello, auth, outcome);
+    }
+    return outcome;
+  }
+
+  /**
+   * Connects the agent audit events (WO-28 {@code AgentAuditRecorder}); {@link
+   * AgentAuditEvents#NONE} until then.
+   */
+  public void auditEvents(AgentAuditEvents events) {
+    this.audit = events == null ? AgentAuditEvents.NONE : events;
+  }
+
+  /**
+   * The user id salt of an app for {@code ServerHello.user_id_salt} (16 §6.3, ADR-0010 C-125 (2)).
+   * Implementations create the salt on first use; they never log it.
+   */
+  @FunctionalInterface
+  public interface SaltSource {
+
+    /**
+     * The 32-byte salt of app {@code appId}, or empty when it cannot be read now.
+     *
+     * @throws RuntimeException never expected; a failure is treated as empty
+     */
+    Optional<byte[]> salt(int appId);
+
+    /** No salt (the Hello sends an empty one). */
+    SaltSource NONE = appId -> Optional.empty();
+  }
+
+  /**
+   * The registration policy an app sets for the unknown (name, env) of its tokens' Hellos ({@code
+   * apps.auto_register}, ADR-0010 C-231 (7)): true {@code auto}, false {@code approval}, null none
+   * (the environment default {@code argos.agent.auto-register.<env>} applies).
+   */
+  @FunctionalInterface
+  public interface RegistrationPolicySource {
+
+    /**
+     * The policy of app {@code appId}, or null when it has none.
+     *
+     * @throws RuntimeException when PostgreSQL cannot be read (the Hello is answered UNAVAILABLE)
+     */
+    Boolean autoRegister(int appId);
+
+    /** No app sets a policy: the environment default applies. */
+    RegistrationPolicySource NONE = appId -> null;
+  }
+
+  /** Connects the app salts (WO-28); {@link SaltSource#NONE} until then. */
+  public void userIdSalts(SaltSource source) {
+    this.salts = source == null ? SaltSource.NONE : source;
+    this.saltsWired = source != null;
+  }
+
+  /**
+   * Connects the app registration policies (WO-28); {@link RegistrationPolicySource#NONE} until
+   * then.
+   */
+  public void registrationPolicies(RegistrationPolicySource source) {
+    this.policies = source == null ? RegistrationPolicySource.NONE : source;
+  }
+
+  private void auditRejection(AgentHello hello, AuthResult auth, HelloOutcome outcome) {
+    try {
+      Status.Code code = outcome.status().getCode();
+      RejectReason reason = outcome.hello().getRejectReason();
+      if (code == Status.Code.UNAVAILABLE || reason == RejectReason.SERVER_SHUTTING_DOWN) {
+        return;
+      }
+      String r =
+          reason == RejectReason.REJECT_REASON_UNSPECIFIED
+              ? code.name().toLowerCase(Locale.ROOT)
+              : reason.name().toLowerCase(Locale.ROOT);
+      audit.sessionRejected(
+          CollectorCalls.PEER.get(),
+          auth.tokenPrefix(),
+          auth.token().appId(),
+          hello.getAppName(),
+          hello.getEnv(),
+          r);
+    } catch (RuntimeException e) {
+      LOG.debug("AGENT_SESSION_REJECTED not recorded", e);
+    }
+  }
+
+  private HelloOutcome decide(
       AgentHello hello, AuthResult auth, boolean plaintext, SessionStream stream) {
     long now = clock.millis();
     ServerHello.Builder base = base(now);
@@ -298,7 +404,7 @@ public final class HelloService {
       AppRef app;
       if (found.isPresent()) {
         app = found.get();
-      } else if (settings.autoRegisters(env)) {
+      } else if (autoRegisters(token.appId(), env)) {
         Optional<AppRef> created =
             store.createVariantApp(hello.getAppName(), env, token.appId(), MAX_APP_VARIANTS);
         if (created.isEmpty()) {
@@ -428,6 +534,7 @@ public final class HelloService {
               .setActiveSnapshotIntervalS(ACTIVE_SNAPSHOT_INTERVAL_S)
               .setStatWindowS(STAT_WINDOW_S)
               .setLimits(settings.limits())
+              .setUserIdSalt(userIdSalt(app.id()))
               .build();
       return HelloOutcome.accepted(accepted, session);
     } catch (RuntimeException e) {
@@ -444,6 +551,47 @@ public final class HelloService {
           "The collector cannot reach its database; retry later",
           false);
     }
+  }
+
+  /**
+   * Whether an unknown (name, env) of a token of {@code homeAppId} is registered automatically: the
+   * home app's own policy when it has one, else {@code argos.agent.auto-register.<env>} (ADR-0010
+   * C-231 (7), 12 §4.4).
+   */
+  private boolean autoRegisters(int homeAppId, String env) {
+    Boolean own = policies.autoRegister(homeAppId);
+    return own != null ? own : settings.autoRegisters(env);
+  }
+
+  /**
+   * The salt of {@code appId} for {@code ServerHello.user_id_salt}; empty (the agent then records
+   * no hashed user id, C-125 (1)) when it cannot be read, logged at most once a minute without
+   * values.
+   */
+  private ByteString userIdSalt(int appId) {
+    SaltSource source = salts;
+    if (!saltsWired) {
+      // Not wired (collector-only contexts of the tests): nothing to warn about.
+      return ByteString.EMPTY;
+    }
+    try {
+      Optional<byte[]> salt = source.salt(appId);
+      if (salt.isPresent()) {
+        byte[] bytes = salt.get();
+        ByteString value = ByteString.copyFrom(bytes);
+        Arrays.fill(bytes, (byte) 0);
+        return value;
+      }
+    } catch (RuntimeException e) {
+      LOG.debug("user id salt not read", e);
+    }
+    if (rateLimited(lastSaltWarn)) {
+      LOG.warn(
+          "The user id salt of app {} cannot be read now; its agents record no hashed user ids"
+              + " until a later session start sends it (16 §6.3)",
+          appId);
+    }
+    return ByteString.EMPTY;
   }
 
   /**
@@ -538,6 +686,14 @@ public final class HelloService {
     if (InstanceMetadata.sqlParamMode(hello.getSqlParamMode()) == null) {
       metrics.unknownEnum(UnknownEnumSink.SQL_PARAM_MODE, 1);
     }
+  }
+
+  /** True at most once a minute per {@code last} (log rate limit). */
+  private static boolean rateLimited(AtomicLong last) {
+    long now = System.nanoTime();
+    long previous = last.get();
+    return (previous == Long.MIN_VALUE || now - previous >= METADATA_WARN_INTERVAL_NANOS)
+        && last.compareAndSet(previous, now);
   }
 
   /**
