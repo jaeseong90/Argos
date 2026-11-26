@@ -110,6 +110,20 @@ export function loadStackSecrets(dir: string): StackSecrets {
   };
 }
 
+/**
+ * The setup token of a fresh stack (WO-46, e2e/stack/fresh.ts), copied from the server's
+ * /data/setup-token into the secrets directory. Absent for a seeded stack.
+ */
+export const SETUP_TOKEN_FILE = 'setup.token';
+
+/** The values of those of `names` that exist in `dir` (for redaction; never printed). */
+export function optionalSecrets(dir: string, names: readonly string[]): string[] {
+  return names
+    .filter((name) => existsSync(join(dir, name)))
+    .map((name) => readSecret(dir, name).trim())
+    .filter((value) => value !== '');
+}
+
 /** Every value of `secrets` (for redaction of error messages). */
 export function secretValues(secrets: StackSecrets): string[] {
   return (Object.keys(SECRET_FILES) as (keyof StackSecrets)[])

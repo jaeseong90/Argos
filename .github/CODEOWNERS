@@ -6,16 +6,21 @@
 # Default owner for everything.
 *                                                       @jaeseong90
 
-# Core paths (docs/19 section 6.8, O-Q03): a maintainer reads the code before merging.
+# Core paths (docs/19 section 6.8, O-Q03): a maintainer reads the code before merging. The 6.8 areas
+# "security" and "command" live in auth/, web/security/, secrets/ and admin/command/; the WAL is wal/.
+# Keep this block equal to the needs-matrix globs of labeler.yml (repo-config.test.sh checks it).
 /agent/agent-bootstrap/                                 @jaeseong90
 /agent/agent-core/                                      @jaeseong90
 /agent/agent-dist/                                      @jaeseong90
 /proto/                                                 @jaeseong90
 /server/src/main/java/io/argos/server/collector/        @jaeseong90
 /server/src/main/java/io/argos/server/storage/          @jaeseong90
-/server/src/main/java/io/argos/server/security/         @jaeseong90
+/server/src/main/java/io/argos/server/wal/              @jaeseong90
+/server/src/main/java/io/argos/server/auth/             @jaeseong90
+/server/src/main/java/io/argos/server/web/security/     @jaeseong90
+/server/src/main/java/io/argos/server/secrets/          @jaeseong90
 /server/src/main/java/io/argos/server/admin/token/      @jaeseong90
-/server/src/main/java/io/argos/server/command/          @jaeseong90
+/server/src/main/java/io/argos/server/admin/command/    @jaeseong90
 /server/src/main/java/io/argos/server/privacy/          @jaeseong90
 /server/src/main/java/io/argos/server/alert/channel/    @jaeseong90
 /server/src/main/resources/db/                          @jaeseong90
@@ -29,3 +34,9 @@
 /NOTICE                                                 @jaeseong90
 /docs/licenses/                                         @jaeseong90
 /docs/adr/                                              @jaeseong90
+
+# Release supply chain (docs/19 sections 7.2-7.4): signing key, release scripts, user-side verification.
+/keys/                                                  @jaeseong90
+/scripts/                                               @jaeseong90
+/deploy/verify-release.sh                               @jaeseong90
+/test/release/                                          @jaeseong90

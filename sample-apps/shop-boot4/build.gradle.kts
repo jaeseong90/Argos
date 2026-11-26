@@ -25,6 +25,8 @@ sampleApp {
     // Clients of GET /api/pay/{id}: the shop-boot3 set on Boot 4 (web layer of shop-boot3).
     expectClients("hurl", "resttemplate", "hc5", "okhttp", "jdk11", "webclient")
     variant("default") {
+      // Tomcat stays the default with Jetty on the class path (WO-50).
+      expectRuntime("container", "tomcat")
       expectRuntime("framework", "Spring Boot $bootVersion")
       expectRuntime("servletApi", "jakarta")
       expectRuntime("javaFeatureVersion", "21")
@@ -59,6 +61,12 @@ sampleApp {
       expectRuntime("virtualThreadsRequested", "true")
       expectRuntime("virtualThreads", "false")
       expectRuntime("javaFeatureVersion", "17")
+    }
+    // SAMPLE_CONTAINER=jetty (WO-50, ADR-0010 C-127): Jetty 12.1 (ee11) instead of Tomcat 11.
+    // Spring Boot 4 has no Undertow support.
+    variant("jetty") {
+      env("SAMPLE_CONTAINER", "jetty")
+      expectRuntime("container", "jetty")
     }
     variant("routing-ds") {
       env("SAMPLE_ROUTING_DS", "true")
@@ -106,4 +114,18 @@ dependencies {
   runtimeOnly(libs.sample.h2)
   runtimeOnly(libs.sample.postgresql)
   runtimeOnly(libs.sample.mysql)
+}
+
+// Servlet container of the compatibility matrix (WO-50, ADR-0010 C-127): SAMPLE_CONTAINER=jetty
+// (Jetty 12.1 ee11) through a ServletWebServerFactory bean (ServletContainers); unset or tomcat
+// keeps Spring Boot's Tomcat. On the runtime class path (compileOnly for the selection code).
+val servletContainers = configurations.dependencyScope("servletContainers")
+
+configurations.runtimeClasspath { extendsFrom(servletContainers.get()) }
+
+configurations.compileOnly { extendsFrom(servletContainers.get()) }
+
+dependencies {
+  servletContainers(platform(libs.sample.boot4.bom))
+  servletContainers(libs.sample.starter.jetty)
 }

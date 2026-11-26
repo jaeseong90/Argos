@@ -71,7 +71,8 @@ class InstanceStateIT {
 
   @Test
   @DisplayName(
-      "T-SV-022 heartbeats stop: STALE at 60 s, DOWN at 180 s (instances.status, state events with session_lost, REST state, argos_instances); a heartbeat makes it UP again")
+      "T-SV-022 heartbeats stop: STALE at 60 s, DOWN at 180 s (instances.status, state events with"
+          + " session_lost, REST state, argos_instances); a heartbeat makes it UP again")
   void silence() throws Exception {
     AgentTokens.IssuedToken token = stack.token("state-silence");
     try (FakeAgent a = stack.agent(token, "state-silence", "host-a:8080", Duration.ZERO)) {
@@ -115,7 +116,15 @@ class InstanceStateIT {
       assertThat(back.getState()).isEqualTo(io.argos.proto.v1.InstanceState.UP);
       stack.flush();
       assertThat(stack.stored(id).status()).isEqualTo("UP");
-      List<StateStack.Event> events = stack.events(id);
+      List<StateStack.Event> all = stack.events(id);
+      assertThat(all)
+          .as(
+              "one agent start for the agent process (F-A26, ADR-0010 C-240 (1)), the rest state"
+                  + " rows")
+          .filteredOn(e -> !e.type().equals("state"))
+          .extracting(StateStack.Event::type)
+          .containsExactly("start");
+      List<StateStack.Event> events = all.stream().filter(e -> e.type().equals("state")).toList();
       assertThat(events).allMatch(e -> e.type().equals("state"));
       assertThat(events)
           .extracting(e -> e.from() + ">" + e.to() + ":" + e.reason())
@@ -136,7 +145,8 @@ class InstanceStateIT {
 
   @Test
   @DisplayName(
-      "T-SV-022 KILL_SWITCH_ON makes the instance WARN kill_switch (warn_flags, REST, HeartbeatAck), KILL_SWITCH_OFF makes it UP")
+      "T-SV-022 KILL_SWITCH_ON makes the instance WARN kill_switch (warn_flags, REST,"
+          + " HeartbeatAck), KILL_SWITCH_OFF makes it UP")
   void warnFromAgentEvent() throws Exception {
     AgentTokens.IssuedToken token = stack.token("state-warn");
     try (FakeAgent a = stack.agent(token, "state-warn", "host-w:8080", Duration.ZERO)) {
@@ -161,14 +171,20 @@ class InstanceStateIT {
       assertThat(stack.stored(id).status()).isEqualTo("UP");
       assertThat(stack.stored(id).warnFlags()).isEmpty();
       assertThat(stack.events(id))
+          .filteredOn(e -> e.type().equals("state"))
           .extracting(e -> e.from() + ">" + e.to())
           .containsExactly("DOWN>UP", "UP>WARN", "WARN>UP");
+      assertThat(stack.events(id))
+          .filteredOn(e -> !e.type().equals("state"))
+          .extracting(StateStack.Event::type)
+          .containsExactly("start");
     }
   }
 
   @Test
   @DisplayName(
-      "T-SV-023 AgentBye then a reconnect after 4:59: no DOWN (no state event to DOWN, no down transition); without a reconnect DOWN at 5:00 (agent_bye)")
+      "T-SV-023 AgentBye then a reconnect after 4:59: no DOWN (no state event to DOWN, no down"
+          + " transition); without a reconnect DOWN at 5:00 (agent_bye)")
   @Tag("req:F-S25")
   @Tag("req:S-17")
   void byeGrace() throws Exception {

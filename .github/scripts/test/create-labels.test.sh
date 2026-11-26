@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
+# req: O-G09
+# test-ids: T-BLD-036
 #
 # Tests for .github/scripts/create-labels.sh in --dry-run mode (never touches GitHub): the label set
 # must match docs/19 section 8 / O-G09 and every label used by labeler.yml, the issue templates and

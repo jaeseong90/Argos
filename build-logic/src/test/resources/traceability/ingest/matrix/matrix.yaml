@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: Apache-2.0
+# Fixture of test/matrix/matrix.yaml for the traceability matrix ingestion (T-BLD-014e).
+version: 1
+
+suite-sets:
+  smoke:
+    - io.argos.agent.testing.matrix.MatrixSmokeTest
+
+rows:
+  - id: T-MX-001
+    group: boot2
+    app: shop-boot2
+    jdk: 8
+    suites: [set:smoke]
+    required: [set:smoke]
+  - id: T-MX-021
+    group: boot3
+    app: shop-boot3
+    jdk: 21
+    suites: [set:smoke]
+    required: [set:smoke]
+  - id: T-MX-022
+    aliases: [T-MX-017]
+    group: boot3
+    app: shop-boot3
+    jdk: 21
+    vt: true
+    suites: [set:smoke]
+    required: [set:smoke]
+  - id: T-MX-023
+    group: boot3
+    app: shop-boot3
+    jdk: 25
+    status: unverified
+    suites: [set:smoke]
+    required: [set:smoke]

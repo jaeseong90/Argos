@@ -452,6 +452,11 @@ class TransportPartsTest {
         .as("TLS reports plaintext=false explicitly (optional field, C-101)")
         .isTrue();
     assertThat(tlsHello.getPlaintext()).isFalse();
+    assertThat(hello.hasCheckOnly())
+        .as("an agent session never sets check_only (only --check does, C-240 (1))")
+        .isFalse();
+    assertThat(CheckProbe.checkOnly(hello).getCheckOnly()).isTrue();
+    assertThat(CheckProbe.checkOnly(hello).toBuilder().clearCheckOnly().build()).isEqualTo(hello);
     assertThat(hello.getCgroup())
         .as("the cgroup mode of this machine (WO-16, 10 §11)")
         .isEqualTo(io.argos.agent.core.metric.CgroupReader.systemMode());
@@ -510,7 +515,8 @@ class TransportPartsTest {
 
   @Test
   @DisplayName(
-      "18 §5.4 test.exporter=noop encodes like the sender: dictionary entries once, then the record")
+      "18 §5.4 test.exporter=noop encodes like the sender: dictionary entries once, then the"
+          + " record")
   void batchEncoder() {
     Dictionary dictionary = new Dictionary();
     io.argos.agent.core.trace.TraceRuntime runtime =

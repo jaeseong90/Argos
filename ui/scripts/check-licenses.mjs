@@ -19,10 +19,24 @@
 // (`MIT OR GPL-3.0` passes, `MIT AND GPL-3.0` fails, `X WITH exception` fails unless listed).
 // Packages without a usable SPDX expression need an override with a source URL.
 //
+// 4. Outputs of the bundle (WO-44): --notices (third-party notices served with the UI),
+//    --about-json (META-INF/argos/licenses/ui.json of the server's About screen, ADR-0010 C-153)
+//    and --sbom (CycloneDX 1.6 JSON, the release asset argos-ui-<version>.cdx.json, SEC-70). All
+//    three list exactly the bundled packages, sorted; the SBOM time is SOURCE_DATE_EPOCH or fixed
+//    (reproducible, T-BLD-009) and its version ARGOS_VERSION or package.json's.
+//
 // Usage: node scripts/check-licenses.mjs [--project <dir>] [--policy <file>] [--bundle <file>]
 //                                         [--require-bundle] [--notices <file>]
+//                                         [--about-json <file>] [--sbom <file>]
 //                                         [--dev] [--dev-only <file>]
-import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -534,6 +548,148 @@ export function renderNotices(entries) {
   return `${lines.join('\n')}\n`;
 }
 
+/** Archive time Gradle uses without SOURCE_DATE_EPOCH (io.argos.buildlogic.argosSourceDateInstant). */
+export const DEFAULT_SBOM_TIMESTAMP = '1980-02-01T00:00:00Z';
+
+/**
+ * Build time of generated metadata: SOURCE_DATE_EPOCH (seconds, the commit time in CI, 19 §3.7)
+ * or the fixed instant above, so that two builds of a commit write identical files (T-BLD-009).
+ *
+ * @param {string | undefined} sourceDateEpoch
+ * @returns {string} ISO-8601 instant without milliseconds
+ */
+export function sbomTimestamp(sourceDateEpoch) {
+  const value = sourceDateEpoch?.trim() ?? '';
+  if (value === '') {
+    return DEFAULT_SBOM_TIMESTAMP;
+  }
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`SOURCE_DATE_EPOCH must be whole seconds, got "${value}"`);
+  }
+  return new Date(Number(value) * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+/**
+ * @typedef {{ name: string, version: string, license: string | null }} ShippedPackage
+ */
+
+/** Code-unit order: the same on every machine and locale. */
+const byNameVersion = (/** @type {ShippedPackage} */ a, /** @type {ShippedPackage} */ b) =>
+  a.name < b.name
+    ? -1
+    : a.name > b.name
+      ? 1
+      : a.version < b.version
+        ? -1
+        : a.version > b.version
+          ? 1
+          : 0;
+
+/**
+ * Distinct packages, sorted by name and version.
+ *
+ * @param {ShippedPackage[]} packages
+ * @returns {ShippedPackage[]}
+ */
+function distinctSorted(packages) {
+  /** @type {Map<string, ShippedPackage>} */
+  const unique = new Map();
+  for (const entry of packages) {
+    unique.set(`${entry.name}@${entry.version}`, entry);
+  }
+  return [...unique.values()].sort(byNameVersion);
+}
+
+/**
+ * The UI part of the About screen's component list (ADR-0010 C-153): the JSON array
+ * `[{name, version, license}]` that the server reads as META-INF/argos/licenses/ui.json
+ * (LicenseCatalog), one entry per bundled package.
+ *
+ * @param {ShippedPackage[]} packages
+ * @returns {string}
+ */
+export function renderAboutJson(packages) {
+  const list = distinctSorted(packages).map((entry) => ({
+    name: entry.name,
+    version: entry.version,
+    license: entry.license ?? 'UNKNOWN',
+  }));
+  return `${JSON.stringify(list, null, 2)}\n`;
+}
+
+/**
+ * @param {string} name npm package name, optionally scoped
+ * @param {string} version
+ * @returns {string} package URL (purl) of the npm package
+ */
+export function npmPurl(name, version) {
+  const encoded = name.startsWith('@') ? `%40${name.slice(1)}` : name;
+  return `pkg:npm/${encoded}@${encodeURIComponent(version)}`;
+}
+
+/**
+ * CycloneDX 1.6 JSON SBOM of the UI bundle (SEC-70, 16 §10.1, 19 §7.2): exactly the packages of
+ * the bundle's license manifest, with their SPDX licenses. No serial number and a fixed timestamp
+ * ([sbomTimestamp]) keep it reproducible; no new tool is needed (WO-44 plan, assumption 6).
+ *
+ * @param {{ name: string, version: string, packages: ShippedPackage[], timestamp: string }} options
+ * @returns {string}
+ */
+export function renderSbom({ name, version, packages, timestamp }) {
+  const rootRef = npmPurl(name, version);
+  const components = distinctSorted(packages).map((entry) => {
+    const purl = npmPurl(entry.name, entry.version);
+    const scoped = /^(@[^/]+)\/(.+)$/.exec(entry.name);
+    /** @type {Record<string, unknown>} */
+    const component = {
+      type: 'library',
+      'bom-ref': purl,
+      ...(scoped !== null ? { group: scoped[1], name: scoped[2] } : { name: entry.name }),
+      version: entry.version,
+      purl,
+    };
+    if (entry.license !== null && entry.license.trim() !== '') {
+      const license = entry.license.trim();
+      component['licenses'] = /^[A-Za-z0-9.+-]+$/.test(license)
+        ? [{ license: { id: license } }]
+        : [{ expression: license }];
+    }
+    return component;
+  });
+  const bom = {
+    bomFormat: 'CycloneDX',
+    specVersion: '1.6',
+    version: 1,
+    metadata: {
+      timestamp,
+      component: {
+        type: 'application',
+        'bom-ref': rootRef,
+        name,
+        version,
+        description: 'Argos APM web UI bundle',
+        licenses: [{ license: { id: 'Apache-2.0' } }],
+        purl: rootRef,
+        externalReferences: [{ type: 'vcs', url: 'https://github.com/argos-apm/argos' }],
+      },
+    },
+    components,
+    dependencies: [
+      { ref: rootRef, dependsOn: components.map((component) => String(component['bom-ref'])) },
+    ],
+  };
+  return `${JSON.stringify(bom, null, 2)}\n`;
+}
+
+/**
+ * @param {string} target
+ * @param {string} content
+ */
+function writeOutput(target, content) {
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, content);
+}
+
 /**
  * @param {string} dir
  * @returns {string | null}
@@ -559,6 +715,8 @@ export function main(argv) {
       bundle: { type: 'string', default: join(uiRoot, 'dist', '.vite', 'license.json') },
       'require-bundle': { type: 'boolean', default: false },
       notices: { type: 'string' },
+      sbom: { type: 'string' },
+      'about-json': { type: 'string' },
       dev: { type: 'boolean', default: false },
       'dev-only': {
         type: 'string',
@@ -575,6 +733,11 @@ export function main(argv) {
     bundle = parseBundleManifest(JSON.parse(readFileSync(bundlePath, 'utf8')));
   } else if (values['require-bundle']) {
     console.error(`ERROR ${bundlePath}: bundle license manifest not found (run vite build first)`);
+    return 1;
+  } else if (values.sbom !== undefined || values['about-json'] !== undefined) {
+    console.error(
+      `ERROR ${bundlePath}: --sbom and --about-json describe the bundle; its license manifest is missing (run vite build first)`,
+    );
     return 1;
   }
 
@@ -649,6 +812,47 @@ export function main(argv) {
     const target = resolve(values.notices);
     writeFileSync(target, renderNotices(entries));
     console.log(`check-licenses: wrote ${target} (${String(entries.length)} packages)`);
+  }
+
+  if (bundle !== null && (values.sbom !== undefined || values['about-json'] !== undefined)) {
+    /** @type {ShippedPackage[]} */
+    const shipped = bundle.map((entry, index) => ({
+      name: entry.name,
+      version: entry.version,
+      license: outcome.bundled[index]?.license ?? null,
+    }));
+    if (values['about-json'] !== undefined) {
+      const target = resolve(values['about-json']);
+      writeOutput(target, renderAboutJson(shipped));
+      console.log(
+        `check-licenses: wrote ${target} (About list, ${String(shipped.length)} packages)`,
+      );
+    }
+    if (values.sbom !== undefined) {
+      const manifest = readManifest(join(resolve(values.project), 'package.json'));
+      const name = typeof manifest['name'] === 'string' ? manifest['name'] : 'ui';
+      // The release version when the build passes it (ARGOS_VERSION), else package.json's.
+      const envVersion = process.env['ARGOS_VERSION']?.trim();
+      const version =
+        envVersion !== undefined && envVersion !== ''
+          ? envVersion
+          : typeof manifest['version'] === 'string'
+            ? manifest['version']
+            : '0.0.0';
+      const target = resolve(values.sbom);
+      writeOutput(
+        target,
+        renderSbom({
+          name,
+          version,
+          packages: shipped,
+          timestamp: sbomTimestamp(process.env['SOURCE_DATE_EPOCH']),
+        }),
+      );
+      console.log(
+        `check-licenses: wrote ${target} (CycloneDX SBOM, ${String(shipped.length)} components)`,
+      );
+    }
   }
   return 0;
 }

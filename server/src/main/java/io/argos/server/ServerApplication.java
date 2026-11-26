@@ -3,7 +3,12 @@ package io.argos.server;
 
 import io.argos.server.cli.AdminCli;
 import io.argos.server.config.ArgosProperties;
+import io.argos.server.config.ServerBuild;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Properties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -26,16 +31,68 @@ public class ServerApplication {
   static final String FLYWAY_AUTO_CONFIGURATION =
       "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration";
 
+  /** The lone argument that prints the version instead of starting the server (O-R12). */
+  static final String VERSION_FLAG = "--version";
+
+  /** Where the build writes the version, commit, protocol and (with SOURCE_DATE_EPOCH) time. */
+  static final String BUILD_INFO = "META-INF/build-info.properties";
+
   /**
    * Starts the server. A failed start phase exits with a non-zero code. With {@code admin} as the
    * first argument it runs an {@code argos-admin} command instead ({@link AdminCli}: configuration
-   * and the databases only, no listener) and exits with its code.
+   * and the databases only, no listener) and exits with its code. With {@value #VERSION_FLAG} as
+   * the only argument it prints {@link #versionLine} and exits with 0, without starting Spring.
    */
   public static void main(String[] args) {
+    if (isVersionRequest(args)) {
+      System.out.println(versionLine(buildInfo(ServerApplication.class.getClassLoader())));
+      System.out.flush();
+      System.exit(0);
+      return;
+    }
     if (AdminCli.selected(args)) {
       System.exit(AdminCli.run(AdminCli.commandArguments(args), Map.of(), System.out, System.err));
       return;
     }
     SpringApplication.run(ServerApplication.class, args);
+  }
+
+  /** True for exactly one argument, {@value #VERSION_FLAG}. */
+  static boolean isVersionRequest(String[] args) {
+    return args != null && args.length == 1 && VERSION_FLAG.equals(args[0]);
+  }
+
+  /** The jar's build information; empty when the class path has none (unknown values). */
+  static Properties buildInfo(ClassLoader loader) {
+    Properties p = new Properties();
+    try (InputStream in = loader.getResourceAsStream(BUILD_INFO)) {
+      if (in != null) {
+        p.load(in);
+      }
+    } catch (IOException e) {
+      // unknown values below
+    }
+    return p;
+  }
+
+  /**
+   * {@code Argos server <version> (commit <commit>, protocol <protocol>[, built <time>])}: the
+   * values of {@link ServerBuild} ({@value ServerBuild#UNKNOWN} when missing); the build time only
+   * when the build recorded one (SOURCE_DATE_EPOCH set, 19 §3.7).
+   */
+  static String versionLine(Properties buildInfo) {
+    ServerBuild build =
+        new ServerBuild(
+            buildInfo.getProperty("build.version"),
+            buildInfo.getProperty("build.commit"),
+            buildInfo.getProperty("build.protocol"));
+    String time = buildInfo.getProperty("build.time");
+    return String.format(
+        Locale.ROOT,
+        "Argos server %s (commit %s, protocol %s%s)",
+        build.version(),
+        build.commit(),
+        build.protocol(),
+        time == null || time.isBlank() ? "" : ", built " + time.strip());
   }
 }

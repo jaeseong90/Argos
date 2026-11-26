@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 package io.argos.sample.boot3;
 
+import io.argos.sample.boot3.config.ServletContainers;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableAsync;
@@ -18,6 +19,9 @@ public class ShopBoot3Application {
   public static final String APP_NAME = "shop-boot3";
 
   public static void main(String[] args) {
-    SpringApplication.run(ShopBoot3Application.class, args);
+    SpringApplication application = new SpringApplication(ShopBoot3Application.class);
+    // SAMPLE_CONTAINER=jetty|undertow (WO-50); Tomcat by default.
+    ServletContainers.select(application, System.getenv());
+    application.run(args);
   }
 }

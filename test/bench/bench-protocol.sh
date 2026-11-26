@@ -10,25 +10,39 @@
 #   container  load set in a --cpus=2 --memory=4g container (item 9: N-29)
 #   vt         load set with virtual threads (item 10: N-28)
 #   worst      load set with every normal request profiled (item 3, optional)
-#   otel       adds the OpenTelemetry Java agent variant to the main set (item 11, reference only)
+#   otel       adds the OpenTelemetry Java agent variant to the main set (item 11, reference only;
+#              OTLP to the harness's loopback black-hole receiver, 18 §7.5)
+#   grpc       load set with --exporter grpc to --collector (the transport cost, WO-11; optional).
+#              The report shows grpc - noop as "transport cost"; verdicts stay on noop (C-80)
 # A report is PASS only when all nine requirements are measured and PASS; a set left out leaves
 # its requirements INVALID ("not measured"). Duration with the defaults: about 5 hours (four load
-# sets of about 85 minutes, the startup set about 30 to 50 minutes); worst and otel add about 85
-# and 45 minutes.
+# sets of about 85 minutes, the startup set about 30 to 50 minutes); worst, grpc and otel add
+# about 85, 85 and 45 minutes.
 #
 # usage: test/bench/bench-protocol.sh --machine-profile ID [options]
 #   --machine-profile ID    the dedicated bench machine (required)
-#   --sets LIST             main,startup,container,vt (default); also worst, otel
+#   --sets LIST             main,startup,container,vt (default); also worst, otel, grpc
 #   --loader USER@HOST      load machine for the process-mode sets (01 §7.3 item 1); without it the
 #                           process-mode sets deviate from the protocol and their verdicts are INVALID
 #   --app-address IP        this machine's address as the load machine reaches it
-#   --otel-agent JAR        opentelemetry-javaagent jar (set otel)
+#   --otel-agent auto|JAR   opentelemetry-javaagent jar (set otel). auto (the default): the jar of
+#                           test/bench/fetch-otel-agent.sh (2.32.0, SHA-256 pinned); run that script
+#                           once before the protocol, the protocol never downloads
 #   --jdk N, --java PATH    JDK of the apps (21; the startup set uses --java, else $JAVA_HOME)
-#   --exporter X            noop (default), drop or grpc (see bench-run.sh)
-#   --collector HOST:PORT   with --exporter grpc
+#   --exporter X            noop (default), drop or grpc for every set (see bench-run.sh)
+#   --collector HOST:PORT   collector of the grpc set (and of --exporter grpc). For example the
+#                           standalone FakeCollector on the load machine:
+#                             ./gradlew :agent:agent-testing:fakeCollectorJar   (build machine)
+#                             java -jar fake-collector.jar --port 7600 --ready-file ready --token-file token
+#                           with --collector LOADHOST:7600 --collector-config
+#                           server.tls=false,server.token-file=<a copy of that token file>
+#   --collector-config K=V,...  agent settings of the grpc set only (collector TLS and token)
 #   --out DIR               set directories (build/bench/protocol-<UTC time>-<commit7>)
 #   --report-dir DIR        report directory (docs/bench)
-#   --baseline FILE         last approved report (18 §7.7)
+#   --baseline FILE|auto    report for the regression check (18 §7.7); auto: the newest approved
+#                           report in --report-dir with the same machine profile, app, JDK, exporter
+#                           and encoding
+#   --latest                also update latest.md and trend.md/.svg in --report-dir (weekly run)
 #   --allow-invalid-env     record an unfit machine and continue (the report is INVALID)
 #   --no-build              use the jars already built (benchTest builds them first)
 # Exit code: the report's (0 PASS, 3 FAIL, 4 INVALID), 2 usage error, 1 other error.
@@ -47,14 +61,16 @@ machine_profile=""
 sets_arg="main,startup,container,vt"
 loader=""
 app_address=""
-otel_agent=""
+otel_agent="auto"
 jdk="21"
 java_bin=""
 exporter="noop"
 collector=""
+collector_config=""
 out=""
 report_dir="docs/bench"
 baseline=""
+latest=0
 allow_invalid=0
 build=1
 while [[ $# -gt 0 ]]; do
@@ -68,9 +84,11 @@ while [[ $# -gt 0 ]]; do
     --java) java_bin="${2:?--java needs a value}"; shift 2 ;;
     --exporter) exporter="${2:?--exporter needs a value}"; shift 2 ;;
     --collector) collector="${2:?--collector needs a value}"; shift 2 ;;
+    --collector-config) collector_config="${2:?--collector-config needs a value}"; shift 2 ;;
     --out) out="${2:?--out needs a value}"; shift 2 ;;
     --report-dir) report_dir="${2:?--report-dir needs a value}"; shift 2 ;;
     --baseline) baseline="${2:?--baseline needs a value}"; shift 2 ;;
+    --latest) latest=1; shift ;;
     --allow-invalid-env) allow_invalid=1; shift ;;
     --no-build) build=0; shift ;;
     -h | --help) usage ;;
@@ -80,11 +98,13 @@ done
 [[ -n "$machine_profile" ]] || die "--machine-profile ID is required (benchTest: -Pbench.machine-profile=<id>, 18 §2.2)"
 IFS=, read -r -a sets <<<"$sets_arg"
 for s in "${sets[@]}"; do
-  [[ "$s" =~ ^(main|startup|container|vt|worst|otel)$ ]] || die "unknown set '$s' (main, startup, container, vt, worst, otel)"
+  [[ "$s" =~ ^(main|startup|container|vt|worst|otel|grpc)$ ]] || die "unknown set '$s' (main, startup, container, vt, worst, otel, grpc)"
 done
 has() { [[ ",$sets_arg," == *",$1,"* ]]; }
-has otel && [[ -z "$otel_agent" ]] && die "set otel needs --otel-agent JAR"
+has otel && [[ -z "$otel_agent" ]] && die "set otel needs --otel-agent auto|JAR"
 has otel && ! has main && die "set otel adds a variant to the main set: include main"
+has grpc && [[ -z "$collector" ]] && die "set grpc needs --collector HOST:PORT (a collector or FakeCollector reachable from this machine)"
+[[ -z "$collector_config" ]] || has grpc || die "--collector-config applies to the grpc set only: include grpc in --sets"
 [[ -z "$loader" || -n "$app_address" ]] || die "--loader needs --app-address"
 cd "$repo_root"
 
@@ -106,7 +126,7 @@ common=(--no-build --jdk "$jdk" --rounds 3 --exporter "$exporter" --machine-prof
 ((allow_invalid)) && common+=(--allow-invalid-env)
 remote=()
 [[ -n "$loader" ]] && remote=(--loader "$loader" --app-address "$app_address")
-if [[ -z "$loader" ]] && { has main || has vt || has worst; }; then
+if [[ -z "$loader" ]] && { has main || has vt || has worst || has grpc; }; then
   log "WARNING: no --loader: k6 runs on this machine; the process-mode sets deviate from 01 §7.3 item 1 (INVALID)"
 fi
 
@@ -134,6 +154,13 @@ fi
 if has worst; then
   run_set worst --profile worst "${remote[@]+"${remote[@]}"}"
   set_dirs+=("$out/worst/worst")
+fi
+if has grpc; then
+  # The transport cost (C-80: verdicts stay on noop): the main load set with the gRPC exporter.
+  grpc_args=(--role grpc --exporter grpc --collector "$collector")
+  [[ -n "$collector_config" ]] && grpc_args+=(--agent-config "$collector_config")
+  run_set grpc "${grpc_args[@]}" "${remote[@]+"${remote[@]}"}"
+  set_dirs+=("$out/grpc/grpc")
 fi
 if has vt; then
   run_set vt --vt "${remote[@]+"${remote[@]}"}"
@@ -171,6 +198,7 @@ set_list=""
 for s in "${set_dirs[@]}"; do set_list+="${set_list:+,}$(native "$s")"; done
 publish=(publish --sets "$set_list" --out "$report_dir" --command "$command_line")
 [[ -n "$baseline" ]] && publish+=(--baseline "$baseline")
+((latest)) && publish+=(--latest --trend)
 log "report: ${publish[*]}"
 code=0
 bash "$script_dir/bench.sh" --no-build "${publish[@]}" || code=$?

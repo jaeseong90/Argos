@@ -15,6 +15,7 @@ import org.gradle.api.GradleException
 import org.gradle.api.Project
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.ListProperty
+import org.gradle.api.provider.MapProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.Input
@@ -25,9 +26,9 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 
 /**
- * Normalizes the CycloneDX JSON SBOM of the agent jar (DSN-19-05, T-BLD-009, SEC-70); see
- * [SbomNormalizer]. Fails when a project in [requiredProjects] is not a component of the SBOM
- * (T-BLD-008).
+ * Normalizes the CycloneDX JSON SBOM of a shipped artifact (agent jar, server jar; DSN-19-05,
+ * T-BLD-009, SEC-70); see [SbomNormalizer]. Fails when a project in [requiredProjects] is not a
+ * component of the SBOM (T-BLD-008).
  */
 abstract class NormalizeSbom : DefaultTask() {
 
@@ -44,23 +45,32 @@ abstract class NormalizeSbom : DefaultTask() {
    */
   @get:Input abstract val requiredProjects: ListProperty<String>
 
+  /**
+   * Modules the artifact ships from outside the dependency graph (`group:artifact:version` to SPDX
+   * license; e.g. the Spring Boot loader and jarmode tools of a boot jar), added as library
+   * components when the SBOM lacks them.
+   */
+  @get:Input abstract val extraComponents: MapProperty<String, String>
+
   @get:OutputFile abstract val outputFile: RegularFileProperty
 
   init {
+    extraComponents.convention(emptyMap())
     group = "build"
     description =
-      "Normalizes the agent SBOM (fixed timestamps, archive names, LF line endings) and checks " +
+      "Normalizes a CycloneDX SBOM (fixed timestamps, archive names, LF line endings) and checks " +
         "that it lists every shipped Argos module."
   }
 
   @TaskAction
   fun normalize() {
     val text = inputFile.get().asFile.readText(Charsets.UTF_8)
-    val normalized = SbomNormalizer.normalize(text, timestamp.get())
+    val normalized =
+      SbomNormalizer.withExtraComponents(SbomNormalizer.normalize(text, timestamp.get()), extraComponents.get())
     val missing = SbomNormalizer.missingProjects(normalized, requiredProjects.get())
     if (missing.isNotEmpty()) {
       throw GradleException(
-        "The agent SBOM ${inputFile.get().asFile} lacks components that the jar ships: " +
+        "The SBOM ${inputFile.get().asFile} lacks components that the artifact ships: " +
           missing.joinToString { "$it (${argosArchivesNameOf(it)})" } +
           ". Add the configuration that resolves them to includeConfigs of cyclonedxDirectBom " +
           "(SEC-70)."
@@ -102,6 +112,39 @@ object SbomNormalizer {
         indentArraysWith(DefaultIndenter("  ", "\n"))
       }
     return mapper.writer(printer).writeValueAsString(normalized).trimEnd() + "\n"
+  }
+
+  /**
+   * [json] with a library component for every `group:artifact:version` of [extra] (to its SPDX
+   * license) that no component has yet, appended in key order; unchanged when [extra] is empty.
+   */
+  fun withExtraComponents(json: String, extra: Map<String, String>): String {
+    if (extra.isEmpty()) return json
+    val mapper = ObjectMapper()
+    val root = mapper.readTree(json) as? ObjectNode ?: error("SBOM is not a JSON object")
+    val components = root.get("components") as? ArrayNode ?: root.putArray("components")
+    val present =
+      components.map { "${it.path("group").asText()}:${it.path("name").asText()}:${it.path("version").asText()}" }.toSet()
+    for ((coordinates, license) in extra.toSortedMap()) {
+      if (coordinates in present) continue
+      val (group, name, version) = coordinates.split(':').also { require(it.size == 3) { "not group:artifact:version: $coordinates" } }
+      val purl = "pkg:maven/$group/$name@$version?type=jar"
+      components.addObject().apply {
+        put("type", "library")
+        put("bom-ref", purl)
+        put("group", group)
+        put("name", name)
+        put("version", version)
+        putArray("licenses").addObject().putObject("license").put("id", license)
+        put("purl", purl)
+      }
+    }
+    val printer =
+      DefaultPrettyPrinter().apply {
+        indentObjectsWith(DefaultIndenter("  ", "\n"))
+        indentArraysWith(DefaultIndenter("  ", "\n"))
+      }
+    return mapper.writer(printer).writeValueAsString(root).trimEnd() + "\n"
   }
 
   /** The Gradle project path in a purl's `project_path` qualifier, or null. */

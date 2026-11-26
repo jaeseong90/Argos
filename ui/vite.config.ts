@@ -156,6 +156,14 @@ export default defineConfig({
     },
   },
   test: {
+    // The JUnit file feeds the traceability report (WO-53, test/README.md section 6): classname is
+    // the test file path, name the describe/test titles. Built into Vitest (no extra dependency).
+    // Vitest adds its GitHub Actions annotations only when no reporter is configured; keep them.
+    reporters: [
+      'default',
+      ...(process.env.GITHUB_ACTIONS === 'true' ? ['github-actions'] : []),
+      ['junit', { outputFile: 'build/test-results/vitest/junit.xml' }],
+    ],
     projects: [
       {
         extends: true,

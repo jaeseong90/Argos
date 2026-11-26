@@ -4,13 +4,13 @@ package io.argos.buildlogic
 import java.util.zip.ZipFile
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
-import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.artifacts.result.ResolvedComponentResult
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.MapProperty
 import org.gradle.api.provider.Property
+import org.gradle.api.provider.SetProperty
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.OutputFile
@@ -65,6 +65,29 @@ abstract class GenerateThirdPartyNotices : DefaultTask() {
   /** `<jar file name>=<group:artifact>` for every file of [noticeSources]. */
   @get:Input abstract val noticeSourceKeys: ListProperty<String>
 
+  /**
+   * Whether the bundled classes are relocated below [AgentShading.PREFIX] (the shaded agent jar,
+   * default) or shipped under their own packages (the server and demo app jars and images).
+   */
+  @get:Input abstract val relocated: Property<Boolean>
+
+  /**
+   * When true, a module whose license is not satisfied by Apache-2.0 alone and that has no entry in
+   * [licenseTexts] gets the `META-INF/LICENSE`, `LICENSE.txt` or `LICENSE.md` of its own jar (in
+   * [noticeSources]) as its license text: the text of exactly the bundled version. Generation fails
+   * when such a module has neither (O-L04). Default false (the agent lists every text explicitly).
+   */
+  @get:Input abstract val licenseTextsFromJars: Property<Boolean>
+
+  /** `group:artifact` of graph modules the artifact does not bundle (see bundledModules). */
+  @get:Input abstract val excludedModules: SetProperty<String>
+
+  /**
+   * `group:artifact:version` to SPDX license of modules the artifact bundles from outside the graph
+   * (see bundledModules).
+   */
+  @get:Input abstract val extraModules: MapProperty<String, String>
+
   @get:OutputFile abstract val outputFile: RegularFileProperty
 
   init {
@@ -75,15 +98,51 @@ abstract class GenerateThirdPartyNotices : DefaultTask() {
     licenseTexts.convention(emptyMap())
     textVersions.convention(emptyMap())
     noticeSourceKeys.convention(emptyList())
+    relocated.convention(true)
+    licenseTextsFromJars.convention(false)
+    excludedModules.convention(emptySet())
+    extraModules.convention(emptyMap())
   }
+
+  private fun sourceKeys(): Map<String, String> =
+    noticeSourceKeys.get().associate { entry ->
+      val separator = entry.indexOf('=')
+      entry.substring(0, separator) to entry.substring(separator + 1)
+    }
+
+  /** License files at the top of META-INF of the jars of [noticeSources], per `group:artifact`. */
+  private fun licensesFromJars(): Map<String, String> {
+    val keys = sourceKeys()
+    val result = sortedMapOf<String, String>()
+    for (file in noticeSources.files) {
+      val key = keys[file.name] ?: continue
+      if (!file.isFile) continue
+      ZipFile(file).use { zip ->
+        val entry =
+          zip.entries().toList().filter { !it.isDirectory }.sortedBy { it.name }
+            .firstOrNull { it.name.matches(LICENSE_ENTRY) }
+        if (entry != null) {
+          val text =
+            zip.getInputStream(entry).use { it.readBytes().toString(Charsets.UTF_8) }.replace("\r\n", "\n").trim('\n')
+          if (text.isNotBlank()) result[key] = text
+        }
+      }
+    }
+    return result
+  }
+
+  /** Whether [expression] needs its own license text (not satisfied by Apache-2.0 alone). */
+  private fun needsLicenseText(expression: String?): Boolean =
+    expression != null &&
+      try {
+        !SpdxExpression.parse(expression).satisfiedBy(setOf("Apache-2.0"))
+      } catch (e: GradleException) {
+        true
+      }
 
   /** NOTICE texts read from the jars of [noticeSources], per `group:artifact`. */
   private fun noticesFromJars(): Map<String, String> {
-    val keys =
-      noticeSourceKeys.get().associate { entry ->
-        val separator = entry.indexOf('=')
-        entry.substring(0, separator) to entry.substring(separator + 1)
-      }
+    val keys = sourceKeys()
     val result = sortedMapOf<String, String>()
     for (file in noticeSources.files) {
       val key = keys[file.name] ?: continue
@@ -117,7 +176,7 @@ abstract class GenerateThirdPartyNotices : DefaultTask() {
   }
 
   /** Every explicit text belongs to the bundled version it was copied for. */
-  private fun checkTextVersions(modules: List<ModuleComponentIdentifier>) {
+  private fun checkTextVersions(modules: List<BundledModule>) {
     val versions = textVersions.get()
     val problems = mutableListOf<String>()
     for (key in (noticeTexts.get().keys + licenseTexts.get().keys).sorted()) {
@@ -154,13 +213,33 @@ abstract class GenerateThirdPartyNotices : DefaultTask() {
 
   @TaskAction
   fun generate() {
-    val modules = DependencyGraph.externalModules(runtimeRoot.get())
+    val extra = extraModules.get()
+    val modules = bundledModules(runtimeRoot.get(), excludedModules.get(), extra.keys)
     checkTextVersions(modules)
-    val licenseMap = licenses.get()
+    val licenseMap = licenses.get() + extra.mapKeys { it.key.substringBeforeLast(':') }
     val explicitNotices = noticeTexts.get()
     val notices = noticesFromJars() + explicitNotices.filterKeys { it.contains(':') }
     val sharedNotices = explicitNotices.filterKeys { !it.contains(':') }
-    val licenseTextMap = licenseTexts.get()
+    val licenseTextMap = licenseTexts.get().toMutableMap()
+    if (licenseTextsFromJars.get()) {
+      val fromJars = licensesFromJars()
+      val missing = mutableListOf<String>()
+      for (module in modules) {
+        val key = "${module.group}:${module.module}"
+        if (key in licenseTextMap || !needsLicenseText(licenseMap[key])) continue
+        val text = fromJars[key]
+        if (text == null) missing += "${module.group}:${module.module}:${module.version} (${licenseMap[key]})"
+        else licenseTextMap[key] = text
+      }
+      if (missing.isNotEmpty()) {
+        throw GradleException(
+          "generateThirdPartyNotices: no license text for bundled module(s) whose license is not " +
+            "Apache-2.0 and whose jar carries no META-INF/LICENSE (O-L04):\n" +
+            missing.joinToString("\n") { "  $it" } +
+            "\nCopy the upstream text of that version to the project's src/notices and add it to licenseTexts."
+        )
+      }
+    }
     val text = buildString {
       append("${ArgosProject.PRODUCT_NAME} - third-party notices for ${artifactName.get()}\n")
       append("=".repeat(72)).append('\n')
@@ -169,7 +248,7 @@ abstract class GenerateThirdPartyNotices : DefaultTask() {
         append("This artifact bundles no third-party components.\n")
       } else {
         append("This artifact bundles the following third-party components.\n")
-        append("Bundled classes are relocated below ${AgentShading.PREFIX}.\n")
+        if (relocated.get()) append("Bundled classes are relocated below ${AgentShading.PREFIX}.\n")
         for (module in modules) {
           val key = "${module.group}:${module.module}"
           append('\n')
@@ -198,5 +277,10 @@ abstract class GenerateThirdPartyNotices : DefaultTask() {
       }
     }
     outputFile.get().asFile.writeText(text, Charsets.UTF_8)
+  }
+
+  private companion object {
+    /** The license file of a jar: META-INF/LICENSE, LICENSE.txt or LICENSE.md. */
+    val LICENSE_ENTRY = Regex("META-INF/LICENSE(\\.txt|\\.md)?", RegexOption.IGNORE_CASE)
   }
 }

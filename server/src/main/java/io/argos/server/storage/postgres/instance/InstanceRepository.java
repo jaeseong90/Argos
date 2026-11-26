@@ -13,6 +13,7 @@ import java.sql.Types;
 import java.time.Instant;
 import java.util.List;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import javax.sql.DataSource;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -39,6 +40,8 @@ public class InstanceRepository {
   static final int QUERY_TIMEOUT_SECONDS = 5;
 
   private static final String FIND = "SELECT id FROM argos.instances WHERE app_id = ? AND name = ?";
+
+  private static final String STARTED_AT = "SELECT started_at FROM argos.instances WHERE id = ?";
 
   private static final String COUNT =
       "SELECT count(*) FROM argos.instances WHERE app_id = ? AND archived_at IS NULL";
@@ -114,6 +117,18 @@ public class InstanceRepository {
     List<Integer> ids =
         jdbc.query(FIND, (rs, row) -> rs.getInt(1), appId, SessionStore.storedInstanceName(name));
     return ids.isEmpty() ? OptionalInt.empty() : OptionalInt.of(ids.get(0));
+  }
+
+  /**
+   * {@code started_at} of instance {@code id} in epoch milliseconds, empty when NULL or no row
+   * (ADR-0010 C-240 (1): the new-process rule of the instance states).
+   */
+  public OptionalLong startedAtMs(int id) {
+    List<Timestamp> values = jdbc.query(STARTED_AT, (rs, row) -> rs.getTimestamp(1), id);
+    if (values.isEmpty() || values.get(0) == null) {
+      return OptionalLong.empty();
+    }
+    return OptionalLong.of(values.get(0).toInstant().toEpochMilli());
   }
 
   /** Instances of {@code appId} that are not archived. */

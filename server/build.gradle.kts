@@ -19,12 +19,34 @@
 //                    generator for the 1/100 data of T-ST-052 path 2 and T-SV-002
 // test/storage/* projects are development-only: they appear in testFixtures and test suites, never
 // in the main (shipped) classpath.
+// Release metadata (WO-44, 19 §3.5, §5.5, O-L04, SEC-70, SEC-77, ADR-0010 C-153): the boot jar's
+// META-INF carries LICENSE, NOTICE, THIRD-PARTY-NOTICES, argos-deps.txt, sbom/server.cdx.json and
+// the About lists argos/licenses/{server,agent,ui}.json; verifyServerJar (T-BLD-003a) finalizes
+// bootJar. The image carries the same files (/opt/argos and the class path). These tasks depend on
+// checkLicenses (the jk1 report is not configuration-cache compatible), so they are attached only
+// to bootJar, the Jib tasks and integrationTest: test and contractTest keep the configuration cache.
+
+import io.argos.buildlogic.ArgosProject
+import io.argos.buildlogic.NormalizeSbom
+import io.argos.buildlogic.argosSourceDateInstant
+import io.argos.buildlogic.release.notices.GenerateLicenseList
+import io.argos.buildlogic.release.notices.LicenseLists
+import io.argos.buildlogic.release.notices.UpstreamText
+import io.argos.buildlogic.release.notices.VerifyServerJar
+import io.argos.buildlogic.release.notices.registerBundledNotices
+import io.argos.buildlogic.server.ServerImage
+import org.cyclonedx.gradle.CyclonedxDirectTask
+import org.cyclonedx.model.Component
+import org.cyclonedx.model.ExternalReference
 
 plugins {
   id("argos.java-server")
   id("argos.integration-test")
   `java-test-fixtures`
 }
+
+// CycloneDX comes with the build-logic classpath (as in :agent:agent-dist).
+apply(plugin = "org.cyclonedx.bom")
 
 description = "Argos collector server (gRPC ingest, REST API, alerting, administration)."
 
@@ -131,7 +153,12 @@ testing {
       }
     }
     named<JvmTestSuite>("securityTest") {
-      dependencies { implementation(testFixtures(project())) }
+      dependencies {
+        implementation(testFixtures(project()))
+        // T-NFR-10c: the seed values and leak sentinels exist once (Seeds of the sample apps,
+        // ADR-0010 C-250 (1)); a Java 8 library without run-time dependencies.
+        implementation(project(":sample-apps:common"))
+      }
     }
     named<JvmTestSuite>("contractTest") {
       // The permission-matrix generator (T-SEC-49, T-API-010) and ApiTestClient. The contract suite
@@ -255,6 +282,24 @@ tasks.named<Test>("integrationTest") {
   )
 }
 
+// T-NFR-10c (WO-46, PiiSeedGrepSecurityTest): the PII seed grep runs the real agent jar on shop-boot3
+// and sends the seed traffic with the smoke runner. One resolvable configuration per artifact, the
+// same variants the agent harness consumes (argos-agent-jar, argos-sample-app).
+val securityTestJars =
+  mapOf(
+      "agentJar" to Pair(":agent:agent-dist", "argos-agent-jar"),
+      "shopBoot3Jar" to Pair(":sample-apps:shop-boot3", "argos-sample-app"),
+      "smokeJar" to Pair(":sample-apps:smoke", "argos-sample-app"),
+    )
+    .mapValues { (key, source) ->
+      val scope = configurations.dependencyScope("securityTest${key.replaceFirstChar(Char::uppercaseChar)}Scope")
+      dependencies { add(scope.name, project(source.first)) }
+      configurations.resolvable("securityTest${key.replaceFirstChar(Char::uppercaseChar)}") {
+        extendsFrom(scope.get())
+        attributes { attribute(Category.CATEGORY_ATTRIBUTE, objects.named(source.second)) }
+      }
+    }
+
 // T-SEC-11 (GzipBombSecurityTest) measures the resident set of the server started from the boot jar.
 tasks.named<Test>("securityTest") {
   val bootJarFile = serverBootJar.flatMap { it.archiveFile }
@@ -262,6 +307,17 @@ tasks.named<Test>("securityTest") {
   jvmArgumentProviders.add(
     CommandLineArgumentProvider { listOf("-Dargos.test.bootJar=" + bootJarFile.get().asFile.absolutePath) }
   )
+  // T-NFR-10c: -Dargos.test.<agentJar|shopBoot3Jar|smokeJar>=<file>; seed requests of the PII grep
+  // -Psecurity.pii.requests (default 10,000 of N-10c for nightly and the release gate; the PR job
+  // security-light passes 2,000, ADR-0010 C-250 (2)).
+  val jarFiles: Map<String, FileCollection> = securityTestJars.mapValues { it.value.get() }
+  jarFiles.forEach { (key, files) ->
+    inputs.files(files).withPropertyName("securityTest-$key").withNormalizer(ClasspathNormalizer::class.java)
+  }
+  jvmArgumentProviders.add(
+    CommandLineArgumentProvider { jarFiles.map { (key, files) -> "-Dargos.test.$key=" + files.singleFile.absolutePath } }
+  )
+  systemProperty("argos.test.piiRequests", providers.gradleProperty("security.pii.requests").getOrElse("10000"))
 }
 
 // --- Query test data for a running installation (WO-23, development only) -------------------------
@@ -334,3 +390,268 @@ tasks.named<ProcessResources>("processResources") {
     into("db/clickhouse")
   }
 }
+
+// --- Release metadata: notices, dependency manifest, SBOM, About lists (WO-44) -----------------
+// Same generators as the agent jar (:agent:agent-dist), on the server's runtimeClasspath, which the
+// boot jar ships unshaded (BOOT-INF/lib). Upstream texts the bundled jars do not carry are in
+// src/notices (README.md there): a version change fails generateThirdPartyNotices until the text is
+// replaced from the new release tag.
+
+/** `argos-server`. */
+val serverArtifactId: String = base.archivesName.get()
+
+/**
+ * Modules the Spring Boot plugin copies into the boot jar from its own resources (not from the
+ * dependency graph): the launcher at the jar root and the jarmode tools (layers, extract) in
+ * BOOT-INF/lib. Same version as the plugin.
+ */
+val bootPackagedModules =
+  libs.plugins.spring.boot.get().version.requiredVersion.let { boot ->
+    mapOf(
+      "org.springframework.boot:spring-boot-loader:$boot" to "Apache-2.0",
+      "org.springframework.boot:spring-boot-jarmode-tools:$boot" to "Apache-2.0",
+    )
+  }
+
+val serverNotices =
+  registerBundledNotices("$serverArtifactId-$version.jar", layout.buildDirectory.dir("server-meta-inf")) {
+    // Dependencies-only starter jars (no classes) are not packaged by the Boot plugin.
+    excludeSpringBootStarters = true
+    bootPackagedModules.forEach { (coordinates, license) -> extraModule(coordinates, license) }
+    licenseText(
+      "com.google.protobuf:protobuf-java",
+      "4.36.2",
+      UpstreamText("protobuf-java-LICENSE.txt", "https://github.com/protocolbuffers/protobuf/blob/v36.2/LICENSE"),
+    )
+    licenseText(
+      "org.ow2.asm:asm",
+      "9.7",
+      UpstreamText("asm-LICENSE.txt", "https://gitlab.ow2.org/asm/asm/-/blob/ASM_9_7/LICENSE.txt"),
+    )
+    licenseText(
+      "org.reactivestreams:reactive-streams",
+      "1.0.4",
+      UpstreamText(
+        "reactive-streams-LICENSE.txt",
+        "https://github.com/reactive-streams/reactive-streams-jvm/blob/v1.0.4/LICENSE",
+      ),
+    )
+    licenseText(
+      "com.github.luben:zstd-jni",
+      "1.5.7-23",
+      UpstreamText("zstd-jni-LICENSE.txt", "https://github.com/luben/zstd-jni/blob/v1.5.7-23/LICENSE"),
+      UpstreamText(
+        "zstd-LICENSE.txt",
+        "https://github.com/facebook/zstd/blob/v1.5.7/LICENSE",
+        heading = "Embedded component license (Zstandard 1.5.7, compiled into the native library of zstd-jni)",
+      ),
+    )
+    val netty = "https://github.com/netty/netty/blob/netty-4.2.19.Final"
+    val nettyEmbedded =
+      listOf(
+          "slf4j" to "SLF4J, MIT; netty-common io.netty.util.internal.logging",
+          "webbit" to "Webbit, BSD-3-Clause; netty-codec-http WebSocket",
+          "jbzip2" to "jbzip2, MIT; netty-codec-compression Bzip2",
+          "libdivsufsort" to "libdivsufsort, MIT; netty-codec-compression Bzip2",
+          "jfastlz" to "jfastlz, MIT; netty-codec-compression FastLz",
+          "hyper-hpack" to "hyper-hpack, MIT; netty-codec-http2 HPACK",
+          "nghttp2-hpack" to "nghttp2, MIT; netty-codec-http2 HPACK",
+        )
+        .map { (name, label) ->
+          UpstreamText(
+            "netty-LICENSE.$name.txt",
+            "$netty/license/LICENSE.$name.txt",
+            heading = "Embedded component license ($label)",
+          )
+        }
+    noticeText(
+      "io.netty",
+      "4.2.19.Final",
+      UpstreamText("netty-NOTICE.txt", "$netty/NOTICE.txt"),
+      *nettyEmbedded.toTypedArray(),
+    )
+    noticeText(
+      "io.grpc",
+      "1.85.1",
+      UpstreamText("grpc-java-NOTICE.txt", "https://github.com/grpc/grpc-java/blob/v1.85.1/NOTICE.txt"),
+    )
+    noticeText(
+      "io.perfmark:perfmark-api",
+      "0.27.0",
+      UpstreamText("perfmark-NOTICE.txt", "https://github.com/perfmark/perfmark/blob/v0.27.0/NOTICE"),
+    )
+    noticeText(
+      "io.prometheus",
+      "1.7.0",
+      UpstreamText(
+        "prometheus-client_java-NOTICE.txt",
+        "https://github.com/prometheus/client_java/blob/v1.7.0/NOTICE",
+      ),
+    )
+  }
+
+/** Bundled projects whose upstream NOTICE must be in THIRD-PARTY-NOTICES (verifyServerJar). */
+val serverNoticeRequired = listOf("io.netty", "io.grpc", "io.perfmark:perfmark-api", "io.prometheus")
+
+// SBOM (SEC-70, 16 §10.1): every module of the runtime classpath, with the Argos protocol project.
+tasks.named<CyclonedxDirectTask>("cyclonedxDirectBom") {
+  includeConfigs = listOf("runtimeClasspath")
+  testConfigs = emptyList()
+  projectType = Component.Type.APPLICATION
+  componentGroup = ArgosProject.MAVEN_GROUP
+  componentName = serverArtifactId
+  componentDescription = "Argos APM collector server"
+  // Reproducible output (DSN-19-05) and no build-environment leakage.
+  includeBomSerialNumber = false
+  includeBuildSystem = false
+  includeLicenseText = false
+  externalReferences =
+    listOf(
+      ExternalReference().apply {
+        type = ExternalReference.Type.VCS
+        url = ArgosProject.REPOSITORY_URL
+      }
+    )
+  jsonOutput = layout.buildDirectory.file("sbom/raw/server.cdx.json")
+  xmlOutput.convention(null as RegularFile?)
+}
+
+// The Spring Boot plugin reacts to the CycloneDX plugin: it copies the output of the aggregate task
+// cyclonedxBom (random serial number, current time) into the main resources as
+// META-INF/sbom/application.cdx.json and names it in the manifest (Sbom-Location). The boot jar
+// carries the normalized META-INF/sbom/server.cdx.json instead (reproducible, T-BLD-009), so the
+// aggregate task is disabled and Sbom-Location names server.cdx.json (Boot's actuator sbom endpoint
+// reads it from there).
+tasks.named("cyclonedxBom") {
+  enabled = false
+  // Without its own dependency on cyclonedxDirectBom, processResources (and so :server:test) does
+  // not resolve the SBOM inputs.
+  setDependsOn(emptyList<Any>())
+}
+
+tasks.named<ProcessResources>("processResources") { exclude("META-INF/sbom/application.cdx.json") }
+
+// Release asset argos-server-<version>.cdx.json (WO-44 contract): timestamps pinned to
+// SOURCE_DATE_EPOCH (T-BLD-009), :proto must be a component (T-BLD-008).
+val serverSbom =
+  tasks.register<NormalizeSbom>("serverSbom") {
+    inputFile = tasks.named<CyclonedxDirectTask>("cyclonedxDirectBom").flatMap { it.jsonOutput }
+    timestamp = argosSourceDateInstant()
+    requiredProjects = listOf(":proto")
+    extraComponents = bootPackagedModules
+    outputFile = layout.buildDirectory.file("sbom/server.cdx.json")
+  }
+
+// About lists (C-153): server.json from the server's argos-deps.txt, agent.json from the agent
+// jar's argos-deps.txt (:agent:agent-dist agentDepsElements), ui.json from the UI build
+// (check-licenses.mjs --about-json); without the UI (-Pargos.ui.skip=true) ui stays not_generated.
+val skipUiBundle = providers.gradleProperty("argos.ui.skip").map { it.toBoolean() }.getOrElse(false)
+
+val agentDeps = configurations.dependencyScope("agentDeps")
+val agentDepsFile =
+  configurations.resolvable("agentDepsFile") {
+    extendsFrom(agentDeps.get())
+    attributes { attribute(Category.CATEGORY_ATTRIBUTE, objects.named("argos-agent-deps")) }
+  }
+
+dependencies { "agentDeps"(project(":agent:agent-dist")) }
+
+val generateServerLicenseList =
+  tasks.register<GenerateLicenseList>("generateServerLicenseList") {
+    depsFile.from(serverNotices.depsFile)
+    outputFile = layout.buildDirectory.file("about-lists/server.json")
+  }
+
+val generateAgentLicenseList =
+  tasks.register<GenerateLicenseList>("generateAgentLicenseList") {
+    depsFile.from(agentDepsFile)
+    outputFile = layout.buildDirectory.file("about-lists/agent.json")
+  }
+
+/** The class path root that holds META-INF/argos/licenses/<part>.json. */
+val aboutLicenseLists =
+  tasks.register<Sync>("aboutLicenseLists") {
+    group = "build"
+    description = "Stages the About lists META-INF/argos/licenses/{server,agent,ui}.json (C-153)."
+    into(layout.buildDirectory.dir("about-licenses"))
+    into(LicenseLists.DIRECTORY) {
+      from(generateServerLicenseList, generateAgentLicenseList)
+      if (!skipUiBundle) {
+        from(files(layout.settingsDirectory.file("ui/build/licenses/ui.json")) { builtBy(":ui:pnpmBuild") })
+      }
+    }
+  }
+
+val rootLicenseFiles = files(layout.settingsDirectory.file("LICENSE"), layout.settingsDirectory.file("NOTICE"))
+
+serverBootJar {
+  // Root META-INF, where the Boot plugin also moves build-info.properties.
+  metaInf {
+    from(rootLicenseFiles)
+    from(serverNotices.noticesFile, serverNotices.depsFile)
+    into("sbom") { from(serverSbom) }
+  }
+  from(aboutLicenseLists)
+  exclude("META-INF/sbom/application.cdx.json")
+  manifest { attributes("Sbom-Format" to "CycloneDX", "Sbom-Location" to "META-INF/sbom/server.cdx.json") }
+}
+
+val verifyServerJar =
+  tasks.register<VerifyServerJar>("verifyServerJar") {
+    jar = serverBootJar.flatMap { it.archiveFile }
+    expectedVersion = version.toString()
+    uiExpected = !skipUiBundle
+    noticeRequired = serverNoticeRequired
+    reportFile = layout.buildDirectory.file("reports/server-jar/verify-server-jar.txt")
+  }
+
+serverBootJar { finalizedBy(verifyServerJar) }
+
+// T-API-013a: the in-process server of the integration tests sees the same lists; AboutApiIT
+// compares them with the argos-deps.txt of the server and of the agent jar.
+tasks.named<Test>("integrationTest") {
+  classpath += files(aboutLicenseLists)
+  val serverDeps = serverNotices.depsFile
+  val agentDeps: FileCollection = agentDepsFile.get()
+  inputs.file(serverDeps).withPropertyName("serverDepsManifest").withPathSensitivity(PathSensitivity.NONE)
+  inputs.files(agentDeps).withPropertyName("agentDepsManifest").withPathSensitivity(PathSensitivity.NONE)
+  systemProperty("argos.test.uiBundled", (!skipUiBundle).toString())
+  jvmArgumentProviders.add(
+    CommandLineArgumentProvider {
+      listOf(
+        "-Dargos.test.serverDepsFile=" + serverDeps.get().asFile.absolutePath,
+        "-Dargos.test.agentDepsFile=" + agentDeps.singleFile.absolutePath,
+      )
+    }
+  )
+}
+
+// Server image: the notices in the working directory /opt/argos, the About lists on the class path
+// (Jib's <appRoot>/resources).
+val serverImageFiles = layout.buildDirectory.dir("jib/server-image-files")
+
+val prepareServerImageFiles =
+  tasks.register<Sync>("prepareServerImageFiles") {
+    group = "argos"
+    description = "Stages the notices, dependency manifest, SBOM and About lists of the server image."
+    into(serverImageFiles)
+    into(ServerImage.WORKING_DIRECTORY.removePrefix("/")) {
+      from(rootLicenseFiles)
+      from(serverNotices.noticesFile, serverNotices.depsFile)
+      into("sbom") { from(serverSbom) }
+    }
+    into("${ServerImage.APP_ROOT.removePrefix("/")}/resources") { from(aboutLicenseLists) }
+  }
+
+jib {
+  extraDirectories {
+    paths {
+      path {
+        setFrom(serverImageFiles.get().asFile)
+        into = "/"
+      }
+    }
+  }
+}
+
+tasks.named { it.startsWith("jib") }.configureEach { dependsOn(prepareServerImageFiles) }

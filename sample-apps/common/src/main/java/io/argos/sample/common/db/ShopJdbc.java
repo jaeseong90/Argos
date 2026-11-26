@@ -209,8 +209,7 @@ public final class ShopJdbc {
     return run(
         c -> {
           int inserted = 0;
-          try (PreparedStatement ps =
-              c.prepareStatement("INSERT INTO audit_log (message, created_at) VALUES (?, ?)")) {
+          try (PreparedStatement ps = c.prepareStatement(db.auditInsertSql())) {
             Timestamp now = now();
             for (int i = 0; i < count; i++) {
               ps.setString(1, "batch-insert " + i);
@@ -235,7 +234,7 @@ public final class ShopJdbc {
   public long insertAudit(String message) {
     return run(
         c -> {
-          String insert = "INSERT INTO audit_log (message, created_at) VALUES (?, ?)";
+          String insert = db.auditInsertSql();
           String[] keyColumns = db.generatedKeyColumns();
           try (PreparedStatement ps =
               keyColumns == null

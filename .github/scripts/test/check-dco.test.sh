@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
+# req: O-L06
+# test-ids: T-BLD-032
 #
 # Tests for .github/scripts/check-dco.sh. Builds a throwaway git repository in a temporary
 # directory (global and system git configuration are ignored) and checks that unsigned and

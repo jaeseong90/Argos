@@ -43,6 +43,7 @@ later (ADR-0010 "결과"); until then this table and the decisions win.
 | `SqlStat.buckets = 10`, `ExtStat.buckets = 9` | - | Added `repeated uint32`, exactly 15 counts, bounds of 13 §2 (`LatencyBuckets`) | DSN-13-03, 13 §18, ADR-0010 C-101 |
 | `SqlStat.sum_exec_us = 11`, `sum_fetch_us = 12` | - | Added `optional uint64` (`sum_us = sum_exec_us + sum_fetch_us` when both are set; absent = not reported, a set 0 is the value 0, C-4), sources of `sql_stat_raw.sum_exec_ms`/`sum_fetch_ms` | 13 §18, ADR-0010 C-101, 11 §12 |
 | `AgentHello.plaintext = 25` | - | Added `optional bool`: the agent connects without TLS (16 §3.4). This agent always sets it (`false` over TLS); absent = an agent that does not report it | ADR-0010 C-101, 11 §12 |
+| `AgentHello.check_only = 26` | - | Added `optional bool`: set (true) only by `java -jar argos-agent.jar --check`. The server runs 11 §5 checks 1 to 5 and the per-token Hello rate, answers an accepted `ServerHello` (`app_id`, `instance_id` 0, no `session_id`, empty `config` and salt) and ends the stream: it registers no instance, writes no approval-queue row, counts against no session cap, tracks no state and evaluates no alert. A missing app that automatic registration would create is answered with `app_id` 0 (nothing is created). A normal agent never sets it; an older server ignores it (unknown field) and registers `<name>-check` as before | ADR-0010 C-240 (1), 11 §12 |
 | `ServerHello.user_id_salt = 18` | - | Added `bytes`: the app's 32-byte salt for `capture.user-id.mode: hashed`, over TLS only, kept in agent memory only (16 §6.3) | ADR-0010 C-101 |
 | `ServerHello.default_ip_mode` | (16 §16 asks for it) | Not added | ADR-0010 C-101 |
 | `TransactionProfile.kind = 6` | - | Added `TransactionKind`: the transaction's kind (= `TransactionRecord.kind`), filled by the agent (`BatchAssembler`); the source of V001 `profile_step.kind` | ADR-0010 C-138 |
@@ -67,7 +68,8 @@ exception.
   each approved by the PM (ADR-0010 C-101). An incompatible protocol is a new package (`argos.v2`).
 - New fields are `optional`, or their default means "none". Only `optional` fields express a missing
   value (C-4, D-23): `cpu_time_us`, `alloc_bytes`, `InstanceUpdate.*`, `Throttle.*`, and the C-101
-  additions `AgentHello.plaintext`, `SqlStat.sum_exec_us`, `SqlStat.sum_fetch_us`.
+  additions `AgentHello.plaintext`, `SqlStat.sum_exec_us`, `SqlStat.sum_fetch_us`, and the C-240 (1)
+  addition `AgentHello.check_only`.
 - Enums keep `*_UNSPECIFIED = 0`; new values go at the end. Receivers map unknown values to
   `*_UNSPECIFIED` and count them; unknown fields are kept and ignored.
 - A new RPC is compatible; removing one needs a major version. `Limits` values are not protocol changes.
@@ -83,7 +85,7 @@ Checks that enforce the rules:
 | `buf breaking` (FILE rules) | Renumbered, retyped, renamed or removed fields, enum values and RPCs (a removed field fails even when reserved: generated accessors disappear) against the pull request base | `bash .github/scripts/check-proto.sh --against-git <base>` (CI `lint` job) or `--against <dir>` |
 | `BootstrapConstantsContractTest` | `StepType`, `DictionaryKind`, `TransactionKind`, `FailureKind` and the C-69 flag bits differ from the agent bootstrap constants | every build |
 | `EnumZeroValueTest` | An enum (top-level or nested, any of the four files) whose zero value is not `<UPPER_SNAKE(EnumName)>_UNSPECIFIED`; the only listed exception is `FailureKind.FAILURE_NONE` | every build |
-| `OptionalPresenceTest` | An `optional` field of the D-23 and C-101 lists above that loses presence (absent and a set 0/`false` must stay distinct after a round trip); a plain numeric field (`sql_count`) that gains it | every build |
+| `OptionalPresenceTest` | An `optional` field of the D-23, C-101 and C-240 lists above that loses presence (absent and a set 0/`false` must stay distinct after a round trip); a plain numeric field (`sql_count`) that gains it | every build |
 
 buf (Apache-2.0) runs as the pinned container `bufbuild/buf:1.74.0@sha256:621f1082...` (full digest in
 `check-proto.sh`) with `--network none`; only the proto sources and `buf.yaml` are mounted

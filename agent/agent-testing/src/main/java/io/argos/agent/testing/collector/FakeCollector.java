@@ -76,7 +76,11 @@ import java.util.function.Supplier;
  *       heartbeat_interval_s} ({@link Builder#heartbeatIntervalS}) and {@code config}. An instance
  *       has one session (12 §4.1): a new hello sends the open session of that instance {@code
  *       SessionClose{REPLACED}} and ends its stream (11 §5 check 7), and the old session id is
- *       refused from then on, also when its stream had already ended.
+ *       refused from then on, also when its stream had already ended. A Hello with {@code
+ *       check_only} (ADR-0010 C-240 (1), {@code --check}) is answered accepted with instance id 0
+ *       and no session id, recorded ({@link SessionInfo#checkOnly}) and its stream ended at once:
+ *       no instance id is assigned and no session registered ({@link Builder#ignoreCheckOnly}
+ *       answers it as a server older than the field does).
  *   <li>11 §2, §3 data calls need {@code authorization: Bearer argos_<base64url>}, {@code
  *       argos-instance-id} and {@code argos-session-id} of an accepted session; otherwise {@code
  *       UNAUTHENTICATED} or {@code FAILED_PRECONDITION} ({@code SESSION_REQUIRED}). A session stays
@@ -119,6 +123,7 @@ public final class FakeCollector implements AutoCloseable {
   private volatile Map<String, String> helloConfig;
   private final ByteString userIdSalt;
   private final boolean retainBatches;
+  private final boolean ignoreCheckOnly;
   private final String token;
   private final LongSupplier clock;
   private final Object registry = new Object();
@@ -192,6 +197,7 @@ public final class FakeCollector implements AutoCloseable {
     this.helloConfig = Map.copyOf(builder.config);
     this.userIdSalt = ByteString.copyFrom(builder.userIdSalt);
     this.retainBatches = builder.retainBatches;
+    this.ignoreCheckOnly = builder.ignoreCheckOnly;
     this.token = builder.token != null ? builder.token : newToken();
     this.clock = builder.clock;
   }
@@ -223,10 +229,20 @@ public final class FakeCollector implements AutoCloseable {
     private Map<String, String> config = Map.of();
     private byte[] userIdSalt = new byte[0];
     private boolean retainBatches = true;
+    private boolean ignoreCheckOnly;
     private String token;
     private LongSupplier clock = System::currentTimeMillis;
 
     private Builder() {}
+
+    /**
+     * Answer a {@code check_only} Hello like a normal one (default false): a server older than
+     * ADR-0010 C-240 (1), which does not know the field, registers the check's instance.
+     */
+    public Builder ignoreCheckOnly(boolean on) {
+      this.ignoreCheckOnly = on;
+      return this;
+    }
 
     /** TLS with a throw-away self-signed certificate for {@code localhost}. */
     public Builder tls(boolean on) {
@@ -1107,6 +1123,31 @@ public final class FakeCollector implements AutoCloseable {
                   }));
       return;
     }
+    if (fields.checkOnly() && !ignoreCheckOnly) {
+      // C-240 (1): answered without a session or an instance, and the stream ended.
+      sessions.add(info(number, 0, true, fields, now, hello, null, null, metadata));
+      later(
+          latency,
+          () ->
+              send(
+                  channel,
+                  c -> {
+                    c.hello(
+                        new CollectorProtocol.HelloAnswer(
+                            true,
+                            0,
+                            "",
+                            null,
+                            null,
+                            0,
+                            now(),
+                            heartbeatIntervalS,
+                            Map.of(),
+                            ByteString.EMPTY));
+                    c.close(Status.OK, Map.of());
+                  }));
+      return;
+    }
     LiveSession live;
     List<LiveSession> replaced = new ArrayList<>();
     synchronized (registry) {
@@ -1196,7 +1237,8 @@ public final class FakeCollector implements AutoCloseable {
         rejectReason,
         metadata.token(),
         fields.agentEpoch(),
-        metadata.plaintext());
+        metadata.plaintext(),
+        fields.checkOnly());
   }
 
   private static Map<String, String> rejectTrailers(String reason, int retryAfterS) {

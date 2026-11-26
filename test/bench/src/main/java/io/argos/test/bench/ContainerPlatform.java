@@ -142,9 +142,11 @@ final class ContainerPlatform implements Platform {
         Platform.variantOptions(
             variant,
             setup,
+            setup.appName(),
             "/opt/bench/" + setup.agentJar().getFileName(),
             setup.otelJar() == null ? null : "/opt/bench/" + setup.otelJar().getFileName(),
-            "/run-out/agent-logs"));
+            "/run-out/agent-logs",
+            "/run-out/" + SelfDiagFile.FILE_NAME));
     java.addAll(List.of("-jar", "/opt/bench/" + setup.appJar().getFileName()));
     run.addAll(java);
     Files.writeString(runDir.resolve("command.txt"), "docker " + String.join("\n", run) + "\n");

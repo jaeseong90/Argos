@@ -99,11 +99,13 @@ final class ProcessPlatform implements Platform {
         Platform.variantOptions(
             variant,
             setup,
+            setup.appName(),
             setup.binDir().resolve(setup.agentJar().getFileName()).toString(),
             setup.otelJar() == null
                 ? null
                 : setup.binDir().resolve(setup.otelJar().getFileName()).toString(),
-            runDir.resolve("agent-logs").toString()));
+            runDir.resolve("agent-logs").toString(),
+            runDir.resolve(SelfDiagFile.FILE_NAME).toString()));
     command.add("-jar");
     command.add(setup.binDir().resolve(setup.appJar().getFileName()).toString());
     command.add("--server.address=" + setup.appAddress());

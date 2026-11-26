@@ -37,12 +37,12 @@ import org.springframework.stereotype.Component;
  * wal.segment-bytes <= max-bytes}; {@code writer.flush-rows <= queue-rows}; {@code
  * auth.password.min-length <= max-length}; {@code auth.refresh-idle-ttl <= refresh-max-ttl}; {@code
  * ops.disk.warn-ratio < emergency-ratio < stop-ratio}; {@code ops.emergency.target-ratio <
- * ops.disk.emergency-ratio}; {@code ops.reconcile.cron} is a Spring cron expression; every entry of
- * {@code metrics.allow-cidrs} and {@code alert.webhook.allow-cidrs} is an IP range ({@link
- * CidrRange}); SMTP {@code starttls: optional} needs {@code insecure: true}; {@code
- * retention.audit} is at least {@value #MIN_AUDIT_RETENTION_DAYS} days (ADR-0010 C-116, the floor
- * that PostgreSQL also enforces); {@code privacy.deletion.max-range} is whole days between 1 and
- * 31.
+ * ops.disk.emergency-ratio}; {@code ops.reconcile.cron}, {@code ops.dictionary-cleanup.cron} and
+ * {@code ops.error-group-cleanup.cron} are Spring cron expressions; every entry of {@code
+ * metrics.allow-cidrs} and {@code alert.webhook.allow-cidrs} is an IP range ({@link CidrRange});
+ * SMTP {@code starttls: optional} needs {@code insecure: true}; {@code retention.audit} is at least
+ * {@value #MIN_AUDIT_RETENTION_DAYS} days (ADR-0010 C-116, the floor that PostgreSQL also
+ * enforces); {@code privacy.deletion.max-range} is whole days between 1 and 31.
  */
 @Component
 @Order(ConfigValidation.ORDER)
@@ -214,6 +214,24 @@ public class ConfigValidation implements StartupPhase {
       out.add(
           new Violation(
               "argos.ops.reconcile.cron", "must be a cron expression of six fields (0 0 3 * * *)"));
+    }
+    String dictionaryCron = p.ops().dictionaryCleanup().cron();
+    if (dictionaryCron != null
+        && !dictionaryCron.isBlank()
+        && !CronExpression.isValidExpression(dictionaryCron)) {
+      out.add(
+          new Violation(
+              "argos.ops.dictionary-cleanup.cron",
+              "must be a cron expression of six fields (0 30 3 * * *)"));
+    }
+    String errorGroupCron = p.ops().errorGroupCleanup().cron();
+    if (errorGroupCron != null
+        && !errorGroupCron.isBlank()
+        && !CronExpression.isValidExpression(errorGroupCron)) {
+      out.add(
+          new Violation(
+              "argos.ops.error-group-cleanup.cron",
+              "must be a cron expression of six fields (0 45 3 * * *)"));
     }
     cidrs("argos.metrics.allow-cidrs", p.metrics().allowCidrs(), out);
     cidrs("argos.alert.webhook.allow-cidrs", p.alert().webhook().allowCidrs(), out);

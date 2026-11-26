@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
+# req: N-11, N-16, O-R02, SEC-74, SEC-75
 #
 # Tests of argos-compose.sh without a stack in pinned Linux containers (container/argos-compose-cases.sh):
-# the refused commands, the up preflight, the input limits of token create, its agent configuration
-# example and the interrupt handling. Ubuntu 22.04 (dash, no openssl), Alpine (BusyBox ash, no
+# backup/restore/diag dispatch, upgrade and rollback (T-NFR-11a logic with stub backup.sh and
+# restore.sh), the up preflight, the input limits of token create, its agent configuration
+# example, the interrupt handling and the demo branch (ARGOS_DEMO_MODE=true: compose.demo.yaml and
+# the demo profile, no TLS files, the demo secrets and images in the preflight; T-NFR-16d). Ubuntu 22.04 (dash, no openssl), Alpine (BusyBox ash, no
 # openssl) and the PostgreSQL image (Debian dash with openssl: the host taken from the certificate).
 # Requires Docker (skipped without it unless REQUIRE_DOCKER=1).
 set -euo pipefail

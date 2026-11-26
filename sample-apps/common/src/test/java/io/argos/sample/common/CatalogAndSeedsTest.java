@@ -75,7 +75,9 @@ class CatalogAndSeedsTest {
   }
 
   @Test
-  @DisplayName("Every seed entry expects the sentinel in the response")
+  @DisplayName(
+      "Every seed entry expects the sentinel in the response (the phone and card exception seeds:"
+          + " their real-shaped sentinel, C-250 (1))")
   void seedEntriesExpectSentinel() {
     List<CatalogEntry> seeds =
         ShopCatalog.entries().stream()
@@ -83,9 +85,13 @@ class CatalogAndSeedsTest {
             .collect(Collectors.toList());
     assertThat(seeds).hasSizeGreaterThan(40);
     for (CatalogEntry entry : seeds) {
+      String expected =
+          entry.id().equals("seed.phone.error")
+              ? Seeds.PHONE_PATTERN
+              : entry.id().equals("seed.card.error") ? Seeds.CARD_PATTERN : Seeds.SENTINEL;
       assertThat(entry.checks())
           .as(entry.id())
-          .anyMatch(c -> c.type() == Check.Type.BODY_CONTAINS && Seeds.SENTINEL.equals(c.value()));
+          .anyMatch(c -> c.type() == Check.Type.BODY_CONTAINS && expected.equals(c.value()));
     }
   }
 
@@ -129,6 +135,54 @@ class CatalogAndSeedsTest {
     assertThat(
             Arrays.asList(Seeds.PHONE_PATTERN, Seeds.RESIDENT_NUMBER_PATTERN, Seeds.CARD_PATTERN))
         .noneMatch(v -> v.contains(Seeds.SENTINEL));
+  }
+
+  @Test
+  @DisplayName(
+      "C-250 (1) exception-message phone and card seeds are real-shaped sentinels (Korean mobile"
+          + " number, Luhn-valid card) and every one is in the leak scan list")
+  void exceptionSeedsAreRealShapedSentinels() {
+    assertThat(Seeds.PHONE_PATTERN).matches("01[016789]-\\d{3,4}-\\d{4}");
+    assertThat(Seeds.CARD_PATTERN).matches("\\d{16}");
+    assertThat(luhn(Seeds.CARD_PATTERN)).as("Luhn check of the card sentinel").isTrue();
+    assertThat(Seeds.PHONE_ERROR_MESSAGE)
+        .contains(Seeds.PHONE_PATTERN)
+        .doesNotContain(Seeds.SENTINEL);
+    assertThat(Seeds.CARD_ERROR_MESSAGE)
+        .contains(Seeds.CARD_PATTERN)
+        .doesNotContain(Seeds.SENTINEL);
+    assertThat(Seeds.LEAK_SENTINELS)
+        .containsExactly(
+            Seeds.SENTINEL,
+            Seeds.ACCESS_KEY_SENTINEL,
+            Seeds.PHONE_PATTERN,
+            Seeds.RESIDENT_NUMBER_PATTERN,
+            Seeds.CARD_PATTERN);
+    assertThat(Seeds.ACCESS_KEY_LIKE).contains(Seeds.ACCESS_KEY_SENTINEL);
+    // The query string of the phone exception seed keeps the ARGOS_SEED phone.
+    CatalogEntry phoneError =
+        ShopCatalog.entries().stream()
+            .filter(e -> e.id().equals("seed.phone.error"))
+            .findFirst()
+            .orElseThrow(AssertionError::new);
+    assertThat(phoneError.path()).contains(ShopCatalog.query(Seeds.PHONE));
+  }
+
+  private static boolean luhn(String digits) {
+    int sum = 0;
+    boolean twice = false;
+    for (int i = digits.length() - 1; i >= 0; i--) {
+      int d = digits.charAt(i) - '0';
+      if (twice) {
+        d *= 2;
+        if (d > 9) {
+          d -= 9;
+        }
+      }
+      sum += d;
+      twice = !twice;
+    }
+    return sum % 10 == 0;
   }
 
   @Test

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+#
+# Fixture of a shell test script (T-BLD-014d). The IDs in this ordinary comment do not count:
+# T-SEC-99, T-NFR-77.
+# test-ids: T-SEC-84a, T-NFR-20c, T-SEC-52e
+# req: SEC-84, N-20
+set -euo pipefail
+
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "$here/lib.sh"
+n=${#items[@]} # T-SEC-98 in a trailing comment
+
+expect_exit 0 "T-SEC-84a: backup.sh exits 0 (caller umask 022)" bk
+check "T-SEC-84a: the set directory $set_dir is 0700" sh -c "[ \"\$(ls -ld '$set_dir' | cut -c1-10)\" = drwx------ ]"
+expect_output "refused" \
+  'T-NFR-20c: the ClickHouse target on the same disk is refused' \
+  bash "$here/backup.sh" --same-disk
+[ -f "$work/x" ] || fail "T-SEC-84a: the manifest is missing: $(tr '\n' ' ' <"$work/.hits")"
+cat >"$work/conf" <<'EOF'
+it's a heredoc: "T-SEC-97 not a description" # not a comment either
+EOF
+echo "FAIL  T-SEC-84a $1 (exit $code)"
+expect_container_suite "backup and restore cases on Alpine (BusyBox ash)" "$ALPINE_IMAGE" -- sh /t/container/backup-cases.sh
+
+finish

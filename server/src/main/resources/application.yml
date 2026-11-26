@@ -192,3 +192,9 @@ argos:
     migrator:
       user: ${ARGOS_CH_MIGRATOR_USER:argos_migrator}
       password-file: ${ARGOS_CH_MIGRATOR_PASSWORD_FILE:}
+  # WO-41: demo mode (Compose demo profile only; supplies plaintext gRPC defaults and the UI banner)
+  # and the applications with agent tokens registered at start (17 §3.2, §3.8).
+  demo:
+    enabled: ${ARGOS_DEMO_MODE:false}
+  bootstrap:
+    apps-file: ${ARGOS_BOOTSTRAP_APPS_FILE:}

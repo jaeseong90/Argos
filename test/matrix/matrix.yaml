@@ -1,0 +1,573 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Compatibility matrix: the single definition of its combinations (docs/18 section 6.1, DSN-18-11,
+# WO-50). Every row is one Gradle task :agent:agent-testing:matrixTest-<id> that runs the listed
+# agent-testing suites against one sample app on one JDK; `./gradlew matrixTest -Pmatrix.combo=<id>`
+# or `-Pmatrix.group=<group>` selects rows, the self-hosted argos-matrix runner runs all of them
+# (.github/workflows/nightly.yml). `./gradlew :agent:agent-testing:matrixReport` turns the results
+# into docs/compatibility-matrix.md. Row fields, the YAML subset this file may use and the verdict
+# rules are in test/matrix/README.md; build-logic MatrixCatalog rejects anything else at
+# configuration time.
+#
+# ID ranges: T-MX-001..121 are those of 18 section 6.1. T-MX-114 (devtools), T-MX-130..139 (servlet
+# containers, ADR-0010 C-127, C-240 (10)), T-MX-140..149 (transport variants, C-235 (12), C-250 (8))
+# and T-MX-150..159 (module boundary versions, C-240 (10), C-237 (11)) are proposed IDs awaiting
+# registration in 18 section 6.1. T-MX-017 (the 18 section 3 example, C-232 (9)) is an alias of the
+# Boot 3 x JDK 21 x virtual threads row, T-MX-022.
+#
+# status: gate rows decide the verdict; unverified rows (02 section 9 "△", untested containers) run
+# but never fail the nightly and never show as verified. requires: env:NAME, prop:name or os:<family>
+# that must be present on the runner; without them the tests skip with the reason and the row is △.
+
+version: 1
+
+suite-sets:
+  # The 18 section 6.1 smoke sequence, then the per-area suites it is made of (matrix-parameters.md).
+  smoke:
+    - io.argos.agent.testing.BytecodeVerificationFlagMatrixTest
+    - io.argos.agent.testing.matrix.MatrixSmokeTest
+    - io.argos.agent.testing.e2e.SampleAppAgentTest
+  boot:
+    - io.argos.agent.testing.BytecodeVerificationFlagMatrixTest
+    - io.argos.agent.testing.matrix.MatrixSmokeTest
+    - io.argos.agent.testing.matrix.ServiceNameBoundaryTest
+    - io.argos.agent.testing.e2e.SampleAppAgentTest
+    - io.argos.agent.testing.e2e.LoadLeakE2eTest
+    - io.argos.agent.testing.servlet.*
+    - io.argos.agent.testing.async.*
+    - io.argos.agent.testing.httpclient.*
+    - io.argos.agent.testing.command.ThreadDumpVirtualTest
+  boot-required:
+    - io.argos.agent.testing.matrix.MatrixSmokeTest
+    - io.argos.agent.testing.e2e.SampleAppAgentTest
+  war:
+    - io.argos.agent.testing.BytecodeVerificationFlagMatrixTest
+    - io.argos.agent.testing.e2e.WarAppAgentTest
+    - io.argos.agent.testing.servlet.War*
+    - io.argos.agent.testing.matrix.WarRedeployTest
+    - io.argos.agent.testing.matrix.JspForwardTest
+  war-required:
+    - io.argos.agent.testing.e2e.WarAppAgentTest
+    - io.argos.agent.testing.matrix.WarRedeployTest
+    - io.argos.agent.testing.matrix.JspForwardTest
+  jdbc:
+    - io.argos.agent.testing.BytecodeVerificationFlagMatrixTest
+    - io.argos.agent.testing.jdbc.*
+  batch:
+    - io.argos.agent.testing.BytecodeVerificationFlagMatrixTest
+    - io.argos.agent.testing.batch.*
+  container:
+    - io.argos.agent.testing.BytecodeVerificationFlagMatrixTest
+    - io.argos.agent.testing.matrix.MatrixSmokeTest
+    - io.argos.agent.testing.matrix.ServiceNameBoundaryTest
+    - io.argos.agent.testing.servlet.StreamingTest
+    - io.argos.agent.testing.servlet.RequestBoundaryTest
+    - io.argos.agent.testing.servlet.FallbackNameTest
+  container-required:
+    - io.argos.agent.testing.matrix.MatrixSmokeTest
+    - io.argos.agent.testing.servlet.StreamingTest
+  coexist:
+    - io.argos.agent.testing.BytecodeVerificationFlagMatrixTest
+    - io.argos.agent.testing.matrix.CoexistenceTest
+
+rows:
+  # --- Spring Boot 2.7 (02 section 9: JDK 8, 11, 17, 21 verified; 25 run, shown as not verified) ---
+  - id: T-MX-001
+    group: boot2
+    app: shop-boot2
+    jdk: 8
+    suites: [set:boot]
+    required: [set:boot-required]
+  - id: T-MX-002
+    group: boot2
+    app: shop-boot2
+    jdk: 11
+    suites: [set:boot]
+    required: [set:boot-required]
+  - id: T-MX-003
+    group: boot2
+    app: shop-boot2
+    jdk: 17
+    suites: [set:boot]
+    required: [set:boot-required]
+  - id: T-MX-004
+    group: boot2
+    app: shop-boot2
+    jdk: 21
+    suites: [set:boot]
+    required: [set:boot-required]
+  - id: T-MX-005
+    group: boot2
+    app: shop-boot2
+    jdk: 25
+    status: unverified
+    suites: [set:boot]
+    required: [set:boot-required]
+    note: Boot 2.7 is not supported on JDK 25 by Spring (02 section 9)
+
+  # --- Spring Boot 3 (JDK 25 with --sun-misc-unsafe-memory-access=deny, a harness preset) -----------
+  - id: T-MX-020
+    group: boot3
+    app: shop-boot3
+    jdk: 17
+    suites: [set:boot]
+    required: [set:boot-required]
+  - id: T-MX-021
+    group: boot3
+    app: shop-boot3
+    jdk: 21
+    suites: [set:boot]
+    required: [set:boot-required]
+  - id: T-MX-022
+    aliases: [T-MX-017]
+    group: boot3
+    app: shop-boot3
+    jdk: 21
+    vt: true
+    suites: [set:boot]
+    required:
+      - set:boot-required
+      - io.argos.agent.testing.async.AsyncPropagationTest
+      - io.argos.agent.testing.command.ThreadDumpVirtualTest
+  - id: T-MX-023
+    group: boot3
+    app: shop-boot3
+    jdk: 25
+    suites: [set:boot]
+    required: [set:boot-required]
+  - id: T-MX-024
+    group: boot3
+    app: shop-boot3
+    jdk: 25
+    vt: true
+    suites: [set:boot]
+    required:
+      - set:boot-required
+      - io.argos.agent.testing.async.AsyncPropagationTest
+      - io.argos.agent.testing.command.ThreadDumpVirtualTest
+
+  # --- Spring Boot 4 ----------------------------------------------------------------------------------
+  - id: T-MX-040
+    group: boot4
+    app: shop-boot4
+    jdk: 17
+    suites: [set:boot]
+    required: [set:boot-required]
+  - id: T-MX-041
+    group: boot4
+    app: shop-boot4
+    jdk: 21
+    suites: [set:boot]
+    required: [set:boot-required]
+  - id: T-MX-042
+    group: boot4
+    app: shop-boot4
+    jdk: 21
+    vt: true
+    suites: [set:boot]
+    required:
+      - set:boot-required
+      - io.argos.agent.testing.async.AsyncPropagationTest
+  - id: T-MX-043
+    group: boot4
+    app: shop-boot4
+    jdk: 25
+    suites: [set:boot]
+    required: [set:boot-required]
+  - id: T-MX-044
+    group: boot4
+    app: shop-boot4
+    jdk: 25
+    vt: true
+    suites: [set:boot]
+    required:
+      - set:boot-required
+      - io.argos.agent.testing.async.AsyncPropagationTest
+
+  # --- shop-heavy: Boot 3 with about 200 jars, startup time recorded (N-04, N-27) -----------------------
+  - id: T-MX-060
+    group: heavy
+    app: shop-heavy
+    jdk: 17
+    suites: [set:smoke]
+    required: [io.argos.agent.testing.matrix.MatrixSmokeTest]
+  - id: T-MX-061
+    group: heavy
+    app: shop-heavy
+    jdk: 21
+    suites: [set:smoke]
+    required: [io.argos.agent.testing.matrix.MatrixSmokeTest]
+  - id: T-MX-062
+    group: heavy
+    app: shop-heavy
+    jdk: 25
+    suites: [set:smoke]
+    required: [io.argos.agent.testing.matrix.MatrixSmokeTest]
+
+  # --- shop-batch: kind=BATCH counted apart (the batch suites add a virtual-thread run on 21+) ---------
+  - id: T-MX-070
+    group: batch
+    app: shop-batch
+    jdk: 17
+    suites: [set:batch]
+    required: [io.argos.agent.testing.batch.BatchTransactionsTest, io.argos.agent.testing.batch.BatchStatsTest]
+  - id: T-MX-071
+    group: batch
+    app: shop-batch
+    jdk: 21
+    suites: [set:batch]
+    required: [io.argos.agent.testing.batch.BatchTransactionsTest, io.argos.agent.testing.batch.BatchStatsTest]
+  - id: T-MX-072
+    group: batch
+    app: shop-batch
+    jdk: 25
+    suites: [set:batch]
+    required: [io.argos.agent.testing.batch.BatchTransactionsTest, io.argos.agent.testing.batch.BatchStatsTest]
+
+  # --- Standalone Tomcat 9 with the javax WAR: 50 redeploys through the manager (T-AG-053) -------------
+  - id: T-MX-080
+    group: war-javax
+    app: shop-war-javax
+    jdk: 8
+    tomcat: tomcat9
+    suites: [set:war]
+    required: [set:war-required]
+  - id: T-MX-081
+    group: war-javax
+    app: shop-war-javax
+    jdk: 11
+    tomcat: tomcat9
+    suites: [set:war]
+    required: [set:war-required]
+  - id: T-MX-082
+    group: war-javax
+    app: shop-war-javax
+    jdk: 17
+    tomcat: tomcat9
+    suites: [set:war]
+    required: [set:war-required]
+  - id: T-MX-083
+    group: war-javax
+    app: shop-war-javax
+    jdk: 21
+    tomcat: tomcat9
+    suites: [set:war]
+    required: [set:war-required]
+
+  # --- Standalone Tomcat 10.1 and 11 with the jakarta WARs: two web applications, context prefix ------
+  - id: T-MX-090
+    group: war-jakarta
+    app: shop-war-jakarta
+    jdk: 17
+    tomcat: tomcat10
+    suites: [set:war]
+    required: [set:war-required, io.argos.agent.testing.servlet.WarContextPrefixTest]
+  - id: T-MX-091
+    group: war-jakarta
+    app: shop-war-jakarta
+    jdk: 21
+    tomcat: tomcat10
+    suites: [set:war]
+    required: [set:war-required, io.argos.agent.testing.servlet.WarContextPrefixTest]
+  - id: T-MX-092
+    group: war-jakarta
+    app: shop-war-jakarta
+    jdk: 25
+    tomcat: tomcat10
+    suites: [set:war]
+    required: [set:war-required, io.argos.agent.testing.servlet.WarContextPrefixTest]
+  - id: T-MX-093
+    group: war-jakarta
+    app: shop-war-jakarta
+    jdk: 17
+    tomcat: tomcat11
+    suites: [set:war]
+    required: [set:war-required, io.argos.agent.testing.servlet.WarContextPrefixTest]
+  - id: T-MX-094
+    group: war-jakarta
+    app: shop-war-jakarta
+    jdk: 21
+    tomcat: tomcat11
+    suites: [set:war]
+    required: [set:war-required, io.argos.agent.testing.servlet.WarContextPrefixTest]
+  - id: T-MX-095
+    group: war-jakarta
+    app: shop-war-jakarta
+    jdk: 25
+    tomcat: tomcat11
+    suites: [set:war]
+    required: [set:war-required, io.argos.agent.testing.servlet.WarContextPrefixTest]
+
+  # --- JDBC (18 section 6.3): HikariCP on every database, Tomcat JDBC and DBCP2 on PostgreSQL ----------
+  # Containers run one at a time (Testcontainers, digests pinned in JdbcDatabase). The in-house
+  # databases come from ARGOS_TEST_<DB>_URL, _USER, _PASSWORD and the vendor drivers from
+  # ARGOS_TEST_JDBC_DRIVER_DIR (trusted runner only, environment 'trusted').
+  - id: T-MX-100
+    group: jdbc
+    app: shop-boot3
+    jdk: 21
+    props: [agent.jdbc.containers=mysql]
+    suites: [set:jdbc]
+    required: ["*JdbcStepsTest.T-AG-030 mysql *", "*JdbcStepsTest.T-ACC-24 mysql *"]
+    note: MySQL 8.4
+  - id: T-MX-101
+    group: jdbc
+    app: shop-boot3
+    jdk: 21
+    props: [agent.jdbc.containers=mariadb]
+    suites: [set:jdbc]
+    required: ["*JdbcStepsTest.T-AG-030 mariadb *", "*JdbcStepsTest.T-ACC-24 mariadb *"]
+    note: MariaDB 11.4
+  - id: T-MX-102
+    group: jdbc
+    app: shop-boot3
+    jdk: 21
+    props: [agent.jdbc.containers=postgres]
+    suites: [set:jdbc]
+    required:
+      - "*JdbcStepsTest.T-AG-030 postgres *"
+      - "*JdbcStepsTest.T-AG-031 postgres *"
+      - "*PoolRegistryE2eTest.T-AG-062f * postgres *"
+    note: PostgreSQL 16 with HikariCP, Tomcat JDBC and DBCP2
+  - id: T-MX-103
+    group: jdbc
+    app: shop-boot3
+    jdk: 21
+    props: [agent.jdbc.containers=mssql]
+    suites: [set:jdbc]
+    required: ["*JdbcStepsTest.T-AG-030 mssql *", "*JdbcStepsTest.T-ACC-24 mssql *"]
+    note: SQL Server 2022
+  - id: T-MX-104
+    group: jdbc
+    app: shop-boot3
+    jdk: 21
+    props: [agent.jdbc.oracle=true]
+    suites: [set:jdbc]
+    required: ["*JdbcStepsTest.T-AG-030 oracle *", "*JdbcStepsTest.T-ACC-24 oracle *"]
+    note: Oracle Database Free container; in-house Oracle 19c when ARGOS_TEST_ORACLE_URL is set
+  - id: T-MX-105
+    group: jdbc
+    app: shop-boot3
+    jdk: 21
+    suites: [set:jdbc]
+    required: ["*VendorDatabaseTest.T-AG-030 tibero *"]
+    requires: [env:ARGOS_TEST_TIBERO_URL, env:ARGOS_TEST_JDBC_DRIVER_DIR]
+    note: Tibero (in-house host)
+  - id: T-MX-106
+    group: jdbc
+    app: shop-boot3
+    jdk: 21
+    suites: [set:jdbc]
+    required: ["*VendorDatabaseTest.T-AG-030 altibase *"]
+    requires: [env:ARGOS_TEST_ALTIBASE_URL, env:ARGOS_TEST_JDBC_DRIVER_DIR]
+    note: Altibase (in-house host)
+  - id: T-MX-107
+    group: jdbc
+    app: shop-boot3
+    jdk: 21
+    suites: [set:jdbc]
+    required: ["*VendorDatabaseTest.T-AG-030 cubrid *"]
+    requires: [env:ARGOS_TEST_CUBRID_URL, env:ARGOS_TEST_JDBC_DRIVER_DIR]
+    note: CUBRID (in-house host)
+  - id: T-MX-108
+    group: jdbc
+    app: shop-boot3
+    jdk: 21
+    suites: [set:jdbc]
+    required: ["*VendorDatabaseTest.T-AG-030 db2 *"]
+    requires: [env:ARGOS_TEST_DB2_URL, env:ARGOS_TEST_JDBC_DRIVER_DIR]
+    note: Db2 (in-house host)
+
+  # --- Coexistence (18 section 6.4): another -javaagent before or after Argos, devtools ---------------
+  # The agents come from test/matrix/fetch-coexist-agents.sh (pinned versions and SHA-256) into
+  # agent/agent-testing/build/matrix-agents; without them CoexistenceTest skips with the reason.
+  - id: T-MX-110
+    group: coexist
+    app: shop-boot3
+    jdk: 21
+    coexist: jacoco-before
+    suites: [set:coexist]
+    required: [io.argos.agent.testing.matrix.CoexistenceTest]
+  - id: T-MX-111
+    group: coexist
+    app: shop-boot3
+    jdk: 21
+    coexist: jacoco-after
+    suites: [set:coexist]
+    required: [io.argos.agent.testing.matrix.CoexistenceTest]
+  - id: T-MX-112
+    group: coexist
+    app: shop-boot3
+    jdk: 21
+    coexist: otel-before
+    suites: [set:coexist]
+    required: [io.argos.agent.testing.matrix.CoexistenceTest]
+  - id: T-MX-113
+    group: coexist
+    app: shop-boot3
+    jdk: 21
+    coexist: otel-after
+    suites: [set:coexist]
+    required: [io.argos.agent.testing.matrix.CoexistenceTest]
+  - id: T-MX-114
+    group: coexist
+    app: shop-boot3
+    jdk: 21
+    coexist: devtools
+    suites: [set:coexist]
+    required: [io.argos.agent.testing.matrix.CoexistenceTest]
+    note: shop-boot3-devtools.jar with restart enabled
+
+  # --- Routing DataSource and nested wrappers (D-24, T-AG-031) -----------------------------------------
+  - id: T-MX-120
+    group: routing
+    app: shop-boot2
+    jdk: 8
+    suites: [io.argos.agent.testing.BytecodeVerificationFlagMatrixTest, io.argos.agent.testing.jdbc.JdbcStepsTest]
+    required: ["*JdbcStepsTest.T-AG-031 h2 *", "*JdbcStepsTest.T-AG-032c h2 *"]
+    note: H2
+  - id: T-MX-121
+    group: routing
+    app: shop-boot3
+    jdk: 21
+    props: [agent.jdbc.containers=postgres]
+    suites: [io.argos.agent.testing.BytecodeVerificationFlagMatrixTest, io.argos.agent.testing.jdbc.JdbcStepsTest]
+    required: ["*JdbcStepsTest.T-AG-031 postgres *", "*JdbcStepsTest.T-AG-032c postgres *"]
+    note: PostgreSQL 16
+
+  # --- Servlet containers other than Tomcat (C-127 flush class names; servlet 3.1 boundary C-240 (10)) -
+  - id: T-MX-130
+    group: containers
+    app: shop-boot2
+    jdk: 8
+    app-env: [SAMPLE_CONTAINER=jetty]
+    suites: [set:container]
+    required: [set:container-required]
+    note: Jetty 9.4 (servlet 3.1 boundary)
+  - id: T-MX-131
+    group: containers
+    app: shop-boot2
+    jdk: 11
+    app-env: [SAMPLE_CONTAINER=undertow]
+    status: unverified
+    suites: [set:container]
+    required: [set:container-required]
+    note: Undertow 2.2
+  - id: T-MX-132
+    group: containers
+    app: shop-boot3
+    jdk: 21
+    app-env: [SAMPLE_CONTAINER=jetty]
+    suites: [set:container]
+    required: [set:container-required]
+    note: Jetty 12 (ee10)
+  - id: T-MX-133
+    group: containers
+    app: shop-boot3
+    jdk: 21
+    app-env: [SAMPLE_CONTAINER=undertow]
+    status: unverified
+    suites: [set:container]
+    required: [set:container-required]
+    note: Undertow 2.3
+  - id: T-MX-134
+    group: containers
+    app: shop-boot4
+    jdk: 21
+    app-env: [SAMPLE_CONTAINER=jetty]
+    suites: [set:container]
+    required: [set:container-required]
+    note: Jetty 12.1
+
+  # --- Agent transport variants (C-235 (12), C-250 (8)) -------------------------------------------------
+  - id: T-MX-140
+    group: transport
+    app: trivial
+    jdk: 8
+    suites: [io.argos.agent.testing.transport.OldJreTransportTest]
+    required: ["*OldJreTransportTest*8u242*"]
+    requires: [prop:agent.jdk8u242]
+    note: AdoptOpenJDK 8u242 (below the TLS 1.3 backport), path from the runner
+  - id: T-MX-141
+    group: transport
+    app: trivial
+    jdk: 8
+    suites: [io.argos.agent.testing.transport.OldJreTransportTest]
+    required: ["*OldJreTransportTest*8u252*"]
+    requires: [prop:agent.jdk8u252]
+    note: AdoptOpenJDK 8u252 (first ALPN-capable 8), path from the runner
+  - id: T-MX-142
+    group: transport
+    app: trivial
+    jdk: 8
+    suites:
+      - io.argos.agent.testing.BytecodeVerificationFlagMatrixTest
+      - io.argos.agent.testing.matrix.Tls13Jdk8Test
+      - io.argos.agent.testing.transport.TlsTransportTest
+    required: [io.argos.agent.testing.matrix.Tls13Jdk8Test]
+    note: JDK 8u261+ toolchain negotiates TLS 1.3 (T-SEC-08d)
+  - id: T-MX-143
+    group: transport
+    app: shop-boot3
+    jdk: 21
+    props: [agent.container=true]
+    suites: [io.argos.agent.testing.launcher.ContainerModeTest]
+    required: [io.argos.agent.testing.launcher.ContainerModeTest]
+    note: sample app in a pinned JDK container (Docker)
+  - id: T-MX-144
+    group: transport
+    app: trivial
+    jdk: 21
+    props: [agent.container=true]
+    suites: [io.argos.agent.testing.transport.*]
+    required: [io.argos.agent.testing.transport.TokenTransportTest, io.argos.agent.testing.transport.ResourceBudgetTransportTest]
+    requires: [os:linux]
+    note: Linux transport variants (POSIX token file, C-75, T-NFR-26a)
+  - id: T-MX-145
+    group: transport
+    app: shop-boot3
+    jdk: 21
+    props: [agent.container=true]
+    suites: [io.argos.agent.testing.metric.CgroupContainerTest]
+    required: [io.argos.agent.testing.metric.CgroupContainerTest]
+    note: cgroup v2 limits in a container (T-AG-063)
+
+  # --- Instrumentation module boundary versions (C-240 (10), C-237 (11)) ------------------------------
+  # httpclient-apache4 4.5.0 (lower bound) is a module test suite, part of check, not a matrix row.
+  - id: T-MX-150
+    group: boundary
+    app: shop-boot3
+    jdk: 17
+    suites: [io.argos.agent.testing.httpclient.HttpClientStepsTest]
+    required: [io.argos.agent.testing.httpclient.HttpClientStepsTest]
+    note: httpclient-jdk11 on JDK 17
+  - id: T-MX-151
+    group: boundary
+    app: shop-boot3
+    jdk: 25
+    suites: [io.argos.agent.testing.httpclient.HttpClientStepsTest]
+    required: [io.argos.agent.testing.httpclient.HttpClientStepsTest]
+    note: httpclient-jdk11 on JDK 25
+  - id: T-MX-152
+    group: boundary
+    app: shop-war-jakarta
+    jdk: 21
+    tomcat: tomcat11
+    status: unverified
+    suites: [io.argos.agent.testing.custom.CustomMethodStepsTest]
+    required: [io.argos.agent.testing.custom.CustomMethodStepsTest]
+    note: custom methods in a WAR (the suite targets jar apps today)
+  - id: T-MX-153
+    group: boundary
+    app: shop-boot2
+    jdk: 11
+    suites: [io.argos.agent.testing.custom.CustomMethodStepsTest]
+    required: [io.argos.agent.testing.custom.CustomMethodStepsTest]
+    note: custom methods on JDK 11
+  - id: T-MX-154
+    group: boundary
+    app: shop-boot3
+    jdk: 17
+    suites: [io.argos.agent.testing.custom.CustomMethodStepsTest]
+    required: [io.argos.agent.testing.custom.CustomMethodStepsTest]
+    note: custom methods on JDK 17

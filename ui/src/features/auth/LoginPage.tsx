@@ -11,6 +11,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router';
 import { fetchSetupStatus } from '../../api/auth';
 import { queryKeys } from '../../api/queryKeys';
 import { useDocumentTitle } from '../../app/useDocumentTitle';
+import { DemoBanner } from '../../components/DemoBanner';
 import { supportedLanguages } from '../../i18n';
 import { useLanguage } from '../../i18n/useLanguage';
 import { useAuthStore } from '../../state/authStore';
@@ -36,6 +37,8 @@ export function AuthPageFrame({ version, children }: AuthPageFrameProps) {
   return (
     <main className="auth-page">
       <div className="auth-page__panel">
+        {/* Demo profile only (setup/status demo_mode, WO-41): also before sign-in. */}
+        <DemoBanner placement="page" />
         <header className="auth-page__header">
           <h1>{t('app.name')}</h1>
           <p>{t('app.tagline')}</p>

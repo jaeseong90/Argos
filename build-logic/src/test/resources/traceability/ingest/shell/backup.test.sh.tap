@@ -1,0 +1,14 @@
+TAP version 13
+# argos-shell-results 1
+# suite: deploy-compose
+# script: deploy/compose/test/backup.test.sh
+# started: 2026-11-26T10:00:00Z
+# exit: 1
+ok 1 - T-SEC-84a: backup.sh exits 0 (caller umask 022)
+ok 2 - T-SEC-84a: the set directory backups/2026-11-26T1000Z is 0700
+not ok 3 - T-NFR-20c: the ClickHouse target on the same disk is refused (output does not contain 'refused')
+ok 4 - T-SEC-84b: retention keeps the ClickHouse chain of 3 sets
+ok 5 - T-SEC-84c: no plaintext copy next to the .gpg file # SKIP gpg missing on this image
+ok 6 - restore order: staging database first
+ok 7 - T-SEC-84z: a description no template produced
+1..7

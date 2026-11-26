@@ -13,7 +13,14 @@ import java.util.Map;
  * {@code *_PATTERN} values (realistic shapes without the sentinel, for the masking pattern tests)
  * and {@link #ACCESS_KEY_LIKE}, which carries {@code ARGOSSEED} instead of {@code ARGOS_SEED} (the
  * 18 §4.3 value; an access key has no underscore): leak scans must also search {@code ARGOSSEED}.
- * Seed values are test data only; none of them is a real person, card or credential.
+ *
+ * <p>Exception messages (ADR-0010 C-250 (1)): the agent masks a message with the regular
+ * expressions of SEC-36 only (email, Korean mobile number, resident number, Luhn card, IPv4), so a
+ * phone or card seed in a message must have the real shape, or it tests no masking rule. The phone
+ * and card exception seeds are therefore the fixed real-shaped sentinels {@link #PHONE_PATTERN} and
+ * {@link #CARD_PATTERN} (Luhn-valid); query-string and bind seeds keep {@code ARGOS_SEED}. Leak
+ * scans search every value of {@link #LEAK_SENTINELS}. Seed values are test data only; none of them
+ * is a real person, card or credential.
  */
 public final class Seeds {
 
@@ -37,6 +44,26 @@ public final class Seeds {
    * {@code X-Api-Key} header only (not in {@link #environment()}).
    */
   public static final String ACCESS_KEY_LIKE = "AKIAARGOSSEED0000001";
+
+  /** The sentinel of {@link #ACCESS_KEY_LIKE} (no underscore, ADR-0004 C-44). */
+  public static final String ACCESS_KEY_SENTINEL = "ARGOSSEED";
+
+  /**
+   * Every string a leak scan must find nowhere (T-NFR-10c, ADR-0010 C-250 (1)): {@value #SENTINEL},
+   * {@value #ACCESS_KEY_SENTINEL} and the real-shaped values {@value #PHONE_PATTERN}, {@value
+   * #RESIDENT_NUMBER_PATTERN} and {@value #CARD_PATTERN}. The seed sender (the catalog, {@link
+   * SeedService}) and the PII seed grep both use this list.
+   */
+  public static final List<String> LEAK_SENTINELS =
+      Collections.unmodifiableList(
+          Arrays.asList(
+              SENTINEL, ACCESS_KEY_SENTINEL, PHONE_PATTERN, RESIDENT_NUMBER_PATTERN, CARD_PATTERN));
+
+  /** Exception message of {@code GET /seed/phone?fail=1}: the real-shaped phone sentinel. */
+  public static final String PHONE_ERROR_MESSAGE = "payment declined for phone " + PHONE_PATTERN;
+
+  /** Exception message of {@code GET /seed/card?fail=1}: the Luhn-valid card sentinel. */
+  public static final String CARD_ERROR_MESSAGE = "card " + CARD_PATTERN + " declined";
 
   /** Statement literals written as SQL (Korean text, doubled quote, dollar quoting). */
   public static final List<String> SQL_LITERALS =

@@ -32,8 +32,9 @@ import org.springframework.core.env.ConfigurableEnvironment;
  * regenerate} ({@link SetupTokenCommand}), {@code tls reload} ({@link TlsReloadCommand}), {@code
  * version} ({@link VersionCommand}), {@code bundle} ({@link BundleCommand}), {@code retention
  * show|apply} ({@link RetentionCommand}) and {@code secrets rekey} with its alias {@code master-key
- * rotate} ({@link SecretsRekeyCommand}). Every command except {@code version} records an audit row
- * ({@link CliAudit}, DSN-17-14).
+ * rotate} ({@link SecretsRekeyCommand}). WO-43 adds {@code secrets verify} ({@link
+ * SecretsVerifyCommand}, used by the backup and restore scripts). Every command except {@code
+ * version} records an audit row ({@link CliAudit}, DSN-17-14).
  *
  * <p>Arguments of the form {@code --spring.<key>=<value>}, {@code --argos.<key>=<value>} or {@code
  * --logging.<key>=<value>} are configuration (as for the server), every other argument belongs to
@@ -69,6 +70,7 @@ public final class AdminCli {
         retention show [--json]
         retention apply [--json]
         secrets rekey [--new-key <path>] [--batch <n>] [--json]
+        secrets verify [--purpose backup|restore|manual] [--json]
         master-key rotate [--new-key-file <path>] [--batch <n>] [--json]
         migrate [--json]
         config effective [--changed] [--json]
@@ -130,6 +132,7 @@ public final class AdminCli {
           case "token create" -> TokenCreateCommand.USAGE;
           case "retention show", "retention apply" -> RetentionCommand.USAGE;
           case "secrets rekey", "master-key rotate" -> SecretsRekeyCommand.USAGE;
+          case "secrets verify" -> SecretsVerifyCommand.USAGE;
           case "migrate" -> MigrateCommand.USAGE;
           case "config effective", "config check" -> ConfigCommand.USAGE;
           case "cleanup instances", "cleanup dictionary", "cleanup commands" ->
@@ -264,6 +267,10 @@ public final class AdminCli {
         SecretsRekeyCommand.Options o =
             SecretsRekeyCommand.parse(name.equals("master-key rotate"), options);
         yield (p, out, err) -> SecretsRekeyCommand.execute(o, p, out, err);
+      }
+      case "secrets verify" -> {
+        SecretsVerifyCommand.Options o = SecretsVerifyCommand.parse(options);
+        yield (p, out, err) -> SecretsVerifyCommand.execute(o, p, out, err);
       }
       case "migrate" -> {
         boolean json = MigrateCommand.parse(options);

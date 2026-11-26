@@ -1,0 +1,272 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+#
+# Test double of the docker CLI for the backup.sh and restore.sh cases (container/backup-cases.sh;
+# never shipped). It answers the calls of the two scripts (through ./argos-compose.sh compose) from
+# environment variables and a state directory. The in-container commands of the scripts are
+# "sh -c <script> <marker> [args]"; the marker (argos-pg-dump, argos-ch-query, ...) selects the
+# answer.
+#   FAKE_DOCKER_LOG          file: every call is appended as one line (its arguments)
+#   FAKE_STATE               directory: down/<service> marks a stopped service (default /tmp/fake-state)
+#   FAKE_DOCKER_DOWN=1       'docker info' fails
+#   FAKE_PG_DUMP_FILE        file printed by pg_dump (default: a small archive starting with PGDMP)
+#   FAKE_PG_DUMP_EXIT        exit code of pg_dump (default 0)
+#   FAKE_FLYWAY              Flyway version printed by psql (default 14)
+#   FAKE_PG_SQL_LOG          file: the SQL of every psql call is appended ("-- database <db>" first)
+#   FAKE_PG_SQL_FAIL         a text: a psql call whose SQL contains it fails
+#   FAKE_PG_SETVAL_OUT       printed by a psql call whose SQL contains setval( (the moved
+#                            sequences, one "<name> <value>" line each)
+#   FAKE_PG_RESTORED         file: the SHA-256 of what pg_restore received on standard input
+#   FAKE_PG_RESTORE_EXIT     exit code of pg_restore (default 0)
+#   FAKE_KID, FAKE_PREVIOUS_KID
+#                            key ids that argos-admin secrets verify reports (backup)
+#   FAKE_VERIFY_EXIT         exit code of argos-admin secrets verify in the running server
+#   FAKE_VERIFY_RESTORE_EXIT exit code of argos-admin secrets verify against argos_restore
+#   FAKE_VERIFY_KEYS         file: the SHA-256 of every key received by the restore verification
+#   FAKE_MIGRATE_EXIT, FAKE_CONSISTENCY_EXIT, FAKE_UP_EXIT
+#                            exit codes of argos-admin migrate, consistency check, compose up
+#   FAKE_CH_DIR              directory standing for /backups of the clickhouse container
+#   FAKE_CH_NOMOUNT=1        /backups is not a mount
+#   FAKE_DEV_DATA, FAKE_DEV_BACKUPS
+#                            device numbers of /var/lib/clickhouse and /backups (2049, 2050)
+#   FAKE_CH_LOG              file: every ClickHouse query is appended ("<user>: <query>")
+#   FAKE_CH_MAX_TS           newest xlog time (Unix seconds, default 0)
+#   FAKE_CH_MAX_IDS          largest app id and instance id of the rollups, "<app> <instance>"
+#                            (default "0 0"); "fail" makes that read fail
+#   FAKE_CH_BACKUP_EXIT, FAKE_CH_RESTORE_EXIT
+#                            exit codes of BACKUP and RESTORE (default 0)
+#   FAKE_SERVER_IMAGE, FAKE_SERVER_VERSION
+#                            image of the server container and its version label
+
+if [ -n "${FAKE_DOCKER_LOG:-}" ]; then
+  printf '%s\n' "$*" | tr '\n' ' ' >>"$FAKE_DOCKER_LOG"
+  printf '\n' >>"$FAKE_DOCKER_LOG"
+fi
+state=${FAKE_STATE:-/tmp/fake-state}
+mkdir -p "$state/down"
+chdir=${FAKE_CH_DIR:-/tmp/fake-ch}
+
+sha() { sha256sum | cut -c1-64; }
+
+# answer <service> <marker> [args...]: the in-container commands of backup.sh and restore.sh.
+answer() {
+  svc=$1
+  marker=$2
+  shift 2
+  case "$svc $marker" in
+    "postgres argos-pg-dump")
+      if [ -n "${FAKE_PG_DUMP_FILE:-}" ]; then
+        cat "$FAKE_PG_DUMP_FILE"
+      else
+        printf 'PGDMP\001\016\000fake custom-format archive of the schema argos\n'
+      fi
+      exit "${FAKE_PG_DUMP_EXIT:-0}"
+      ;;
+    "postgres argos-pg-flyway") printf '%s\n' "${FAKE_FLYWAY:-14}" ;;
+    "postgres argos-pg-list")
+      cat >/dev/null
+      printf ';\n; Archive created at 2026-11-26 01:00:00 UTC\n;\n'
+      printf '7; 2615 16389 SCHEMA - argos argos\n'
+      printf '217; 1259 16471 TABLE argos flyway_schema_history argos\n'
+      printf '3470; 0 16471 TABLE DATA argos flyway_schema_history argos\n'
+      ;;
+    "postgres argos-pg-sql")
+      sql=$(cat)
+      if [ -n "${FAKE_PG_SQL_LOG:-}" ]; then
+        printf -- '-- database %s\n%s\n' "${1:-}" "$sql" >>"$FAKE_PG_SQL_LOG"
+      fi
+      if [ -n "${FAKE_PG_SQL_FAIL:-}" ]; then
+        case $sql in
+          *"$FAKE_PG_SQL_FAIL"*) echo "ERROR:  fake failure" >&2; exit 3 ;;
+        esac
+      fi
+      case $sql in
+        *"setval("*) [ -z "${FAKE_PG_SETVAL_OUT:-}" ] || printf '%s\n' "$FAKE_PG_SETVAL_OUT" ;;
+      esac
+      ;;
+    "postgres argos-pg-putlist") cat >"$state/restore.list" ;;
+    "postgres argos-pg-restore")
+      s=$(sha)
+      [ -z "${FAKE_PG_RESTORED:-}" ] || printf '%s\n' "$s" >"$FAKE_PG_RESTORED"
+      exit "${FAKE_PG_RESTORE_EXIT:-0}"
+      ;;
+    "clickhouse argos-ch-prepare")
+      [ "${FAKE_CH_NOMOUNT:-0}" != 1 ] || exit 3
+      mkdir -p "$chdir"
+      printf '%s %s\n' "${FAKE_DEV_DATA:-2049}" "${FAKE_DEV_BACKUPS:-2050}"
+      ;;
+    "clickhouse argos-ch-list")
+      for d in "$chdir"/*/; do
+        [ -f "$d.backup" ] && basename "$d"
+      done
+      exit 0
+      ;;
+    "clickhouse argos-ch-has")
+      for n in "$@"; do
+        [ -f "$chdir/$n/.backup" ] || { echo "$n"; exit 1; }
+      done
+      ;;
+    "clickhouse argos-ch-remove")
+      for n in "$@"; do rm -rf "${chdir:?}/$n"; done
+      ;;
+    "clickhouse argos-ch-query")
+      IFS= read -r password || true
+      [ -n "$password" ] || { echo "no password on standard input" >&2; exit 5; }
+      user=$1
+      query=$2
+      [ -z "${FAKE_CH_LOG:-}" ] || printf '%s: %s\n' "$user" "$query" >>"$FAKE_CH_LOG"
+      case $query in
+        "BACKUP DATABASE argos TO Disk('backups', '"*)
+          code=${FAKE_CH_BACKUP_EXIT:-0}
+          [ "$code" = 0 ] || { echo "Code: 497. DB::Exception: fake" >&2; exit "$code"; }
+          n=${query#*Disk(\'backups\', \'}
+          n=${n%%\'*}
+          mkdir -p "$chdir/$n"
+          : >"$chdir/$n/.backup"
+          printf '6a6da253-1143-4799-a0b8-bc18cdbb7994\tBACKUP_CREATED\n'
+          ;;
+        "RESTORE DATABASE argos FROM "*)
+          code=${FAKE_CH_RESTORE_EXIT:-0}
+          [ "$code" = 0 ] || { echo "Code: 36. DB::Exception: fake" >&2; exit "$code"; }
+          printf '2929f102-11eb-47c7-b735-408aa11b148d\tRESTORED\n'
+          ;;
+        "SELECT toUnixTimestamp(max(ts)) FROM argos.xlog") printf '%s\n' "${FAKE_CH_MAX_TS:-0}" ;;
+        "DROP DATABASE IF EXISTS argos SYNC") ;;
+        *) echo "fake docker: unexpected ClickHouse query: $query" >&2; exit 9 ;;
+      esac
+      ;;
+    "clickhouse argos-ch-read")
+      # restore.sh ch_read: argos_reader (readonly profile), no setting changes on the command line.
+      IFS= read -r password || true
+      [ -n "$password" ] || { echo "no password on standard input" >&2; exit 5; }
+      [ -z "${FAKE_CH_LOG:-}" ] || printf 'argos_reader: %s\n' "$1" >>"$FAKE_CH_LOG"
+      case $1 in
+        "SELECT toUnixTimestamp(max(ts)) FROM argos.xlog") printf '%s\n' "${FAKE_CH_MAX_TS:-0}" ;;
+        "SELECT greatest((SELECT max(app_id) FROM argos.app_stat_1h), "*" FORMAT TSV")
+          ids=${FAKE_CH_MAX_IDS:-0 0}
+          [ "$ids" != fail ] || { echo "Code: 159. DB::Exception: fake timeout" >&2; exit 159; }
+          printf '%s\t%s\n' "${ids% *}" "${ids#* }"
+          ;;
+        *) echo "fake docker: unexpected ClickHouse read: $1" >&2; exit 9 ;;
+      esac
+      ;;
+    "server argos-verify")
+      s=$(sha)
+      [ -z "${FAKE_VERIFY_KEYS:-}" ] || printf '%s\n' "$s" >>"$FAKE_VERIFY_KEYS"
+      code=${FAKE_VERIFY_RESTORE_EXIT:-0}
+      if [ "$code" = 0 ]; then
+        printf '{"command":"secrets verify","kid":"%s","previous_kid":null,"verifiable":true,"rows":3,"ok":3,"failed":0,"columns":[]}\n' "${FAKE_KID:-0123456789abcdef}"
+      else
+        printf '{"command":"secrets verify","kid":"%s","previous_kid":null,"verifiable":true,"rows":3,"ok":0,"failed":3,"columns":[]}\n' "${FAKE_KID:-0123456789abcdef}"
+      fi
+      exit "$code"
+      ;;
+    "server argos-migrate")
+      printf '{"command":"migrate","postgres_applied":0,"clickhouse_applied":0}\n'
+      exit "${FAKE_MIGRATE_EXIT:-0}"
+      ;;
+    *)
+      echo "fake docker: unsupported in-container command: $svc $marker" >&2
+      exit 9
+      ;;
+  esac
+  exit 0
+}
+
+case ${1:-} in
+  info)
+    [ -z "${FAKE_DOCKER_DOWN:-}" ] || exit 1
+    case "$*" in
+      *OperatingSystem*) printf '%s\n' "${FAKE_DOCKER_OS:-Docker Desktop}" ;;
+      *) echo "fake docker info" ;;
+    esac
+    ;;
+  inspect)
+    case "$*" in
+      *'{{.Config.Image}}'*) printf '%s\n' "${FAKE_SERVER_IMAGE:-argos-server:0.0.0-SNAPSHOT}" ;;
+      *'{{.Image}}'*) echo "sha256:1111111111111111111111111111111111111111111111111111111111111111" ;;
+      *) echo "fake docker inspect: unsupported: $*" >&2; exit 1 ;;
+    esac
+    ;;
+  image)
+    [ "${2:-}" = inspect ] || { echo "fake docker: unsupported: $*" >&2; exit 1; }
+    case "$*" in
+      *'{{.Id}}'*) echo "sha256:1111111111111111111111111111111111111111111111111111111111111111" ;;
+      *RepoDigests*) echo "" ;;
+      *org.opencontainers.image.version*) printf '%s\n' "${FAKE_SERVER_VERSION:-0.0.0-SNAPSHOT}" ;;
+      *) echo '[{"Id":"sha256:fake"}]' ;;
+    esac
+    ;;
+  compose)
+    shift
+    while [ $# -gt 0 ]; do
+      case $1 in
+        -f | -p | --profile) shift 2 ;;
+        *) break ;;
+      esac
+    done
+    sub=${1:-}
+    shift
+    case $sub in
+      version) echo 2.29.7 ;;
+      ps)
+        [ "${1:-}" = -q ] || { echo "NAME SERVICE STATUS"; exit 0; }
+        svc=${2:-}
+        [ -e "$state/down/$svc" ] || printf 'fake-%s\n' "$svc"
+        ;;
+      stop)
+        for svc in "$@"; do : >"$state/down/$svc"; done
+        ;;
+      up)
+        svcs=
+        for a in "$@"; do
+          case $a in -*) ;; *) svcs="$svcs $a" ;; esac
+        done
+        code=${FAKE_UP_EXIT:-0}
+        [ "$code" = 0 ] || exit "$code"
+        if [ -z "$svcs" ]; then
+          rm -f "$state/down/"*
+        else
+          for svc in $svcs; do rm -f "$state/down/$svc"; done
+        fi
+        ;;
+      exec | run)
+        while [ $# -gt 0 ]; do
+          case $1 in
+            -T | --rm | --no-deps) shift ;;
+            -u | -e | --entrypoint) shift 2 ;;
+            *) break ;;
+          esac
+        done
+        svc=${1:-}
+        shift
+        [ "$sub" = run ] || [ ! -e "$state/down/$svc" ] || { echo "service $svc is not running" >&2; exit 1; }
+        if [ "${1:-}" = sh ] && [ "${2:-}" = -c ]; then
+          shift 3
+          answer "$svc" "$@"
+        elif [ "${1:-}" = -c ]; then
+          shift 2
+          answer "$svc" "$@"
+        fi
+        case "$svc $*" in
+          "server java "*" admin secrets verify "*)
+            printf '{"command":"secrets verify","kid":"%s","previous_kid":%s,"verifiable":true,"rows":3,"ok":3,"failed":0,"columns":[]}\n' \
+              "${FAKE_KID:-0123456789abcdef}" "$(if [ -n "${FAKE_PREVIOUS_KID:-}" ]; then printf '"%s"' "$FAKE_PREVIOUS_KID"; else printf null; fi)"
+            exit "${FAKE_VERIFY_EXIT:-0}"
+            ;;
+          "server java "*" admin consistency check "*)
+            for a in "$@"; do last=$a; done
+            printf 'day %s: consistent\n' "$last"
+            exit "${FAKE_CONSISTENCY_EXIT:-0}"
+            ;;
+          *) echo "fake docker compose $sub: unsupported: $svc $*" >&2; exit 9 ;;
+        esac
+        ;;
+      *) echo "fake docker compose: unsupported: $sub $*" >&2; exit 9 ;;
+    esac
+    ;;
+  *)
+    echo "fake docker: unsupported: $*" >&2
+    exit 1
+    ;;
+esac

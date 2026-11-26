@@ -5,26 +5,78 @@ import io.argos.buildlogic.traceability.JUnitXmlResults.Status
 import java.util.Collections
 import java.util.IdentityHashMap
 
-/** Aggregated result of one test over every result file that recorded it. */
-data class ResultSummary(val status: Status, val runs: Int, val lastRun: String?, val suites: List<String>) {
+/**
+ * Aggregated result of one test over every result file that recorded it. [reasons]: why it was
+ * skipped or failed, when the result format says (Playwright fixme, matrix runner requirements).
+ */
+data class ResultSummary(
+  val status: Status,
+  val runs: Int,
+  val lastRun: String?,
+  val suites: List<String>,
+  val reasons: List<String> = emptyList(),
+) {
   companion object {
     fun of(cases: List<JUnitXmlResults.Case>): ResultSummary? {
       if (cases.isEmpty()) return null
-      val status =
-        when {
-          cases.any { it.status == Status.FAILED } -> Status.FAILED
-          cases.any { it.status == Status.PASSED } -> Status.PASSED
-          else -> Status.SKIPPED
-        }
-      return ResultSummary(status, cases.size, cases.mapNotNull { it.timestamp }.maxOrNull(), cases.map { it.suite }.distinct().sorted())
+      return ResultSummary(statusOf(cases.map { it.status }), cases.size, cases.mapNotNull { it.timestamp }.maxOrNull(), cases.map { it.suite }.distinct().sorted())
     }
+
+    fun ofScript(cases: List<ScriptCase>): ResultSummary? {
+      if (cases.isEmpty()) return null
+      val status = statusOf(cases.map { it.status })
+      return ResultSummary(
+        status,
+        cases.size,
+        cases.mapNotNull { it.timestamp }.maxOrNull(),
+        cases.map { it.suite }.distinct().sorted(),
+        cases.filter { it.status == status }.mapNotNull { it.reason }.distinct(),
+      )
+    }
+
+    /** FAILED if any run failed, else PASSED if any passed, else SKIPPED. */
+    fun statusOf(statuses: List<Status>): Status =
+      when {
+        Status.FAILED in statuses -> Status.FAILED
+        Status.PASSED in statuses -> Status.PASSED
+        else -> Status.SKIPPED
+      }
   }
 }
 
 /**
+ * One result of a test that is not a JUnit method: a Vitest case (JUnit XML of
+ * ui/build/test-results/vitest), a Playwright test of one project, a shell assertion line (TAP) or a
+ * matrix combination. [file] is the repository-relative test source file the result belongs to,
+ * [name] the full title (Vitest/Playwright "describe > title", shell description, matrix row title),
+ * [requirements] per-test requirements of the result itself (Playwright `req` annotations, matrix
+ * N-13), [resultFile] the result file it was read from.
+ */
+data class ScriptCase(
+  val source: String,
+  val file: String,
+  val name: String,
+  val status: Status,
+  val timestamp: String?,
+  val suite: String,
+  val resultFile: String,
+  val testIds: List<String> = TestIds.find(name),
+  val requirements: List<String> = emptyList(),
+  val reason: String? = null,
+)
+
+/**
+ * Counts of one kind of test source and result ([TestEntry.source]): test source files, result
+ * files, result cases read, and result cases left out of the report because they have neither a
+ * test ID nor a requirement and match no source test.
+ */
+data class SourceStats(val source: String, val sourceFiles: Int, val resultFiles: Int, val resultCases: Int, val unlistedResultCases: Int)
+
+/**
  * One reported test: a source test, or one runtime case of a dynamic source test (factories,
  * parameterized tests), or a result whose source was not found. [name] is what JUnit, Vitest or
- * Playwright shows (display name, method name or title).
+ * Playwright shows (display name, method name or title), a shell description or a matrix row title.
+ * [source] is the kind: "junit", "vitest", "playwright", "shell" or "matrix" ([Traceability.SOURCES]).
  */
 data class TestEntry(
   val testIds: List<String>,
@@ -36,6 +88,7 @@ data class TestEntry(
   val line: Int,
   val suite: String,
   val result: ResultSummary?,
+  val source: String = Traceability.SOURCE_JUNIT,
 ) {
   val quarantined: Boolean
     get() = "quarantine" in tags
@@ -48,7 +101,15 @@ data class TraceabilityModel(
   val resultFiles: Int,
   val unreadableResultFiles: List<String>,
   val testsWithoutId: Int,
+  /** Per kind of source, in the order of [Traceability.SOURCES] (empty for a model built by hand). */
+  val sources: List<SourceStats> = emptyList(),
 ) {
+  /** Last-result counts of the entries of [source]: PASSED, FAILED, SKIPPED, NOT RUN (all four keys). */
+  fun statusCounts(source: String? = null): Map<String, Int> {
+    val counts = entries.filter { source == null || it.source == source }.groupingBy { it.result?.status?.name ?: "NOT RUN" }.eachCount()
+    return listOf("PASSED", "FAILED", "SKIPPED", "NOT RUN").associateWith { counts[it] ?: 0 }
+  }
+
   /** Requirement -> entries, requirements in natural order (D-2 before D-10). */
   val byRequirement: Map<String, List<TestEntry>> by lazy {
     val map = sortedMapOf<String, MutableList<TestEntry>>(Traceability.naturalOrder)
@@ -87,6 +148,16 @@ data class TraceabilityModel(
 
 object Traceability {
 
+  const val SOURCE_JUNIT: String = "junit"
+  const val SOURCE_VITEST: String = "vitest"
+
+  /** Kinds of test sources and results, in report order. */
+  val SOURCES: List<String> =
+    listOf(SOURCE_JUNIT, SOURCE_VITEST, PlaywrightResults.SOURCE, ShellTestScanner.SOURCE, MatrixEvidence.SOURCE)
+
+  /** A Vitest case in JUnit XML: classname is the test file relative to ui/ ("src/a/b.test.ts"). */
+  private val scriptFile = Regex(""".+\.(test|spec)\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$""")
+
   /** Natural order of IDs: "T-AG-2" < "T-AG-10", "D-2" < "D-10". */
   val naturalOrder: Comparator<String> = Comparator { a, b -> compareNatural(a, b) }
 
@@ -116,7 +187,13 @@ object Traceability {
    * test without a prefix takes the rest of its class. Cases left over are reported with the tags
    * of their class.
    *
+   * Script tests (Vitest, Playwright, shell, matrix: [SourceTest.methodName] null) are joined with
+   * [scriptResults] and with the Vitest cases among [results] (project `ui`, classname a test file)
+   * by file and title, see [joinScripts].
+   *
    * @param results results with the project directory (repository-relative) they belong to
+   * @param sourceFileCounts test source files per kind of [SOURCES] (for [TraceabilityModel.sources])
+   * @param resultFileCounts result files per kind of [SOURCES]
    */
   fun build(
     classes: List<SourceClass>,
@@ -126,7 +203,110 @@ object Traceability {
     resultFiles: Int,
     unreadableResultFiles: List<String> = emptyList(),
     testsWithoutId: Int = 0,
+    scriptResults: List<ScriptCase> = emptyList(),
+    sourceFileCounts: Map<String, Int> = emptyMap(),
+    resultFileCounts: Map<String, Int> = emptyMap(),
   ): TraceabilityModel {
+    val (vitestResults, junitResults) = results.partition { (project, case) -> project == "ui" && scriptFile.matches(case.className) }
+    val vitestCases =
+      vitestResults.map { (_, c) ->
+        ScriptCase(SOURCE_VITEST, "ui/" + c.className, c.name, c.status, c.timestamp, c.suite, c.file.invariantSeparatorsPath)
+      }
+    val junit = buildJUnit(classes, tests, junitResults)
+    val unlisted = HashMap<String, Int>()
+    val scripts = joinScripts(tests.filter { it.methodName == null }, vitestCases + scriptResults, unlisted)
+    val entries = junit + scripts
+    val casesBySource = (vitestCases + scriptResults).groupingBy { it.source }.eachCount()
+    val stats =
+      SOURCES.map { s ->
+        SourceStats(
+          source = s,
+          sourceFiles = sourceFileCounts[s] ?: tests.filter { sourceOf(it) == s }.map { it.file }.distinct().size,
+          resultFiles = resultFileCounts[s] ?: 0,
+          resultCases = if (s == SOURCE_JUNIT) junitResults.size else casesBySource[s] ?: 0,
+          unlistedResultCases = unlisted[s] ?: 0,
+        )
+      }
+    return TraceabilityModel(entries, sourceFiles, resultFiles, unreadableResultFiles, testsWithoutId, stats)
+  }
+
+  /** "junit" for a JUnit method, otherwise the script kind kept in [SourceTest.sourceSet]. */
+  fun sourceOf(test: SourceTest): String = if (test.methodName != null) SOURCE_JUNIT else test.sourceSet
+
+  /**
+   * Joins script tests with their results. A case matches the source tests of its file whose title
+   * produced it: Vitest and Playwright titles are one " > " segment of the case name (an `it` title
+   * is the last one, a `describe` title an earlier one; `${…}` matches anything); a shell description
+   * template matches the whole description (`$x`, `${…}`, `$(…)` match anything, a failure detail in
+   * parentheses may follow), and a shell case that matches nothing in its script is tried against
+   * the other scripts below the script's directory (container case files run by a parent script);
+   * a matrix case matches the row with its ID. A case can match several source tests (a describe
+   * and its test). A shell case without a test ID that matches nothing goes to the script's header
+   * entry ([SourceTest.matchAll]). Requirements: Playwright `req` annotations of the results replace
+   * the per-file association of the source; other sources add the case requirements to theirs.
+   * Cases that match nothing are reported on their own when they have a test ID (then with the
+   * requirements of their file's source tests too) or a requirement or failed, and counted in
+   * [unlisted] otherwise.
+   */
+  private fun joinScripts(scriptTests: List<SourceTest>, cases: List<ScriptCase>, unlisted: MutableMap<String, Int>): List<TestEntry> {
+    val byFile = scriptTests.groupBy { it.file }
+    val matchers = IdentityHashMap<SourceTest, Regex>()
+    fun matcher(test: SourceTest): Regex =
+      matchers.getOrPut(test) {
+        val title = test.displayName.orEmpty()
+        when (test.sourceSet) {
+          ShellTestScanner.SOURCE -> Regex("^" + ShellTestScanner.templatePattern(title, shell = true) + "(?: \\(.*\\))?$", RegexOption.DOT_MATCHES_ALL)
+          else -> Regex("^(?:.* > )?" + ShellTestScanner.templatePattern(title, shell = false) + "(?: > .*)?$", RegexOption.DOT_MATCHES_ALL)
+        }
+      }
+    fun matches(test: SourceTest, case: ScriptCase): Boolean =
+      when {
+        test.matchAll -> false
+        test.sourceSet == MatrixEvidence.SOURCE -> case.testIds.any { it in test.testIds }
+        test.displayName.isNullOrEmpty() -> false
+        else -> matcher(test).matches(case.name)
+      }
+    val casesOf = IdentityHashMap<SourceTest, MutableList<ScriptCase>>()
+    val leftover = mutableListOf<ScriptCase>()
+    for (case in cases) {
+      val own = byFile[case.file].orEmpty().filter { it.sourceSet == case.source }
+      var hits = own.filter { matches(it, case) }
+      if (hits.isEmpty() && case.source == ShellTestScanner.SOURCE) {
+        val dir = case.file.substringBeforeLast('/', "") + "/"
+        hits = scriptTests.filter { it.sourceSet == ShellTestScanner.SOURCE && it.file != case.file && it.file.startsWith(dir) && matches(it, case) }
+        if (hits.isEmpty() && case.testIds.isEmpty()) hits = own.filter { it.matchAll }
+      }
+      if (hits.isEmpty()) leftover += case
+      for (test in hits) casesOf.getOrPut(test) { mutableListOf() } += case
+    }
+    val entries = mutableListOf<TestEntry>()
+    for (test in scriptTests) {
+      val mine = casesOf[test].orEmpty()
+      val caseReqs = mine.flatMap { it.requirements }.distinct()
+      val reqs =
+        if (test.sourceSet == PlaywrightResults.SOURCE && caseReqs.isNotEmpty()) caseReqs else (test.requirements + caseReqs).distinct()
+      entries +=
+        TestEntry(test.testIds, reqs, test.tags, test.className, test.displayName.orEmpty(), test.file, test.line, test.sourceSet, ResultSummary.ofScript(mine), sourceOf(test))
+    }
+    val fileReqs = byFile.mapValues { (_, list) -> list.flatMap { it.requirements }.distinct() }
+    for ((key, group) in leftover.groupBy { Triple(it.source, it.file, it.name) }) {
+      val (source, file, name) = key
+      val ids = group.flatMap { it.testIds }.distinct()
+      val caseReqs = group.flatMap { it.requirements }.distinct()
+      // Like the source scanners: only a test with an ID takes the per-file requirements.
+      val inherited = if (ids.isNotEmpty()) fileReqs[file].orEmpty() else emptyList()
+      val reqs = if (source == PlaywrightResults.SOURCE) caseReqs.ifEmpty { inherited } else (caseReqs + inherited).distinct()
+      // A failure is always listed (a shell script that exited non-zero without a description).
+      if (ids.isEmpty() && reqs.isEmpty() && group.none { it.status == Status.FAILED }) {
+        unlisted.merge(source, group.size, Int::plus)
+        continue
+      }
+      entries += TestEntry(ids, reqs, emptyList(), file, name, file, 0, group.first().suite, ResultSummary.ofScript(group), source)
+    }
+    return entries
+  }
+
+  private fun buildJUnit(classes: List<SourceClass>, tests: List<SourceTest>, results: List<Pair<String, JUnitXmlResults.Case>>): List<TestEntry> {
     val classByKey = HashMap<Pair<String, String>, SourceClass>()
     val projectOfClassFile = HashMap<String, String>()
     for (test in tests) projectOfClassFile[test.file] = test.projectDir
@@ -138,7 +318,6 @@ object Traceability {
     val entries = mutableListOf<TestEntry>()
 
     val junitTests = tests.filter { it.methodName != null }
-    val scriptTests = tests.filter { it.methodName == null }
 
     // 1. Exact matches of static and dynamic tests.
     val exact = HashMap<SourceTest, List<JUnitXmlResults.Case>>()
@@ -235,26 +414,17 @@ object Traceability {
             result = mergeResults(group.mapNotNull { it.result }),
           )
       }
-    val scripts =
-      scriptTests.map {
-        TestEntry(it.testIds, it.requirements, it.tags, it.className, it.displayName.orEmpty(), it.file, it.line, it.sourceSet, null)
-      }
-    return TraceabilityModel(merged + scripts, sourceFiles, resultFiles, unreadableResultFiles, testsWithoutId)
+    return merged
   }
 
   private fun mergeResults(results: List<ResultSummary>): ResultSummary? {
     if (results.isEmpty()) return null
-    val status =
-      when {
-        results.any { it.status == Status.FAILED } -> Status.FAILED
-        results.any { it.status == Status.PASSED } -> Status.PASSED
-        else -> Status.SKIPPED
-      }
     return ResultSummary(
-      status,
+      ResultSummary.statusOf(results.map { it.status }),
       results.sumOf { it.runs },
       results.mapNotNull { it.lastRun }.maxOrNull(),
       results.flatMap { it.suites }.distinct().sorted(),
+      results.flatMap { it.reasons }.distinct(),
     )
   }
 

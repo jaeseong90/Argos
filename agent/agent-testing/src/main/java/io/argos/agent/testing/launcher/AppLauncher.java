@@ -81,11 +81,58 @@ import java.util.stream.Stream;
  * #tomcat(String)}, else {@link SampleApp#defaultTomcat(int)}. Request paths carry the context
  * ({@code app.get("/shop-a/api/orders/1")}). {@link RunningApp#gracefulStop()} (and {@code
  * close()}) of a WAR run sends the shutdown command first, so Tomcat stops its web applications
- * (and its leak detection logs) before the JVM exits, on Windows too.
+ * (and its leak detection logs) before the JVM exits, on Windows too. With {@link
+ * #tomcatManager(boolean)} the staged Tomcat also serves its manager web application ({@code
+ * /manager}, text interface, a {@code manager-script} user with a random password per run, loopback
+ * only), which {@code leak.TomcatRedeployDriver} drives.
+ *
+ * <p>Compatibility matrix runs (WO-50, 18 §6, {@code test/matrix/matrix.yaml}) set two system
+ * properties of the test JVM that apply to every launch: {@value #MATRIX_APP_ENV} ({@code K=V;K=V}:
+ * application environment variables added to every run before the test's own {@link #withEnv},
+ * which wins, e.g. {@code SAMPLE_CONTAINER=jetty}) and {@value #MATRIX_TOMCAT} (the Tomcat key of a
+ * WAR run, e.g. {@code tomcat11}: it replaces the test's {@link #tomcat(String)} and {@link
+ * SampleApp#defaultTomcat(int)} for every WAR app whose launch descriptor has that key, so that a
+ * matrix row decides the container of every suite it runs). Without them nothing changes. {@link
+ * #withExtraAgent} adds another Java agent before or after Argos (coexistence rows, 18 §6.4).
  */
 public final class AppLauncher {
   /** {@code app.env} of every harness run (harness defaults). */
   public static final String HARNESS_ENV = "test";
+
+  /** System property of a matrix run: {@code K=V;K=V} environment of every launch (WO-50). */
+  public static final String MATRIX_APP_ENV = "argos.test.matrix.appEnv";
+
+  /** System property of a matrix run: the Tomcat key of every WAR launch (WO-50). */
+  public static final String MATRIX_TOMCAT = "argos.test.matrix.tomcat";
+
+  /** Where an extra Java agent ({@link #withExtraAgent}) goes relative to the Argos agent. */
+  public enum Order {
+    /** {@code -javaagent:<extra>} before {@code -javaagent:argos-agent.jar}: it runs first. */
+    BEFORE,
+    /** {@code -javaagent:<extra>} after the Argos agent and its settings: it runs second. */
+    AFTER
+  }
+
+  /**
+   * Another Java agent of the run (JaCoCo, the OpenTelemetry Java agent, 18 §6.4).
+   *
+   * @param jar the agent jar (used in place, not copied)
+   * @param order before or after the Argos agent
+   * @param options the agent argument ({@code -javaagent:<jar>=<options>}), null or blank for none
+   */
+  public record ExtraAgent(Path jar, Order order, String options) {
+    public ExtraAgent {
+      if (jar == null || order == null) {
+        throw new IllegalArgumentException("extra agent jar and order are required");
+      }
+    }
+
+    /** The {@code -javaagent} argument. */
+    public String argument() {
+      String path = jar.toAbsolutePath().toString();
+      return "-javaagent:" + path + (options == null || options.isBlank() ? "" : "=" + options);
+    }
+  }
 
   /** File name of {@code argos.test.selfdiag-file} in {@code <workDir>/out} (harness defaults). */
   public static final String SELF_DIAGNOSTICS_FILE = "selfdiag.json";
@@ -108,12 +155,89 @@ public final class AppLauncher {
   private String cpus;
   private String memory;
   private String tokenFileMode;
+  private final Map<String, String> containerTmpfs = new LinkedHashMap<>();
+  private String containerNetwork;
   private String tomcatKey;
   private final Map<String, Path> webapps = new LinkedHashMap<>();
+  private final List<ExtraAgent> extraAgents = new ArrayList<>();
+  private boolean tomcatManager;
+  private Map<String, String> matrixEnvironment;
+  private String matrixTomcat;
 
   private AppLauncher(SampleApp app, Jdk jdk) {
     this.app = app;
     this.jdk = jdk;
+    this.matrixEnvironment = parseEnvironment(System.getProperty(MATRIX_APP_ENV));
+    String tomcat = System.getProperty(MATRIX_TOMCAT);
+    this.matrixTomcat = tomcat == null || tomcat.isBlank() ? null : tomcat.strip();
+  }
+
+  /**
+   * Parses {@code K=V;K=V} ({@value #MATRIX_APP_ENV}): blank items are skipped, a value may contain
+   * {@code =}, a key is an environment variable name ({@code [A-Za-z_][A-Za-z0-9_]*}).
+   *
+   * @throws IllegalArgumentException for an item without {@code =} or with an invalid name
+   */
+  static Map<String, String> parseEnvironment(String spec) {
+    Map<String, String> parsed = new LinkedHashMap<>();
+    if (spec == null || spec.isBlank()) {
+      return parsed;
+    }
+    for (String item : spec.split(";", -1)) {
+      if (item.isBlank()) {
+        continue;
+      }
+      int equals = item.indexOf('=');
+      String key = equals < 0 ? "" : item.substring(0, equals).strip();
+      if (!key.matches("[A-Za-z_][A-Za-z0-9_]*")) {
+        throw new IllegalArgumentException(
+            MATRIX_APP_ENV
+                + ": expected K=V;K=V with environment variable names, got '"
+                + item
+                + "'");
+      }
+      parsed.put(key, item.substring(equals + 1).strip());
+    }
+    return parsed;
+  }
+
+  /**
+   * The matrix settings of this launcher instead of the test JVM's system properties ({@value
+   * #MATRIX_APP_ENV}, {@value #MATRIX_TOMCAT}); for unit tests.
+   */
+  AppLauncher matrixSettings(String appEnv, String tomcat) {
+    this.matrixEnvironment = parseEnvironment(appEnv);
+    this.matrixTomcat = tomcat == null || tomcat.isBlank() ? null : tomcat.strip();
+    return this;
+  }
+
+  /**
+   * Adds another Java agent ({@code -javaagent:<jar>[=<options>]}) {@link Order#BEFORE} or {@link
+   * Order#AFTER} the Argos agent, in the order of the calls; with {@link #withoutAgent()} it is the
+   * only agent. The coexistence rows of the matrix use it (JaCoCo, OpenTelemetry, 18 §6.4).
+   */
+  public AppLauncher withExtraAgent(Path jar, Order order, String options) {
+    extraAgents.add(new ExtraAgent(jar, order, options));
+    return this;
+  }
+
+  /** The extra agents of {@link #withExtraAgent}, in order. */
+  public List<ExtraAgent> extraAgents() {
+    return List.copyOf(extraAgents);
+  }
+
+  /**
+   * WAR apps only: the staged Tomcat also deploys the distribution's manager web application with a
+   * {@code manager-script} user (random password per run, {@code conf/tomcat-users.xml} owner only,
+   * requests from 127.0.0.1 only; {@link TomcatStaging}). {@link RunningApp#tomcatManager()} gives
+   * the access of the run.
+   */
+  public AppLauncher tomcatManager(boolean on) {
+    if (on && !app.isWar()) {
+      throw new IllegalStateException(app.name() + " is not a WAR app");
+    }
+    this.tomcatManager = on;
+    return this;
   }
 
   /** A launcher of {@code app} on {@code jdk} (18 §5.2 {@code AppLauncher.of(app, jdk)}). */
@@ -260,6 +384,37 @@ public final class AppLauncher {
   }
 
   /**
+   * Container mode only: a tmpfs mount at {@code path} inside the container with the mount {@code
+   * options} ({@code size=1m}; {@code docker run --tmpfs path:options}), for example a small agent
+   * log directory that fills up (chaos test T-CH-005).
+   */
+  public AppLauncher containerTmpfs(String path, String options) {
+    containerTmpfs.put(path, options == null ? "" : options);
+    return this;
+  }
+
+  /** The tmpfs mounts of {@link #containerTmpfs}. */
+  Map<String, String> containerTmpfs() {
+    return Map.copyOf(containerTmpfs);
+  }
+
+  /**
+   * Container mode only: the Docker network the container joins instead of the default bridge
+   * ({@code docker run --network <name>}), so that it reaches other containers of the test by their
+   * network aliases (chaos tests: toxiproxy); the app port is still published, and {@code
+   * host.docker.internal} names the Docker host ({@code host-gateway}). Null: default.
+   */
+  public AppLauncher containerNetwork(String name) {
+    this.containerNetwork = name;
+    return this;
+  }
+
+  /** The network of {@link #containerNetwork}, or null. */
+  String containerNetwork() {
+    return containerNetwork;
+  }
+
+  /**
    * The standalone Tomcat of a WAR app, a key of its launch descriptor ({@code tomcat9}, {@code
    * tomcat10}, {@code tomcat11}); default {@link SampleApp#defaultTomcat(int)}.
    */
@@ -282,10 +437,16 @@ public final class AppLauncher {
     return this;
   }
 
-  /** The Tomcat key a WAR run uses (see {@link #tomcat(String)}). */
+  /**
+   * The Tomcat key a WAR run uses: the matrix row's ({@value #MATRIX_TOMCAT}) when the app has that
+   * Tomcat, else {@link #tomcat(String)}, else {@link SampleApp#defaultTomcat(int)}.
+   */
   public String tomcatKey() {
     if (!app.isWar()) {
       throw new IllegalStateException(app.name() + " is not a WAR app");
+    }
+    if (matrixTomcat != null && app.tomcats().containsKey(matrixTomcat)) {
+      return matrixTomcat;
     }
     return tomcatKey != null ? tomcatKey : app.defaultTomcat(jdk.feature());
   }
@@ -337,8 +498,14 @@ public final class AppLauncher {
     return memory;
   }
 
+  /**
+   * The application environment of a run: the matrix row's ({@value #MATRIX_APP_ENV}), then the
+   * test's own ({@link #withEnv}), which wins.
+   */
   Map<String, String> environment() {
-    return environment;
+    Map<String, String> merged = new LinkedHashMap<>(matrixEnvironment);
+    merged.putAll(environment);
+    return merged;
   }
 
   /** The effective agent settings of a run in {@code dir} (defaults, collector, test settings). */
@@ -439,12 +606,22 @@ public final class AppLauncher {
     command.add(jdk.java().toString());
     command.addAll(options);
     command.add("-Djava.io.tmpdir=" + dir.resolve("tmp"));
+    for (ExtraAgent extra : extraAgents) {
+      if (extra.order() == Order.BEFORE) {
+        command.add(extra.argument());
+      }
+    }
     if (agentJar != null) {
       command.add("-javaagent:" + dir.resolve("agent").resolve("argos-agent.jar"));
       AgentSettings settings = agentSettings(dir);
       command.addAll(settings.systemProperties());
       if (configFile) {
         command.add("-Dargos.config=" + dir.resolve("argos-agent.yml"));
+      }
+    }
+    for (ExtraAgent extra : extraAgents) {
+      if (extra.order() == Order.AFTER) {
+        command.add(extra.argument());
       }
     }
     if (app.isWar()) {
@@ -527,19 +704,31 @@ public final class AppLauncher {
         throw new UnsupportedOperationException(
             app.name() + " is a WAR app: container mode runs jar apps, WAR apps run as processes");
       }
+      if (!extraAgents.isEmpty()) {
+        throw new UnsupportedOperationException(
+            "extra agents (withExtraAgent) run in local processes only, not in container mode");
+      }
       return ContainerApp.start(this, prepare(), timeout);
     }
     Path dir = prepare();
     int port = freePort();
     TomcatStaging.Shutdown shutdown = null;
+    TomcatStaging.ManagerAccess manager = null;
     if (app.isWar()) {
       int shutdownPort = freePort();
       while (shutdownPort == port) {
         shutdownPort = freePort();
       }
       shutdown = TomcatStaging.Shutdown.random(shutdownPort);
+      manager = tomcatManager ? TomcatStaging.ManagerAccess.random() : null;
       TomcatStaging.stage(
-          app, app.tomcatHome(tomcatKey()), TomcatStaging.base(dir), port, shutdown, webapps);
+          app,
+          app.tomcatHome(tomcatKey()),
+          TomcatStaging.base(dir),
+          port,
+          shutdown,
+          webapps,
+          manager);
     }
     List<String> command = command(dir);
     ProcessBuilder builder = processBuilder(dir, command);
@@ -550,7 +739,7 @@ public final class AppLauncher {
       env.put("SERVER_ADDRESS", "127.0.0.1");
     }
     env.put("SPRING_MAIN_BANNER_MODE", "off");
-    env.putAll(environment);
+    env.putAll(environment());
     builder.redirectOutput(dir.resolve("stdout.log").toFile());
     builder.redirectError(dir.resolve("stderr.log").toFile());
 
@@ -561,6 +750,7 @@ public final class AppLauncher {
     ProcessApp running =
         new ProcessApp(app, jdk, process, port, dir, command, tempWatch, collector);
     running.tomcatShutdown(shutdown);
+    running.tomcatManager(manager);
     try {
       long deadline = spawn + timeout.toNanos();
       while (!portOpen(port)) {
@@ -600,7 +790,7 @@ public final class AppLauncher {
     Path dir = prepare();
     List<String> command = command(dir);
     ProcessBuilder builder = processBuilder(dir, command);
-    builder.environment().putAll(environment);
+    builder.environment().putAll(environment());
     Path systemTemp = systemTemp();
     List<String> systemTempBefore = watchSystemTemp ? agentLikeEntries(systemTemp) : List.of();
     try (TempWatch watch = TempWatch.start(dir.resolve("tmp"))) {

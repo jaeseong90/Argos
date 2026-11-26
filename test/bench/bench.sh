@@ -6,14 +6,19 @@
 # the WO-02 run-overhead.sh, moved here by WO-05. bench-run.sh (18 §7.3) and bench-protocol.sh
 # (benchTest) call it; use it directly for single sets, re-reports and the report generator.
 #
-# usage: test/bench/bench.sh [--no-build] <load|startup|report|publish> [harness options]
+# usage: test/bench/bench.sh [--no-build] <load|startup|report|publish|trend|noise|gate1> [harness options]
 #   --no-build   use the jars already built (on a dedicated machine: build, ./gradlew --stop, then
 #                run with --no-build so that no Gradle daemon is alive during the measurement)
 # Examples:
 #   test/bench/bench.sh load --out build/bench/main --java "$JAVA_HOME/bin/java"
+#   test/bench/bench.sh load --out build/bench/otel --variants off,on,otel --otel-agent auto
 #   test/bench/bench.sh startup --out build/bench/startup
 #   test/bench/bench.sh --no-build report --out build/bench/main
-#   test/bench/bench.sh --no-build publish --sets build/bench/main,build/bench/startup --out docs/bench
+#   test/bench/bench.sh --no-build publish --sets build/bench/main,build/bench/startup --out docs/bench --baseline auto --latest --trend
+#   test/bench/bench.sh --no-build trend --dir docs/bench
+#   test/bench/bench.sh --no-build noise --sets build/bench/main
+#   test/bench/bench.sh --no-build gate1 --reports docs/bench/<date>-<commit7>.md --out build/bench/gate1.md
+# --otel-agent auto needs test/bench/fetch-otel-agent.sh run once (the harness never downloads).
 # java -jar test/bench/build/bench/bench-harness.jar --help lists every option.
 # Exit code: the harness's (0 PASS, 2 usage, 3 FAIL, 4 INVALID, 1 other error).
 

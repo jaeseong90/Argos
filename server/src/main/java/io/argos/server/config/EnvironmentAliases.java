@@ -44,11 +44,9 @@ public final class EnvironmentAliases {
           // listens on every interface (server.address, argos.collector.bind)
           "ARGOS_HTTP_BIND",
           "ARGOS_GRPC_BIND",
-          // read by later work orders (demo mode WO-40, unattended setup WO-24/WO-40, JWT key
+          // read through the relaxed names of their keys (unattended setup WO-24/WO-40, JWT key
           // WO-24)
-          "ARGOS_DEMO_MODE",
           "ARGOS_ADMIN_PASSWORD_FILE",
-          "ARGOS_BOOTSTRAP_APPS_FILE",
           "ARGOS_JWT_KEY",
           "ARGOS_JWT_KEY_FILE");
 
@@ -80,6 +78,9 @@ public final class EnvironmentAliases {
     m.put("ARGOS_CH_MIGRATOR_PASSWORD_FILE", "argos.clickhouse.migrator.password-file");
     m.put("ARGOS_TLS_CERT_FILE", "argos.collector.tls.cert-file");
     m.put("ARGOS_TLS_KEY_FILE", "argos.collector.tls.key-file");
+    // WO-41: the Compose demo profile (17 §3.2) and the applications registered at start (17 §3.8)
+    m.put("ARGOS_DEMO_MODE", "argos.demo.enabled");
+    m.put("ARGOS_BOOTSTRAP_APPS_FILE", "argos.bootstrap.apps-file");
     return Collections.unmodifiableMap(m);
   }
 

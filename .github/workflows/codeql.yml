@@ -3,7 +3,10 @@
 # CodeQL static analysis for Java and TypeScript/JavaScript (O-S04, docs/16 section 10.5).
 # Runs on pull requests, on pushes to trusted branches and weekly on main to pick up new queries.
 # build-mode none analyses the sources without building, so no toolchain or network access to
-# dependency repositories is needed.
+# dependency repositories is needed. Queries (default + security-extended) and the paths that are
+# not analysed (negative fixtures, seed data, generated code only) are in
+# .github/codeql/codeql-config.yml; .github/scripts/test/supply-chain-workflows.test.sh checks both
+# files (T-BLD-028, proposed).
 name: CodeQL
 
 on:
@@ -49,6 +52,7 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
+          config-file: ./.github/codeql/codeql-config.yml
       - name: Analyze
         uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:

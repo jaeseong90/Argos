@@ -19,7 +19,9 @@ interface Platform extends AutoCloseable {
   /**
    * Fixed inputs of a set: files, JVM options and agent settings (identical for off and on). {@code
    * agentConfig} holds the keys of {@link AgentSettings} (exporter, profile) and {@code
-   * --agent-config}.
+   * --agent-config}. {@code selfDiag}: agent variants write the self-diagnostics snapshot ({@link
+   * SelfDiagFile}, development builds only, C-95). {@code otlpEndpoint}: the {@link OtlpBlackHole}
+   * the otel variant exports to, null for exporters {@code none}.
    */
   record Setup(
       Path repo,
@@ -43,7 +45,61 @@ interface Platform extends AutoCloseable {
       Path benchJs,
       int cpus,
       String memory,
-      String appAddress) {}
+      String appAddress,
+      boolean selfDiag,
+      String otlpEndpoint) {
+
+    /** A setup without self-diagnostics file and without OTLP receiver (the WO-05 settings). */
+    Setup(
+        Path repo,
+        Path setDir,
+        Path binDir,
+        Path java,
+        String image,
+        String sidecarImage,
+        String appName,
+        Path appJar,
+        Path extJar,
+        Path agentJar,
+        Path otelJar,
+        List<String> jvmOptions,
+        Map<String, String> appEnv,
+        Map<String, String> agentConfig,
+        Map<String, Map<String, String>> variantConfigs,
+        String k6,
+        String k6Ssh,
+        String k6Image,
+        Path benchJs,
+        int cpus,
+        String memory,
+        String appAddress) {
+      this(
+          repo,
+          setDir,
+          binDir,
+          java,
+          image,
+          sidecarImage,
+          appName,
+          appJar,
+          extJar,
+          agentJar,
+          otelJar,
+          jvmOptions,
+          appEnv,
+          agentConfig,
+          variantConfigs,
+          k6,
+          k6Ssh,
+          k6Image,
+          benchJs,
+          cpus,
+          memory,
+          appAddress,
+          false,
+          null);
+    }
+  }
 
   /** A started app. */
   interface App {
@@ -134,6 +190,21 @@ interface Platform extends AutoCloseable {
   /** JVM options of a variant of {@code appName} (the startup set starts several apps). */
   static List<String> variantOptions(
       String variant, Setup setup, String appName, String agentJar, String otelJar, String logDir) {
+    return variantOptions(variant, setup, appName, agentJar, otelJar, logDir, null);
+  }
+
+  /**
+   * JVM options of a variant of {@code appName}; {@code selfDiagFile} (the snapshot path as the app
+   * sees it) is added to Argos agent variants when {@link Setup#selfDiag()} is set (C-95).
+   */
+  static List<String> variantOptions(
+      String variant,
+      Setup setup,
+      String appName,
+      String agentJar,
+      String otelJar,
+      String logDir,
+      String selfDiagFile) {
     List<String> options = new ArrayList<>();
     switch (variant) {
       case "off" -> {}
@@ -143,16 +214,18 @@ interface Platform extends AutoCloseable {
         config.putAll(requiredAgentKeys(appName, logDir));
         config.putAll(setup.agentConfig());
         config.forEach((k, v) -> options.add("-Dargos." + k + "=" + v));
+        if (setup.selfDiag() && selfDiagFile != null) {
+          options.add(SelfDiagFile.jvmOption(selfDiagFile));
+        }
       }
       case "otel" -> {
         if (otelJar == null) {
           throw new UsageException("variant otel needs --otel-agent");
         }
-        // Reference point only (01 §7.3 item 11): the OpenTelemetry Java agent without exporters.
+        // Reference point only (01 §7.3 item 11): the OpenTelemetry Java agent exporting OTLP to
+        // the harness's black-hole receiver (18 §7.5), or without exporters when there is none.
         options.add("-javaagent:" + otelJar);
-        options.add("-Dotel.traces.exporter=none");
-        options.add("-Dotel.metrics.exporter=none");
-        options.add("-Dotel.logs.exporter=none");
+        options.addAll(OtlpBlackHole.otelOptions(setup.otlpEndpoint()));
       }
       default -> {
         // Diagnostic agent variants (--variant-defs): the on settings plus their own.
@@ -167,6 +240,9 @@ interface Platform extends AutoCloseable {
         config.putAll(setup.agentConfig());
         config.putAll(extra);
         config.forEach((k, v) -> options.add("-Dargos." + k + "=" + v));
+        if (setup.selfDiag() && selfDiagFile != null) {
+          options.add(SelfDiagFile.jvmOption(selfDiagFile));
+        }
       }
     }
     return options;

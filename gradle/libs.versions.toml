@@ -109,6 +109,10 @@ poc-netty41-bom = { module = "io.netty:netty-bom", version = "4.1.139.Final" }
 # Netty of the agent transport only (ADR-0009 C-73: 4.1.x >= 4.1.139 keeps C-22, shaded major <= 52;
 # enforced in :agent:agent-dist). Never used by the server (its own netty-bom entry, WO-21).
 agent-netty-bom = { module = "io.netty:netty-bom", version = "4.1.139.Final" }
+# Floor for grpc-java's transitive Guava (Android flavor, Java 8 class files): grpc 1.85.1 asks for
+# 33.6.0-android, which carries CVE-2026-102554 (HIGH, release SBOM scan, WO-44 T-BLD-008). Applied as
+# a dependency constraint by argos.protobuf, so every gRPC consumer (agent jar included) resolves it.
+grpc-guava-android = { module = "com.google.guava:guava", version = "33.7.2-android" }
 grpc-inprocess = { module = "io.grpc:grpc-inprocess", version.ref = "grpc" }
 protoc-gen-grpc-java = { module = "io.grpc:protoc-gen-grpc-java", version.ref = "grpc" }
 protobuf-bom = { module = "com.google.protobuf:protobuf-bom", version.ref = "protobuf" }
@@ -204,6 +208,10 @@ sample-starter-restclient = { module = "org.springframework.boot:spring-boot-sta
 sample-starter-websocket = { module = "org.springframework.boot:spring-boot-starter-websocket" }
 sample-starter-data-jpa = { module = "org.springframework.boot:spring-boot-starter-data-jpa" }
 sample-starter-jdbc = { module = "org.springframework.boot:spring-boot-starter-jdbc" }
+# demo-app (WO-41, ADR-0004 C-43): Log4j 2 instead of Logback in the public argos-demo-app image
+sample-starter-log4j2 = { module = "org.springframework.boot:spring-boot-starter-log4j2" }
+# ... and Tomcat's jakarta.annotation (Apache-2.0) instead of jakarta.annotation-api (EPL/GPL)
+sample-tomcat-annotations-api = { module = "org.apache.tomcat:tomcat-annotations-api" }
 sample-starter-actuator = { module = "org.springframework.boot:spring-boot-starter-actuator" }
 sample-starter-tomcat = { module = "org.springframework.boot:spring-boot-starter-tomcat" }
 sample-starter-batch = { module = "org.springframework.boot:spring-boot-starter-batch" }
@@ -234,6 +242,18 @@ sample-log4j-core = { module = "org.apache.logging.log4j:log4j-core" }
 sample-log4j1 = { module = "log4j:log4j", version = "1.2.17" }
 sample-reload4j = { module = "ch.qos.reload4j:reload4j", version = "1.2.26" }
 sample-hc4 ={ module = "org.apache.httpcomponents:httpclient" }
+# Lower boundary of the httpclient-apache4 module (WO-50, ADR-0010 C-240 (10)): the first 4.5
+# release (published as "4.5", the 4.5.0 of C-240) and the httpcore it was released with, module
+# test variant testLowerBound only.
+agent-hc4-min = { module = "org.apache.httpcomponents:httpclient", version = "4.5" }
+agent-hc4-core-min = { module = "org.apache.httpcomponents:httpcore", version = "4.4.1" }
+# Servlet containers of the compatibility matrix (WO-50, ADR-0010 C-127, SAMPLE_CONTAINER): versions
+# from each app's Boot BOM (Boot 2.7: Jetty 9.4 and Undertow 2.2; Boot 3.5: Jetty 12.0 ee10 and
+# Undertow 2.3; Boot 4.1: Jetty 12.1 ee11), on the runtime class path of the shop jar apps only.
+sample-starter-jetty = { module = "org.springframework.boot:spring-boot-starter-jetty" }
+sample-starter-undertow = { module = "org.springframework.boot:spring-boot-starter-undertow" }
+# shop-boot3-devtools.jar of the coexistence rows (WO-50, 18 §6.1 T-MX-110..113), Boot BOM version.
+sample-devtools = { module = "org.springframework.boot:spring-boot-devtools" }
 sample-hc5 = { module = "org.apache.httpcomponents.client5:httpclient5" }
 sample-okhttp3 = { module = "com.squareup.okhttp3:okhttp", version.ref = "sample-okhttp3" }
 sample-okhttp4 = { module = "com.squareup.okhttp3:okhttp", version.ref = "sample-okhttp4" }

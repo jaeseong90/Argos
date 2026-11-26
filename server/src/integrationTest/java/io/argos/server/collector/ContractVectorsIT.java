@@ -213,6 +213,26 @@ class ContractVectorsIT {
     }
 
     /**
+     * A {@code check_only} hello step (ADR-0010 C-240 (1)): accepted with instance id 0 and no
+     * session id, then the server ends the stream with {@code expected_code}; the replay's current
+     * session stays the one it was.
+     */
+    void checkOnlyHello(JsonNode step) {
+      long agentEpoch = step.has("agent_epoch") ? step.get("agent_epoch").asLong() : epoch;
+      FakeAgent a = newAgent(tokenOf(step), agentEpoch);
+      HelloResult r = a.connect(a.helloTemplate().toBuilder().setCheckOnly(true).build());
+      assertThat(r.accepted())
+          .as(step + " -> " + r)
+          .isEqualTo(step.get("expected_accepted").asBoolean());
+      assertThat(step.get("expected_check_only_answer").asBoolean()).isTrue();
+      assertThat(r.hello().getInstanceId()).as("%s: instance id (%s)", name, step).isZero();
+      assertThat(r.hello().getSessionId()).as("%s: session id (%s)", name, step).isEmpty();
+      HelloResult end = a.awaitSessionEnd(Duration.ofSeconds(10));
+      assertThat(end.code()).as("%s: the server ended the stream (%s)", name, step).isNotNull();
+      assertThat(end.code().name()).isEqualTo(step.get("expected_code").asString());
+    }
+
+    /**
      * A hello step: the answer ({@code expectHello}) and the instance ({@link #expectInstance}).
      */
     void checkedHello(JsonNode step) {
@@ -327,7 +347,8 @@ class ContractVectorsIT {
 
   @Test
   @DisplayName(
-      "11 §16 vector 'session' #2: Hello checks in 11 §5 order with the fault states set up for real")
+      "11 §16 vector 'session' #2: Hello checks in 11 §5 order with the fault states set up for"
+          + " real")
   void session2() {
     JsonNode v = vector("session", 1);
     Replay replay = new Replay(v.get("name").asString(), tls);
@@ -376,7 +397,8 @@ class ContractVectorsIT {
 
   @Test
   @DisplayName(
-      "11 §16 vector 'session' #3: one session per instance, REPLACED whatever the epoch, a half-closed stream ends without a message")
+      "11 §16 vector 'session' #3: one session per instance, REPLACED whatever the epoch, a"
+          + " half-closed stream ends without a message")
   void session3() {
     JsonNode v = vector("session", 2);
     Replay replay = new Replay(v.get("name").asString(), tls);
@@ -405,9 +427,9 @@ class ContractVectorsIT {
 
   @Test
   @DisplayName(
-      "11 §16 vector 'session' #4: InstanceUpdate.instance_name renames the instance and keeps its id;"
-          + " after a restart the new name gets the same id and dedup window, the old name is a new"
-          + " instance (12 §4.3, ADR-0010 C-185 (1))")
+      "11 §16 vector 'session' #4: InstanceUpdate.instance_name renames the instance and keeps its"
+          + " id; after a restart the new name gets the same id and dedup window, the old name is a"
+          + " new instance (12 §4.3, ADR-0010 C-185 (1))")
   void session4() throws Exception {
     JsonNode v = vector("session", 3);
     Replay replay = new Replay(v.get("name").asString(), tls);
@@ -445,8 +467,33 @@ class ContractVectorsIT {
   }
 
   @Test
+  @Tag("req:C-240")
   @DisplayName(
-      "11 §16 vector 'dedup': key (instance, epoch, kind, seq), last_seq per kind, window 1,000, retry after an error")
+      "T-SV-022b 11 §16 vector 'session' #5: a check-only hello is answered without a session or an"
+          + " instance and ends its stream; data stays refused; it neither registers nor replaces"
+          + " the instance's session (ADR-0010 C-240 (1))")
+  void session5() {
+    JsonNode v = vector("session", 4);
+    Replay replay = new Replay(v.get("name").asString(), tls);
+    for (JsonNode step : v.get("steps")) {
+      switch (step.get("action").asString()) {
+        case "hello" -> {
+          if (step.path("check_only").asBoolean(false)) {
+            replay.checkOnlyHello(step);
+          } else {
+            replay.checkedHello(step);
+          }
+        }
+        case "data" -> expectData(replay.data(step), step);
+        default -> throw new IllegalArgumentException(step.toString());
+      }
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "11 §16 vector 'dedup': key (instance, epoch, kind, seq), last_seq per kind, window 1,000,"
+          + " retry after an error")
   void dedup() {
     JsonNode v = vector("dedup", 0);
     Replay replay = new Replay(v.get("name").asString(), tls);
@@ -509,7 +556,8 @@ class ContractVectorsIT {
 
   @Test
   @DisplayName(
-      "11 §16 'status_codes' real equivalents: WAL full (DSN-11-09), back pressure, undurable write")
+      "11 §16 'status_codes' real equivalents: WAL full (DSN-11-09), back pressure, undurable"
+          + " write")
   void statusCodeEquivalents() {
     Replay replay = new Replay("status_codes", tls);
     FakeAgent a = replay.newAgent(replay.token.token(), 31);
@@ -549,7 +597,8 @@ class ContractVectorsIT {
 
   @Test
   @DisplayName(
-      "11 §16 'session revoked token' for real: WO-26's hook (cache invalidate + closeByToken) closes with TOKEN_REVOKED_CLOSE")
+      "11 §16 'session revoked token' for real: WO-26's hook (cache invalidate + closeByToken)"
+          + " closes with TOKEN_REVOKED_CLOSE")
   @Tag("req:SEC-04")
   void revokedToken() throws Exception {
     Replay replay = new Replay("session revoked token", tls);
@@ -558,7 +607,8 @@ class ContractVectorsIT {
     try (Connection c = env.connect(PgAccount.APP);
         PreparedStatement ps =
             c.prepareStatement(
-                "UPDATE argos.agent_tokens SET status = 'REVOKED', revoked_at = now() WHERE id = ?")) {
+                "UPDATE argos.agent_tokens SET status = 'REVOKED', revoked_at = now() WHERE id"
+                    + " = ?")) {
       ps.setObject(1, replay.token.id());
       ps.executeUpdate();
     }
@@ -576,7 +626,8 @@ class ContractVectorsIT {
 
   @Test
   @DisplayName(
-      "11 §16 'session server shutdown' for real: SessionClose SERVER_SHUTDOWN retry 30, UNAVAILABLE, argos-retry-after-ms 30000 (12 §3.9)")
+      "11 §16 'session server shutdown' for real: SessionClose SERVER_SHUTDOWN retry 30,"
+          + " UNAVAILABLE, argos-retry-after-ms 30000 (12 §3.9)")
   void serverShutdown() {
     try (CollectorHarness own = CollectorHarness.start(env)) {
       String app = app();

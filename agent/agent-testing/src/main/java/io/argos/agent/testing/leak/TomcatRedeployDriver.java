@@ -2,6 +2,8 @@
 package io.argos.agent.testing.leak;
 
 import io.argos.agent.testing.jvm.ClassHistogram;
+import io.argos.agent.testing.launcher.RunningApp;
+import io.argos.agent.testing.launcher.TomcatStaging;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -22,12 +24,13 @@ import java.util.regex.Pattern;
  * checks {@link #webappLoaders} (1: only the current deployment's {@code
  * ParallelWebappClassLoader}) and {@link #threadLocalLeakWarnings} (0) in the Tomcat log.
  *
- * <p>The redeploy cycles need Tomcat's manager app (role {@code manager-script}), which only the
- * matrix container has (18 §18 #10, WO-50): the launcher's WAR mode ({@code AppLauncher}, {@code
- * TomcatStaging}) stages a standalone Tomcat without it. The cycles are therefore unit-tested with
- * a fake {@link Manager} and run in the matrix. {@link #threadLocalLeakWarnings} is also used on
- * every WAR run of the launcher: {@code log.TomcatLogCheck} judges the staged Tomcat's log after
- * its graceful stop ({@code WarAppAgentTest}, WO-05 r1-new-1).
+ * <p>The redeploy cycles need Tomcat's manager app (role {@code manager-script}): the launcher's
+ * WAR mode stages it on request ({@code AppLauncher.tomcatManager(true)}, {@code TomcatStaging},
+ * random password per run, 127.0.0.1 only), and {@link #of(RunningApp)} gives the HTTP {@link
+ * Manager} of such a run (the matrix's {@code WarRedeployTest}, WO-50). {@link
+ * #threadLocalLeakWarnings} is also used on every WAR run of the launcher: {@code
+ * log.TomcatLogCheck} judges the staged Tomcat's log after its graceful stop ({@code
+ * WarAppAgentTest}, WO-05 r1-new-1).
  */
 public final class TomcatRedeployDriver {
   /** Class of a webapp's class loader on Tomcat 9, 10.1 and 11. */
@@ -61,7 +64,12 @@ public final class TomcatRedeployDriver {
     this.manager = manager;
   }
 
-  /** The manager at {@code managerBase} ({@code http://127.0.0.1:8080/manager}) with basic auth. */
+  /**
+   * The manager at {@code managerBase} ({@code http://127.0.0.1:8080/manager}) with basic auth: one
+   * {@code GET <managerBase>/text/<command>} per call, the body of a 200 answer; any other status
+   * makes {@link Manager#get} throw an {@link IOException} that names the status and the command,
+   * never the credentials or the query.
+   */
   public static Manager http(URI managerBase, String user, String password) {
     HttpClient client =
         HttpClient.newBuilder()
@@ -79,10 +87,35 @@ public final class TomcatRedeployDriver {
               .header("Authorization", auth)
               .GET()
               .build();
-      return client
-          .send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
-          .body();
+      HttpResponse<String> response =
+          client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+      if (response.statusCode() != 200) {
+        String name = command.contains("?") ? command.substring(0, command.indexOf('?')) : command;
+        throw new IOException(
+            "Tomcat manager answered HTTP " + response.statusCode() + " to " + name);
+      }
+      return response.body();
     };
+  }
+
+  /**
+   * The HTTP manager of a WAR run started with {@code AppLauncher.tomcatManager(true)} ({@code
+   * <baseUrl>/manager}, the run's {@code manager-script} user).
+   *
+   * @throws IllegalStateException when the run has no manager app
+   */
+  public static Manager of(RunningApp app) {
+    TomcatStaging.ManagerAccess access =
+        app.tomcatManager()
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        app.app().name()
+                            + " runs without the Tomcat manager app (AppLauncher.tomcatManager)"));
+    return http(
+        URI.create(app.baseUrl() + "/" + TomcatStaging.MANAGER_CONTEXT),
+        access.user(),
+        access.password());
   }
 
   /**

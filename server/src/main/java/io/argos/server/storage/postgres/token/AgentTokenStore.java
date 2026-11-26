@@ -3,11 +3,14 @@ package io.argos.server.storage.postgres.token;
 
 import io.argos.server.collector.api.TokenHash;
 import io.argos.server.collector.api.TokenStatus;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -49,6 +52,9 @@ public class AgentTokenStore {
    * Most rows {@link #listByApp} returns (an app has at most 5 active tokens; the rest is history).
    */
   public static final int MAX_LISTED = 500;
+
+  /** Most recently revoked rows {@link #revocationCheck} returns besides the live tokens. */
+  public static final int MAX_RECENT_REVOCATIONS = 1_000;
 
   private static final String COLUMNS =
       "t.id, t.app_id, t.token_hash, t.token_prefix, t.status, t.issued_by, u.username AS"
@@ -334,6 +340,40 @@ public class AgentTokenStore {
         AgentTokenStore::map,
         Timestamp.from(now),
         Timestamp.from(now));
+  }
+
+  /**
+   * The rows the revocation watcher checks in one query (ADR-0010 C-238 (14)): the tokens {@code
+   * ids} of the live sessions, and every token revoked within {@code recent} of the database's
+   * clock (a revocation written by another process, {@code argos-admin token revoke}, whose cache
+   * entry this server may still hold). The database's {@code now()} is the reference for {@code
+   * recent} because the revoking process wrote {@code revoked_at} with its own clock, not this
+   * server's.
+   *
+   * @param ids the token ids of the live sessions (at most one per session)
+   * @param recent how far back a revocation counts as recent
+   * @return at most {@code ids.size()} + {@value #MAX_RECENT_REVOCATIONS} rows
+   */
+  public List<StoredToken> revocationCheck(Collection<UUID> ids, Duration recent) {
+    UUID[] array = ids.toArray(UUID[]::new);
+    long seconds = Math.max(1, recent.toSeconds());
+    int limit = array.length + MAX_RECENT_REVOCATIONS;
+    return jdbc.query(
+        con -> {
+          PreparedStatement ps =
+              con.prepareStatement(
+                  "SELECT "
+                      + COLUMNS
+                      + FROM
+                      + " WHERE t.id = ANY(?) OR (t.revoked_at IS NOT NULL"
+                      + " AND t.revoked_at > now() - make_interval(secs => ?))"
+                      + " ORDER BY t.id LIMIT ?");
+          ps.setArray(1, con.createArrayOf("uuid", array));
+          ps.setLong(2, seconds);
+          ps.setInt(3, limit);
+          return ps;
+        },
+        AgentTokenStore::map);
   }
 
   /** Whether the app {@code appId} exists. */

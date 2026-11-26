@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
 
@@ -201,6 +202,14 @@ public interface RunningApp extends AutoCloseable {
    */
   default List<String> tomcatLogLines() {
     return List.of();
+  }
+
+  /**
+   * The manager user of a WAR run started with {@code AppLauncher.tomcatManager(true)} (the manager
+   * app answers under {@code <baseUrl>/manager}, 127.0.0.1 only); empty otherwise.
+   */
+  default Optional<TomcatStaging.ManagerAccess> tomcatManager() {
+    return Optional.empty();
   }
 
   /** {@code -Dargos.debug.transform-list} ({@code <workDir>/out/transformed.txt}). */

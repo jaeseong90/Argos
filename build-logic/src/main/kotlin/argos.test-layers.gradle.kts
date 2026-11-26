@@ -13,7 +13,12 @@
 //                      without a valid -Pbench.machine-profile=<id> (18 §2.2).
 // Report:
 //   traceabilityReport build/reports/traceability.md and .json: requirement -> tests -> last result
-//                      (skeleton of 18 §16; the diff against 18 §16 and the CI job are WO-53).
+//                      (18 §16).
+//   checkTraceability  build/reports/traceability-check.md and .json: catalogue (R1), 18 §16.1
+//                      diff (R2), required requirements (R3), Gate 1 evidence page IDs (R4); fails
+//                      on any of them (WO-53, test/README.md section 6).
+//   gate1Report        build/reports/gate1.md (docs/bench/gate1.md with -Pgate1.publish=true):
+//                      Gate 1 NFR rows from approved dedicated-machine reports and CI results.
 
 import io.argos.buildlogic.testing.CheckClosure
 import io.argos.buildlogic.testing.CheckComposition
@@ -55,11 +60,33 @@ gradle.taskGraph.whenReady {
   }
 }
 
+// `-Ptraceability.results=none` ignores result files in the traceability tasks (a clean checkout, what CI sees).
+val traceabilityResults: Boolean = providers.gradleProperty("traceability.results").orNull != "none"
+
 tasks.register<TraceabilityReport>("traceabilityReport") {
   repositoryRoot = layout.settingsDirectory
+  includeResults = traceabilityResults
   markdownReport = layout.buildDirectory.file("reports/traceability.md")
   jsonReport = layout.buildDirectory.file("reports/traceability.json")
   // When requested together with test tasks (`./gradlew check traceabilityReport`), report their
   // fresh results. Never a dependency: the report alone runs no test.
+  buildProjects.forEach { mustRunAfter(it.tasks.withType<Test>()) }
+}
+
+// WO-53: catalogue and 18 §16.1 check (fails on R1..R4) and the Gate 1 NFR page. Both read files
+// only.
+tasks.register<io.argos.buildlogic.traceability.CheckTraceability>("checkTraceability") {
+  repositoryRoot = layout.settingsDirectory
+  includeResults = traceabilityResults
+  markdownReport = layout.buildDirectory.file("reports/traceability-check.md")
+  jsonReport = layout.buildDirectory.file("reports/traceability-check.json")
+  buildProjects.forEach { mustRunAfter(it.tasks.withType<Test>()) }
+}
+
+tasks.register<io.argos.buildlogic.traceability.Gate1ReportTask>("gate1Report") {
+  repositoryRoot = layout.settingsDirectory
+  includeResults = traceabilityResults
+  if (providers.gradleProperty("gate1.publish").orNull == "true") report.set(layout.settingsDirectory.file("docs/bench/gate1.md"))
+  else report.set(layout.buildDirectory.file("reports/gate1.md"))
   buildProjects.forEach { mustRunAfter(it.tasks.withType<Test>()) }
 }

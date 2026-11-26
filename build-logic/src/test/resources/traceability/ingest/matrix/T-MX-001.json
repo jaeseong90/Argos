@@ -1,0 +1,21 @@
+{
+    "format": 1,
+    "id": "T-MX-001",
+    "task": ":agent:agent-testing:matrixTest-T-MX-001",
+    "commit": "eb9693bfc03a8bc8c178bb480cd6288881a24a47",
+    "os": "Linux",
+    "started_at": "2026-11-26T06:02:33.214Z",
+    "finished_at": "2026-11-26T06:09:26.360Z",
+    "duration_seconds": 413,
+    "passed": 60,
+    "failed": 0,
+    "skipped": 8,
+    "skip_reasons": {
+        "no WAR app in -Pagent.e2e (for example shop-war-jakarta@21, shop-war-javax@8)": 4
+    },
+    "failures": [],
+    "metrics": { "startup_ms": "7101", "transformed_classes": "81", "transactions": "526" },
+    "missing_requirements": [],
+    "lines": [],
+    "cases": []
+}

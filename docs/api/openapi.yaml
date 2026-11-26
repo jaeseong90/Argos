@@ -9546,11 +9546,15 @@ components:
       type: object
     SetupStatusResponse:
       properties:
+        demo_mode:
+          description: 'Whether the server runs in demo mode (argos.demo.enabled, Compose demo profile): the UI shows the demo banner on every screen, also before login (WO-41)'
+          type: boolean
         needs_setup:
           type: boolean
         server_version:
           type: string
       required:
+      - demo_mode
       - needs_setup
       - server_version
       type: object

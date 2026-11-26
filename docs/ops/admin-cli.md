@@ -9,9 +9,11 @@ java -jar argos-server-<version>.jar admin <command> [options] [--argos.<key>=<v
 In the Compose installation, run it inside the server container (the image starts the server class from its classpath file, not from a jar):
 
 ```
-./argos-compose.sh compose exec -T server java -Xmx256m -XX:+UseSerialGC \
+./argos-compose.sh compose exec -T -e JAVA_TOOL_OPTIONS= server java -Xmx256m -XX:+UseSerialGC \
   -cp @/opt/argos/app/jib-classpath-file io.argos.server.ServerApplication admin <command> ...
 ```
+
+`-e JAVA_TOOL_OPTIONS=` is required. The server container sets `JAVA_TOOL_OPTIONS` to the server heap (`ARGOS_SERVER_JAVA_OPTS`, by default `-Xms4096m -Xmx4096m`), and `compose exec` passes it to the command's JVM. With `-Xmx256m` that JVM then stops at once with "Initial heap size set to a larger value than the maximum heap size" (exit code 1).
 
 `argos-compose.sh token create` wraps `token create` this way; for the other commands use the line above.
 
@@ -49,24 +51,42 @@ In the Compose installation, run it inside the server container (the image start
 | `cleanup dictionary [--json]` | Deletes dictionary entries not seen for 90 days. An entry that is seen again is recreated. | `ADMIN_COMMAND_EXECUTED` |
 | `cleanup commands [--json]` | Deletes remote commands, with their results, that are older than `argos.retention.command-results` (30 days) or beyond `argos.commands.keep-per-instance` per instance. Queued and sent commands stay. | `ADMIN_COMMAND_EXECUTED` |
 | `token create\|issue --app <name> --env <env> [--expires-days <n>] [--json]` | Issues an agent token, creating the application if it does not exist, and prints the token once. `issue` is the 17 §4.4 name of `create`. | `TOKEN_ISSUED` |
-| `token revoke (--id <uuid> \| --prefix <argos_xxxxxxxx>) --reason <text> [--json]` | Revokes a token. | `TOKEN_REVOKED` |
+| `token revoke (--id <uuid> \| --prefix <argos_xxxxxxxx>) --reason <text> [--json]` | Revokes a token. A running server refuses it and ends its open agent sessions within 5 seconds (below). | `TOKEN_REVOKED` |
 | `token rotate (--id <uuid> \| --prefix <argos_xxxxxxxx>) [--grace-days <1..30>] [--json]` | Issues a successor, printed once. The old token keeps working for the grace period (default 7 days). | `TOKEN_ROTATED`, `TOKEN_ISSUED` |
 | `setup-token regenerate [--json]` | Writes a new setup token to `argos.auth.setup-token-file` (owner-only). Works only while no administrator exists; refused when the unattended setup is configured. | `ADMIN_COMMAND_EXECUTED` (`rejected` when refused) |
 | `tls reload [--wait <seconds>] [--json]` | Checks the gRPC certificate files and asks the running server to load them, without a restart. | `ADMIN_COMMAND_EXECUTED`; the server records `TLS_RELOADED` |
 | `secrets rekey [--new-key <path>] [--batch <n>] [--json]` | Re-encrypts every stored secret under one master key (procedure below). | `MASTER_KEY_ROTATED` |
 | `master-key rotate [--new-key-file <path>] [--batch <n>] [--json]` | Alias of `secrets rekey` (12 §8.2 and 17 §4.4 name). | `MASTER_KEY_ROTATED` |
+| `secrets verify [--purpose backup\|restore\|manual] [--json]` | Checks that the configured master key (and the previous key, if set) decrypts every stored secret. Writes nothing and prints no secret (section below). | `ADMIN_COMMAND_EXECUTED` with the purpose, key ids and counts |
 | `bundle [--since <n>h\|<n>d] [--out <dir>] [--log-dir <dir>] [--json]` | Writes a diagnostic bundle (contents below). | `ADMIN_COMMAND_EXECUTED` |
 | `version [--json]` | Prints the server version, commit and agent protocol version of this jar. Needs no configuration or database. | none |
 
+### cleanup dictionary and the nightly job
+
+The server runs the same clean-up every night at 03:30 server time: entries that no agent has sent for more than 90 days (`last_seen`) are deleted, 10,000 rows per statement. The keys are `argos.ops.dictionary-cleanup.cron` (Spring cron with six fields, default `0 30 3 * * *`; an invalid expression refuses the start) and `argos.ops.dictionary-cleanup.enabled` (default `true`; `false` leaves only this command). The job writes one INFO line with the count and the duration. A failure is logged as a WARN line and the next night runs again. The nightly job also removes the deleted keys from the server's dictionary cache. When an agent still uses such an entry, the server asks the agent for the text and stores it again. This command runs in its own process and cannot reach that cache, so the server keeps treating an entry deleted by the command as known. Rows written in the meantime show `<unknown:hash>` for that entry until the server restarts. To avoid this, run the command only while the server is stopped, or rely on the nightly job.
+
+Limits to know (1.0, ADR-0010 C-244 (4)):
+
+- `last_seen` is refreshed only when an agent sends the entry's text (`DictionaryEntries`), not when records refer to the entry. An agent that runs for more than 90 days without restarting can therefore lose entries it still uses. This repairs itself: the next record that refers to a deleted entry makes the server ask the agent for the text (`DictionaryRequest`), and the entry is stored again. Rows written between the deletion and the repair show `<unknown:hash>` for that entry.
+- The command cleans the database only and cannot evict the dictionary cache of a running server. With several server nodes, a nightly run evicts only the cache of the node whose statements deleted the rows: the other nodes keep treating those entries as known (rows they write show `<unknown:hash>` for them) until the entry is sent again or the node restarts.
+- The per-application `<overflow>` entries (texts mapped there by the dictionary caps) are deleted like any other entry after 90 days without a refresh. The server writes the `<overflow>` entry again the next time a text overflows; until then, older rollup rows that point to it show `<unknown:hash>`.
+
+### The nightly error group clean-up
+
+The server also deletes error groups that did not occur for more than 90 days (`error_groups.last_seen`), every night at 03:45 server time, after the consistency check (03:00) and the dictionary clean-up (03:30), 10,000 rows per statement. The keys are `argos.ops.error-group-cleanup.cron` (Spring cron with six fields, default `0 45 3 * * *`; an invalid expression refuses the start) and `argos.ops.error-group-cleanup.enabled` (default `true`). The job writes one INFO line with the count and the duration; a failure is logged as a WARN line and the next night runs again. There is no `argos-admin` command for it.
+
+A deleted group that occurs again is recorded again as a new group: its first occurrence, count and representative stack start over, and the error list marks it as new. Transactions older than 90 days that still carry the group's id (within the ClickHouse retention) are shown without the group's message pattern and stack.
+
 ### Token commands and a running server
 
-The command line cannot reach the running server's token cache or its agent sessions. Because of that:
+The command line changes the token in PostgreSQL. A running server checks the tokens of its open agent sessions, and the tokens revoked in the last 5 minutes, every 2 seconds. When a token no longer authenticates (revoked, expired, or past its rotation grace), the server:
 
-- A revocation reaches the collector within the cache lifetime of 60 seconds, for new calls.
-- The end of a grace period behaves the same way.
-- Agent sessions that are already open continue until they reconnect.
+- drops the token from its token cache, so a new connection with it is refused;
+- ends the token's open agent sessions with `UNAUTHENTICATED` (the agent sees `TOKEN_REVOKED_CLOSE`).
 
-For an immediate cut-off that also closes open sessions, use the administration API (`POST /api/v1/admin/tokens/{id}/revoke`) or the token management screen.
+This takes at most 5 seconds after the command, the same as a revocation through the administration API (`POST /api/v1/admin/tokens/{id}/revoke`) or the token management screen. The server writes one INFO line with the token prefix and the number of sessions it closed. The audit row is the command's `TOKEN_REVOKED`; the server does not add one. If PostgreSQL cannot be read, the server logs a WARN line (at most one per minute) and retries every 2 seconds.
+
+After `token rotate`, the old token keeps working until its grace period ends. The server then ends its sessions the same way.
 
 ### setup-token regenerate
 
@@ -105,6 +125,33 @@ Each stored secret is encrypted with the master key: alert channel settings, web
 `--new-key <path>` (or `master-key rotate --new-key-file <path>`) re-encrypts under a key that the server does not use yet. After that run, the server must be restarted with that key as `argos.master-key-file` before it can read the secrets.
 
 On Windows the key file's permissions cannot be checked. The server logs one INFO line and starts; restrict the file with the operating system's tools.
+
+### secrets verify
+
+`argos-admin secrets verify` reads every stored secret (alert channel settings, webhook signing keys, command results and application user id salts) and decrypts it with the configured master key and, if set, the previous key. It changes nothing. It prints, per column, the number of stored values, how many decrypt, how many do not, and the key ids (`kid`) they name. The key id is the first 8 bytes of the key's SHA-256, as 16 hex characters; it identifies a key without revealing it.
+
+| Exit code | Meaning |
+|---|---|
+| 0 | Every stored secret decrypts, or none is stored (`"verifiable": false`: nothing could prove the key). |
+| 1 | A stored secret does not decrypt with the loaded keys, the key file is missing, malformed or readable by group or others, or the database cannot be read. |
+| 2 | Invalid arguments. |
+
+`--json` prints one object: `command`, `kid`, `previous_kid` (or `null`), `verifiable`, the totals `rows`, `ok` and `failed`, and `columns`, each with `table`, `column`, `present` (false when the database has no such column, for example a backup of an older version), `rows`, `ok`, `failed`, `kids` and `failed_rows` (row ids with a reason code, at most 20).
+
+The backup and restore scripts use it:
+
+- `backup.sh` records the key id in the backup manifest (`--purpose backup`).
+- `restore.sh` runs it against the restored copy before that copy replaces the live database, with the key that goes with the backup (`--purpose restore`). A different key exits 1 and the restore stops without changing the live database.
+
+To check another database or key file, give the settings on the command line, for example:
+
+```
+argos-admin secrets verify --json \
+  --argos.postgres.url=jdbc:postgresql://postgres:5432/argos_restore \
+  --argos.master-key-file=/run/secrets/master_key.candidate
+```
+
+The audit row (`ADMIN_COMMAND_EXECUTED`, target `secrets verify`) is written to the database that `argos.postgres.url` names, and holds the purpose, the key ids and the counts only.
 
 ### Retention
 

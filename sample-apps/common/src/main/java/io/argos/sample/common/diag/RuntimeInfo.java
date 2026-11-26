@@ -2,6 +2,7 @@
 package io.argos.sample.common.diag;
 
 import io.argos.sample.common.SampleConfig;
+import io.argos.sample.common.ServletContainer;
 import io.argos.sample.common.datasource.SampleDataSource;
 import java.time.Clock;
 import java.util.ArrayList;
@@ -24,6 +25,7 @@ public final class RuntimeInfo {
     final String servletApi;
     final String server;
     final String contextPath;
+    final boolean jsp;
 
     /**
      * @param framework e.g. "Spring Boot 3.5.16"
@@ -32,12 +34,28 @@ public final class RuntimeInfo {
      * @param contextPath context path ("" for the root)
      */
     public WebLayer(String framework, String servletApi, String server, String contextPath) {
+      this(framework, servletApi, server, contextPath, false);
+    }
+
+    /**
+     * @param jsp whether the web app has the JSP of GET /api/jsp-forward ({@link
+     *     #JSP_FORWARD_TARGET}, the WAR apps): adds the capability {@code jsp}
+     */
+    public WebLayer(
+        String framework, String servletApi, String server, String contextPath, boolean jsp) {
       this.framework = framework;
       this.servletApi = servletApi;
       this.server = server;
       this.contextPath = contextPath;
+      this.jsp = jsp;
     }
   }
+
+  /** The JSP that GET /api/jsp-forward forwards to (WAR apps, ADR-0010 C-162 (2)). */
+  public static final String JSP_FORWARD_TARGET = "/WEB-INF/jsp/forward.jsp";
+
+  /** Capability of the apps that serve {@link #JSP_FORWARD_TARGET}. */
+  public static final String JSP_CAPABILITY = "jsp";
 
   public static Map<String, Object> describe(
       SampleConfig config,
@@ -52,6 +70,9 @@ public final class RuntimeInfo {
     info.put("framework", web.framework);
     info.put("servletApi", web.servletApi);
     info.put("server", web.server);
+    // The container that serves the request (from the server info) and SAMPLE_CONTAINER (WO-50).
+    info.put("container", ServletContainer.kindOf(web.server));
+    info.put("containerRequested", config.container().id());
     info.put("contextPath", web.contextPath);
     info.put("virtualThreads", JavaRuntime.currentThreadIsVirtual());
     info.put("virtualThreadsRequested", config.virtualThreads());
@@ -75,6 +96,9 @@ public final class RuntimeInfo {
     List<String> capabilities = new ArrayList<>();
     for (String client : clients) {
       capabilities.add("client:" + client);
+    }
+    if (web.jsp) {
+      capabilities.add(JSP_CAPABILITY);
     }
     info.put("capabilities", capabilities);
     info.putAll(JavaRuntime.describe());

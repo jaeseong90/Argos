@@ -19,9 +19,10 @@ class TomcatLogCheckTest {
 
   private static final String THREAD_LOCAL_LEAK =
       T
-          + "WARNING [main] org.apache.catalina.loader.WebappClassLoaderBase.checkThreadLocalMapForLeaks"
-          + " The web application [shop-a] created a ThreadLocal with key of type"
-          + " [java.lang.ThreadLocal] (value [java.lang.ThreadLocal@1b2c3d4e]) and a value of type"
+          + "WARNING [main]"
+          + " org.apache.catalina.loader.WebappClassLoaderBase.checkThreadLocalMapForLeaks The web"
+          + " application [shop-a] created a ThreadLocal with key of type [java.lang.ThreadLocal]"
+          + " (value [java.lang.ThreadLocal@1b2c3d4e]) and a value of type"
           + " [io.argos.agent.bootstrap.TraceContext] (value [x]) but failed to remove it when the"
           + " web application was stopped. Threads are going to be renewed over time to try and"
           + " avoid a probable memory leak.";
@@ -45,10 +46,11 @@ class TomcatLogCheckTest {
             " java.base/jdk.internal.misc.Unsafe.park(Native Method)",
             " io.argos.agent.core.watch.Example.run(Example.java:1)",
             T
-                + "WARNING [main] org.apache.catalina.loader.WebappClassLoaderBase"
-                + ".clearReferencesThreads The web application [shop-b] appears to have started a"
-                + " thread named [sample-scheduler-1] of io.argos.sample.boot3.config.SampleExecutors"
-                + " but has failed to stop it.",
+                + "WARNING [main]"
+                + " org.apache.catalina.loader.WebappClassLoaderBase.clearReferencesThreads The web"
+                + " application [shop-b] appears to have started a thread named"
+                + " [sample-scheduler-1] of io.argos.sample.boot3.config.SampleExecutors but has"
+                + " failed to stop it.",
             T
                 + "WARNING [main] org.apache.tomcat.util.scan.StandardJarScanner.processURLs Failed"
                 + " to scan [file:/C:/workspace/Argos/agent/agent-testing/build/x.jar] from"
@@ -92,9 +94,9 @@ class TomcatLogCheckTest {
   void agentFramesInStacks() {
     String servletError =
         T
-            + "SEVERE [http-nio-127.0.0.1-8080-exec-3] org.apache.catalina.core.StandardWrapperValve"
-            + ".invoke Servlet.service() for servlet [dispatcherServlet] in context with path"
-            + " [/shop-a] threw exception";
+            + "SEVERE [http-nio-127.0.0.1-8080-exec-3]"
+            + " org.apache.catalina.core.StandardWrapperValve.invoke Servlet.service() for servlet"
+            + " [dispatcherServlet] in context with path [/shop-a] threw exception";
     String agentFrame =
         "\tat io.argos.agent.instrumentation.servlet.ServletHelperJakarta.enter"
             + "(ServletHelperJakarta.java:60)";
@@ -182,7 +184,35 @@ class TomcatLogCheckTest {
         .isTrue();
     assertThat(TomcatLogCheck.normalized(appLeakWithAgent))
         .isEqualTo(TomcatLogCheck.normalized(appLeakWithoutAgent))
-        .startsWith("SEVERE [main]");
+        .startsWith("SEVERE [*] org.apache.catalina.loader.WebappClassLoaderBase");
+  }
+
+  @Test
+  @DisplayName(
+      "beyond(baseline) across manager undeploys (WO-50): the same leak report on request threads"
+          + " of another port and pool number is excused; another application's report is not")
+  void beyondBaselineOnRequestThreads() {
+    String leak =
+        "26-Nov-2026 13:10:00.461 SEVERE [http-nio-127.0.0.1-61476-exec-8]"
+            + " org.apache.catalina.loader.WebappClassLoaderBase.checkThreadLocalMapForLeaks The"
+            + " web application [shop-a] created a ThreadLocal with key of type"
+            + " [java.lang.ThreadLocal] (value [java.lang.ThreadLocal@6019a181]) and a value of"
+            + " type [io.netty.util.internal.InternalThreadLocalMap] (value"
+            + " [io.netty.util.internal.InternalThreadLocalMap@2f08bbcc]) but failed to remove it"
+            + " when the web application was stopped.";
+    String withoutAgentLeak =
+        leak.replace("13:10:00.461", "13:35:32.336")
+            .replace("61476-exec-8", "60716-exec-6")
+            .replace("@6019a181", "@5882952b")
+            .replace("@2f08bbcc", "@7cc74d19");
+    String otherApp = withoutAgentLeak.replace("[shop-a]", "[shop-c]");
+    TomcatLogCheck.Findings withAgent = TomcatLogCheck.judge(List.of(leak));
+    assertThat(withAgent.beyond(TomcatLogCheck.judge(List.of(withoutAgentLeak))).clean()).isTrue();
+    assertThat(withAgent.beyond(TomcatLogCheck.judge(List.of(otherApp))).severe())
+        .containsExactly(leak);
+    assertThat(TomcatLogCheck.normalized(leak))
+        .startsWith("SEVERE [*] org.apache.catalina.loader.WebappClassLoaderBase")
+        .doesNotContain("61476");
   }
 
   @Test

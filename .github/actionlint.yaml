@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# actionlint configuration (read automatically by the pr.yml lint job). Custom labels of the
+# trusted self-hosted runners; everything else runs on GitHub-hosted runners (19 section 6.6).
+# Owned by WO-47 (runner isolation, ADR-0010 C-252 (8), C-253 (7)). check-workflows.sh W8 treats
+# every `self-hosted` or `argos-*` label (and any runner group) as self-hosted and applies the
+# trusted-trigger, trusted-ref guard, checkout and environment rules to those jobs, so a label is
+# listed here only for a runner that W8 already governs. Runner groups (argos-trusted,
+# argos-release) are `runs-on: group:` values, not labels, and need no entry.
+self-hosted-runner:
+  labels:
+    # .github/workflows/bench.yml: dedicated overhead bench application machine (18 section 7.1, WO-51)
+    - argos-bench-app
+    # Compatibility matrix runner (18 section 6, WO-50 nightly.yml; matrixTest runs only with this
+    # label in ARGOS_RUNNER_LABELS, build-logic TestLayers.MATRIX_RUNNER_LABEL)
+    - argos-matrix

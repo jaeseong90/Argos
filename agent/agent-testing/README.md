@@ -128,7 +128,7 @@ try (RunningApp app =
   `argos.<key>`, `argos:`; not the sample apps' `io.argos.sample` or paths that contain the
   repository name) and Tomcat's ThreadLocal leak warnings (`TomcatRedeployDriver.
   threadLocalLeakWarnings`). `Findings.beyond(baseline)` drops the SEVERE records and leak
-  warnings that the same run without the agent logs too (timestamps and hash codes ignored), never
+  warnings that the same run without the agent logs too (timestamps, thread names and hash codes ignored), never
   an agent warning. `WarAppAgentTest` asserts zero agent warnings and zero SEVERE records and leak
   warnings beyond a no-agent run after a graceful stop.
 - Container mode: `container(true, cpus, memory)` runs the app in `eclipse-temurin:<jdk>-jdk`
@@ -177,8 +177,22 @@ try (RunningApp app =
   `ExitedApp.premainClasses()` the sorted list `<file>.premain-classes` (the classes the agent class
   loader defined on the premain thread, C-79). WO-17 adds the `SELF_DIAGNOSTICS` command as a second
   source of the same snapshot.
-- Not yet: the 50 WAR redeploys of `TomcatRedeployDriver` against a real Tomcat (manager app,
-  matrix, WO-50); the staged Tomcat has no manager app.
+- Tomcat manager (WO-50): `tomcatManager(true)` (WAR apps) also stages the distribution's
+  `webapps/manager` with its own `META-INF/context.xml` (privileged, `RemoteAddrValve` allowing
+  127.0.0.1 only), a generated `conf/tomcat-users.xml` with one `manager-script` user
+  (`argos-matrix`, a random 128-bit password per run, owner read and write only on POSIX file
+  systems, `ManagerAccess.toString()` masks it, the harness never prints it) and the
+  `UserDatabase` resource and realm in `server.xml`. `RunningApp.tomcatManager()` gives the access
+  of the run, `TomcatRedeployDriver.of(app)` the HTTP manager (`/manager/text/*`, basic auth; any
+  status but 200 fails with the command name only). Without the option nothing changes.
+- Matrix rows (WO-50, `test/matrix/matrix.yaml`): two system properties of the test JVM apply to
+  every launch. `argos.test.matrix.appEnv=K=V;K=V` adds application environment variables before
+  the test's own `withEnv` (which wins; for example `SAMPLE_CONTAINER=jetty`, `SAMPLE_DB=postgres`;
+  a malformed item fails the launcher), and `argos.test.matrix.tomcat=<tomcat9|tomcat10|tomcat11>`
+  picks the Tomcat of every WAR launch whose app has that key, over `tomcat(key)` and the default
+  (the row decides the container of every suite it runs). `withExtraAgent(jar, Order.BEFORE |
+  AFTER, options)` adds another `-javaagent` before the Argos agent or after it and its settings
+  (coexistence rows, 18 §6.4; local processes only). `MatrixLauncherTest` covers the options.
 
 ### Spring-free servlet fixture (WO-12, T-AG-020)
 
@@ -741,9 +755,11 @@ re-records the budgets; review the class diff like a transform baseline.
   `assertNoFailure()` fails on FAIL; `assertAllPassed()` also fails on NOT_AVAILABLE.
   `isNotFromThread`/`noneFromThread` fail on a transaction without a thread name. `TomcatRedeployDriver` (manager text
   API, `ParallelWebappClassLoader` count, ThreadLocal leak warnings) and `NmtSummary` (`Internal +
-  Other` <= 16 MB, threads <= 6) are the WAR and native parts, unit-tested; the redeploy cycles and
-  NMT run with the WAR matrix (WO-50), while the ThreadLocal leak warnings are judged on every WAR
-  run of the launcher (`TomcatLogCheck`, `WarAppAgentTest`).
+  Other` <= 16 MB, threads <= 6) are the WAR and native parts, unit-tested (`LeakProbeTest`, the
+  HTTP manager against a loopback server in `TomcatManagerHttpTest`); the 50 redeploy cycles run
+  against a real Tomcat manager in the matrix (`matrix.WarRedeployTest`, below), while the
+  ThreadLocal leak warnings are judged on every WAR run of the launcher (`TomcatLogCheck`,
+  `WarAppAgentTest`). NMT stays with the soak run (WO-52).
 
 ## Logs and Unsafe (18 §5.10)
 
@@ -795,6 +811,39 @@ re-records the budgets; review the class diff like a transform baseline.
   `DynamicType.Builder...intercept(..)` (A-6).
 - `src/archFixtures` holds a compliant miniature agent and one violating class per rule, compiled
   with `--release 8` like agent code (test-only).
+
+## Compatibility matrix tests (`matrixTest`, package `matrix`, WO-50, 18 §6)
+
+`src/matrixTest/java/io/argos/agent/testing/matrix` holds the tests that only the compatibility
+matrix runs; a matrix row (`test/matrix/matrix.yaml`, `./gradlew matrixTest -Pmatrix.combo=<ID>`,
+`test/matrix/README.md`) runs them together with the integration suites of its row. They use the
+public harness API only and read the row from system properties that the row's Gradle task sets:
+
+| Property | Meaning |
+|---|---|
+| `argos.matrix.combo` | row ID; every test name starts with it (`T-MX-021 T-AG-054 ...`, test/README.md) |
+| `argos.test.e2e` | the row's `<app>@<jdk>` (first jar app for the jar tests, first WAR app for the WAR tests); with `argos.test.sampleApp.<app>`, `argos.test.java<N>`, `argos.test.releaseAgentJar` as for `integrationTest` |
+| `argos.test.matrix.vt` | `true` on a virtual-thread row (`SAMPLE_VT=true`) |
+| `argos.test.matrix.coexist` | `jacoco-before`, `jacoco-after`, `otel-before`, `otel-after` or `devtools` |
+| `argos.test.matrix.agentsDir` | folder of `jacocoagent-*.jar` and `opentelemetry-javaagent-*.jar` (`test/matrix/fetch-coexist-agents.sh`; default `build/matrix-agents`) |
+| `argos.test.sampleApp.shop-boot3-devtools` | shop-boot3 built with `spring-boot-devtools` (devtools row) |
+| `argos.test.matrix.resultDir` | the tests write `<test>.properties` there (`smoke`, `redeploy`, `jsp-forward`, `coexist-<kind>`, `names-static`, `names-error`, `tls13`: startup ms, transformed classes, transactions, ...) for the row's result JSON; the same values are one `[mx-<test>]` console line |
+| `argos.test.matrix.appEnv`, `argos.test.matrix.tomcat` | applied by `AppLauncher` itself (above) |
+
+| Class | Tags | What it proves |
+|---|---|---|
+| `MatrixSmokeTest` | F-A01, F-A05, F-A07, F-A23, F-A30, F-A31, N-04, N-27 | the 18 §6.1 smoke sequence on one run of a jar app with a TLS `FakeCollector`, as ordered dynamic tests: startup ms; 25 catalog endpoints (`ShopCatalog`) x 20 = one transaction each, no `/error` service, SQL steps 1:1 (N+1 = 21 executions); three outgoing client kinds with the trace id at ext-stub; four async kinds (`/api/async/executor?work=sql`, one SQL step per branch); 100 excluded noise requests (exclusion counter +100 by reason); T-AG-005 against `<app>-<jdk>[-<container>][-vt]-smoke.txt` (`-jetty`, `-undertow` for a `SAMPLE_CONTAINER` row), log allow-list, quiet console, D-23 missing values; T-AG-070 (no `IllegalAccessError` after HttpURLConnection, ThreadPoolExecutor, CompletableFuture); on a VT row T-AG-054 (all on virtual threads, same count, THREAD dictionary <= 1,000); `THREAD_DUMP` with the blocked request (virtual on VT rows, `dumpThreads` on JDK 21+); stop and `AgentBye` (skipped with the reason on Windows, which ends processes without shutdown hooks) |
+| `WarRedeployTest` | F-A15, F-A36, N-02 | T-AG-053 / proposed T-AG-053w: 50 undeploy/deploy cycles through the real Tomcat manager, the redeployed context still measured, `ParallelWebappClassLoader` count after `GC.run` x2 = before the cycles, Tomcat's log names no agent and adds no SEVERE or ThreadLocal leak warning beyond the same cycles without the agent (C-162 (1)) |
+| `JspForwardTest` | D-04, F-A28, F-A36 | proposed T-AG-012j (C-162 (2)): `GET <context>/api/jsp-forward` forwards to a JSP that the staged Tomcat's Jasper compiles with the distribution's `lib/ecj-*.jar`; one transaction per request named after the request, `dispatch_count` 2, the compiled `forward_jsp.class` in Tomcat's work directory; skipped with the reason when the distribution has no JDT compiler |
+| `CoexistenceTest` | F-A32, F-A31, F-A01 | T-MX-110~113 (proposed T-MX-110a~e): Argos alone and Argos with JaCoCo / OpenTelemetry before or after it, or devtools; same requests, same transaction count, coexistence baseline `<app>-<jdk>-coexist-<kind>.txt`, no agent ERROR, nothing from Argos on the console, `traceparent` at ext-stub: OpenTelemetry's own, recorded unchanged in the Argos HTTP step detail (F-A32), else the Argos trace id; skipped with the reason without the agent jars |
+| `ServiceNameBoundaryTest` | D-04, F-A29, F-A01 | C-164 with Spring Boot's default `add-mappings=true`: 404s of the `/**` resource handler are one service `GET /**` (proposed T-AG-010s), a client's own `GET /error` is named `GET /error` (proposed T-AG-010e) |
+| `Tls13Jdk8Test` | SEC-07, DSN-10-11 | proposed T-SEC-08d (C-250 (8)): the trivial app on the toolchain JDK 8 (8u261+, else skipped with the update) negotiates TLSv1.3 with a TLS `FakeCollector`, batches delivered, no ERROR or WARN |
+
+Transform baselines of the matrix are files of their own next to the integration ones, so that
+re-recording one suite never drops another's classes: `<app>-<jdk>[-<container>][-vt]-smoke.txt` and
+`<app>-<jdk>-coexist-<kind>.txt`. A row whose baseline is not recorded yet skips that check with
+the reason (the table shows the row as not verified, never as passed); record it on the matrix
+runner with `-Pagent.baseline.record=true` and review the file like code.
 
 ## Integration tests (`integrationTest`)
 

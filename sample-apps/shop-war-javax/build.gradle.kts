@@ -70,6 +70,8 @@ sampleApp {
 dependencies {
   implementation(platform(libs.sample.boot2.bom))
   implementation(project(":sample-apps:shop-boot2"))
+  // WarAppConfiguration (WO-50): the catalog constants and the shutdown cleanup of common.
+  implementation(project(":sample-apps:common"))
   // SpringBootServletInitializer and the javax servlet types for compiling; at run time they come
   // from shop-boot2 (spring-boot in WEB-INF/lib) and Tomcat (servlet-api.jar). Not providedCompile:
   // that would also drop spring-boot from the WAR.

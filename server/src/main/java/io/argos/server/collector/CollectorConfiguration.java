@@ -15,8 +15,10 @@ import io.argos.server.collector.grpc.TransportRejectionCounter;
 import io.argos.server.collector.limits.CollectorLimits;
 import io.argos.server.collector.limits.InstanceQuotas;
 import io.argos.server.collector.limits.LimitsChecker;
+import io.argos.server.collector.testing.IngestFaultInjector;
 import io.argos.server.config.ArgosProperties;
 import io.argos.server.config.ServerBuild;
+import io.argos.server.config.TestingHooks;
 import io.argos.server.ingest.api.ApdexProvider;
 import io.argos.server.ingest.api.DictionaryIntake;
 import io.argos.server.ingest.api.IngestPipeline;
@@ -188,7 +190,9 @@ public class CollectorConfiguration {
       ApdexProvider apdex,
       ObjectProvider<ClickHouseWriter> writer,
       Clock clock,
-      InstanceStateTracker states) {
+      InstanceStateTracker states,
+      ServerBuild build,
+      ObjectProvider<TestingHooks> testingHooks) {
     AgentServiceImpl service =
         new AgentServiceImpl(
             limits,
@@ -209,6 +213,10 @@ public class CollectorConfiguration {
             metrics,
             clock);
     service.instanceStates(states);
+    // 18 §19: development builds only (a release build ignores argos.testing.*, TestingHooks).
+    service.ingestFaults(
+        IngestFaultInjector.from(
+            testingHooks.getIfAvailable(() -> new TestingHooks(properties, build))));
     return service;
   }
 

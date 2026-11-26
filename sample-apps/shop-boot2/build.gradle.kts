@@ -31,6 +31,8 @@ sampleApp {
     // Clients of GET /api/pay/{id} (18 §4.1 stack): HttpURLConnection, RestTemplate, HC4, OkHttp 3.
     expectClients("hurl", "resttemplate", "hc4", "okhttp")
     variant("default") {
+      // Tomcat stays the default with Jetty and Undertow on the class path (WO-50).
+      expectRuntime("container", "tomcat")
       expectRuntime("servletApi", "javax")
       expectRuntime("virtualThreads", "false")
       expectRuntime("javaFeatureVersion", "8")
@@ -86,6 +88,16 @@ sampleApp {
       }
     }
     // SAMPLE_VT=true on a JDK that has virtual threads: still platform threads, stated at runtime.
+    // SAMPLE_CONTAINER (WO-50, ADR-0010 C-127): Jetty 9.4 (Servlet 3.1, the lowest servlet version
+    // of the agent's support range, C-240 (10)) and Undertow 2.2 instead of the default Tomcat 9.
+    variant("jetty") {
+      env("SAMPLE_CONTAINER", "jetty")
+      expectRuntime("container", "jetty")
+    }
+    variant("undertow") {
+      env("SAMPLE_CONTAINER", "undertow")
+      expectRuntime("container", "undertow")
+    }
     variant("vt-not-applicable") {
       runJdk = 21
       env("SAMPLE_VT", "true")
@@ -113,6 +125,22 @@ dependencies {
   runtimeOnly(libs.sample.h2)
   runtimeOnly(libs.sample.postgresql)
   runtimeOnly(libs.sample.mysql)
+}
+
+// Servlet containers of the compatibility matrix (WO-50, ADR-0010 C-127): SAMPLE_CONTAINER=jetty
+// (Jetty 9.4) or undertow (Undertow 2.2) through a ServletWebServerFactory bean (ServletContainers);
+// unset or tomcat keeps Spring Boot's Tomcat. On this app's own runtime class path only (compileOnly
+// for the selection code), never on shop-war-javax's.
+val servletContainers = configurations.dependencyScope("servletContainers")
+
+configurations.runtimeClasspath { extendsFrom(servletContainers.get()) }
+
+configurations.compileOnly { extendsFrom(servletContainers.get()) }
+
+dependencies {
+  servletContainers(platform(libs.sample.boot2.bom))
+  servletContainers(libs.sample.starter.jetty)
+  servletContainers(libs.sample.starter.undertow)
 }
 
 // The slow tests (src/integrationTest) use the app's own stack directly, as the unit tests do.

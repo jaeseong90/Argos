@@ -45,7 +45,9 @@ import org.slf4j.LoggerFactory;
  * <ul>
  *   <li>{@code AgentHello} within 10 s of the stream's start, otherwise {@code
  *       SessionClose{PROTOCOL_ERROR}} and {@code FAILED_PRECONDITION}; the first message must be
- *       the Hello; {@link HelloService} runs the 11 §5 checks;
+ *       the Hello; {@link HelloService} runs the 11 §5 checks; an accepted check-only Hello ({@code
+ *       AgentHello.check_only}, ADR-0010 C-240 (1)) is answered and its stream ended with {@code
+ *       OK} at once, counted as {@code type="hello_check_only"}: no session, no instance state;
  *   <li>{@code Heartbeat}: {@code HeartbeatAck{t1, t2, t3, offset, state}}, the offset from the
  *       session's {@link ClockSync} (11 §9, server − agent, C-139), the state from the {@link
  *       InstanceStateTracker} (WO-22; {@code UP} without one); sent only when the transport is
@@ -360,6 +362,10 @@ public final class SessionHandler
         return;
       }
       if (!outcome.accepted()) {
+        if (outcome.checkOnly()) {
+          // ADR-0010 C-240 (1): answered, no session, no instance state; the stream ends here.
+          metrics.sessionMessage("hello_check_only");
+        }
         stream.send(ServerMessage.newBuilder().setHello(outcome.hello()).build());
         stream.end(outcome.status(), outcome.trailers());
         return;

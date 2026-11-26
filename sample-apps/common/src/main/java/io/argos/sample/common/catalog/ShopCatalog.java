@@ -3,6 +3,7 @@ package io.argos.sample.common.catalog;
 
 import io.argos.sample.common.async.SeedThreadPoolExecutor;
 import io.argos.sample.common.db.ShopSchema;
+import io.argos.sample.common.diag.RuntimeInfo;
 import io.argos.sample.common.http.PayService;
 import io.argos.sample.common.seed.Seeds;
 import java.util.ArrayList;
@@ -52,6 +53,15 @@ public final class ShopCatalog {
    * /api/not-found-x must not be answered by one.
    */
   public static final String NO_STATIC_RESOURCE = "No static resource";
+
+  /** Chunks of GET /api/stream ({@code StreamingResponseBody}, ADR-0010 C-162 (3)). */
+  public static final int STREAM_CHUNKS = 3;
+
+  /** The last chunk of GET /api/stream: {@code "chunk 3\n"}, its body ends with it. */
+  public static final String STREAM_LAST_CHUNK = "chunk " + STREAM_CHUNKS;
+
+  /** Marker in the page of the JSP that GET /api/jsp-forward forwards to (WAR apps). */
+  public static final String JSP_FORWARD_MARKER = "argos-jsp-forward";
 
   private ShopCatalog() {}
 
@@ -149,6 +159,38 @@ public final class ShopCatalog {
             .check(Check.contentType("text/event-stream"))
             .check(Check.sseEvents(3))
             .purpose("SseEmitter, 3 events then complete; F-A34 end at first flush")
+            .build());
+    e.add(
+        CatalogEntry.get("stream", "/api/stream")
+            .check(Check.contentType("text/plain"))
+            .check(Check.bodyContains(STREAM_LAST_CHUNK))
+            .purpose(
+                "StreamingResponseBody, "
+                    + STREAM_CHUNKS
+                    + " chunks each flushed from the MVC async executor (the stream is opened on the"
+                    + " request thread before startAsync); F-A34 end at first flush, C-162 (3)")
+            .build());
+    e.add(
+        CatalogEntry.get("any.get", "/api/any")
+            .check(Check.jsonEquals("method", "GET"))
+            .purpose(
+                "@RequestMapping without a method condition (every method matches); service name"
+                    + " GET /api/any, C-162 (3)")
+            .build());
+    e.add(
+        CatalogEntry.post("any.post", "/api/any")
+            .check(Check.jsonEquals("method", "POST"))
+            .purpose("The same method-less mapping called with POST; service name POST /api/any")
+            .build());
+    e.add(
+        CatalogEntry.get("jsp-forward", "/api/jsp-forward")
+            .requires(RuntimeInfo.JSP_CAPABILITY)
+            .check(Check.bodyContains(JSP_FORWARD_MARKER))
+            .purpose(
+                "WAR apps: RequestDispatcher.forward(\""
+                    + RuntimeInfo.JSP_FORWARD_TARGET
+                    + "\"), compiled by Jasper (ecj) in the standalone Tomcat; D-04 FORWARD,"
+                    + " C-162 (2)")
             .build());
     e.add(
         CatalogEntry.get("ws.echo", "/ws/echo")
@@ -406,9 +448,12 @@ public final class ShopCatalog {
             .purpose("Phone in query string and bind parameter (and the pattern-only variant)")
             .build());
     e.add(
-        seed("seed.phone.error", "/seed/phone?fail=1&phone=" + query(Seeds.PHONE))
+        CatalogEntry.get("seed.phone.error", "/seed/phone?fail=1&phone=" + query(Seeds.PHONE))
+            .check(Check.bodyContains(Seeds.PHONE_PATTERN))
             .status(500)
-            .purpose("Phone in an exception message")
+            .purpose(
+                "Real-shaped phone sentinel in an exception message (C-250 (1); the query string"
+                    + " keeps the ARGOS_SEED phone)")
             .build());
     e.add(
         seed("seed.rrn", "/seed/rrn")
@@ -416,9 +461,10 @@ public final class ShopCatalog {
             .build());
     e.add(seed("seed.card", "/seed/card").purpose("Card number shape in bind parameter").build());
     e.add(
-        seed("seed.card.error", "/seed/card?fail=1")
+        CatalogEntry.get("seed.card.error", "/seed/card?fail=1")
+            .check(Check.bodyContains(Seeds.CARD_PATTERN))
             .status(500)
-            .purpose("Card number shape in an exception message")
+            .purpose("Luhn-valid card sentinel in an exception message (C-250 (1))")
             .build());
     e.add(
         seed("seed.user", "/seed/user")

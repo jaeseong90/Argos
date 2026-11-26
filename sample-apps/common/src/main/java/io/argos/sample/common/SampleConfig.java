@@ -3,6 +3,7 @@ package io.argos.sample.common;
 
 import io.argos.sample.common.db.DbKind;
 import io.argos.sample.common.db.PoolKind;
+import io.argos.sample.common.db.VendorDriver;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.Collections;
@@ -18,8 +19,13 @@ import java.util.Properties;
  * <table>
  *   <caption>Switches</caption>
  *   <tr><th>Variable</th><th>Values</th><th>Default</th></tr>
- *   <tr><td>SAMPLE_DB</td><td>h2, postgres, mysql, mariadb, mssql, oracle</td>
+ *   <tr><td>SAMPLE_DB</td><td>h2, postgres, mysql, mariadb, mssql, oracle; tibero, altibase,
+ *       cubrid, db2 with their driver jars in SAMPLE_JDBC_DRIVER_DIR</td>
  *       <td>h2 (in memory)</td></tr>
+ *   <tr><td>SAMPLE_JDBC_DRIVER_DIR (or ARGOS_TEST_JDBC_DRIVER_DIR)</td><td>folder of vendor JDBC driver jars (SAMPLE_DB=tibero,
+ *       altibase, cubrid, db2), loaded by the app itself (VendorDriver)</td><td>none</td></tr>
+ *   <tr><td>SAMPLE_CONTAINER</td><td>tomcat, jetty, undertow: embedded container of the jar
+ *       apps (ServletContainer)</td><td>tomcat</td></tr>
  *   <tr><td>SAMPLE_DB_URL, SAMPLE_DB_USER, SAMPLE_DB_PASSWORD</td><td>JDBC URL and account
  *       (Testcontainers inject them)</td><td>per database</td></tr>
  *   <tr><td>SAMPLE_POOL</td><td>hikari, tomcat, dbcp2</td><td>hikari</td></tr>
@@ -53,6 +59,16 @@ public final class SampleConfig {
   /** System property of the fixed business clock (18 §4.4). */
   public static final String FIXED_CLOCK_PROPERTY = "sample.fixed-clock";
 
+  /** Folder of the vendor JDBC driver jars (SAMPLE_DB=tibero, altibase, cubrid, db2; WO-50). */
+  public static final String JDBC_DRIVER_DIR = "SAMPLE_JDBC_DRIVER_DIR";
+
+  /**
+   * The trusted runner's name of the same folder, read when {@link #JDBC_DRIVER_DIR} is unset (the
+   * agent test harness drops ARGOS_* variables from app processes and passes the folder as
+   * SAMPLE_JDBC_DRIVER_DIR).
+   */
+  public static final String RUNNER_JDBC_DRIVER_DIR = "ARGOS_TEST_JDBC_DRIVER_DIR";
+
   /** The driver wrapper of SAMPLE_DRIVER_WRAPPER (ADR-0004 C-40), outside io.argos on purpose. */
   public static final String WRAPPER_DRIVER_CLASS = "example.jdbcwrapper.WrappingDriver";
 
@@ -70,6 +86,8 @@ public final class SampleConfig {
   private final boolean secondPool;
   private final boolean virtualThreads;
   private final boolean customExecutor;
+  private final ServletContainer container;
+  private final String jdbcDriverDir;
   private final String extUrl;
   private final int extRefusedPort;
   private final int extTimeoutMs;
@@ -92,6 +110,8 @@ public final class SampleConfig {
     this.secondPool = bool(env, "SAMPLE_SECOND_POOL");
     this.virtualThreads = bool(env, "SAMPLE_VT");
     this.customExecutor = bool(env, "SAMPLE_CUSTOM_EXECUTOR");
+    this.container = ServletContainer.fromEnvironment(env);
+    this.jdbcDriverDir = text(env, JDBC_DRIVER_DIR, text(env, RUNNER_JDBC_DRIVER_DIR, null));
     this.extUrl = trimTrailingSlash(text(env, "SAMPLE_EXT_URL", "http://127.0.0.1:18080"));
     this.extRefusedPort = integer(env, "SAMPLE_EXT_REFUSED_PORT", 1, 1, 65535);
     this.extTimeoutMs = integer(env, "SAMPLE_EXT_TIMEOUT_MS", 1000, 50, 60_000);
@@ -159,7 +179,15 @@ public final class SampleConfig {
 
   /** The driver class the pool is configured with (the wrapper with SAMPLE_DRIVER_WRAPPER=true). */
   public String poolDriverClass() {
-    return driverWrapper ? WRAPPER_DRIVER_CLASS : db.driverClass();
+    return driverWrapper ? WRAPPER_DRIVER_CLASS : driverClass();
+  }
+
+  /**
+   * The JDBC driver class of SAMPLE_DB: the database's own, or for a vendor driver that is not on
+   * the class path {@code VendorDriver}, which loads it from {@link #jdbcDriverDir()} (WO-50).
+   */
+  public String driverClass() {
+    return db.vendorDriver() ? VendorDriver.driverClassName(db, jdbcDriverDir) : db.driverClass();
   }
 
   /**
@@ -177,6 +205,20 @@ public final class SampleConfig {
 
   public boolean customExecutor() {
     return customExecutor;
+  }
+
+  /** SAMPLE_CONTAINER as configured (the jar apps' embedded container, WO-50). */
+  public ServletContainer container() {
+    return container;
+  }
+
+  /**
+   * SAMPLE_JDBC_DRIVER_DIR (or ARGOS_TEST_JDBC_DRIVER_DIR): a folder with the vendor JDBC driver
+   * jars of SAMPLE_DB=tibero, altibase, cubrid or db2 (never committed, docs/licenses/dev-only.md
+   * condition 4), or null.
+   */
+  public String jdbcDriverDir() {
+    return jdbcDriverDir;
   }
 
   public String extUrl() {

@@ -3,6 +3,7 @@ package io.argos.server.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.argos.proto.v1.AgentHello;
 import io.argos.server.auth.Role;
 import io.argos.server.testing.ServerTestEnvironment;
 import io.argos.server.testing.ServerTestEnvironment.PgAccount;
@@ -26,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -80,6 +82,20 @@ final class StateStack implements AutoCloseable {
 
   /** A fake agent of {@code app}/{@code instance} whose clock is the server's plus {@code skew}. */
   FakeAgent agent(AgentTokens.IssuedToken token, String app, String instance, Duration skew) {
+    return agent(token, app, instance, skew, UnaryOperator.identity());
+  }
+
+  /**
+   * A fake agent as {@link #agent(AgentTokens.IssuedToken, String, String, Duration)} whose Hello
+   * template {@code hello} changes ({@code check_only}, {@code agent_epoch}, {@code
+   * process_start_ms}; WO-29).
+   */
+  FakeAgent agent(
+      AgentTokens.IssuedToken token,
+      String app,
+      String instance,
+      Duration skew,
+      UnaryOperator<AgentHello.Builder> hello) {
     AgentClock agentClock =
         clock == null ? AgentClock.skewed(skew) : AgentClock.of(clock::millis, skew.toMillis());
     return FakeAgent.builder(
@@ -90,7 +106,22 @@ final class StateStack implements AutoCloseable {
         .instanceName(instance)
         .clock(agentClock)
         .callDeadline(Duration.ofSeconds(30))
+        .hello(hello)
         .build();
+  }
+
+  /** The single {@code count(*)} of {@code sql} with one parameter per {@code ?}. */
+  long count(String sql, Object... args) throws SQLException {
+    try (Connection c = env.connect(PgAccount.APP);
+        PreparedStatement ps = c.prepareStatement(sql)) {
+      for (int i = 0; i < args.length; i++) {
+        ps.setObject(i + 1, args[i]);
+      }
+      try (ResultSet rs = ps.executeQuery()) {
+        assertThat(rs.next()).isTrue();
+        return rs.getLong(1);
+      }
+    }
   }
 
   /**

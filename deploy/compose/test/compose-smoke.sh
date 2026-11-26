@@ -7,17 +7,22 @@
 # first. Development and CI only, never shipped; needs Docker and about 5 GiB of memory.
 #
 # For each mode (setup token wizard, then unattended) in a fresh copy of deploy/:
-#   argos-env-init.sh --ram-mb 8192 -> a throwaway self-signed gRPC certificate (only here, never
-#   committed, C-172 (1)) -> compose.override.yaml with small memory limits and the test label ->
+#   argos-env-init.sh --ram-mb 8192 -> a throwaway self-signed gRPC certificate (wizard mode:
+#   argos-env-init.sh --self-signed-tls localhost,127.0.0.1, ADR-0010 C-172 (1), WO-43; unattended
+#   mode: openssl in a container; never committed) -> compose.override.yaml with small memory limits and the test label ->
 #   argos-compose.sh up (project argos-wo40-smoke) -> smoke.sh -> mode-specific checks ->
 #   argos-compose.sh down --volumes.
 # Wizard mode adds: smoke.sh --complete-setup; argos-compose.sh token create, a real agent (the
 # shop-boot3 sample app) connecting over TLS with the printed token (issued by argos-admin token
 # create in the server container, C-173 (4)) in a server.token-file (the
 # guide's pattern), its transactions in ClickHouse (reader account, and the query API of a
-# logged-in session), the token absent from every log and file, the limit of 5 active tokens (the
+# logged-in session), ./ops-report.sh with the agent connected (WO-42: exit 0, real schema, no
+# secret, token, app name or address in its output), the token absent from every log and file, the limit of 5 active tokens (the
 # 6th is refused, exit 4) and one audit row per token; the management port published with
-# ARGOS_MGMT_EXPOSE=true (bearer token, allow-cidrs).
+# ARGOS_MGMT_EXPOSE=true (bearer token, allow-cidrs); at the end ./argos-compose.sh diag
+# (diag-bundle.sh, WO-43): the outer and the server's inner bundle extracted, grep finds 0 of every
+# secrets/* value (database passwords, ClickHouse hashes, master key, metrics token), the agent
+# tokens, the setup token and two sentinels appended to .env, and no argos_ token at all (T-SEC-06i).
 # Unattended mode adds: smoke.sh --check-admin-login (sign-in with secrets/admin_password, the
 # password must be changed, sign-out); a forbidden ClickHouse password stops the server start
 # (T-SV-049 linkage) and makes smoke.sh fail (T-SEC-74).
@@ -65,6 +70,8 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/argos-wo40-smoke.XXXXXX")
 chmod 0700 "$work"
 java_pid=
 current_dir=
+smoke_tokens=()
+smoke_setup_token=
 started=$(date +%s)
 timings=()
 stats=()
@@ -142,7 +149,7 @@ prepare() {
   export COMPOSE_PROJECT_NAME=$PROJECT
   local t0
   t0=$(now)
-  ./argos-env-init.sh --ram-mb 8192 --public-url http://localhost:8080 "$@"
+  ./argos-env-init.sh --ram-mb 8192 --public-url http://localhost:8080 "$@" 2>&1 | tee "$work/env-init-$mode.txt"
   timing "$mode: argos-env-init.sh" $(($(now) - t0))
 
   # The server refuses a master key file that group or others can read (16 section 8.2, WO-28,
@@ -152,14 +159,26 @@ prepare() {
   docker run --rm --network none --label io.argos.wo40=1 --entrypoint sh -v "$(host_path "$PWD/secrets"):/s" "$POSTGRES_IMAGE" -c \
     "chmod 0600 /s/master_key && chown 10001:10001 /s/master_key"
 
-  # Throwaway self-signed certificate for 9100 (C-172 (1): only the smoke harness creates one). The
-  # key belongs to uid 10001 (the server's user, as the installation guide asks), also where Docker
-  # Desktop keeps the owner that a container sets.
-  mkdir -p tls
-  docker run --rm --network none --label io.argos.wo40=1 --entrypoint sh -v "$(host_path "$PWD/tls"):/out" "$POSTGRES_IMAGE" -c \
-    "openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 2 -subj /CN=localhost \
-       -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' -keyout /out/server.key -out /out/server.crt 2>/dev/null \
-     && chmod 0600 /out/server.key && chmod 0644 /out/server.crt && chown 10001:10001 /out/server.key /out/server.crt"
+  # Throwaway self-signed certificate for 9100. With --self-signed-tls argos-env-init.sh wrote it
+  # (ADR-0010 C-172 (1), WO-43): check its evaluation-only warning. Otherwise openssl in a container
+  # creates one. The key belongs to uid 10001 (the server's user, as the installation guide asks),
+  # set from a container also where Docker Desktop keeps the owner that a container sets (env-init
+  # chowns it itself on a Linux Docker Engine only).
+  if [[ " $* " == *" --self-signed-tls "* ]]; then
+    [[ -s tls/server.crt && -s tls/server.key ]] || fail "argos-env-init.sh --self-signed-tls wrote no tls/server.crt and tls/server.key"
+    grep -q 'tls/server.crt is a SELF-SIGNED certificate for an evaluation only' "$work/env-init-$mode.txt" \
+      || fail "argos-env-init.sh --self-signed-tls printed no evaluation-only warning"
+    docker run --rm --network none --label io.argos.wo40=1 --entrypoint sh -v "$(host_path "$PWD/tls"):/out" "$POSTGRES_IMAGE" -c \
+      "chmod 0600 /out/server.key && chmod 0644 /out/server.crt && chown 10001:10001 /out/server.key /out/server.crt"
+    log "ok: argos-env-init.sh --self-signed-tls wrote the gRPC certificate with its evaluation-only warning (T-SEC-74a)"
+  else
+    mkdir -p tls
+    docker run --rm --network none --label io.argos.wo40=1 --entrypoint sh -v "$(host_path "$PWD/tls"):/out" "$POSTGRES_IMAGE" -c \
+      "openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 2 -subj /CN=localhost \
+         -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' -keyout /out/server.key -out /out/server.crt 2>/dev/null \
+       && chmod 0600 /out/server.key && chmod 0644 /out/server.crt && chown 10001:10001 /out/server.key /out/server.crt"
+  fi
+  rm -f "$work/env-init-$mode.txt"
 
   # Smaller limits than the plan (shared machine) and the label of this work order's containers.
   local ch_bytes=$((CH_MEM_MIB * 1048576 * 9 / 10))
@@ -323,6 +342,7 @@ EOF
     || { tail -n 40 "$agent_dir/logs/"*.log 2>/dev/null | redact >&2; fail "the agent log does not report 'collector session established'"; }
   log "ok: the agent connected with the token file (server.token-file, TLS, own CA; 'collector session established') and $count transactions reached argos.xlog (argos_reader)"
   sample_stats "wizard after agent traffic"
+  ops_report_check "$token"
 
   # The query API of a logged-in session reads them as argos_reader (WO-23 hand-over).
   local cfg=$work/.session.cfg body
@@ -369,6 +389,8 @@ EOF
   log "ok: 5 active tokens per app; the 6th is refused (exit 4) and audited as rejected; one successful TOKEN_ISSUED audit row per token"
   rm -f "$work"/token-create-*.txt
   never_written "no token in a file, the container logs or the agent log" "${tokens[@]}"
+  # Kept in memory for the diagnostic bundle check at the end of this mode (T-SEC-06i).
+  smoke_tokens+=("${tokens[@]}")
   tokens=()
   token=
 
@@ -383,6 +405,91 @@ EOF
   [[ "$code" == 200 ]] || fail "127.0.0.1:8081/actuator/prometheus with the bearer token answers $code (allow-cidrs, C-114)"
   log "ok: ARGOS_MGMT_EXPOSE=true publishes 127.0.0.1:8081; prometheus needs the bearer token and accepts it from the host"
   timing "wizard: management port variant" $(($(now) - t0))
+}
+
+# diag_check: ./argos-compose.sh diag on the running installation (diag-bundle.sh, WO-43, T-SEC-06i):
+# grep over the extracted outer bundle and the server's inner bundle finds none of the secrets.
+diag_check() {
+  local t0 rand1 rand2 outer inner patterns=$work/.diag-patterns f
+  t0=$(now)
+  rand1=$(head -c 24 /dev/urandom | base64 | tr -d '\n=' | tr '+/' '-_')
+  rand2=$(head -c 24 /dev/urandom | base64 | tr -d '\n=' | tr '+/' '-_')
+  printf 'ARGOS_SMOKE_SENTINEL_TOKEN=%s\nARGOS_SMOKE_SENTINEL_URL=https://smoke:%s@sentinel.invalid/x\n' "$rand1" "$rand2" >>.env
+  mkdir -p "$work/diag-out" "$work/diag-x/inner"
+  ./argos-compose.sh diag --out "$work/diag-out" >"$work/diag.txt" 2>&1 || { redact <"$work/diag.txt" >&2; fail "./argos-compose.sh diag failed"; }
+  sed 's/^/  | /' "$work/diag.txt"
+  outer=$(find "$work/diag-out" -maxdepth 1 -name 'argos-diag-compose-*.tar.gz' | head -n 1)
+  [[ -n "$outer" ]] || fail "./argos-compose.sh diag wrote no argos-diag-compose-*.tar.gz"
+  tar -xzf "$outer" -C "$work/diag-x"
+  inner=$(find "$work/diag-x" -path '*/server/argos-diag-*.tar.gz' | head -n 1)
+  [[ -n "$inner" ]] || fail "the diagnostic bundle holds no server bundle (argos-admin bundle in the server container)"
+  tar -xzf "$inner" -C "$work/diag-x/inner"
+  grep -q '"name": "logs_postgres", "ok": true' "$work"/diag-x/argos-diag-compose-*/manifest.json \
+    || fail "the diagnostic bundle has no PostgreSQL container log"
+  grep -qxF 'ARGOS_SMOKE_SENTINEL_TOKEN=****' "$work"/diag-x/argos-diag-compose-*/compose/env.masked \
+    || fail "the .env sentinel is not masked in compose/env.masked"
+  (
+    umask 077
+    : >"$patterns"
+    for f in secrets/*; do
+      sed -e '/^#/d' -e 's/^[A-Z0-9_]*SHA256=//' "$f"
+      echo
+    done | tr -d '\r' | sed '/^$/d' >>"$patterns"
+    printf '%s\n' "$rand1" "$rand2" "$smoke_setup_token" "${smoke_tokens[@]}" >>"$patterns"
+  )
+  [[ $(wc -l <"$patterns") -ge 15 ]] || fail "too few values to look for in the diagnostic bundle"
+  if grep -rlF -f "$patterns" "$work/diag-x" "$work/diag-out" "$work/diag.txt" >"$work/.hits" 2>/dev/null; then
+    rm -f "$patterns"
+    fail "T-SEC-06i: a secret is in the diagnostic bundle: $(tr '\n' ' ' <"$work/.hits")"
+  fi
+  rm -f "$patterns"
+  if grep -rlE 'argos_[A-Za-z0-9_-]{40,}' "$work/diag-x" "$work/diag.txt" >"$work/.hits" 2>/dev/null; then
+    fail "T-SEC-06i: an argos_ token is in the diagnostic bundle: $(tr '\n' ' ' <"$work/.hits")"
+  fi
+  rm -rf "$work/diag-out" "$work/diag-x" "$work/diag.txt" "$work/.hits"
+  log "ok: T-SEC-06i: ./argos-compose.sh diag; outer and server bundle hold none of the secrets/* values, the agent and setup tokens or the .env sentinels, and no argos_ token"
+  timing "wizard: diagnostic bundle" $(($(now) - t0))
+}
+
+# ops_report_check <agent token>: ./ops-report.sh (WO-42, proposed T-BLD-030) on the running
+# installation with a connected agent: exit 0, its headings, PostgreSQL read as argos_backup against
+# the real schema, the Prometheus scrape with the metrics token inside the server container, the
+# agent's instance counted as sending data (UP, or WARN when the server sees a warning condition
+# such as clock skew of the Docker Desktop VM); the output holds no secrets/* value, the agent
+# token, the application name or an IPv4 address.
+ops_report_check() {
+  local t0 out=$work/ops-report.md patterns=$work/.ops-patterns f rc=0
+  t0=$(now)
+  sh ./ops-report.sh >"$out" 2>&1 || rc=$?
+  [[ $rc -eq 0 ]] || { redact <"$out" >&2; fail "./ops-report.sh exited $rc on the running installation"; }
+  for f in '### Argos daily check ' '#### Checks to act on' '#### Nightly consistency check' '#### Sections' \
+    '| postgres | ok |' '| prometheus | ok |' '| clickhouse_disk | ok |' '| server | running | healthy |'; do
+    grep -qF -- "$f" "$out" || { redact <"$out" >&2; fail "ops-report.sh output lacks '$f'"; }
+  done
+  grep -qE 'UP [1-9][0-9]*, WARN [0-9]+, STALE|UP [0-9]+, WARN [1-9][0-9]*, STALE' "$out" \
+    || { redact <"$out" >&2; fail "ops-report.sh does not count the connected agent as UP or WARN"; }
+  # The agent's transactions are in ClickHouse already: the lag cell must carry a p99 (estimated
+  # from the histogram buckets of the real server), not "no inserts yet".
+  grep -qE '^\| [0-9-]+ \| .* \| (\*\*)?p99 [0-9.]+ s' "$out" \
+    || { redact <"$out" >&2; fail "ops-report.sh shows no ingest lag p99 after the agent's inserts"; }
+  (
+    umask 077
+    : >"$patterns"
+    for f in secrets/*; do
+      sed -e '/^#/d' -e 's/^[A-Z0-9_]*SHA256=//' "$f"
+      echo
+    done | tr -d '\r' | sed '/^$/d' >>"$patterns"
+    printf '%s\n' "$1" wo40-smoke >>"$patterns"
+  )
+  if grep -qF -f "$patterns" "$out" || grep -qE '[0-9]{1,3}(\.[0-9]{1,3}){3}' "$out"; then
+    rm -f "$patterns"
+    fail "ops-report.sh printed a secret, the agent token, the application name or an address"
+  fi
+  rm -f "$patterns"
+  sed -n '/^| Date (UTC)/,/^$/p' "$out" | sed 's/^/  | /'
+  rm -f "$out"
+  log "ok: ops-report.sh exit 0 on the real stack (argos_backup psql, metrics-token scrape, df); no secret, token, app name or address in its output"
+  timing "wizard: ops-report.sh" $(($(now) - t0))
 }
 
 unattended_extra() {
@@ -411,13 +518,19 @@ for mode in $MODES; do
   log "=== mode: $mode"
   case $mode in
     wizard)
-      prepare wizard
+      prepare wizard --self-signed-tls localhost,127.0.0.1
       up wizard
+      # The setup token of this start, for the diagnostic bundle check (memory only).
+      smoke_setup_token=$(./argos-compose.sh compose exec -T server cat /data/setup-token | tr -d '\r\n')
+      [[ -n "$smoke_setup_token" ]] || fail "no setup token in /data/setup-token"
       (umask 077 && printf '%s' "$(head -c 18 /dev/urandom | base64 | tr -d '\n=' | tr '+/' '-_')" >"$work/admin-password")
       run_smoke wizard --complete-setup --admin-password-file "$work/admin-password"
       sample_stats "wizard after smoke"
       audit_job_check
       wizard_extra
+      diag_check
+      smoke_tokens=()
+      smoke_setup_token=
       ;;
     unattended)
       prepare unattended --unattended --ip-mode masked

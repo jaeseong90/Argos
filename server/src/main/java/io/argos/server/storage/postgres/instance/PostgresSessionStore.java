@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.UUID;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DuplicateKeyException;
@@ -77,6 +78,11 @@ public class PostgresSessionStore implements SessionStore {
   @Override
   public OptionalInt findInstance(int appId, String name) {
     return instances.find(appId, name);
+  }
+
+  @Override
+  public OptionalLong instanceStartedAtMs(int instanceId) {
+    return instances.startedAtMs(instanceId);
   }
 
   @Override

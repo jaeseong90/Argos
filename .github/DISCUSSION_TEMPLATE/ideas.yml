@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+# Form for the "Ideas" Discussions category (slug ideas, GOVERNANCE.md "Discussions").
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share an idea before it becomes a concrete feature proposal. Describe the problem first; a solution is easier to agree on once the problem is clear.
+        Check ROADMAP.md ("Not planned for 1.0") and existing discussions first. When an idea is agreed, a maintainer or you can open a feature proposal issue.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what makes it hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea
+      description: How could Argos help? Sketches of configuration, screens or APIs are welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Scale (applications, instances, transactions per second), environment constraints such as air-gapped networks, workarounds you use today.

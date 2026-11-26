@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
@@ -42,6 +43,7 @@ public final class ProcessApp implements RunningApp {
   private Duration startup = Duration.ZERO;
   private Duration ready = Duration.ZERO;
   private volatile TomcatStaging.Shutdown tomcatShutdown;
+  private volatile TomcatStaging.ManagerAccess tomcatManager;
 
   /** Seconds a staged Tomcat gets to stop its web applications after the shutdown command. */
   static final int TOMCAT_STOP_SECONDS = 60;
@@ -73,6 +75,16 @@ public final class ProcessApp implements RunningApp {
   /** The shutdown port of a staged Tomcat (WAR runs), used by {@link #gracefulStop()}. */
   void tomcatShutdown(TomcatStaging.Shutdown shutdown) {
     this.tomcatShutdown = shutdown;
+  }
+
+  /** The manager user of a staged Tomcat with its manager app (WAR runs, null otherwise). */
+  void tomcatManager(TomcatStaging.ManagerAccess manager) {
+    this.tomcatManager = manager;
+  }
+
+  @Override
+  public Optional<TomcatStaging.ManagerAccess> tomcatManager() {
+    return Optional.ofNullable(tomcatManager);
   }
 
   void checkAlive(long deadlineNanos) {

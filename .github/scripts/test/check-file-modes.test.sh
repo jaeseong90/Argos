@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
+# req: O-Q02
+# test-ids: T-BLD-033
 #
 # Tests for .github/scripts/check-file-modes.sh. Builds throwaway git repositories with
 # core.filemode=false (the Windows default) in a temporary directory: a plain `git add` records

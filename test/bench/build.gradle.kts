@@ -24,12 +24,24 @@ tasks.named<Jar>("jar") {
 }
 
 // Unit tests read repository files (sample-apps/load/run-bench.sh pins the k6 image; the bench
-// scripts' option tables) relative to the root.
+// scripts' option tables; the weekly workflow .github/workflows/bench.yml, BenchWorkflowTest)
+// relative to the root.
 tasks.withType<Test>().configureEach {
   systemProperty("argos.repositoryRoot", layout.settingsDirectory.asFile.absolutePath)
   inputs.file(layout.settingsDirectory.file("sample-apps/load/run-bench.sh"))
     .withPathSensitivity(PathSensitivity.RELATIVE)
     .withPropertyName("runBenchScript")
+  inputs.file(layout.settingsDirectory.file(".github/workflows/bench.yml"))
+    .withPathSensitivity(PathSensitivity.RELATIVE)
+    .withPropertyName("benchWorkflow")
+  // OtlpBlackHoleTest: the fetch script pins the same OTel version and SHA-256 as the harness.
+  inputs.file(layout.settingsDirectory.file("test/bench/fetch-otel-agent.sh"))
+    .withPathSensitivity(PathSensitivity.RELATIVE)
+    .withPropertyName("fetchOtelAgentScript")
+  // NoiseCalibrationTest: the committed WO-02 sets are the noise-calibration evidence.
+  inputs.dir(layout.settingsDirectory.dir("docs/bench/wo02-overhead-2026-10-24"))
+    .withPathSensitivity(PathSensitivity.RELATIVE)
+    .withPropertyName("wo02Sets")
 }
 
 val benchJar =

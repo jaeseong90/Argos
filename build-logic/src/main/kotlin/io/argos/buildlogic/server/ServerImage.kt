@@ -109,13 +109,16 @@ object ServerImage {
       "-Duser.home=$DATA_VOLUME",
     )
 
-  /** Local image name of jibDockerBuild; publishing to a registry is WO-44. */
+  /**
+   * Image name of jibDockerBuild; the release workflow (WO-44) pushes the same image as
+   * `ghcr.io/<owner>/argos-server` through Jib's `-Djib.to.image`.
+   */
   const val IMAGE_NAME: String = "argos-server"
 
   /**
    * Platforms built by default: linux/amd64 for the local `jibDockerBuild` of WO-40. The multi-arch
    * image (linux/amd64 + linux/arm64, `-Pargos.image.platforms=linux/amd64,linux/arm64`) is built
-   * and pushed by the release pipeline (WO-44); jibDockerBuild loads one platform only.
+   * and pushed by the release workflow (WO-44, release.yml); jibDockerBuild loads one platform only.
    */
   const val DEFAULT_PLATFORMS: String = "linux/amd64"
 

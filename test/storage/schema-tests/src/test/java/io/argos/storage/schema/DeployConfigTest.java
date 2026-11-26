@@ -233,7 +233,9 @@ class DeployConfigTest {
         .containsExactly(
             "GRANT CREATE DATABASE, CREATE TABLE, CREATE VIEW, DROP DATABASE, DROP TABLE,"
                 + " DROP VIEW, ALTER, INSERT, SELECT, BACKUP ON argos.*",
-            "GRANT SELECT ON system.mutations");
+            "GRANT SELECT ON system.mutations",
+            // BACKUP/RESTORE to Disk('backups'), limited by backups.allowed_disk (WO-43).
+            "GRANT READ, WRITE ON DISK");
     String users = Files.readString(DIR.resolve("users.d/argos.xml"), StandardCharsets.UTF_8);
     assertThat(users).doesNotContain("DICTIONARY ON", "FUNCTION ON", "NAMED COLLECTION ON");
   }

@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# Form for the "Show and tell" Discussions category (slug show-and-tell, GOVERNANCE.md "Discussions").
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Show how you use Argos APM: an installation, a dashboard, an alert rule set, an integration or a write-up.
+        Do not include screenshots or logs that show secrets, internal host names or personal data.
+        If you checked Argos against a library, database, application server or JDK, please also file a compatibility report issue so the compatibility table can be updated.
+  - type: textarea
+    id: what
+    attributes:
+      label: What did you build or set up?
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions and environment
+      placeholder: "server 0.1.0 with Docker Compose, agent 0.1.0 on Temurin 17 with Spring Boot 3.3"
+  - type: textarea
+    id: details
+    attributes:
+      label: Details, lessons learned, links

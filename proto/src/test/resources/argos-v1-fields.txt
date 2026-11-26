@@ -183,6 +183,7 @@ argos.v1.AgentHello.agent_epoch = 22, uint64, singular
 argos.v1.AgentHello.process_start_ms = 23, int64, singular
 argos.v1.AgentHello.instrumentation_modules = 24, string, repeated
 argos.v1.AgentHello.plaintext = 25, bool, optional
+argos.v1.AgentHello.check_only = 26, bool, optional
 message argos.v1.ServerHello
 argos.v1.ServerHello.accepted = 1, bool, singular
 argos.v1.ServerHello.reject_reason = 2, enum argos.v1.RejectReason, singular

@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Community-verified combinations (◎ in docs/compatibility-matrix.md, 18 section 6.2): users report a
+# combination that works for them in a GitHub issue labelled kind/compat-report
+# (.github/ISSUE_TEMPLATE/compat-report.yml); a maintainer checks the report and adds one entry here.
+# The generator only writes the links; it never contacts GitHub.
+#
+# Format (the YAML subset of test/matrix/README.md):
+#   reports:
+#     - id: T-MX-005                 # a matrix.yaml row (△ rows become ◎), or instead of id:
+#       combination: WebLogic 14.1 + JDK 11   # free text for a combination outside the matrix
+#       issue: https://github.com/<owner>/<repo>/issues/<n>
+#       agent-version: 1.0.0         # the Argos agent version the user ran
+#       reported: 2026-12-01         # yyyy-MM-dd
+#       note: optional short remark
+# A report never overrides a matrix result: ○ and ✗ stay as they are.
+
+version: 1
+reports: []

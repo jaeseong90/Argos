@@ -16,6 +16,8 @@
 #   --catalog C        shop (seeds of the shop apps) or batch (shop-batch's job name XSS seeds)
 #                                                                             (shop)
 #   --url URL          base URL of a running app, WAR context path included  (http://localhost:8080)
+#   --set S            all (every seed), pii (the PII and secret seeds: seed.email .. seed.literals
+#                      and seed.env; shop catalog only) or xss (the XSS and CSV seeds)  (all)
 #   --repeat N         calls of every seed endpoint                           (1)
 #   --report-dir DIR   smoke.json and smoke.md of the run                      (build/reports/seed-traffic)
 #   --start            start the app here instead of using --url (shop-boot3, or shop-batch with
@@ -41,6 +43,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../.." && pwd)"
 
 catalog="shop"
+seed_set="all"
 url="http://localhost:8080"
 repeat=1
 report_dir="$repo_root/build/reports/seed-traffic"
@@ -65,6 +68,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --catalog) catalog="${2:?--catalog needs a value}"; shift 2 ;;
     --url) url="${2:?--url needs a value}"; shift 2 ;;
+    --set) seed_set="${2:?--set needs a value}"; shift 2 ;;
     --repeat) repeat="${2:?--repeat needs a value}"; shift 2 ;;
     --report-dir) report_dir="${2:?--report-dir needs a value}"; shift 2 ;;
     --start) start=1; shift ;;
@@ -87,6 +91,29 @@ case "$catalog" in
   *) fail_usage "--catalog must be shop or batch: $catalog" ;;
 esac
 [[ -n "$app_jar" ]] || app_jar="$repo_root/sample-apps/$app_name/build/sample-app/$app_name.jar"
+
+# Entry id prefixes of each seed set (smoke runner --only). The PII set is the one of the PII seed
+# grep (T-NFR-10c, server PiiSeedGrepSecurityTest reads the next line): the XSS and CSV seeds carry
+# the sentinel into stored names by design (service path, thread name, external path, job name)
+# and are checked by T-SEC-62/63 instead.
+pii_prefixes=(seed.email seed.phone seed.rrn seed.card seed.user seed.xff seed.token seed.literals seed.env)
+xss_prefixes=(seed.xss. seed.csv.)
+only_args=()
+case "$seed_set" in
+  all) only_args=(--only seed.) ;;
+  pii)
+    [[ "$catalog" == shop ]] || fail_usage "--set pii needs --catalog shop (shop-batch has only XSS seeds)"
+    for p in "${pii_prefixes[@]}"; do only_args+=(--only "$p"); done
+    ;;
+  xss)
+    if [[ "$catalog" == batch ]]; then
+      only_args=(--only seed.)
+    else
+      for p in "${xss_prefixes[@]}"; do only_args+=(--only "$p"); done
+    fi
+    ;;
+  *) fail_usage "--set must be all, pii or xss: $seed_set" ;;
+esac
 
 if [[ -z "$java_bin" ]]; then
   if [[ -n "${JAVA_HOME:-}" ]]; then java_bin="$JAVA_HOME/bin/java"; else java_bin="java"; fi
@@ -115,14 +142,14 @@ fi
 [[ -f "$smoke_jar" ]] || fail_usage "missing smoke runner $smoke_jar"
 mkdir -p "$report_dir"
 
-smoke_args=(--catalog "$catalog" --only seed. --repeat "$repeat" --report-dir "$report_dir")
+smoke_args=(--catalog "$catalog" "${only_args[@]}" --repeat "$repeat" --report-dir "$report_dir")
 
 if ((start)); then
   [[ -f "$app_jar" ]] || fail_usage "missing app $app_jar"
   app_major="$(java_major "$app_java")"
   ((app_major >= 17)) || fail_usage "$app_java is not Java 17+ ($app_name)"
   echo "seed-traffic: starting $(basename "$app_jar") on Java $app_major with the seed environment," \
-    "calling every seed endpoint $repeat time(s)"
+    "calling every seed endpoint of set $seed_set $repeat time(s)"
   set +e
   "$java_bin" -jar "$smoke_jar" --app "$(basename "$app_jar" .jar)" --variant seed-traffic \
     --kind boot-jar --artifact "$app_jar" --app-java "$app_java" --app-jdk "$app_major" --seed-env \
@@ -145,7 +172,7 @@ else
         "environment-dump seeds (see the header of this script)"
     fi
   fi
-  echo "seed-traffic: calling every seed endpoint of $url $repeat time(s)"
+  echo "seed-traffic: calling every seed endpoint of set $seed_set at $url $repeat time(s)"
   set +e
   "$java_bin" -jar "$smoke_jar" --app seed-traffic --variant seed-traffic --kind url --url "$url" \
     "${smoke_args[@]}"

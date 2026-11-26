@@ -57,7 +57,8 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
 ./gradlew :agent:agent-dist:check verifyAgentJar  # checkShading, checkMajorVersion(자체 52·셰이딩 ≤ 52), checkRelocatedStrings·checkOwnRelocatedLiterals(C-23), checkModuleIndex,
                                                   # checkManifestVersion(Implementation-Version = 프로젝트 버전, T-BLD-010 릴리스 판정 fail-closed), checkJulBridge(JUL 참조 0),
                                                   # checkThirdPartyNotices(O-L04: 비Apache 라이선스의 저작권·본문, Netty·gRPC·PerfMark 원 NOTICE. 원문은 agent/agent-dist/src/notices/)
-./gradlew :agent:agent-testing:archTest           # Advice·패키지 경계·코드 규칙(T-AG-001~004, ADV-01~04, A-1~A-9, B-1~B-4, AGT-01~03, 10 §14 로그 인자 allowlist LOG-01).
+./gradlew :agent:agent-testing:archTest           # Advice·패키지 경계·코드 규칙(T-AG-001~004, ADV-01~04, A-1~A-9, B-1~B-4, AGT-01~03, 10 §14 로그 인자 allowlist LOG-01,
+                                                  # SEC-91 ST-91-1: core.command·core.config에 스크립트 엔진·프로세스 실행·동적 클래스 로딩 없음, Class.forName·getMethod는 상수 이름만).
                                                   # 규칙마다 위반 픽스처(src/archFixtures)가 실제로 잡혀야 통과. INFO 이상 로그의 문자열 인자는 src/archTest/resources/log-argument-allowlist.txt에 근거와 함께
 ./gradlew checkLicenses checkDevOnlyLicenses      # 라이선스 허용 목록(테스트 전용 예외: docs/licenses/dev-only.md)
 ./gradlew integrationTest                         # Testcontainers(Docker), 샘플 앱 shop-boot3 스모크 3변형·시드 센티널, 저장소 스키마·생성기·쿼리(실제 ClickHouse). check에 포함되지 않음
@@ -90,7 +91,8 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
                                                   # 기본은 H2만(기본 integrationTest에도 포함, C-149 (1)). -Pagent.jdbc.containers=true(또는 postgres,mysql처럼 목록)면
                                                   # MySQL 8.4·MariaDB 11.4·PostgreSQL 16·SQL Server 2022(이미지 다이제스트 고정, 한 번에 1개, 무작위 비밀번호, nightly·수동, C-149 (2)),
                                                   # -Pagent.jdbc.oracle=true면 gvenzl/oracle-free(4 GiB, FUTC dev-only, C-149 (3)). 사내 Oracle 19c·Tibero·Altibase·CUBRID·DB2는
-                                                  # ARGOS_TEST_<DB>_URL·_USER·_PASSWORD(없으면 사유와 함께 skip, 사람 확인). 이 노트북 H2 약 6분, 컨테이너 + Oracle 약 10분(DB당 컨테이너 ≤ 4 GiB, Oracle 실측 약 3.1 GiB).
+                                                  # ARGOS_TEST_<DB>_URL·_USER·_PASSWORD(없으면 사유와 함께 skip, 사람 확인. Tibero·Altibase·CUBRID·DB2는 jdbc.VendorDatabaseTest가 shop-boot3
+                                                  # SAMPLE_DB=tibero|altibase|cubrid|db2로, 벤더 드라이버 jar 폴더는 ARGOS_TEST_JDBC_DRIVER_DIR → 앱에는 SAMPLE_JDBC_DRIVER_DIR, WO-50). 이 노트북 H2 약 6분, 컨테이너 + Oracle 약 10분(DB당 컨테이너 ≤ 4 GiB, Oracle 실측 약 3.1 GiB).
                                                   # 로그 agent/agent-testing/build/reports/agent-e2e/wo13-*, 콘솔 [wo13-table]·[wo13-db]·[wo13-sql-ids] 줄은 결과 XML의 system-out에
 ./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot4@21 --tests '*httpclient*'
                                                   # HTTP 클라이언트 스위트(WO-14, 패키지 io.argos.agent.testing.httpclient, 기본 integrationTest에도 포함되며 기본은 shop-boot3@21):
@@ -133,6 +135,8 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
                                                   # WO-18 모듈 시험(실제 라이브러리 + 실제 tracer, holder agent): scheduler test(JDK 8: Spring 5.3·Quartz 2.3.2·Batch 4.3)·testModern(JDK 17: Spring 6.2·
                                                   # Quartz 2.5·Batch 5.2)·testSpring7(JDK 17: Spring 7.0, @Scheduled·Quartz), logging test(JDK 8: Logback 1.2·Log4j 2.17.2·Log4j 1.2.17)·testModern
                                                   # (JDK 17: Logback 1.5·Log4j 2.25·reload4j 1.2.26, [wo18-u13] Log4j2 주입기 시그니처·frozen 여부), custom test(JDK 8)·testJdk21. 합계 약 1.5분
+./gradlew :agent:agent-instrumentation:httpclient-apache4:testLowerBound   # 하한 경계(C-240 (10), WO-50, check 포함): JDK 8에서 httpclient 4.5(Maven의 첫 4.5 좌표) + httpcore 4.4.1 strictly로
+                                                  # Apache4AdviceTest·ModuleTest·Apache4VersionTest([wo50-hc4]). 서블릿 모듈 flush 이름(Jetty 9.4·12 ee10/ee11·Undertow)은 servlet:check의 T-AG-016b
 ./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-batch@17,shop-batch@21,shop-boot3@21,shop-boot2@8 --tests '*batch*' --tests '*logging*' --tests '*custom*' --tests '*CustomMethodPolicy*' --tests '*SeedLogTest*'
                                                   # WO-18 스위트. batch(패키지 io.argos.agent.testing.batch, shop-batch 조합만, 기본 매트릭스에는 없어 사유와 skip): T-AG-058 BatchTransactionsTest
                                                   # (@Scheduled 3종·Quartz 2종·분리 실행 Spring Batch step = BATCH, 항목당 SQL 20,000건 요약 모드, HTTP 안 동기 실행은 METHOD step, JDK 21+는 vt 1회),
@@ -160,7 +164,8 @@ Java 백엔드(Spring Boot / Tomcat)용 설치형 **오픈소스 APM(Apache-2.0)
 ./gradlew :agent:agent-core:integrationTest --tests '*ContextStoreFootprint*'   # C-120 (3) ContextStore 항목당 바이트(포크 JVM 클래스 히스토그램, 약 5초, [c120-contextstore])
 java -jar agent/agent-dist/build/libs/argos-agent-<버전>.jar --check [--config <yml>] [--json] [--classpath <dir|jar>...]
                                                   # 설치 전 점검(10 §13.3, docs/agent-config.md "Pre-flight check"): 설정·토큰·DNS/TCP/TLS·hello·시계·JDK·클래스패스 호환성·로그 디렉터리/토큰 파일 표
-                                                  # (또는 JSON 1개), 종료 코드 0(FAIL 없음)·1(FAIL)·2(사용법 오류). 토큰은 argos_****. 수집기에 '<instance|host>-check' 인스턴스를 등록하고 곧바로 AgentBye
+                                                  # (또는 JSON 1개), 종료 코드 0(FAIL 없음)·1(FAIL)·2(사용법 오류). 토큰은 argos_****. Hello에 check_only(C-240 (1))를 실어 현재 서버는 인스턴스를
+                                                  # 등록하지 않고(세션 id 없음, 스트림 OK 종료, 상태·알림 없음) Bye도 보내지 않는다. 이전 서버는 '<instance|host>-check'를 등록하므로 곧바로 AgentBye
 ./gradlew :agent:agent-testing:integrationTest --tests '*transport*' -Pagent.jdk8u252=<JRE> -Pagent.jdk8u242=<JRE>
                                                   # gRPC 전송(WO-11) 대 FakeCollector: T-AG-071·067, T-ACC-02a·06a, T-SEC-06·07a·08c, T-NFR-26a, C-74 증명(T-BLD-004a), C-75, T-BLD-011·011a(실행 시점 프록시 미사용),
                                                   # 세션 반응(ConnectionTransportTest: 백오프당 TCP 접속·DNS 조회 1회, 해석 불가 주소 WARN 분당 1회, 영구 거부·REPLACED 뒤 연결·argos-io 해제, Ack.throttle).
@@ -174,6 +179,10 @@ java -jar agent/agent-dist/build/libs/argos-agent-<버전>.jar --check [--config
                                                   # P-3 측정 매트릭스(약 35분) → test/agent/transport-poc/build/poc/bench/<시각>/summary.md. 조용한 머신에서
 ./gradlew :server:bootJar                         # 서버 실행 jar → server/build/libs/argos-server-<버전>.jar(레이어 4종: java -Djarmode=tools -jar <jar> list-layers).
                                                   # -Pargos.ui.skip=true가 없으면 ui/dist를 static/에 넣는다. :server:checkFlywayNames(check 포함)는 db/pg 파일명 규칙(C-28)
+                                                  # bootJar는 :server:verifyServerJar(T-BLD-003a)로 끝난다: 루트 META-INF의 LICENSE·NOTICE·THIRD-PARTY-NOTICES·argos-deps.txt(= BOOT-INF/lib)·
+                                                  # sbom/server.cdx.json(:server:serverSbom → server/build/sbom/server.cdx.json, 시각 SOURCE_DATE_EPOCH 또는 1980-02-01)·
+                                                  # argos/licenses/{server,agent,ui}.json(C-153 About 목록, ui는 UI 포함 빌드만). 비Apache 원문은 server/src/notices(README에 SHA-256, 버전 올리면 갱신)
+java -jar server/build/libs/argos-server-<버전>.jar --version   # 'Argos server X (commit c, protocol p[, built t])' 1줄, Spring 미기동, 종료 0(O-R12, T-BLD-021)
 java -jar server/build/libs/argos-server-<버전>.jar admin rollup rebuild --date <yyyy-MM-dd> [--table <t>]... [--json]
                                                   # argos-admin(WO-27, C-59): 그날 1m 롤업과 같은 달 1h 롤업을 <t>_rebuild 스테이징 + REPLACE PARTITION으로 재구축(--app 없음, C-59 (c)),
                                                   # 파티션별 재구축 전후 digest(키 수 + 키별 cityHash64 합)를 출력. 설정은 서버와 같은 ARGOS_* 환경(migrator 계정), 로그는 stderr JSON, 결과는 stdout.
@@ -192,6 +201,9 @@ java -jar server/build/libs/argos-server-<버전>.jar admin <command> ... [--jso
                                                   # token issue(= token create)|revoke (--id|--prefix) --reason|rotate [--grace-days], setup-token regenerate(관리자 없을 때만, 0600 파일), tls reload [--wait s]
                                                   # (<data>/tls/reload.request를 서버가 5초마다 확인), retention show|apply(PG settings 값이 설정 파일보다 우선, MODIFY TTL·보존 밖 DROP),
                                                   # secrets rekey [--new-key <path>] [--batch n](별칭 master-key rotate --new-key-file, 채널·서명 키·명령 결과·앱 user_id 솔트 재암호화, MASTER_KEY_ROTATED),
+                                                  # secrets verify [--purpose backup|restore|manual] [--json](WO-43: 현재·이전 키로 SecretField 4열 복호화만 시도, 읽기 전용, kid = SHA-256(key)[0:8] 16hex,
+                                                  # verifiable·failed·열별 kids, 종료 0 전부 복호화 또는 봉투 없음·1 실패·키·DB 문제·2 인자, --argos.postgres.url=…·--argos.master-key-file=… 덮어쓰기, ADMIN_COMMAND_EXECUTED),
+                                                  # CLI token revoke·rotate도 실행 중 서버가 2초마다 PG를 확인해 5초 안에 그 토큰의 세션을 닫는다(TokenRevocationWatcher, C-238 (14) 해소),
                                                   # bundle [--since 24h|7d] [--out dir] [--log-dir dir](argos-diag-<host>-<ts>.tar.gz 0600, 토큰·비밀번호·마스터 키·채널 URL 마스킹), version.
                                                   # stdout은 결과(--json이면 JSON 1개, 실패 {command,error,code}), stderr는 메시지. 종료 코드 0/1/2/4. version 외 전부 감사(전용 이벤트 없으면 ADMIN_COMMAND_EXECUTED,
                                                   # rollup·consistency·apdex는 ROLLUP_REBUILT·CONSISTENCY_CHECKED·APDEX_REAPPLIED, C-220 (3)), 감사 싱크는 서버와 같은 argos.audit.sinks(PG가 죽으면 폴백 파일).
@@ -255,6 +267,13 @@ java -jar server/build/libs/argos-server-<버전>.jar admin <command> ... [--jso
                                                   # session.OverviewStateIT T-SV-022a(WS overview status = REST 기준, C-218 (3)), ConfigChangeIT(C-239 (3) CUSTOM_METHOD_CHANGED 행위자 = applied_by).
                                                   # 설정 argos.ui.active-thresholds-ms(기본 1000,3000,8000, 양수 3개 오름차순 아니면 WARN 1줄 + 기본값)는 GET /apps/{id}/active의 default_thresholds_ms(REST 전용,
                                                   # 화면은 뷰어 localStorage > 이 값 > 1/3/8초, C-225 (3), T-API-013c)
+                                                  # WO-29: session.CheckOnlyHelloIT(T-SV-022b check_only Hello: 등록·대기열·세션 상한·상태·알림 없음, 약 30초)·session.AgentStartEventIT(T-SV-023b
+                                                  # 새 agent_epoch의 첫 Hello마다 events type='start', 같은 프로세스 재접속·서버 재기동 뒤 재접속은 없음, 약 50초),
+                                                  # --tests 'io.argos.server.ops.dictionary.*'(DictionaryCleanupJobIT T-SV-014d~f: 야간 사전 정리 잡(C-238 (14), argos.ops.dictionary-cleanup.cron
+                                                  # 기본 '0 30 3 * * *'·enabled 기본 true) last_seen 90일 경계·재실행 0·삭제 키 캐시 무효화 뒤 재요청·재삽입·10만 행 삭제 [wo29-dict-cleanup])
+                                                  # --tests 'io.argos.server.ops.errorgroup.*'(ErrorGroupCleanupJobIT T-SV-014h·i, 약 30초: 야간 에러 그룹 정리 잡(ADR-0010 C-255 (5),
+                                                  # argos.ops.error-group-cleanup.cron 기본 '0 45 3 * * *'·enabled 기본 true) last_seen 90일 경계·재실행 0·2.5만 행 배치 삭제·
+                                                  # 정리 전 재발생 그룹 유지·삭제 뒤 재발생은 upsert로 새 그룹 재삽입·API 카탈로그에서 제외 [c255-error-group-cleanup])
 ./gradlew :server:generateOpenApi                 # docs/api/openapi.yaml 재생성(생성본, 손 편집 금지, C-28). 컨트롤러·DTO를 바꾸면 돌리고 함께 커밋한다(빌드 버전과 무관, info.version v1).
                                                   # :server:contractTest(check 포함)가 커밋본 = 생성본, 14 §2.9 린트(JUnit, Spectral 없음, C-151), 저장소 조회 operation의 x-argos-limits,
                                                   # 커밋본 스펙의 권한 매트릭스(T-API-010), oasdiff 네거티브(T-API-002, Docker)를 검사한다. 서버 jar를 다시 만들 수 있어 서버 통합 실행 중에는 돌리지 않는다.
@@ -278,16 +297,53 @@ java -jar server/build/libs/argos-server-<버전>.jar admin <command> ... [--jso
 ./gradlew :server:jibDockerBuild                  # 로컬 이미지 argos-server:<버전>(linux/amd64, 베이스 다이제스트 고정, user 10001:10001, HOME=/data, 포트 8080·9100, UI 포함.
                                                   # -Pargos.ui.skip=true면 UI 없음). Jib은 구성 캐시 미호환. 서버 jar를 다시 만들므로 server-it 락 안에서 돌린다(test/lock/argos-lock.sh run).
                                                   # /data·/data/tmp·/logs는 이미지에서 10001:10001 0700이라 새 named volume은 준비가 필요 없다(bind mount만 chown, server/README.md)
-bash deploy/compose/test/run-all.sh               # Compose 설치 스크립트 테스트(Docker, 약 50초): env-init을 Ubuntu·Alpine·Debian 컨테이너에서(권한·길이·금지 목록·종료 코드·
-                                                  # RAM 8/16/32GB 스냅샷·--force 거부), argos-compose.sh(미제공 명령 거부·up 사전 검사·token create 입력 상한·서버 컨테이너 exec 경로(가짜 docker)·SAN 예시),
-                                                  # smoke.sh 판정 로직과 변이(5432 게시·.env 0644 등), compose 파일(다이제스트 = image.properties, 포트 집합, 프록시 XFF·INTERNALPROXIES, .env.example)
+bash deploy/compose/test/run-all.sh               # Compose 설치 스크립트 테스트(Docker, 이 노트북 약 4분, 약 2,550건): env-init을 Ubuntu·Alpine·Debian 컨테이너에서(권한·길이·금지 목록·종료 코드·
+                                                  # RAM 8/16/32GB 스냅샷·--force 거부·--self-signed-tls T-SEC-74a), argos-compose.sh(미지 명령 거부·up 사전 검사·token create 입력 상한·서버 컨테이너 exec 경로(가짜 docker)·SAN 예시·
+                                                  # upgrade 규칙 T-NFR-11a), backup.test.sh(backup.sh·restore.sh 논리, 약 50초: T-SEC-84a~c 0700/0600·보존·gpg, T-NFR-20c 같은 디스크 거부, T-SEC-52e kid 불일치 무변경, T-SEC-73),
+                                                  # diag.test.sh(diag-bundle.sh T-SEC-84d·T-SEC-06i 마스킹), smoke.sh 판정 로직과 변이(5432 게시·.env 0644 등), compose 파일(다이제스트 = image.properties, 포트 집합, 프록시 XFF·INTERNALPROXIES,
+                                                  # chbackup 오버레이·backups.xml, .env.example)
 ./gradlew :deploy:composeSmoke                    # Compose 종단 스모크(WO-40, Docker, check 미포함, 약 3.5분 + 이미지 빌드): jibDockerBuild → env-init → up --wait → smoke.sh
-                                                  # → token create(서버 컨테이너 안 argos-admin, WO-26) + 실제 에이전트(shop-boot3, TLS) 적재 → 5개 상한 → ARGOS_MGMT_EXPOSE 변형 → down -v, 마법사·무인 두 모드와 금지 비밀번호 기동 거부.
+                                                  # → token create(서버 컨테이너 안 argos-admin, WO-26) + 실제 에이전트(shop-boot3, TLS) 적재 → ops-report.sh(WO-42, 종료 0·비밀값 0) → 5개 상한 → ARGOS_MGMT_EXPOSE 변형 → down -v, 마법사·무인 두 모드와 금지 비밀번호 기동 거부.
+                                                  # 마법사 모드는 env-init --self-signed-tls 인증서(에이전트 ca-file)로 접속하고 끝에 argos-compose.sh diag를 풀어 심은 비밀값 grep 0(T-SEC-06i, WO-43).
                                                   # compose-smoke.sh가 server-it 락을 스스로 잡는다(앞의 jibDockerBuild까지 묶으려면 명령 전체를 argos-lock.sh run으로 감쌈). 호스트 포트 8080·9100을 쓴다(프로젝트 argos-wo40-smoke, 컨테이너 ≤ 6GiB 상한). -Pcompose.smoke.modes=wizard|unattended,
                                                   # 진단은 ARGOS_SMOKE_KEEP_ON_FAILURE=1 bash deploy/compose/test/compose-smoke.sh. Linux Docker Engine에서는 root로(비밀값을 uid 10001에 넘김)
+./gradlew :deploy:backupRoundTrip                 # 백업·복구 실스택(WO-43, Docker 약 6 GiB, check 미포함, server-it 락을 스스로 잡음, 프로젝트 argos-wo43-backup, 이 노트북 약 8.5분(jibDockerBuild 포함), INVALID 참고):
+                                                  # jibDockerBuild·agentJar·shop-boot3 → env-init --unattended → 실제 에이전트 → backup.sh --clickhouse(tmpfs 볼륨 대상) → 변경 → restore.sh --clickhouse = 백업 시점 상태(T-NFR-20a),
+                                                  # 다른 유효 키 → 종료 1·라이브 DB 불변(T-SEC-52e), PG만 이전 시점 복원 → WARN·healthy·재접속·조회 API 5xx 0·백업 뒤 토큰 거부(T-NFR-20b), docker kill -s KILL·down/up 중
+                                                  # count(xlog) = 보낸 요청(T-ACC-13 (b) Compose), 재라벨 이미지 upgrade·rollback(T-NFR-11a), 같은 디스크 대상 거부(T-NFR-20c), 출력·로그 비밀값 0(T-SEC-73).
+                                                  # 결과 줄 [wo43-roundtrip]·[wo43-wrongkey]·[wo43-pitr]·[wo43-kill]·[wo43-downup]·[wo43-upgrade]·[wo43-chsame]. 실패 시 ARGOS_RT_KEEP_ON_FAILURE=1이면 스택 보존, 앱 포트 ARGOS_RT_APP_PORT(기본 18094).
+                                                  # Docker Desktop(Windows)은 Windows 경로가 약 180자를 넘는 단일 파일 bind mount를 비root 컨테이너(ClickHouse uid 101)가 읽지 못하므로(EIO) TMPDIR은 짧게(기본 %TEMP%)
+cd deploy/compose && ./argos-compose.sh backup [--clickhouse] [--encrypt age:<recipient>|gpg:<key>] [--label L] [--json]   # 운영 스크립트(WO-43, POSIX sh, docs/ops/backup-restore.md):
+                                                  # backup.sh = pg_dump -Fc(argos_backup, 컨테이너 안) + manifest(이미지·Flyway·kid·sha256), 세트 ARGOS_BACKUP_DIR(기본 ./backups) 0700·파일 0600, 보존 ARGOS_BACKUP_KEEP_DAYS(7, CH 증분 체인 보호),
+                                                  # --clickhouse는 ARGOS_CH_BACKUP_DIR(compose.chbackup.yaml, 다른 디스크만, 같은 디스크면 종료 1), 암호화는 호스트에 이미 있는 age·gpg만(없으면 종료 2, 내려받지 않음).
+                                                  # ./argos-compose.sh restore <세트> [--clickhouse] [--master-key <file>] [--yes] [--json]: manifest·sha256·kid 비교 → 서버 정지 → 스테이징 DB argos_restore → secrets verify →
+                                                  # 이름 교체(실패면 라이브 DB 불변, 종료 1) → CH DROP+RESTORE → migrate → 시점 불일치 WARN → 기동 → consistency check(경고만). Linux는 root.
+                                                  # ./argos-compose.sh upgrade --image <ref> [--yes] | upgrade --rollback: healthy 확인·SemVer 규칙(다운그레이드·메이저 2단계 이상 종료 2) → pre-upgrade 백업(실패면 1, 무변경) →
+                                                  # .env ARGOS_SERVER_IMAGE 교체·up --wait(실패면 종료 8 = 롤백 필요). ./argos-compose.sh diag [--since 24h] [--out dir]: 서버 컨테이너 argos-admin bundle + compose ps·이미지 digest·
+                                                  # 마스킹한 .env·CH/PG 로그 → argos-diag-compose-<host>-<UTC>.tar.gz 0600. ./argos-compose.sh files: 쓰이는 compose 파일 목록
+cd deploy/compose && ./argos-env-init.sh ... --self-signed-tls <host>[,<host>...]   # 평가 전용 자체 서명 gRPC 인증서(C-172 (1), WO-43): SAN = 주어진 DNS·IP, EC P-256 365일, tls/server.key 0600(uid 10001)·0700 디렉터리,
+                                                  # 평가 전용 WARN, 기본값 아님, openssl 없거나 기존 tls/server.* 있는데 --force 없으면 종료 2. 에이전트는 tls/server.crt를 server.tls.ca-file로
+./gradlew :sample-apps:demo-app:jibDockerBuild :sample-apps:load:jibDockerBuild   # 데모 이미지(WO-41, 로컬 데몬 linux/amd64, 서버와 같은 베이스·uid 10001·OCI 라벨): argos-demo-app:<버전>
+                                                  # (order-api·payment-api 겸용, DEMO_ROLE=order|payment, 에이전트 /opt/argos-agent/argos-agent.jar, PostgreSQL만, C-43·C-186 (1)),
+                                                  # argos-demo-load:<버전>(TARGET_URL·RATE=50·MIX=demo). multi-arch·GHCR·서명은 WO-44. :sample-apps:demo-app:integrationTest는 Testcontainers PostgreSQL(약 1분)
+cd deploy/compose && ./argos-env-init.sh --demo && docker compose --profile demo up -d   # 데모 프로파일(17 §3.9, docs/install/compose.md 14장): --demo = 무인 설치 + IP masked + 127.0.0.1 게시 +
+                                                  # secrets/demo_{order,payment}_api_token·demo_db_password(0600) + .env의 ARGOS_DEMO_MODE=true·COMPOSE_FILE(compose.demo.yaml)·COMPOSE_PROFILES=demo.
+                                                  # 메모리 최소 7396 MiB(데모 예약 1536). 제거 docker compose --profile demo down -v. 서버 데모 모드 = 평문 gRPC 기본값·기동 WARN·UI 배너(setup/status demo_mode),
+                                                  # 앱·토큰 등록은 argos.bootstrap.apps-file(ARGOS_BOOTSTRAP_APPS_FILE, config/demo/bootstrap-apps.yaml)
+./gradlew :deploy:demoSmoke [-Pdemo.smoke.enforce=true] [-Pdemo.smoke.long=true]   # 데모 종단(WO-41, Docker 7 GiB·Node.js, check 미포함, server-it 락을 스스로 잡음, 프로젝트 argos-wo41-demo, 127.0.0.1:8080·9100):
+                                                  # 이미지 3종 빌드 → env-init --demo → up -d(수동 chmod 없음: Docker Desktop은 데모 오버레이의 ARGOS_SECURITY_MASTERKEY_PERMISSIVE, C-243 (1)) → T-NFR-16 첫 XLog 점(실제 API) → build/reports/demo/first-xlog.md(노트북 32초, INVALID 참고) → payment·느림·에러·N+1 21·
+                                                  # 분산 트레이스·BATCH ≤ 150초·권장 규칙·통계·smoke.sh·게시 포트·uid·비밀 누출 0 → down -v 잔여 0. 약 2분(+ 이미지 빌드). enforce면 60초 초과 실패(조용한 머신),
+                                                  # long이면 order-api error_rate FIRING까지(노트북 509초, 총 약 9분). ARGOS_DEMO_KEEP=1이면 내리지 않고 URL·새 관리자 비밀번호 파일 경로 출력(스크린샷용)
+                                                  # 서버 쪽: --tests 'io.argos.server.demo.*'(DemoBootstrapIT T-NFR-16a·16d, :server:integrationTest, 약 30초). run-all.sh에 env-init --demo·compose 데모 파일·argos-compose 데모 분기 포함
 deploy/compose/smoke.sh                           # 설치 상태 검사(운영자용, POSIX sh, 기본 읽기 전용): .env·secrets/ 권한, 게시 포트 {8080, 9100}(+127.0.0.1:8081), ss -ltnp, 이미지 다이제스트,
                                                   # back internal, uid 10001, health, /actuator 404, 설정 토큰 403. --complete-setup(마법사 API로 관리자 생성, 테스트 설치용),
                                                   # --check-admin-login(무인 설치 직후 로그인·변경 강제·로그아웃). 설치 절차는 docs/install/compose.md(ko: compose.ko.md)
+deploy/compose/ops-report.sh [--since <UTC>] [--date <yyyy-MM-dd>] [--backup-dir <dir>]
+                                                  # 읽기 전용 일일 점검 Markdown(WO-42, 운영자용, POSIX sh): 컨테이너·전날 UTC 야간 정합(reconcile_results를 postgres 컨테이너 안 argos_backup 읽기 전용 트랜잭션으로)·
+                                                  # 적재 지연·드롭(서버 컨테이너 안 /actuator/prometheus, 메트릭 토큰은 curl 표준 입력)·디스크·알림·인스턴스·인증서/토큰 만료·최신 백업. 이름·토큰·주소 출력 0, 쓰기·외부 전송 0.
+                                                  # 종료 0 수집 완료, 1 구획 FAILED, 2 사용법 오류. 시험 bash deploy/compose/test/ops-report.test.sh(가짜 docker, Ubuntu·Alpine, T-BLD-030 제안, 약 20초, run-all.sh 포함),
+                                                  # 실스택은 :deploy:composeSmoke의 ops-report 단계. 도그푸딩 절차·매일/매주 점검·운영 일지·문제 기록·비교 표 템플릿은 docs/dogfooding/(기록은 비공개 저장소),
+                                                  # 공개 익명화 요약은 docs/field-reports/, 0.1 업그레이드 노트(에러 그룹 분할, C-240 (9))는 docs/upgrade/0.1.md
 test/storage/bench/bench-server.sh start          # 저장소 PoC 벤치용 단독 ClickHouse(127.0.0.1:18123, 비밀번호는 test/storage/bench/build/). 절차는 test/storage/bench/README.md
 ./gradlew :test:storage:generator:storageBench -Pbench.machine-profile=<id> -Pstorage.profile=local -Pstorage.target=url:http://127.0.0.1:18123/ -Pstorage.apply-schema=true
                                                   # 저장소 PoC 벌크 생성·적재(13 §15, 18 §9; profile ci 1/100, local 1/20, full). 리플레이는 storageGenerate -Pstorage.mode=replay
@@ -310,14 +366,62 @@ test/storage/bench/bench-server.sh start          # 저장소 PoC 벤치용 단�
                                                   # ChannelAuditSecurityTest(CHANNEL_* 행), MasterKeySecurityTest(T-SEC-52c 키 없음·형식 오류·0644 기동 거부(비POSIX는 사유 skip), T-SEC-52d·22b rekey 뒤
                                                   # PG 평문 0·새 kid·이전 키 제거 후 열람), CertReloadSecurityTest(T-SEC-09a~d 만료 게이지·cert 규칙 FIRING·파일 교체 무중단 리로드·key-password-file·reload API·watch=false),
                                                   # DiagnosticBundleSecurityTest(T-SEC-06g 심은 토큰·비밀번호·마스터 키·웹훅 URL·메트릭 토큰 → 풀어 낸 번들 grep 0)
+                                                  # WO-46: catalog.SecuritySuiteCatalogSecurityTest(T-SEC-93, 컨테이너 없음, 약 4초): test/security/sec-gate1.tsv(Gate 1 보안 카탈로그: 06 단계 M 요구마다
+                                                  # 테스트 ID·계층·실행 명령·근거)의 행 집합 = 06의 M 행, 나열된 ID가 테스트 소스에 정확히 존재 → server/build/reports/security/sec-gate1.md.
+                                                  # 새 M 요구나 테스트 ID 이름 변경 때 tsv도 고친다. pii.PiiSeedGrepSecurityTest(T-NFR-10c, 약 2분): 자체 PG·CH + 서버 bootJar 자식 JVM + 실제 에이전트·shop-boot3에
+                                                  # PII 시드 세트(seed-traffic.sh --set pii, 기본 1만 요청, -Psecurity.pii.requests=N) → ARGOS_SEED·ARGOSSEED를 CH String 열 전부·pg_dump 열 단위·서버·에이전트 로그·
+                                                  # 알림 웹훅·SMTP 수신함·text/csv API 전부에서 0건, 양성 대조(user-id plain) 뒤 개인정보 삭제 API → 0 → server/build/reports/security/pii-seed-grep.md.
+                                                  # securityTest는 agentJar·shop-boot3·smoke sampleAppJar를 빌드한다. tls.TestsslSecurityTest(T-SEC-07c, 약 16초): testssl.sh 3.2 컨테이너(다이제스트 고정,
+                                                  # GPL dev-only)로 수집기 TLS 포트 → server/build/reports/security/testssl-collector.json. alert.SsrfVectorsSecurityTest(T-SEC-51f 표기 변형·51g 3xx 미추종, 약 25초)
                                                   # 웹 계층 스텁 매트릭스(Docker 없음)는 :server:contractTest → permission-matrix.md. 두 Gradle 실행이 같은 :server:securityTest를 동시에 돌리면 결과 파일이 깨진다
 java server/scripts/GeneratePasswordDenylist.java # 비밀번호 금지 목록 해시 재생성(개발 도구, SecLists 10k를 고정 커밋·SHA-256으로 내려받음, 출처 NOTICE)
                                                   # → server/src/main/resources/security/password-denylist.sha256. 빌드·실행 시에는 아무것도 내려받지 않는다
-./gradlew matrixTest -Pmatrix.combo=<id>          # 호환성 매트릭스 1개 조합(또는 -Pmatrix.group=<group>)을 로컬 실행(Docker·해당 JDK 필요). 전체 매트릭스는 신뢰 러너 전용.
-                                                  # 라벨(ARGOS_RUNNER_LABELS=argos-matrix)·선택이 없으면 SKIPPED + WARNING 1줄
+./gradlew matrixTest -Pmatrix.combo=<id>[,<id>]  # 호환성 매트릭스(WO-50, 18 §6, test/matrix/README.md). 조합의 유일한 정의는 test/matrix/matrix.yaml(63행 T-MX-001~154, T-MX-017은 022의 별칭,
+                                                  # build-logic MatrixCatalog가 구성 단계에서 검증: 모르는 ID·그룹·필드는 실패). 행마다 :agent:agent-testing:matrixTest-<ID>가 행의 app@jdk·vt·app-env(SAMPLE_CONTAINER 등)·
+                                                  # tomcat·coexist·props로 기존 하네스 스위트와 src/matrixTest의 io.argos.agent.testing.matrix(MatrixSmokeTest 18 §6.1 시퀀스·ServiceNameBoundaryTest·
+                                                  # WarRedeployTest(manager로 재배포 50회, T-AG-053w)·JspForwardTest·CoexistenceTest·Tls13Jdk8Test)를 돌리고, finalizer matrixResult-<ID>가
+                                                  # build/matrix/<ID>.json(+ <ID>/의 *.properties·[mx-*] 줄)을 쓴다. -Pmatrix.group=<boot2|boot3|boot4|heavy|batch|war-javax|war-jakarta|jdbc|coexist|routing|
+                                                  # containers|transport|boundary>[,...]. 선택도 러너 라벨(ARGOS_RUNNER_LABELS=argos-matrix)도 없으면 SKIPPED + WARNING 1줄. 조합은 순차, check 미포함,
+                                                  # unverified 행은 실패해도 태스크는 녹색(결과는 ✗). 이 PC는 대표 조합만 agent-it 락 안에서 하나씩(전체 매트릭스·사내 DB·옛 JRE·Linux 전용 행은 러너, 사람 확인).
+                                                  # Windows에서는 MatrixSmokeTest의 AgentBye 단계가 skip이라 boot 행은 △. 새 smoke·공존 변환 베이스라인(<app>-<jdk>[-vt]-smoke.txt, -coexist-<kind>.txt)은 -Pagent.baseline.record=true
+./gradlew :agent:agent-testing:matrixReport [-Pmatrix.results=<dir>]
+                                                  # build/matrix(또는 내려받은 nightly 결과 폴더)와 test/matrix/community-reports.yaml → docs/compatibility-matrix.md(생성본, 손 편집 금지, 시계·네트워크 없음).
+                                                  # 판정 ○ 통과, ✗ 실패, △ 미실행·skip·requires 미충족·unverified·required 시험 skip(사유와 함께), ◎ 커뮤니티 보고(△ 행만). gate 실패 목록 build/matrix-report/gate-failures.txt
+bash test/matrix/fetch-coexist-agents.sh [--dest <dir>]   # 공존 행(T-MX-110~113) 에이전트: OTel javaagent(test/bench/fetch-otel-agent.sh)·JaCoCo 0.8.14 runtime(SHA-256 고정, dev-only)
+                                                  # → agent/agent-testing/build/matrix-agents(없으면 CoexistenceTest가 사유와 skip). devtools 행 T-MX-114는 :sample-apps:shop-boot3:sampleAppDevtoolsJar
+                                                  # (build/sample-app/shop-boot3-devtools.jar, -Dspring.devtools.restart.enabled=true일 때 restartedMain)
+                                                  # nightly: .github/workflows/nightly.yml(schedule·workflow_dispatch(scope·group·combo)·push main/release/**, W8): plan → matrix(self-hosted argos-matrix, 그룹별,
+                                                  # max-parallel 4, environment trusted 비밀 ARGOS_TEST_<DB>_*, 변수 ARGOS_MATRIX_JDK8U242_HOME·ARGOS_MATRIX_JDK8U252_HOME·ARGOS_TEST_JDBC_DRIVER_DIR),
+                                                  # server-nightly(:server:integrationTest -Pserver.nightly=true), security-full(securityTest, PII 시드 1만), sample-smoke, compose-smoke, demo-first
+                                                  # (:deploy:demoSmoke -Pdemo.smoke.enforce=true) → report(matrixReport, gate 실패면 빨간색). 결과 페이지 PR 잡(publish)은 W4 허용 목록 대기로 주석
 ./gradlew :test:bench:benchTest -Pbench.machine-profile=<id>
                                                   # 오버헤드 벤치 전체 프로토콜(18 §7, bench-protocol.sh: main·startup·container·vt, 약 5시간). 벤치 머신 전용
-./gradlew serverLoadTest -Pbench.machine-profile=<id>   # soakTest·chaosTest도 같다. 러너는 WO-29·WO-52 몫이라 지금은 담당 WO를 밝히고 실패(측정 없음).
+./gradlew serverLoadTest -Pbench.machine-profile=<id> [-Pserver.load.profile=full|smoke|mini] [-Pserver.load.publish=true] [-Pserver.load.args="--tps=2000 --attack=none"]
+                                                  # 서버 부하 시험(WO-29, 18 §8, test/load/fake-agents/README.md): Testcontainers PG·CH + 서버 bootJar 자식 JVM(17 §7.2 옵션·NMT·JFR 핀닝)에
+                                                  # 프로토콜 수준 가짜 에이전트 부하 + 대시보드 사용자 10명 5초 폴링, 5초 샘플러(적재 지연·WAL fsync·parts·DelayedInserts·CH/PG 컨테이너·서버 RSS·힙·스레드),
+                                                  # 측정 창 뒤 부하 중 공격 4종(gzip-bomb·batch-overflow·dict-flood·instance-flood, 다른 앱 지연·RSS 증가), 부하 뒤 유휴 세션 단계(C-157 (1) 세션당 바이트·5,000 외삽),
+                                                  # 마지막에 unauth-flood(루프백 10분 차단). 종료 정합 D-13·OOM 0·CH 설정(N-18)·공격 거부 코드는 모든 프로필에서 단언(어기면 태스크 실패),
+                                                  # 시간·자원 판정은 full(5,000 TPS·50,000 step/s·10,000 stat/s 1시간, CH 7.5GiB·PG 1.5GiB·-Xmx4g, 13 §7.1 장비)만 PASS/FAIL, 그 밖은 INVALID.
+                                                  # smoke(1,000 TPS 5분, CH 4GiB·PG 1GiB·-Xmx2g) 이 노트북 약 17분, mini(200 TPS 90초) 약 3.5분. 보고서 build/reports/server-load/server-load.md
+                                                  # (publish면 docs/bench/server-load.md), samples.tsv·class-histogram.txt·native-memory.txt. server-it 락 안에서, 다른 무거운 작업과 동시에 돌리지 않는다
+./gradlew chaosTest -Pbench.machine-profile=<id> [-Pchaos.profile=short|full] [-Pchaos.scenarios=T-CH-001,T-CH-009] [-Pchaos.rate=100] [-Pchaos.publish=true] [-Pchaos.netem.image=<img@sha256>]
+                                                  # 카오스(WO-52, 18 §11.1, test/chaos/README.md): Testcontainers PG·CH + 서버 bootJar 자식 JVM(TLS 수집기, 실행별 PKI) ↔ toxiproxy 2.12.0(다이제스트 고정, MIT dev-only)
+                                                  # ↔ shop-boot3 + 실제 에이전트(JDK 21), 부하는 k6 대신 sample-apps/load(편차). T-CH-001 서버 중단(Windows는 강제 종료라 server_down 행 SKIPPED)·002 지연 500ms·
+                                                  # 003 손실 10%(tc netem 변형은 Linux Docker Engine + -Pchaos.netem.image일 때만, 아니면 SKIPPED)·004 UNAVAILABLE/RESOURCE_EXHAUSTED/쿼터(서버 훅 아래)·005 로그 디스크 풀
+                                                  # (컨테이너 1MB tmpfs)·006 DNS 실패(jdk.net.hosts.file)·007 TLS 이름 불일치·skip-verify·009 ClickHouse docker pause(WAL < 10GiB, 재적재)·008 instance_id 재할당(PG 초기화, 마지막).
+                                                  # T-CH-010·011은 SKIPPED(WO-52 밖), T-NFR-05는 T-CH-001~003 집계 행. 불변식(수집 재개·에이전트 ERROR 0·드롭 계수 D-13·중복 0·collection-health 표시)은 항상
+                                                  # PASS/FAIL, 시간·p99는 profile=full + argos-matrix만 PASS/FAIL(그 밖은 INVALID). short 9개 이 노트북 약 50~60분(메모리 약 6GiB), full 약 3.5시간.
+                                                  # 보고서 test/chaos/build/reports/chaos/<run>/report.md·results.json·work/(publish면 docs/bench/chaos-<date>.md, 재변환 실패 WARN 줄 수 C-257 (2) 포함).
+                                                  # server-it 락 안에서. 단위 T-CH-020a~o는 :test:chaos:check. 워크플로 .github/workflows/chaos.yml(argos-matrix, 주간·수동·release/** push).
+                                                  # 서버 실패 주입 훅: 개발 빌드 전용 키 argos.testing.ingest-fault-file(파일 내용 <UNAVAILABLE|INTERNAL|RESOURCE_EXHAUSTED|QUOTA>[:ratio], 1초에 1회 읽음,
+                                                  # 데이터 배치 4종만, 없거나 해석 불가면 꺼짐, 릴리스 빌드 무시). 시험 ./gradlew :server:integrationTest --tests '*IngestFaultHookIT'(T-CH-004a, 약 45초)
+./gradlew soakTest -Pbench.machine-profile=<id> [-Psoak.duration=72h|15m] [-Psoak.tps=500] [-Psoak.vt=true] [-Psoak.publish=true] [-Psoak.args="--ch-memory=2g --app-heap=384m"]
+                                                  # soak(WO-52, 18 §11.2, test/soak/README.md): shop-boot3·shop-batch + 에이전트(NMT) + ext-stub + 실서버 + PG·CH, load jar 연속 부하 + 배치 주기 실행.
+                                                  # 에이전트 힙(io.argos. 히스토그램) 기울기·최대, NMT, argos-* 스레드, FD, 서버 RSS·WAL, CH parts·디스크, 정합(argos-admin consistency check), FIRING 알림, p99, OOM 증거.
+                                                  # 불변식(OOM 0·정합·CH 설정, T-NFR-18)은 항상 PASS/FAIL, 시간·자원(T-SOAK-001)은 72h·500TPS·argos-bench-app*만 PASS/FAIL(그 밖은 INVALID, 짧은 실행은 간격 비례 축소).
+                                                  # 종료 코드 0(FAIL 없음, INVALID 포함)·1(FAIL·중단)·2(옵션 오류). 이 노트북 15m 약 21분. 보고서 test/soak/build/reports/soak/{report.md,results.json,samples.tsv}
+                                                  # (publish면 docs/bench/soak-<시작일 UTC>.md). server-it 락 안에서. 워크플로 .github/workflows/soak.yml(argos-bench-app, 수동만, 76시간 타임아웃).
+                                                  # 릴리스 노트의 '72시간 soak·카오스 미실행'은 전용 러너의 유효 실행이 생길 때까지 유지한다(C-246 (2), release.yml 불변)
                                                   # benchTest·serverLoadTest·storageBench·soakTest·chaosTest는 프로필이 없으면 아무것도 빌드하기 전에 실패
 test/bench/bench-run.sh --app shop-boot3 --jdk 21 --rounds 3 --exporter noop
                                                   # 18 §7.3 A-B-A-B-A-B 세트 + 보고서 docs/bench/<날짜>-<커밋7>.md. 전용 장비 절차는 docs/poc/agent-overhead.md 9장.
@@ -325,13 +429,40 @@ test/bench/bench-run.sh --app shop-boot3 --jdk 21 --rounds 3 --exporter noop
                                                   # WO-02 P-2 설정 재현, C-80). 옛 키 argos.exporter는 없다(C-88). 둘 다 테스트 키라 개발(-SNAPSHOT) jar만 받는다(릴리스 jar는 거부)
 test/bench/bench-run.sh --smoke --startup --exporter drop --machine-profile <이름>
                                                   # 공유 머신에서 측정 체인만 확인(약 7분, 보고서는 항상 INVALID)
+test/bench/fetch-k6.sh && test/bench/fetch-otel-agent.sh && test/bench/bench-run.sh --smoke --startup --exporter noop --reference otel --otel-agent auto --machine-profile <이름> --out test/bench/build/smoke/<이름> -- --heap 1g
+                                                  # WO-51 체인 확인(이 노트북 약 7분, INVALID): fetch-otel-agent.sh는 OTel Java 에이전트 2.32.0(SHA-256 고정, 개발 전용·배포 안 함)을
+                                                  # test/bench/build/otel/에 받고, --otel-agent auto는 그 파일만 쓴다(실행 중 내려받기 없음). otel 변형은 하네스의 OTLP 블랙홀(127.0.0.1)로 보낸다(measure.otlp).
+                                                  # 에이전트 변형은 -Dargos.test.selfdiag-file로 에이전트 스레드 CPU·직접 메모리·premain을 자가 진단에서 읽는다(measure.selfDiag, jcmd·NMT·배너는 교차 확인·대체).
+                                                  # 부하기 쪽 dial 소켓 오류는 실행을 FAIL이 아니라 INVALID로(H-2 잠정 규칙, C-80). 결과는 build 아래에만, docs/bench에 넣지 않는다
 test/bench/bench-run.sh ... --exporter grpc --collector HOST:PORT --agent-config server.tls=false,server.token-file=FILE
                                                   # 전송 비용 포함(N-01·N-03 gRPC 재측정). 수집기는 fake-collector.jar 또는 서버, 예시는 test/bench/README.md
-test/bench/bench.sh <load|startup|report|publish> ...   # 벤치 하네스 직접 실행(k6는 test/bench/fetch-k6.sh). 사용법 test/bench/README.md
-./gradlew traceabilityReport                      # 요구 → 테스트 ID → 테스트 → 마지막 결과 → build/reports/traceability.md·.json(테스트 실행 없음, test/README.md 6장)
+test/bench/bench-protocol.sh --no-build --machine-profile <id> [--sets main,startup,container,vt,worst,otel,grpc] [--collector H:P [--collector-config k=v,...]] --baseline auto --latest
+                                                  # 전체 프로토콜(benchTest가 부르는 것). grpc 세트는 판정에서 빠지고 보고서 "Transport cost (grpc - noop)" 절(판정은 noop, C-80).
+                                                  # --baseline auto = 같은 머신 프로필·앱·JDK·exporter·encoding의 가장 최근 승인 보고서(없으면 NOT COMPARED와 사유), --latest = latest.md(포인터)·trend.md/.svg 갱신
+test/bench/bench.sh <load|startup|report|publish|trend|noise|gate1> ...   # 벤치 하네스 직접 실행(k6는 test/bench/fetch-k6.sh). 사용법 test/bench/README.md.
+                                                  # publish --baseline auto|none|FILE --latest --trend, trend --dir D(wo02-*·JSONL 시대 보고서는 제외 표, C-145 (4)),
+                                                  # gate1 --reports F[,F] --out F.md(T-NFR-01~04·26~30 9행 + F.json, 수치 없는 PASS 없음, 종료 코드 0/3/4, 사람 확인 목록 C-240 (7)·C-244 (7)·C-245 (1)),
+                                                  # noise --sets D[,D] [--out F.md](off CV·A-A 부트스트랩 구간·MDE, 18 미결 3 근거)
+.github/workflows/bench.yml                       # 주간 벤치(토 18:00 UTC + workflow_dispatch만, pull_request 없음): self-hosted argos-bench-app에서 main·startup(dispatch 입력으로 다른 세트)을
+                                                  # --baseline auto --latest로 돌리고, GitHub-hosted publish 잡만 쓰기 권한으로 docs/bench/<날짜>-<커밋7>.md PR을 연다. 구조 검사 BenchWorkflowTest(T-BLD-015i),
+                                                  # 커스텀 러너 라벨은 .github/actionlint.yaml. 실제 실행은 전용 장비(사람)
+./gradlew traceabilityReport                      # 요구 → 테스트 ID → 테스트 → 마지막 결과 → build/reports/traceability.md·.json(테스트 실행 없음, test/README.md 6장).
+                                                  # 결과 출처 5종(WO-53, '## Sources' 표): JUnit XML, Vitest ui/build/test-results/vitest/junit.xml(pnpm -C ui test),
+                                                  # Playwright ui/test-results/**/results*.json(새 실행은 ui/test-results/e2e-json/results-<프로젝트>[-shard-i-of-n].json, 테스트별 req annotation),
+                                                  # 셸 TAP build/test-results/shell/<suite>/<script>.tap(4개 run-all.sh와 bash test/traceability/shell-results.sh <suite> <script>가 씀,
+                                                  # '# argos-shell-results 1' 형식, 스크립트 머리 '# req:'·'# test-ids:'), 매트릭스 test/matrix/matrix.yaml 행 + build/matrix/T-MX-*.json.
+                                                  # -Ptraceability.results=none이면 결과 파일을 읽지 않는다(깨끗한 체크아웃과 같다, 전부 NOT RUN, FAILED 0)
+./gradlew checkTraceability [-Ptraceability.results=none]   # 카탈로그·대응표 검사(WO-53, test/README.md 6.1, 위반이면 실패): R1 쓰인 ID가 18 부록 A·본문 표에 있음, R2 18 §16.1 대응표 ID가
+                                                  # 시험으로 존재, R3 필수 요구(D-01~D-26·N-xx·06 단계 M SEC) 대응 누락 0, R4 docs/gates/gate1-evidence.md의 ID가 카탈로그에 있음.
+                                                  # 비시험 증거(design·human·measurement·deferred)는 test/traceability/evidence.yaml. 경고(번호 규칙·부분 덮임·동적 이름만 등)는 실패 아님.
+                                                  # → build/reports/traceability-check.md·.json. PR CI traceability 잡(필수 검사)이 결과 파일 없이 checkTraceability traceabilityReport gate1Report를 돈다
+./gradlew gate1Report [-Pgate1.publish=true]      # Gate 1 NFR 표(WO-53, 16행): 성능 행은 "approved": true 전용 장비 보고서만(C-252 (5)), N-07·N-24는 웜·콜드 두 조건(C-180),
+                                                  # N-15·N-23·N-25는 CI 결과, 사람 항목 목록 → build/reports/gate1.md(publish면 docs/bench/gate1.md). 증빙 지도는 docs/gates/gate1-evidence.md
 ./gradlew :sample-apps:<app>:sampleSmoke          # 샘플 앱을 에이전트 없이 기동해 엔드포인트 카탈로그 검증(전 변형, check 미포함).
-                                                  # 1개 변형은 sampleSmoke<Variant>, 루트 sampleSmoke는 55변형 전부. -Psample.startupRuns=5는 기동 중앙값.
-                                                  # 스위치(sample-apps/README.md): SAMPLE_DB=h2|postgres|mysql|mariadb|mssql|oracle(mariadb·mssql·oracle 드라이버는 shop-boot3만, WO-13),
+                                                  # 1개 변형은 sampleSmoke<Variant>, 루트 sampleSmoke는 60변형 전부. -Psample.startupRuns=5는 기동 중앙값.
+                                                  # 스위치(sample-apps/README.md): SAMPLE_DB=h2|postgres|mysql|mariadb|mssql|oracle(mariadb·mssql·oracle 드라이버는 shop-boot3만, WO-13)
+                                                  # |tibero|altibase|cubrid|db2(벤더 드라이버는 SAMPLE_JDBC_DRIVER_DIR의 jar, WO-50), SAMPLE_CONTAINER=tomcat|jetty|undertow(boot2 Jetty 9.4·Undertow 2.2,
+                                                  # boot3 Jetty 12.0 ee10·Undertow 2.3, boot4 Jetty 12.1만. WAR·shop-heavy는 무시, 변형 sampleSmokeJetty·Undertow, C-127),
                                                   # SAMPLE_POOL=hikari|tomcat|dbcp2, SAMPLE_ROUTING_DS, SAMPLE_DRIVER_WRAPPER(C-40 위임 래퍼 5번째 층), SAMPLE_SECOND_POOL(풀 2개·재기동)
 ./gradlew :sample-apps:<app>:sampleAppJar         # 실행 jar → sample-apps/<app>/build/sample-app/<app>.jar (WAR 앱은 :war)
 ./gradlew :sample-apps:<app>:sampleImage          # 샘플 앱 Docker 이미지 argos-sample/<app>:dev
@@ -408,6 +539,11 @@ pnpm -C ui e2e:stack --grep "T-SV-020e|T-SEC-44c|T-E2E-xlog-10 "   # 실서버 W
 pnpm -C ui e2e:docker [-- --update-snapshots=missing|all]   # stack 프로젝트를 다이제스트 고정 Linux Playwright 이미지 안에서(컨테이너는 pnpm-lock.yaml에서 만든 package-lock.json을
                                                   # npm ci로 무결성 검사하며 설치. UI를 바꾼 뒤에는 --update-snapshots=all로 다시 만들고 이미지를 확인. 시각 회귀 기준 이미지 생성·비교는
                                                   # 여기서만, 그 밖에서는 screenshot-linux-only로 skip). CI pr.yml e2e 잡(4샤드)이 이것을 쓴다. 기준 이미지 갱신은 quiet 락
+pnpm -C ui e2e:stack --grep "T-SEC-62"            # XSS 시드 전 화면 순회(WO-46, xss-seed.spec, 약 6분 새 스택 포함): 18 §4.3 위치 10종의 페이로드가 API 데이터에 실재 → 화면이 텍스트로 표시·주입 요소 0,
+                                                  # routes.ts 전 라우트 방문(계획에 없는 새 라우트는 실패), CSP 카운터 증가 0. 스윕 전용 앱 e2e-xss-*(shop-boot3)·e2e-xss-batch-*(:sample-apps:shop-batch:sampleAppJar 전제)
+pnpm -C ui e2e:fresh                              # 신규 설치 스택 변형(WO-46, C-192 (1), 약 1분): 관리자 없음·시드 없음·설정 토큰 파일(secrets/setup.token, 출력 금지)로 fresh-install 프로젝트
+                                                  # (specs/fresh/setup-wizard.spec: T-SEC-47 (fresh) 무토큰·오토큰 거부, T-E2E-059 실서버 마법사·IP 단계 강제·첫 앱 토큰 1회·사용한 토큰 403, CSP 0).
+                                                  # 메인 스택과 같은 server-it 락. e2e:docker 이미지 안은 node e2e/stack/cli.ts docker-fresh(CI e2e 잡 샤드 1)
 pnpm -C ui e2e:stack:up && pnpm -C ui e2e:stack:down   # 시드된 스택을 띄워 두고(ARGOS_E2E_STACK_URL=<URL>로 재사용) / 제거. node e2e/stack/cli.ts restart-server는
                                                   # DB를 둔 채 새 bootJar로 서버만 재기동. 변수·픽스처·required YAML은 ui/e2e/README.md
 pnpm -C ui perf:initial-load                      # 스택 위 초기 로드(T-NFR-14 골격, Navigation Timing 5회·CPU 부하 기록, 참고값). 같은 jar 전제
@@ -428,17 +564,62 @@ bash test/lock/argos-lock.sh run server-it --purpose "<용도>" -- ./gradlew :se
 bash sample-apps/load/run-bench.sh --summary build/bench/summary.json   # k6 bench.js 1,000/s × 1분(Docker), 결과 JSON·머신 부하
 java -jar sample-apps/load/build/sample-app/load.jar --target-url http://127.0.0.1:8080 --mix bench --rate 1000 --duration 1m --summary build/load/summary.json
                                                   # 데모 부하 생성기(의존성 없음, :sample-apps:load:sampleAppJar), 실행 중인 앱 대상
-bash test/seed/seed-traffic.sh --start --repeat 10   # PII·XSS 시드 트래픽(센티널 ARGOS_SEED). 실행 중인 앱은 --url <URL>
+bash test/seed/seed-traffic.sh --start --repeat 10   # PII·XSS 시드 트래픽(센티널 ARGOS_SEED). 실행 중인 앱은 --url <URL>, --set pii|xss|all(기본 all)
 bash test/agent/check-shading.sh agent/agent-dist/build/libs/argos-agent-0.0.0-SNAPSHOT.jar
-bash .github/scripts/check-workflows.sh           # 워크플로 정책(pull_request_target·self-hosted 금지, SHA 고정)
+bash test/lint/check-notice.sh                    # 차용 코드 출처 린트(T-BLD-012, 루트 check의 checkNotice): 비Argos 저작권·비Apache SPDX·'Adapted from' 표지 ↔ NOTICE 절
+./gradlew releaseArtifacts -Pversion=X.Y.Z        # 릴리스 자산(WO-44, 19 §7.2, check 미포함) → build/release/: argos-{agent,server}-X.Y.Z.jar, argos-{agent,server,ui}-X.Y.Z.cdx.json,
+                                                  # SHA256SUMS(sha256sum -c). SOURCE_DATE_EPOCH = 태그 커밋 시각. -Pargos.release.parts=agent[,server][,ui]는 일부만(로컬 확인용)
+bash test/release/verify-reproducible.sh run [--ui-skip] [--agent-only] [--images] [--version X.Y.Z] [--out <dir>]
+                                                  # T-BLD-009: --no-build-cache --rerun-tasks 2회 빌드 → 엔트리 단위 비교(compareReleaseOutputs, 원인 분류), 보고서 build/reproducibility/compare-report.txt.
+                                                  # --images는 amd64 jibBuildTar 3종도(이미지 tar 사본 약 0.9GB가 build/reproducibility/{a,b}/images에 남으니 지울 것). server-it 락 안에서.
+                                                  # compare <dirA> <dirB>는 release.yml 두 러너 비교. 종료 0 같음·1 다름·2 사용법
+bash test/release/check-sbom.sh [--require agent,server,ui] [--scanner "bash test/release/trivy-scan.sh"] build/release
+                                                  # T-BLD-008: CycloneDX 형식·컴포넌트 > 0, .trivyignore = docs/security/cve-exceptions.md ID 집합. 스캐너는 Trivy 0.76.2 다이제스트 고정(Docker, DB만 내려받음)
+                                                  # PR sbom-scan 잡(WO-46, C-246 (4)) 로컬 재현: ./gradlew :agent:agent-dist:agentSbom :server:serverSbom :ui:pnpmBuild → 세 SBOM을
+                                                  # build/sbom-scan/argos-<part>-<버전>.cdx.json으로 복사 → 같은 check-sbom.sh --require agent,server,ui --scanner ... build/sbom-scan.
+                                                  # 예외 승인 절차는 docs/security/cve-exceptions.md. 워크플로 정책 W7(check-workflows.sh): securityTest는 build-java 밖 자기 잡, sbom-scan은 Trivy 게이트
+                                                  # --review-dates warn|fail [--today YYYY-MM-DD](기본 warn: 재검토일 지난 예외 행마다 WARN, fail은 종료 1. 형식 오류·승인일 + 90일 초과는 항상 실패, T-BLD-008b 제안)
+bash test/release/trivy-scan.sh --image argos-server:<버전> .trivyignore   # 로컬 데몬 이미지 스캔(WO-47, T-SEC-71d 제안): docker save tar를 :ro로 같은 다이제스트 고정 Trivy에(소켓 미전달),
+                                                  # 수정 가능한 Critical·High, 같은 .trivyignore. 이미지는 먼저 ./gradlew :server:jibDockerBuild(server-it 락). pr.yml sbom-scan이 SBOM 게이트 뒤에 실행.
+                                                  # 주간 .github/workflows/sbom-rescan.yml(화 04:23 UTC·dispatch: SBOM 3종 --review-dates fail, 서버·데모 이미지 2종, 최신 릴리스 SBOM, 실패 시 kind/security 이슈)의
+                                                  # 로컬 재현 명령은 docs/security/cve-exceptions.md 'Where the gate runs'. 공급망 CI 전체(러너 격리·Dependabot PR 절차·수동 핀 갱신)는 docs/security/supply-chain.md
+bash test/release/check-image-arch.sh [--version X.Y.Z] <project>/build/jib-image.tar arm64   # T-BLD-022: jibBuildTar -Pargos.image.platforms=linux/arm64 결과의 os/arch·uid 10001·
+                                                  # OCI 라벨·베이스 다이제스트(--print-expected-base). 테스트 bash test/release/run-all.sh(JDK 없으면 ARGOS_RELEASE_TEST_GRADLE=0)
+deploy/verify-release.sh [--offline] [--key <asc>] [--fingerprint <FPR>] [--repo <o/n>] [<version>] <dir>
+                                                  # 릴리스 검증(docs/install/verify-release.md): SHA256SUMS·GPG(keys/ARGOS-RELEASE-KEY.asc, 지문은 아직 PLACEHOLDER라 --fingerprint 필수)·
+                                                  # 온라인이면 cosign verify-blob·이미지·gh attestation. 테스트 bash deploy/test/verify-release.test.sh(버리는 키, 약 2분),
+                                                  # 로컬 서명 리허설 bash deploy/test/release-signing-rehearsal.sh 0.1.0 build/release
+bash scripts/release-notes.sh [--check] [--assets <dir>] X.Y.Z   # CHANGELOG 절 → 릴리스 노트(T-BLD-019). release-compose.sh X.Y.Z <digests> <out.tar.gz>(compose 자산, 이미지 tag@digest),
+                                                  # release-sign.sh(release.yml sign 잡), check-release-key.sh [--allow-placeholder](keys/·상수·SECURITY.md 일관성). 테스트 bash scripts/test/run-all.sh
+bash .github/scripts/check-workflows.sh           # 워크플로 정책 W1~W8: pull_request_target 금지, PR 도달 워크플로는 GitHub 호스트 러너만, SHA·다이제스트 고정, W8 self-hosted 잡은
+                                                  # push(main·release/**·태그 v*)·schedule·dispatch만 + 잡 if: 신뢰 ref 가드(TRUSTED_REF_GUARDS) + checkout persist-credentials: false +
+                                                  # 비밀값은 environment trusted + 쓰기 권한 없음. 새 self-hosted 라벨은 .github/actionlint.yaml에도
+bash .github/scripts/check-workflows.sh --simulate <pull_request|push|schedule|workflow_dispatch> [--ref <ref>] [--fork] [<root>]
+                                                  # 그 이벤트에서 잡마다 <workflow>\t<job>\t<github-hosted|self-hosted>\t<runs|skipped:<사유>|may-run> TSV(포크 PR·기능 브랜치에
+                                                  # self-hosted 실행 0 = runner-isolation.test.sh, T-BLD-027 제안, 약 30초)
+bash .github/scripts/check-dependency-verification.sh [<root>]   # 의존성 검증 강제 V1~V5(T-SEC-73a 제안, 약 3초): verification-metadata verify-metadata·sha256, trusted-artifacts 사유 목록,
+                                                  # 스크립트·빌드·워크플로에 lenient/off·메타데이터 재생성 금지(docs/·*.md 제외), pnpm install은 --frozen-lockfile.
+                                                  # TestKit 시험 ./gradlew :build-logic:test --tests '*DependencyVerificationFunctionalTest*'. Dependabot 설정 시험 bash .github/scripts/test/dependabot-config.test.sh(T-SEC-71b 제안)
+bash .github/scripts/test/supply-chain-workflows.test.sh   # CodeQL·secrets-scan·sbom-rescan·pr.yml 이미지 스캔 구조와 변이 사본(T-BLD-028·T-SEC-73b·71c·71d 제안, Docker 불필요, 약 1분)
 bash .github/scripts/check-proto.sh [--against-git <base>|--against <dir>]   # proto buf lint, 인자를 주면 buf breaking(고정 다이제스트 컨테이너, --network none, PR lint 잡)
 bash .github/scripts/check-file-modes.sh          # git 인덱스에서 gradlew·*.sh가 100755인지(lint 잡)
-REQUIRE_DOCKER=1 bash .github/scripts/test/run-all.sh   # CI 스크립트 테스트(DCO·changelog·워크플로 정책 등)
-bash .github/scripts/run-gitleaks.sh dir          # 비밀 스캔(Docker)
+REQUIRE_DOCKER=1 bash .github/scripts/test/run-all.sh   # CI 스크립트 테스트(DCO·changelog·워크플로 정책·러너 격리·공급망 워크플로·dependabot·의존성 검증·branch-protection·repo-config·project-files·셸 결과 기록기(T-BLD-014i)·traceability 잡 구조(T-BLD-014j) 등 18스위트 736건, 이 노트북 약 7.5분).
+                                                  # 셸 실행기 4개(이것, deploy/compose·scripts·test/release의 run-all.sh)는 스크립트마다 build/test-results/shell/<suite>/<script>.tap을 남긴다(traceabilityReport 입력)
+bash .github/scripts/test/repo-config.test.sh     # CODEOWNERS·labeler 일관성(T-BLD-025 제안, 약 30초): 문법·경로 존재·19 §6.8 핵심 경로 소유 = labeler needs-matrix 집합, 표본 경로 → 라벨, 위반 픽스처
+bash .github/scripts/test/project-files.test.sh [<root>]   # 19 §8 파일 세트·제목 계약·코드 앵커(SECURITY.md#supported-versions 등)·개인정보(이메일·전화)·사업 요소·상대 링크
+                                                  # (T-BLD-026 제안, 약 1분). <root>를 주면 그 트리만 검사하고 ERROR [...] 줄 출력. 프로젝트 파일 제목을 바꾸면 시험도 함께 고친다
+bash .github/scripts/branch-protection.sh --dry-run [--repo OWNER/NAME] [--approvals N] [--include-e2e] [--include-sbom-scan] [--list-checks]
+                                                  # 브랜치 보호 ruleset argos-protected-branches(main·release/*)·Discussions·PVR·포크 PR 워크플로 승인. 메인테이너가 gh auth로 실행(이 노트북에서 GitHub 호출 금지),
+                                                  # --dry-run은 gh 호출 없이 실행 가능한 스크립트 출력. pull_request 워크플로의 새 잡은 required_checks 또는 excluded_jobs(사유)에 분류해야
+                                                  # branch-protection.test.sh(가짜 gh, T-BLD-024 제안)가 통과한다
+bash .github/scripts/create-labels.sh --dry-run [--repo OWNER/NAME] [--backport X.Y]   # 라벨 체계(area/*·kind/*·needs-matrix 등) 생성, 메인테이너가 gh로 실행. 시험 create-labels.test.sh
+./gradlew :agent:agent-core:test --tests '*AgentConfigKeySnapshotTest*'   # T-API-009 에이전트 몫: 공개·진단 설정 키(타입·기본값·remote·env) = agent/agent-core/src/test/resources/config/agent-config-keys.txt.
+                                                  # 키를 추가·삭제·변경하면 파일을 손으로 고치고 CHANGELOG 항목을 더한다(재생성 없음). 서버 몫은 :server:contractTest ConfigKeySnapshotTest·ConfigEnvAliasSnapshotTest
+bash .github/scripts/run-gitleaks.sh dir          # 비밀 스캔(Docker). git [log-opts]는 커밋 범위, 인자 없는 git은 전체 이력(secrets-scan.yml 주간·dispatch와 같다)
 ```
 
 - 워크플로 lint: `docker run --rm -v "$PWD:/repo:ro" -w /repo rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -color` (Git Bash에서는 `MSYS_NO_PATHCONV=1`과 Windows 경로 볼륨). PR 잡과 명령의 대응은 `docs/dev-setup.md` 5절.
-- 의존성 변경 후: `./gradlew resolveAndLockAll --write-locks --no-configuration-cache -Pargos.ui.skip=true`로 잠금을 갱신하고, `gradle/verification-metadata.xml`은 빈 Gradle 캐시의 Linux 컨테이너에서 `--write-verification-metadata sha256`으로 다시 만든다(명령은 `docs/dev-setup.md` 7절). Windows 웜 캐시에서 만들면 POM·BOM 항목이 빠지고 CRLF로 바뀐다.
+- 의존성 변경 후: `./gradlew resolveAndLockAll --write-locks --no-configuration-cache -Pargos.ui.skip=true`로 잠금을 갱신하고, `gradle/verification-metadata.xml`은 빈 Gradle 캐시의 Linux 컨테이너에서 `--write-verification-metadata sha256`으로 다시 만든다(명령은 `docs/dev-setup.md` 7절). Windows 웜 캐시에서 만들면 POM·BOM 항목이 빠지고 CRLF로 바뀐다. Dependabot PR도 병합 전에 같은 방법으로 잠금·메타데이터를 다시 만든다(`docs/security/supply-chain.md`).
 - Windows: Git Bash 기준. PowerShell에서는 `.\gradlew.bat`을 쓰고 `"-Pargos.ui.skip=true"`처럼 따옴표로 감싼다. `git config --global core.longpaths true` 권장.
 - Windows에서 커밋할 때(core.filemode=false) `gradlew`와 `*.sh`는 `git add --chmod=+x`로 추가해 100755를 유지한다(`git ls-files -s gradlew` → 100755). 안 하면 100644로 기록되어 CI의 `./gradlew` 잡과 Linux·macOS 빌드가 전부 Permission denied(exit 126)로 실패한다. `bash .github/scripts/check-file-modes.sh`로 확인한다.
 

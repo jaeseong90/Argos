@@ -25,13 +25,14 @@ import org.slf4j.MDC;
 import org.springframework.boot.SpringBootVersion;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Slow, error, dispatch and diagnostics endpoints of the shop catalog (18 §4.2): /api/slow,
  * /api/error-500, /api/send-error, /api/forward, /api/threads/dump-me, /api/mdc-log, /api/user,
- * /api/version, /api/runtime.
+ * /api/version, /api/runtime, and the method-less mapping /api/any.
  */
 @RestController
 public class DiagnosticsController {
@@ -167,6 +168,17 @@ public class DiagnosticsController {
     return result;
   }
 
+  /**
+   * A mapping without a method condition (ADR-0010 C-162 (3)): every HTTP method reaches it; the
+   * answer names the method of the request.
+   */
+  @RequestMapping("/api/any")
+  public Map<String, Object> any(HttpServletRequest request) {
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("method", request.getMethod());
+    return result;
+  }
+
   @GetMapping("/api/version")
   public Map<String, Object> version() {
     Map<String, Object> result = new LinkedHashMap<>();
@@ -188,6 +200,16 @@ public class DiagnosticsController {
             "Spring Boot " + SpringBootVersion.getVersion(),
             "jakarta",
             request.getServletContext().getServerInfo(),
-            request.getContextPath()));
+            request.getContextPath(),
+            hasJspForwardTarget(request)));
+  }
+
+  /** Whether the web app has the JSP of GET /api/jsp-forward (shop-war-jakarta). */
+  private static boolean hasJspForwardTarget(HttpServletRequest request) {
+    try {
+      return request.getServletContext().getResource(RuntimeInfo.JSP_FORWARD_TARGET) != null;
+    } catch (java.net.MalformedURLException e) {
+      return false;
+    }
   }
 }

@@ -6,19 +6,26 @@
 //   benchmarks only, never shipped (docs/licenses/dev-only.md, ADR-0003 C-33).
 // - The demo load generator behind the public image argos-demo-load (ADR-0003 C-33, 17 §3.2/§3.9):
 //   own Java 17 code on java.net.http with a fixed arrival rate and no third-party dependency, so
-//   the image holds allow-listed licenses only (WO-41 moves this project to checkLicenses). Same
-//   bench mix as bench.js (MIX=bench) plus the demo mix of 17 §3.9 (MIX=default).
+//   the image holds allow-listed licenses only (checkLicenses: ArgosProject.isDevelopmentOnly leaves
+//   this project out of the development-only set, WO-41). Same bench mix as bench.js (MIX=bench),
+//   the 17 §3.9 shares over the shop apps (MIX=default) and the demo profile over argos-demo-app
+//   (MIX=demo, order-api -> payment-api; WO-41).
+// - jibDockerBuild (argos.demo-image, WO-41): the public image argos-demo-load:<version> (local
+//   daemon, linux/amd64; defaults TARGET_URL=http://sample-app-a:8080, RATE=50, MIX=demo).
+//   sampleImage keeps the development Dockerfile image argos-sample/load:dev.
 // - integrationTest: the generator over HTTP against an in-process server; then shop-boot3 (jar, JDK
 //   17) + ext-stub with the seed environment: the seed check of 18 §4.3 (every seed endpoint
 //   answers with the ARGOS_SEED sentinel), test/seed/seed-traffic.sh (every seed endpoint N
 //   times) and short runs of the packaged load.jar with both mixes.
 // - checkDemoLoadDependencies (in check): the generator keeps zero runtime dependencies.
 
+import io.argos.buildlogic.demo.DemoImage
 import io.argos.buildlogic.sample.SampleSmokeSlot
 
 plugins {
   id("argos.sample-app")
   id("argos.integration-test")
+  id("argos.demo-image")
 }
 
 description = "Sample apps: demo load generator (fixed arrival rate), k6 scenario and seed check."
@@ -28,6 +35,14 @@ sampleApp {
   runJdk = 17
   executableJar("io.argos.sample.load.DemoLoadMain")
   dockerImage()
+}
+
+demoImage {
+  imageName = DemoImage.LOAD_IMAGE_NAME
+  title = DemoImage.LOAD_IMAGE_NAME
+  description = "Argos demo load generator: fixed arrival rate over the demo app endpoints"
+  jvmFlags = DemoImage.LOAD_JVM_FLAGS
+  environment = DemoImage.LOAD_ENVIRONMENT
 }
 
 // The packaged apps the seed check starts: shop-boot3 (the reference app, 18 §2.1) and the smoke

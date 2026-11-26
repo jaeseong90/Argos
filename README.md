@@ -22,15 +22,38 @@ and no published agent yet. The repository currently contains the design documen
 skeleton and the CI checks that every later change must pass. Interfaces described below are planned
 and may change without notice until 1.0.
 
-## Planned quick start
+## Quick start: the demo
 
-The following is the intended first-five-minutes experience; it does not work yet.
+Try Argos on one machine with Docker: the server, ClickHouse, PostgreSQL, two sample applications
+(`order-api` and `payment-api`) with the agent attached, and a load generator (50 requests a second
+with slow requests, errors, an N+1 query, calls from `order-api` to `payment-api` and a batch every
+2 minutes). Needs Docker Engine 24+ with Compose v2.24+ (or Docker Desktop) and at least 7.4 GiB of
+memory for Docker; until images are published, JDK 21 to build them.
 
 ```sh
-# Server, ClickHouse, PostgreSQL, two sample apps with the agent attached, and a load generator.
-docker compose --profile demo up
-# Open http://localhost:8080 and watch XLog points arrive within 60 seconds.
+# 1. Build the images once, in the repository root (the first build takes several minutes).
+./gradlew :server:jibDockerBuild :sample-apps:demo-app:jibDockerBuild :sample-apps:load:jibDockerBuild
+
+# 2. Prepare and start the demo (on a Linux Docker Engine: sudo before each command).
+cd deploy/compose
+./argos-env-init.sh --demo
+docker compose --profile demo up -d
+
+# 3. Open http://localhost:8080 and sign in as admin with this password; the UI asks for a new one.
+cat secrets/admin_password
+#    XLog points arrive within about a minute. Then look at the dashboard, traces, errors, SQL,
+#    batch transactions and, after about 8 minutes, an alert.
+
+# 4. Remove the demo and all its data.
+docker compose --profile demo down -v
 ```
+
+The demo is for evaluation only: its agents send plaintext gRPC inside the Docker network, the UI
+shows a "DEMO MODE" banner, the ports `8080` and `9100` are published on `127.0.0.1`, and the server
+skips the permission check of its master key file (Docker Desktop shows the secret files as `0777`;
+it logs a warning at every start). Details and troubleshooting (Docker Desktop on Windows included):
+[docs/install/compose.md, section 14](docs/install/compose.md#14-demo-profile). A real installation
+follows the rest of that guide.
 
 Attaching the agent to an application (planned):
 

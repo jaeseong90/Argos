@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
+# req: C-235
+# test-ids: T-BLD-040
 #
 # Tests for test/lock/argos-lock.sh (ADR-0010 C-235 (8)) in a throwaway lock root (ARGOS_LOCK_DIR):
 # the owner file, run/acquire/release, the stale rule (only a dead PID of this host and PID kind),

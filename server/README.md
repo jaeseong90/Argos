@@ -106,7 +106,12 @@ only SHA-256 hashes of tokens and bcrypt hashes of passwords. The same flow runs
 
 One server holds at most **5,000 live agent sessions** on its gRPC port. The bound keeps the session registry and the
 deduplication window in memory bounded: about 325 MB in the worst case, with every deduplication ring full. 5,000 is 16
-times the 10 to 300 instances per server that `docs/01-product-plan.md` plans for.
+times the 10 to 300 instances per server that `docs/01-product-plan.md` plans for. Measured cost of idle sessions
+(`serverLoadTest` smoke, 1,000 idle sessions with one TLS connection each, shared laptop, reference only): about
+14.6 KiB of heap per idle session after a full GC (drift of the idle server taken off) and about 16 KiB of resident
+set, so about 71 MiB of heap and 78 MiB of resident set for 5,000 sessions, before their deduplication rings fill
+(`docs/bench/server-load.md`, ADR-0010 C-157 (1)·C-244 (5); laptop values, INVALID as measurements). The 5,000 bound
+stays; the value on the target machine needs the full run.
 
 - At the bound, the Hello of an instance without a live session is refused with gRPC `RESOURCE_EXHAUSTED`,
   `RejectReason` `RATE_LIMITED` and `retry_after_s` 60 (the agent retries after 60 s). It is counted as

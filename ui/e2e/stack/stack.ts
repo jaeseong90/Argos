@@ -71,7 +71,9 @@ import {
 import {
   createStackSecrets,
   loadStackSecrets,
+  optionalSecrets,
   SECRET_FILES,
+  SETUP_TOKEN_FILE,
   secretValues,
   sha256Hex,
   type StackSecrets,
@@ -152,11 +154,20 @@ export function rolesScript(secrets: StackSecrets): string {
   );
 }
 
+/**
+ * Which stack a run starts: `seeded` (the unattended administrator, users and seed data of the
+ * stack project) or `fresh` (WO-46, ADR-0010 C-192 (1): a new installation for the setup wizard of
+ * the fresh-install project: no administrator, so the server writes a setup token to
+ * /data/setup-token and the wizard asks for it; no IP mode either, the wizard step chooses it).
+ */
+export type StackVariant = 'seeded' | 'fresh';
+
 /** Environment of the server container (documented short names and *_FILE secrets). */
 export function serverEnvironment(
   runId: string,
   port: number,
   masterKey?: string,
+  variant: StackVariant = 'seeded',
 ): Record<string, string> {
   const names = stackNames(runId);
   const secret = (key: keyof StackSecrets): string => `${SECRETS_MOUNT}/${SECRET_FILES[key]}`;
@@ -175,9 +186,15 @@ export function serverEnvironment(
     ARGOS_CH_WRITER_PASSWORD_FILE: secret('chWriter'),
     ARGOS_CH_READER_PASSWORD_FILE: secret('chReader'),
     ARGOS_CH_MIGRATOR_PASSWORD_FILE: secret('chMigrator'),
-    ARGOS_ADMIN_USERNAME: ADMIN_USERNAME,
-    ARGOS_ADMIN_PASSWORD_FILE: secret('adminInitial'),
-    ARGOS_IP_MODE: 'masked',
+    // A fresh installation has no unattended administrator (and no IP mode: SEC-31 makes the
+    // wizard's step choose it), so the server issues a setup token instead (16 §7.8).
+    ...(variant === 'fresh'
+      ? {}
+      : {
+          ARGOS_ADMIN_USERNAME: ADMIN_USERNAME,
+          ARGOS_ADMIN_PASSWORD_FILE: secret('adminInitial'),
+          ARGOS_IP_MODE: 'masked',
+        }),
     ARGOS_JWT_KEY_FILE: '/data/jwt.key',
     ARGOS_WAL_DIR: '/data/wal',
     // The master key of the alert channel secrets (WO-38: channels can be created and test-sent).
@@ -434,8 +451,15 @@ async function assertRunning(name: string): Promise<void> {
   }
 }
 
-/** Starts the stack of a new run and writes run.json. */
-export async function startStack(runId: string, log: Log): Promise<StartedStack> {
+/**
+ * Starts the stack of a new run and writes run.json. A `fresh` stack (WO-46) has the same
+ * containers, limits and labels but no unattended administrator and no fake alert receivers.
+ */
+export async function startStack(
+  runId: string,
+  log: Log,
+  variant: StackVariant = 'seeded',
+): Promise<StartedStack> {
   const timings: Record<string, number> = {};
   const started = Date.now();
   const built = stackJars();
@@ -543,15 +567,18 @@ export async function startStack(runId: string, log: Log): Promise<StartedStack>
   const publicUrl = `http://127.0.0.1:${String(port)}`;
   const serverEnv = envFile(
     join(secretDir, 'server.env'),
-    serverEnvironment(runId, port, secrets.masterKey),
+    serverEnvironment(runId, port, secrets.masterKey, variant),
   );
   // Fake alert receivers (WO-38): the SMTP port is fixed now (a server setting); a free host port,
-  // which the alert spec's SMTP receiver binds on 127.0.0.1.
-  const receivers = receiverConfig(
-    await resolveHostGateway(runId, images.serverJre, names.network, log),
-    await freePort(),
-  );
-  writeReceiverConfig(runId, receivers);
+  // which the alert spec's SMTP receiver binds on 127.0.0.1. A fresh stack has no alert tests.
+  let receivers: ReceiverStackConfig | null = null;
+  if (variant === 'seeded') {
+    receivers = receiverConfig(
+      await resolveHostGateway(runId, images.serverJre, names.network, log),
+      await freePort(),
+    );
+    writeReceiverConfig(runId, receivers);
+  }
   await docker([
     'run',
     '-d',
@@ -571,8 +598,7 @@ export async function startStack(runId: string, log: Log): Promise<StartedStack>
     '/data',
     '--env-file',
     serverEnv,
-    '--add-host',
-    `${RECEIVER_HOST_ALIAS}:host-gateway`,
+    ...(receivers === null ? [] : ['--add-host', `${RECEIVER_HOST_ALIAS}:host-gateway`]),
     ...bind(jars.server, '/opt/argos/argos-server.jar'),
     ...bind(secretDir, SECRETS_MOUNT),
     '-p',
@@ -669,8 +695,12 @@ export async function stopStack(state: RunState, keep: boolean, log: Log): Promi
     log(`stack ${state.run_id} was reused (ARGOS_E2E_STACK_URL): left running`);
     return;
   }
+  // The setup token of a fresh stack (WO-46) is in one server log line (16 §7.8): redacted too.
   const secrets = existsSync(secretsDir(state.run_id))
-    ? secretValues(runSecrets(state.run_id))
+    ? [
+        ...secretValues(runSecrets(state.run_id)),
+        ...optionalSecrets(secretsDir(state.run_id), [SETUP_TOKEN_FILE]),
+      ]
     : [];
   if (state.containers !== null) {
     const dir = logsDir(state.run_id);
@@ -697,14 +727,15 @@ export async function stopStack(state: RunState, keep: boolean, log: Log): Promi
 
 /**
  * Deletes what a removed run leaves below ui/e2e/.stack except its logs: the secrets, the loader
- * and seed-traffic outputs, the CSP control record, the fake receiver settings (receivers.json), the
+ * and seed-traffic outputs, the XSS sweep's record and smoke reports (xss-seed/, WO-46), the CSP
+ * control record, the fake receiver settings (receivers.json), the
  * seed manifest and the session. Only `*.log`
  * files stay (diagnostics),
  * so the next `prettier --check .` of the UI does not trip over JSON and Markdown of a finished run.
  */
 export function removeRunOutputs(runId: string): void {
   rmSync(secretsDir(runId), { recursive: true, force: true });
-  for (const name of ['querydata', 'seed-traffic', 'jars', 'container-install']) {
+  for (const name of ['querydata', 'seed-traffic', 'jars', 'container-install', 'xss-seed']) {
     rmSync(join(runDir(runId), name), { recursive: true, force: true });
   }
   rmSync(cspControlFile(runId), { force: true });

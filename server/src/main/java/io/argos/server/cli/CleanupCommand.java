@@ -5,6 +5,7 @@ import io.argos.server.audit.AuditResult;
 import io.argos.server.config.ArgosProperties;
 import io.argos.server.storage.postgres.ops.AdminCommandDatabase;
 import io.argos.server.storage.postgres.ops.AdminCommandDatabase.AdminCommandDatabaseException;
+import io.argos.server.storage.postgres.ops.DictionaryCleanupRepository;
 import java.io.PrintStream;
 import java.time.Clock;
 import java.time.Duration;
@@ -50,8 +51,11 @@ final class CleanupCommand {
         Exit codes: 0 success, 1 failure, 2 invalid arguments.
       """;
 
-  /** Days after which an unseen dictionary entry is deleted (SEC-13, 17 §9.3). */
-  static final int DICTIONARY_DAYS = 90;
+  /**
+   * Days after which an unseen dictionary entry is deleted (SEC-13, 17 §9.3; the nightly job's
+   * value).
+   */
+  static final int DICTIONARY_DAYS = DictionaryCleanupRepository.UNSEEN_DAYS;
 
   /** What is cleaned. */
   enum Target {
@@ -114,8 +118,7 @@ final class CleanupCommand {
           counts.put("connected_skipped", connected.size());
         }
         case DICTIONARY -> {
-          long deleted =
-              db.deleteDictionaryUnseenSince(now.minus(Duration.ofDays(DICTIONARY_DAYS)));
+          long deleted = db.deleteDictionaryUnseenSince(DictionaryCleanupRepository.cutoff(now));
           counts.put("deleted", deleted);
           counts.put("unseen_days", DICTIONARY_DAYS);
         }

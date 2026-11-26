@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# ClickHouse backup target (docs/17 section 10, docs/13 section 10, WO-43): binds the operator's
+# directory ARGOS_CH_BACKUP_DIR to /backups in the clickhouse service and declares it as the only
+# backup disk (config/clickhouse/backups.xml, backups.allowed_disk). argos-compose.sh adds this
+# file when ARGOS_CH_BACKUP_DIR is set in .env; Compose has no conditional mounts.
+#
+# ARGOS_CH_BACKUP_DIR must be a directory on another disk than the Docker data (an external disk,
+# a NAS mount): backup.sh --clickhouse refuses a directory on the same device as the ClickHouse
+# data. The directory must exist (it is not created here, so that an unmounted mount point fails
+# instead of filling the system disk); backup.sh gives it to the ClickHouse user (uid 101) with
+# mode 0700. Nothing is published: the ports of compose.yaml stay as they are.
+
+services:
+  clickhouse:
+    volumes:
+      - type: bind
+        source: ${ARGOS_CH_BACKUP_DIR:?ARGOS_CH_BACKUP_DIR must name an existing directory on another disk}
+        target: /backups
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./config/clickhouse/backups.xml
+        target: /etc/clickhouse-server/config.d/backups.xml
+        read_only: true
+        bind:
+          create_host_path: false

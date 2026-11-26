@@ -1,6 +1,9 @@
 {
   "documentTitle": "{{screen}} · Argos APM",
   "skipToContent": "본문으로 건너뛰기",
+  "demo": {
+    "banner": "데모 모드: 평문 gRPC 사용 중, 샘플 트래픽"
+  },
   "topbar": {
     "label": "전역 조작",
     "home": "Argos APM 처음 화면",

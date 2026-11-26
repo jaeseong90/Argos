@@ -11,7 +11,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && node scripts/check-licenses.mjs --require-bundle --notices dist/licenses.txt && node scripts/check-no-external.mjs && node scripts/bundle-size.mjs",
+    "build": "tsc -b && vite build && node scripts/check-licenses.mjs --require-bundle --notices dist/licenses.txt --about-json build/licenses/ui.json --sbom build/sbom/ui.cdx.json && node scripts/check-no-external.mjs && node scripts/bundle-size.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "lint": "eslint --max-warnings 0 .",
@@ -28,6 +28,7 @@
     "e2e": "vite build --mode perf --outDir build/perf-dist && playwright test --project preview --project stack",
     "e2e:preview": "vite build --mode perf --outDir build/perf-dist && playwright test --project preview",
     "e2e:stack": "playwright test --project stack",
+    "e2e:fresh": "playwright test --project fresh-install",
     "e2e:docker": "node e2e/stack/cli.ts docker",
     "e2e:stack:up": "node e2e/stack/cli.ts up",
     "e2e:stack:down": "node e2e/stack/cli.ts down",

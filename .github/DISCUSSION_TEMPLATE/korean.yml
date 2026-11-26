@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Form for the "Korean (한국어)" Discussions category (slug korean, GOVERNANCE.md "Discussions").
+body:
+  - type: markdown
+    attributes:
+      value: |
+        한국어로 질문하고 토론하는 공간입니다. Questions and discussions in Korean.
+        **보안 취약점은 여기에 올리지 마세요.** SECURITY.md의 비공개 신고 절차를 따라 주세요. (Do not post security vulnerabilities here; follow SECURITY.md.)
+        토큰·비밀번호·호스트 이름·IP 주소·개인정보는 지우고 올려 주세요. (Remove tokens, passwords, host names, IP addresses and personal data.)
+  - type: textarea
+    id: body
+    attributes:
+      label: 내용 (Message)
+      description: 질문, 아이디어, 사용기 등 무엇이든 좋습니다.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: 버전 (Versions)
+      description: 관련 있으면 Argos 서버·에이전트 버전, JDK, Spring Boot, 서블릿 컨테이너를 적어 주세요.
+      placeholder: "server 0.1.0, agent 0.1.0, Temurin 21.0.4, Spring Boot 3.3.4"

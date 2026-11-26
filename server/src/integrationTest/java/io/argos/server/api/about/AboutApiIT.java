@@ -14,9 +14,13 @@ import io.argos.server.testing.auth.ApiTestClient;
 import io.argos.server.testing.auth.ArgosTestServer;
 import io.argos.server.testing.auth.TestUsers;
 import io.argos.server.testing.fakeagent.AgentTokens;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.util.Map;
+import java.util.TreeMap;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -28,9 +32,10 @@ import tools.jackson.databind.JsonNode;
  * T-API-013a on a real server with PostgreSQL and ClickHouse (WO-39; 14 §4.14, O-R12, O-L04,
  * ADR-0010 C-153): {@code GET /about} gives the build's version and commit (the same as the {@code
  * X-Argos-Server-Version} header), the protocol version, the agent versions of the instances that
- * are not archived and the uptime; {@code GET /about/licenses} gives the three parts, {@code
- * not_generated} while the build carries no list (WO-44). Every role may read both, nobody without
- * a session.
+ * are not archived and the uptime; {@code GET /about/licenses} gives the three parts from the lists
+ * the build generates (WO-44): server and agent equal to their argos-deps.txt, ui only in a build
+ * with the UI bundle ({@code not_generated} otherwise). Every role may read both, nobody without a
+ * session.
  */
 @Tag("integration")
 @Tag("req:O-R12")
@@ -129,26 +134,79 @@ class AboutApiIT {
     assertThat(anonymous.status()).as(anonymous.toString()).isEqualTo(401);
   }
 
+  /** {@code group:artifact} to {@code version:license} of an argos-deps.txt file (SEC-77). */
+  private static Map<String, String> depsOf(String property) throws Exception {
+    String path = System.getProperty(property);
+    assertThat(path).as("system property " + property + " (server/build.gradle.kts)").isNotBlank();
+    Map<String, String> out = new TreeMap<>();
+    for (String line : Files.readAllLines(Path.of(path), StandardCharsets.UTF_8)) {
+      String l = line.strip();
+      if (l.isEmpty() || l.startsWith("#")) {
+        continue;
+      }
+      String[] parts = l.split(":", 4);
+      assertThat(parts).as(l).hasSize(4);
+      out.put(parts[0] + ":" + parts[1], parts[2] + ":" + parts[3]);
+    }
+    assertThat(out).as(path).isNotEmpty();
+    return out;
+  }
+
+  private static Map<String, String> componentsOf(JsonNode section) {
+    Map<String, String> out = new TreeMap<>();
+    for (JsonNode c : section.path("components")) {
+      out.put(
+          c.path("name").asString(),
+          c.path("version").asString() + ":" + c.path("license").asString());
+    }
+    return out;
+  }
+
   @Test
   @DisplayName(
-      "T-API-013a GET /about/licenses: server, ui and agent sections; without the generated lists"
-          + " (WO-44) available=false, reason=not_generated, no components; viewer 200, no session"
-          + " 401")
-  void licenses() {
+      "T-API-013a GET /about/licenses (WO-44, C-153): the server and agent sections list exactly the"
+          + " modules of their argos-deps.txt with the same versions and licenses (e.g."
+          + " io.grpc:grpc-netty, org.springframework:spring-core, net.bytebuddy:byte-buddy); the ui"
+          + " section is available exactly in a build with the UI bundle, otherwise not_generated;"
+          + " viewer 200, no session 401")
+  void licenses() throws Exception {
     ApiResponse r = login(Role.VIEWER).get("/api/v1/about/licenses");
     assertThat(r.status()).as(r.toString()).isEqualTo(200);
     JsonNode data = r.json().path("data");
     ClassLoader loader = AboutApiIT.class.getClassLoader();
     for (String part : new String[] {"server", "ui", "agent"}) {
-      JsonNode section = data.path(part);
-      assertThat(section.isObject()).as(part).isTrue();
-      boolean generated = loader.getResource(LicenseCatalog.DIRECTORY + part + ".json") != null;
-      assertThat(section.path("available").asBoolean()).as(part).isEqualTo(generated);
-      if (!generated) {
-        assertThat(section.path("reason").asString()).as(part).isEqualTo("not_generated");
-        assertThat(section.path("components").isArray()).as(part).isTrue();
-        assertThat(section.path("components").size()).as(part).isZero();
-      }
+      assertThat(data.path(part).isObject()).as(part).isTrue();
+    }
+
+    Map<String, String> serverDeps = depsOf("argos.test.serverDepsFile");
+    JsonNode serverSection = data.path("server");
+    assertThat(serverSection.path("available").asBoolean()).as(serverSection.toString()).isTrue();
+    assertThat(serverSection.path("truncated").asBoolean()).isFalse();
+    Map<String, String> serverListed = componentsOf(serverSection);
+    assertThat(serverListed).as("server list = server argos-deps.txt").isEqualTo(serverDeps);
+    assertThat(serverListed).containsKeys("io.grpc:grpc-netty", "org.springframework:spring-core");
+    assertThat(serverListed.get("org.postgresql:postgresql")).endsWith(":BSD-2-Clause");
+
+    Map<String, String> agentDeps = depsOf("argos.test.agentDepsFile");
+    JsonNode agentSection = data.path("agent");
+    assertThat(agentSection.path("available").asBoolean()).as(agentSection.toString()).isTrue();
+    Map<String, String> agentListed = componentsOf(agentSection);
+    assertThat(agentListed).as("agent list = agent jar argos-deps.txt").isEqualTo(agentDeps);
+    assertThat(agentListed).containsKeys("io.grpc:grpc-netty", "net.bytebuddy:byte-buddy");
+
+    boolean uiBundled = Boolean.parseBoolean(System.getProperty("argos.test.uiBundled", "false"));
+    JsonNode ui = data.path("ui");
+    assertThat(loader.getResource(LicenseCatalog.DIRECTORY + "ui.json") != null)
+        .as("ui.json on the class path exactly when the build bundles the UI")
+        .isEqualTo(uiBundled);
+    assertThat(ui.path("available").asBoolean()).as(ui.toString()).isEqualTo(uiBundled);
+    if (uiBundled) {
+      assertThat(ui.path("components").size()).isPositive();
+      assertThat(componentsOf(ui)).containsKey("react");
+    } else {
+      assertThat(ui.path("reason").asString()).isEqualTo("not_generated");
+      assertThat(ui.path("components").isArray()).isTrue();
+      assertThat(ui.path("components").size()).isZero();
     }
     ApiResponse anonymous = server.client().get("/api/v1/about/licenses");
     assertThat(anonymous.status()).as(anonymous.toString()).isEqualTo(401);

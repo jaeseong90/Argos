@@ -20,15 +20,37 @@ Argos APM은 설계와 저장소 골격 단계다. 릴리스, 컨테이너 이�
 설계 문서, 빌드 골격, 이후 모든 변경이 통과해야 하는 CI 검사가 있다. 아래에 적은 인터페이스는 계획이며
 1.0 전까지 예고 없이 바뀔 수 있다.
 
-## 빠른 시작(계획)
+## 빠른 시작: 데모
 
-아래는 목표로 하는 "첫 5분" 경험이며 아직 동작하지 않는다.
+Docker가 있는 한 대에서 Argos를 체험한다. 서버, ClickHouse, PostgreSQL, 에이전트를 붙인 샘플
+애플리케이션 2개(`order-api`, `payment-api`), 부하 생성기(초당 50요청: 느린 요청, 에러, N+1 쿼리,
+`order-api`에서 `payment-api`로의 호출, 2분마다 도는 배치)가 뜬다. Docker Engine 24 이상과 Compose
+v2.24 이상(또는 Docker Desktop), Docker에 보이는 메모리 7.4 GiB 이상이 필요하고, 이미지가 배포되기
+전까지는 이미지를 빌드할 JDK 21이 필요하다.
 
 ```sh
-# 서버, ClickHouse, PostgreSQL, 에이전트를 붙인 샘플 앱 2개, 부하 생성기
-docker compose --profile demo up
-# http://localhost:8080 에서 60초 안에 XLog 점이 들어오는 것을 확인
+# 1. 저장소 루트에서 이미지를 한 번 빌드한다(첫 빌드는 몇 분 걸린다).
+./gradlew :server:jibDockerBuild :sample-apps:demo-app:jibDockerBuild :sample-apps:load:jibDockerBuild
+
+# 2. 데모를 준비하고 시작한다(Linux Docker Engine에서는 각 명령 앞에 sudo).
+cd deploy/compose
+./argos-env-init.sh --demo
+docker compose --profile demo up -d
+
+# 3. http://localhost:8080 을 열고 admin과 아래 비밀번호로 로그인한다. UI가 새 비밀번호를 묻는다.
+cat secrets/admin_password
+#    약 1분 안에 XLog 점이 들어온다. 대시보드, 트레이스, 에러, SQL, 배치 트랜잭션을 보고,
+#    약 8분 뒤에는 알림도 확인한다.
+
+# 4. 데모와 모든 데이터를 지운다.
+docker compose --profile demo down -v
 ```
+
+데모는 평가 전용이다. 데모 에이전트는 Docker 네트워크 안에서 평문 gRPC로 보내고, UI에 "DEMO MODE"
+배너가 보이며, 포트 `8080`과 `9100`은 `127.0.0.1`에 게시되고, 서버는 마스터 키 파일의 권한 검사를
+건너뛴다(Docker Desktop에서는 비밀값 파일이 `0777`로 보인다. 기동마다 경고를 남긴다). 자세한 내용과 문제 해결(Windows의 Docker
+Desktop 포함)은 [docs/install/compose.ko.md 14장](docs/install/compose.ko.md#14-데모-프로파일)에 있다. 실제
+설치는 그 가이드의 나머지를 따른다.
 
 애플리케이션에 에이전트 붙이기(계획):
 

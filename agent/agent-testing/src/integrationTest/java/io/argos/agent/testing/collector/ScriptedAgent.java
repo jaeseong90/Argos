@@ -271,19 +271,35 @@ public final class ScriptedAgent implements AutoCloseable {
         long epoch,
         int protocolVersion,
         long sentAtMs) {
-      send(
-          AgentMessage.newBuilder()
-              .setHello(
-                  AgentHello.newBuilder()
-                      .setAppName(app)
-                      .setEnv(env)
-                      .setInstanceName(instanceName)
-                      .setAppVersion("1.2.3")
-                      .setAgentVersion("0.0.0-SNAPSHOT")
-                      .setProtocolVersion(protocolVersion)
-                      .setAgentEpoch(epoch)
-                      .setSentAtMs(sentAtMs))
-              .build());
+      hello(app, env, instanceName, epoch, protocolVersion, sentAtMs, false);
+    }
+
+    /**
+     * {@code AgentHello} with these fields; {@code checkOnly} sets {@code check_only} (ADR-0010
+     * C-240 (1), the {@code --check} Hello).
+     */
+    public void hello(
+        String app,
+        String env,
+        String instanceName,
+        long epoch,
+        int protocolVersion,
+        long sentAtMs,
+        boolean checkOnly) {
+      AgentHello.Builder hello =
+          AgentHello.newBuilder()
+              .setAppName(app)
+              .setEnv(env)
+              .setInstanceName(instanceName)
+              .setAppVersion("1.2.3")
+              .setAgentVersion("0.0.0-SNAPSHOT")
+              .setProtocolVersion(protocolVersion)
+              .setAgentEpoch(epoch)
+              .setSentAtMs(sentAtMs);
+      if (checkOnly) {
+        hello.setCheckOnly(true);
+      }
+      send(AgentMessage.newBuilder().setHello(hello).build());
     }
 
     /** Sends a hello and returns the accepted {@code ServerHello}. */

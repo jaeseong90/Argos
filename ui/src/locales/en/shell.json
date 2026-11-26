@@ -1,6 +1,9 @@
 {
   "documentTitle": "{{screen}} · Argos APM",
   "skipToContent": "Skip to main content",
+  "demo": {
+    "banner": "DEMO MODE: plaintext gRPC enabled, sample traffic"
+  },
   "topbar": {
     "label": "Global controls",
     "home": "Argos APM home",

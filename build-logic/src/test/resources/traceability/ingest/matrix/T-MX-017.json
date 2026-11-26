@@ -1,0 +1,19 @@
+{
+    "format": 1,
+    "id": "T-MX-017",
+    "task": ":agent:agent-testing:matrixTest-T-MX-022",
+    "commit": "eb9693bfc03a8bc8c178bb480cd6288881a24a47",
+    "os": "Windows 11",
+    "started_at": "2026-11-26T08:00:00.000Z",
+    "finished_at": null,
+    "duration_seconds": 12,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 5,
+    "skip_reasons": { "missing env:ARGOS_MATRIX_DOCKER": 5 },
+    "failures": [],
+    "metrics": {},
+    "missing_requirements": ["env:ARGOS_MATRIX_DOCKER"],
+    "lines": [],
+    "cases": []
+}

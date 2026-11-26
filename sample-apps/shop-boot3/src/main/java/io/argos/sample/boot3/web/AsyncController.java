@@ -5,6 +5,7 @@ import io.argos.sample.boot3.config.SampleExecutors;
 import io.argos.sample.common.async.AsyncSqlWork;
 import io.argos.sample.common.async.ExecutorProbe;
 import io.argos.sample.common.db.JdbcAccess;
+import io.argos.sample.common.diag.StreamChunks;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -14,11 +15,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.DisposableBean;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.context.request.async.DeferredResult;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 /**
  * Servlet async variants of 18 §4.2: DeferredResult (completed by a timer after 200 ms), Callable
@@ -94,6 +98,16 @@ public class AsyncController implements DisposableBean {
       result.putAll(sqlWork.run(executors.custom(), asyncSql));
     }
     return result;
+  }
+
+  /**
+   * StreamingResponseBody (ADR-0010 C-162 (3)): the output stream is opened on the request thread,
+   * the chunks are written and flushed on the MVC async executor.
+   */
+  @GetMapping("/api/stream")
+  public ResponseEntity<StreamingResponseBody> stream() {
+    StreamingResponseBody body = StreamChunks::write;
+    return ResponseEntity.ok().contentType(MediaType.TEXT_PLAIN).body(body);
   }
 
   @GetMapping("/api/sse")

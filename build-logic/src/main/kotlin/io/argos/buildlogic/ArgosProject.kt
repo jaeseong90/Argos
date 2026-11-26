@@ -39,11 +39,20 @@ object ArgosProject {
   const val BUILD_JDK = 21
 
   /**
-   * Projects that never feed a shipped artifact: the agent test harness, sample apps and test tools.
-   * Their runtime classpath is checked by checkDevOnlyLicenses instead of checkLicenses (19 §5.5).
+   * Sample-apps projects published as the demo images argos-demo-app and argos-demo-load (17 §3.9,
+   * ADR-0003 C-33, ADR-0004 C-43, WO-41): shipped, so checkLicenses checks their runtime classpath.
+   */
+  val PUBLISHED_SAMPLE_APPS: Set<String> = setOf(":sample-apps:demo-app", ":sample-apps:load")
+
+  /**
+   * Projects that never feed a shipped artifact: the agent test harness, sample apps (except
+   * [PUBLISHED_SAMPLE_APPS]) and test tools. Their runtime classpath is checked by
+   * checkDevOnlyLicenses instead of checkLicenses (19 §5.5).
    */
   fun isDevelopmentOnly(path: String): Boolean =
-    path == ":agent:agent-testing" || path.startsWith(":sample-apps:") || path.startsWith(":test:")
+    path == ":agent:agent-testing" ||
+      (path.startsWith(":sample-apps:") && path !in PUBLISHED_SAMPLE_APPS) ||
+      path.startsWith(":test:")
 }
 
 /** The root version catalog (gradle/libs.versions.toml). */

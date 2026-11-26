@@ -151,6 +151,14 @@ public final class ContainerApp implements RunningApp {
                     .forStatusCode(200)
                     .withStartupTimeout(timeout));
     launcher.environment().forEach(container::withEnv);
+    if (!launcher.containerTmpfs().isEmpty()) {
+      container.withTmpFs(launcher.containerTmpfs());
+    }
+    if (launcher.containerNetwork() != null) {
+      container.withNetworkMode(launcher.containerNetwork());
+      // Services of the test on the Docker host stay reachable by name (Linux needs the entry).
+      container.withExtraHost(FakeCollector.DOCKER_HOST, "host-gateway");
+    }
     FakeCollector collector = launcher.collector();
     if (collector != null) {
       // The agent reaches the collector on the Docker host (FakeCollector#containerAddress()).
@@ -251,6 +259,11 @@ public final class ContainerApp implements RunningApp {
     }
     String digits = unit == 1 ? value : value.substring(0, value.length() - 1);
     return Long.parseLong(digits) * unit;
+  }
+
+  /** The Docker container id (chaos tests run {@code docker exec} in it). */
+  public String containerId() {
+    return container.getContainerId();
   }
 
   @Override

@@ -14,6 +14,15 @@
 import io.argos.buildlogic.AgentShading
 import io.argos.buildlogic.ArgosProject
 import io.argos.buildlogic.argosArchivesName
+import io.argos.buildlogic.argosGitCommit
+import io.argos.buildlogic.testing.MatrixCatalog
+import io.argos.buildlogic.testing.MatrixDefinitionException
+import io.argos.buildlogic.testing.MatrixGate
+import io.argos.buildlogic.testing.MatrixReportTask
+import io.argos.buildlogic.testing.MatrixResultTask
+import io.argos.buildlogic.testing.MatrixSelection
+import io.argos.buildlogic.testing.MatrixStatus
+import io.argos.buildlogic.testing.TestLayers
 import java.util.zip.ZipFile
 
 plugins {
@@ -373,6 +382,12 @@ val containerImages: Map<String, String> =
     "argos.test.container.image." + it.key.removePrefix("agent.container.image.")
   }
 
+// Old JREs below and at the 8u252 TLS line (OldJreTransportTest, docs/poc/agent-poc.md 9.8): not
+// Gradle toolchains, so their homes come in as -Pagent.jdk8u252=<JRE home> and
+// -Pagent.jdk8u242=<JRE home>; without them the tests skip and say so.
+val oldJreHomes: Map<String, String> =
+  listOf("jdk8u252", "jdk8u242").mapNotNull { jre -> providers.gradleProperty("agent.$jre").orNull?.let { jre to it } }.toMap()
+
 /**
  * Standalone Tomcat distributions of the WAR apps (their `tomcat(...)` keys, 18 §4.1): AppLauncher
  * stages a CATALINA_BASE over `sample-apps/<app>/build/tomcat/<key>` (README, WAR apps).
@@ -382,18 +397,19 @@ val warTomcats = mapOf("shop-war-javax" to listOf("tomcat9"), "shop-war-jakarta"
 /** Apps the launcher can start: jar apps directly, WAR apps in a staged standalone Tomcat. */
 val e2eApps = listOf("shop-boot2", "shop-boot3", "shop-boot4", "shop-heavy", "shop-batch") + warTomcats.keys
 
-val e2eCombos =
-  providers.gradleProperty("agent.e2e").getOrElse("shop-boot3@21").split(',')
+/** `<app>@<jdk>,...` of -Pagent.e2e (or a matrix row); "none" and blanks are dropped. */
+fun parseE2eCombos(value: String, source: String): List<String> =
+  value.split(',')
     .map { it.trim() }
     .filter { it.isNotEmpty() && it != "none" }
     .onEach {
       val app = it.substringBefore('@')
       if (app !in e2eApps || it.substringAfter('@', "").toIntOrNull() == null) {
-        throw GradleException("-Pagent.e2e: expected <app>@<jdk> with app in $e2eApps, got '$it'")
+        throw GradleException("$source: expected <app>@<jdk> with app in $e2eApps, got '$it'")
       }
     }
-val e2eRequestedApps = e2eCombos.map { it.substringBefore('@') }.distinct()
-val e2eJdks = e2eCombos.map { it.substringAfter('@').toInt() }.distinct()
+
+val e2eCombos = parseE2eCombos(providers.gradleProperty("agent.e2e").getOrElse("shop-boot3@21"), "-Pagent.e2e")
 
 /** One resolvable configuration per app, so that only the requested apps are built. */
 val sampleAppJars =
@@ -454,12 +470,35 @@ tasks.named<Test>("test") {
     .withPropertyName("readmeTestClasses")
 }
 
-tasks.named<Test>("integrationTest") {
+/**
+ * The harness switches of one test task (matrix-parameters.md "Harness switches"):
+ * integrationTest takes them from the -P switches, every matrixTest-<ID> task from its row of
+ * test/matrix/matrix.yaml (WO-50). [reportDir] receives the transform lists and per-run logs.
+ */
+class HarnessSpec(
+  val e2eCombos: List<String>,
+  val attachJdks: List<Int>,
+  val gcJdks: List<Int>,
+  val containerMode: Boolean,
+  val jdbcContainers: String,
+  val jdbcOracle: Boolean,
+  val reportDir: Provider<Directory>,
+)
+
+/**
+ * Wires the harness into a test task: sample app jars and their launch descriptors, staged Tomcat
+ * homes, the servlet and logging fixtures, the agent jars, the trivial app, the JDK launchers and
+ * the database and container switches, as system properties the harness reads (README). Shared by
+ * integrationTest and the matrix combinations so that both run the suites the same way.
+ */
+fun Test.wireHarness(spec: HarnessSpec) {
+  val requestedApps = spec.e2eCombos.map { it.substringBefore('@') }.distinct()
+  val requestedJdks = spec.e2eCombos.map { it.substringAfter('@').toInt() }.distinct()
   val launchers =
-    (attachJdks + e2eJdks + gcJdks).distinct().associateWith { version ->
+    (spec.attachJdks + requestedJdks + spec.gcJdks).distinct().associateWith { version ->
       javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(version) }
     }
-  val appFiles: Map<String, FileCollection> = e2eRequestedApps.associateWith { sampleAppJars.getValue(it).get() }
+  val appFiles: Map<String, FileCollection> = requestedApps.associateWith { sampleAppJars.getValue(it).get() }
   appFiles.forEach { (app, files) ->
     inputs.files(files).withPropertyName("sampleApp-$app").withNormalizer(ClasspathNormalizer::class.java)
     // The launch descriptor next to the jar finalizes the jar task; make it an explicit input step.
@@ -467,7 +506,7 @@ tasks.named<Test>("integrationTest") {
   }
   // WAR apps: the unpacked Tomcat distributions (CATALINA_HOME) of the argos.sample-app plugin.
   val tomcatHomes: Map<String, String> =
-    e2eRequestedApps
+    requestedApps
       .flatMap { app -> warTomcats[app].orEmpty().map { key -> app to key } }
       .associate { (app, key) ->
         val suffix = key.replaceFirstChar(Char::uppercaseChar)
@@ -505,32 +544,27 @@ tasks.named<Test>("integrationTest") {
     }
   )
   // Locals only inside the providers below (the configuration cache cannot keep script objects).
-  val combos = e2eCombos.joinToString(",")
+  val combos = spec.e2eCombos.joinToString(",")
   // Transformed-class lists and JSONL of the e2e runs (T-AG-005 baseline input, PoC run table).
-  val e2eReportDir = layout.buildDirectory.dir("reports/agent-e2e")
+  val e2eReportDir = spec.reportDir
   outputs.dir(e2eReportDir).withPropertyName("e2eReports")
-  val attachJdkList = attachJdks.joinToString(",")
-  val gcJdkList = gcJdks.joinToString(",")
+  val attachJdkList = spec.attachJdks.joinToString(",")
+  val gcJdkList = spec.gcJdks.joinToString(",")
   inputs.property("gcJdks", gcJdkList)
   inputs.property("e2eCombos", combos)
-  inputs.property("containerMode", containerMode)
-  systemProperty("argos.test.container", containerMode.toString())
-  inputs.property("jdbcContainers", jdbcContainers)
-  inputs.property("jdbcOracle", jdbcOracle)
-  systemProperty("argos.test.jdbc.containers", jdbcContainers)
-  systemProperty("argos.test.jdbc.oracle", jdbcOracle.toString())
+  inputs.property("containerMode", spec.containerMode)
+  systemProperty("argos.test.container", spec.containerMode.toString())
+  inputs.property("jdbcContainers", spec.jdbcContainers)
+  inputs.property("jdbcOracle", spec.jdbcOracle)
+  systemProperty("argos.test.jdbc.containers", spec.jdbcContainers)
+  systemProperty("argos.test.jdbc.oracle", spec.jdbcOracle.toString())
   // The in-house databases of a trusted host (human check): their variables change the inputs.
   listOf("ORACLE", "TIBERO", "ALTIBASE", "CUBRID", "DB2").forEach {
     inputs.property("jdbc$it", providers.environmentVariable("ARGOS_TEST_${it}_URL").orElse(""))
   }
   inputs.property("containerImages", containerImages)
   containerImages.forEach { (name, image) -> systemProperty(name, image) }
-  // Old JREs below and at the 8u252 TLS line (OldJreTransportTest, docs/poc/agent-poc.md 9.8): not
-  // Gradle toolchains, so their homes come in as -Pagent.jdk8u252=<JRE home> and
-  // -Pagent.jdk8u242=<JRE home>; without them the tests skip and say so.
-  listOf("jdk8u252", "jdk8u242").forEach { jre ->
-    providers.gradleProperty("agent.$jre").orNull?.let { systemProperty("argos.test.$jre", it) }
-  }
+  oldJreHomes.forEach { (jre, home) -> systemProperty("argos.test.$jre", home) }
   jvmArgumentProviders.add(
     CommandLineArgumentProvider {
       listOf("-Dargos.test.e2e=" + combos, "-Dargos.test.reportDir=" + e2eReportDir.get().asFile.absolutePath) +
@@ -566,4 +600,161 @@ tasks.named<Test>("integrationTest") {
         }
     }
   )
+}
+
+tasks.named<Test>("integrationTest") {
+  wireHarness(
+    HarnessSpec(
+      e2eCombos = e2eCombos,
+      attachJdks = attachJdks,
+      gcJdks = gcJdks,
+      containerMode = containerMode,
+      jdbcContainers = jdbcContainers,
+      jdbcOracle = jdbcOracle,
+      reportDir = layout.buildDirectory.dir("reports/agent-e2e"),
+    )
+  )
+}
+
+// --- Compatibility matrix runner (18 §6, DSN-18-11, WO-50; test/matrix/README.md) ------------------
+// test/matrix/matrix.yaml is the single definition of the combinations. Every row becomes one Test
+// task matrixTest-<ID> that runs the listed suites of src/matrixTest and src/integrationTest with
+// the row's app@jdk and switches (the same wiring as integrationTest), then its finalizer
+// matrixResult-<ID> writes build/matrix/<ID>.json (repository root). `matrixTest` runs the rows
+// that -Pmatrix.combo=<id|alias>[,...] and -Pmatrix.group=<group>[,...] select, or all of them on
+// the self-hosted runner (ARGOS_RUNNER_LABELS contains argos-matrix); a combination task named on
+// the command line runs too. Rows run one after another (one sample app at a time). `matrixReport`
+// writes docs/compatibility-matrix.md from build/matrix (or -Pmatrix.results=<dir>, the downloaded
+// nightly artifacts) and test/matrix/community-reports.yaml. None of these tasks is part of check.
+
+// src/matrixTest reuses the integrationTest helpers (E2eRuns, ServletRuns, TransportRuns, ...).
+configurations.named("matrixTestImplementation") { extendsFrom(configurations["integrationTestImplementation"]) }
+configurations.named("matrixTestRuntimeOnly") { extendsFrom(configurations["integrationTestRuntimeOnly"]) }
+dependencies { "matrixTestImplementation"(sourceSets["integrationTest"].output) }
+
+val matrixCatalogFile = layout.settingsDirectory.file("test/matrix/matrix.yaml")
+val matrixCatalog: MatrixCatalog =
+  try {
+    MatrixCatalog.parse(providers.fileContents(matrixCatalogFile).asText.get(), "test/matrix/matrix.yaml")
+  } catch (e: MatrixDefinitionException) {
+    throw GradleException(e.message ?: "invalid test/matrix/matrix.yaml", e)
+  }
+val matrixSelection: Set<String> =
+  try {
+    MatrixSelection.select(
+        matrixCatalog,
+        providers.gradleProperty("matrix.combo").orNull,
+        providers.gradleProperty("matrix.group").orNull,
+        all = TestLayers.MATRIX_RUNNER_LABEL in MatrixGate.labels(providers.environmentVariable(TestLayers.RUNNER_LABELS_ENV).orNull),
+      )
+      .map { it.id }
+      .toSet()
+  } catch (e: MatrixDefinitionException) {
+    throw GradleException(e.message ?: "invalid matrix selection", e)
+  }
+val requestedTaskNames: Set<String> = gradle.startParameter.taskNames.map { it.substringAfterLast(':') }.toSet()
+// build/matrix at the repository root: <ID>.json per combination and <ID>/, the files its tests
+// write (argos.test.matrix.resultDir: [mx-...] lines, *.properties with startup_ms,
+// transformed_classes, transactions).
+val matrixResultsDir: File = layout.settingsDirectory.dir("build/matrix").asFile
+// The agents of the coexistence rows (test/matrix/fetch-coexist-agents.sh).
+val matrixAgentsDir: File = layout.buildDirectory.dir("matrix-agents").get().asFile
+val matrixCommit = argosGitCommit()
+val matrixSourceSet = sourceSets["matrixTest"]
+val integrationSourceSet = sourceSets["integrationTest"]
+
+val matrixComboTasks =
+  matrixCatalog.rows.mapIndexed { index, row ->
+    val taskName = MatrixSelection.taskName(row)
+    val selected = row.id in matrixSelection || taskName in requestedTaskNames
+    val resultDir = File(matrixResultsDir, row.id)
+    val resultTask =
+      tasks.register<MatrixResultTask>(MatrixSelection.resultTaskName(row)) {
+        description = "Writes build/matrix/${row.id}.json from the results of $taskName (WO-50)."
+        combination = row.id
+        testTaskPath = "${project.path}:$taskName"
+        requirements = row.requires
+        gradleProperties =
+          row.requires.filter { it.startsWith("prop:") }.map { it.removePrefix("prop:") }.associateWith { key ->
+            row.props[key] ?: providers.gradleProperty(key).orNull.orEmpty()
+          }
+        commit = matrixCommit
+        junitXmlDirectory = layout.buildDirectory.dir("test-results/$taskName")
+        resultDirectory = resultDir
+        outputFile = File(matrixResultsDir, "${row.id}.json")
+        onlyIf("${row.id} is selected") { selected }
+      }
+    val earlier = matrixCatalog.rows.take(index).map { MatrixSelection.taskName(it) }
+    tasks.register<Test>(taskName) {
+      description = "Compatibility matrix ${row.id}: ${row.app} on JDK ${row.jdk} (test/matrix/matrix.yaml line ${row.line})."
+      group = "verification"
+      testClassesDirs = matrixSourceSet.output.classesDirs + integrationSourceSet.output.classesDirs
+      classpath = matrixSourceSet.runtimeClasspath + integrationSourceSet.runtimeClasspath
+      useJUnitPlatform()
+      jvmArgs("-XX:+UnlockDiagnosticVMOptions", "-XX:+BytecodeVerificationLocal")
+      filter {
+        row.suites.forEach { includeTestsMatching(it) }
+        // A combination whose suites do not exist yet is reported (△ "did not run"), not a build error.
+        isFailOnNoMatchingTests = false
+      }
+      // Unverified rows run but never gate (18 §6.2): their failures are results, not build failures.
+      ignoreFailures = row.status == MatrixStatus.UNVERIFIED
+      outputs.upToDateWhen { false }
+      mustRunAfter(earlier)
+      val attach = row.props["agent.attach.jdks"]?.split(',')?.map { it.trim().toInt() } ?: listOf(row.jdk)
+      wireHarness(
+        HarnessSpec(
+          e2eCombos = parseE2eCombos(row.e2eCombo ?: "none", "test/matrix/matrix.yaml ${row.id}"),
+          attachJdks = attach,
+          gcJdks = row.props["agent.gc.jdks"]?.split(',')?.map { it.trim().toInt() } ?: attach,
+          containerMode = row.props["agent.container"]?.toBoolean() ?: false,
+          jdbcContainers = row.props["agent.jdbc.containers"] ?: "false",
+          jdbcOracle = row.props["agent.jdbc.oracle"]?.toBoolean() ?: false,
+          reportDir = layout.buildDirectory.dir("reports/agent-e2e-matrix/${row.id}"),
+        )
+      )
+      // The contract of the matrix tests (src/matrixTest, package io.argos.agent.testing.matrix).
+      systemProperty("argos.matrix.combo", row.id)
+      systemProperty("argos.test.matrix.vt", row.vt.toString())
+      if (row.appEnv.isNotEmpty()) systemProperty("argos.test.matrix.appEnv", row.appEnvProperty)
+      row.tomcat?.let { systemProperty("argos.test.matrix.tomcat", it) }
+      row.coexist?.let { systemProperty("argos.test.matrix.coexist", it) }
+      systemProperty("argos.test.matrix.agentsDir", matrixAgentsDir.absolutePath)
+      systemProperty("argos.test.matrix.resultDir", resultDir.absolutePath)
+      if (row.coexist == "devtools") {
+        // Built by the shop-boot3 sample app (devtools on the class path; the default jar has none).
+        dependsOn(":sample-apps:shop-boot3:sampleAppDevtoolsJar")
+        val devtoolsJar =
+          rootProject.project(":sample-apps:shop-boot3").layout.buildDirectory.file("sample-app/shop-boot3-devtools.jar").get().asFile
+        systemProperty("argos.test.sampleApp.shop-boot3-devtools", devtoolsJar.absolutePath)
+      }
+      doFirst {
+        // Results of an earlier run of this combination must not leak into this one.
+        resultDir.deleteRecursively()
+        resultDir.mkdirs()
+      }
+      onlyIf("${row.id} selected by -Pmatrix.combo, -Pmatrix.group or the '${TestLayers.MATRIX_RUNNER_LABEL}' runner") { selected }
+      finalizedBy(resultTask)
+    }
+  }
+
+tasks.named<Test>("matrixTest") {
+  // The aggregate: the selected combinations, then (cheap) its own JVM flag check. The other tests
+  // of src/matrixTest need a combination's properties and run only in matrixTest-<ID>.
+  dependsOn(matrixCatalog.rows.filter { it.id in matrixSelection }.map { MatrixSelection.taskName(it) })
+  filter { includeTestsMatching("io.argos.agent.testing.BytecodeVerificationFlagMatrixTest") }
+}
+
+tasks.register<MatrixReportTask>("matrixReport") {
+  description = "Generates docs/compatibility-matrix.md from build/matrix or -Pmatrix.results=<dir> (WO-50)."
+  group = "documentation"
+  catalogFile = matrixCatalogFile
+  communityFile = layout.settingsDirectory.file("test/matrix/community-reports.yaml")
+  val override = providers.gradleProperty("matrix.results").orNull
+  resultsDirectory =
+    override?.let { path -> File(path).let { if (it.isAbsolute) it else layout.settingsDirectory.file(path).asFile } }
+      ?: matrixResultsDir
+  reportFile = layout.settingsDirectory.file("docs/compatibility-matrix.md")
+  gateFailuresFile = layout.buildDirectory.file("matrix-report/gate-failures.txt")
+  mustRunAfter(matrixCatalog.rows.map { MatrixSelection.resultTaskName(it) })
 }

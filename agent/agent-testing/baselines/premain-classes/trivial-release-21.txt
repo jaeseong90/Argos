@@ -11,6 +11,7 @@ io.argos.agent.core.boot.AgentStarter$Handoff
 io.argos.agent.core.boot.AgentStarter$MatcherErrors
 io.argos.agent.core.boot.AgentStarter$Running
 io.argos.agent.core.boot.ArgosAgentBuilder
+io.argos.agent.core.boot.BootstrapTypeFallbackPool
 io.argos.agent.core.boot.HelperInjector
 io.argos.agent.core.boot.IgnoreMatchers
 io.argos.agent.core.boot.IgnoreMatchers$1
@@ -32,6 +33,7 @@ io.argos.agent.core.boot.PremainDiscovery
 io.argos.agent.core.boot.Recording
 io.argos.agent.core.boot.Recording$1
 io.argos.agent.core.boot.Recording$2
+io.argos.agent.core.boot.RetransformFailureListener
 io.argos.agent.core.boot.StartTimer
 io.argos.agent.core.boot.StartTimer$1
 io.argos.agent.core.boot.StartTimer$ClassCounter
@@ -267,7 +269,6 @@ io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$Matchable
 io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$PatchMode$Handler
 io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$PatchMode$Handler$NoOp
 io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$PoolStrategy
-io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$PoolStrategy$Default
 io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RawMatcher
 io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RawMatcher$ForElementMatchers
 io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RedefinitionListenable
@@ -290,6 +291,7 @@ io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RedefinitionStrat
 io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RedefinitionStrategy$DiscoveryStrategy$SinglePass
 io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RedefinitionStrategy$Dispatcher
 io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RedefinitionStrategy$Listener
+io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RedefinitionStrategy$Listener$Compound
 io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RedefinitionStrategy$Listener$NoOp
 io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RedefinitionStrategy$ResubmissionEnforcer
 io.argos.agent.shaded.net.bytebuddy.agent.builder.AgentBuilder$RedefinitionStrategy$ResubmissionEnforcer$Disabled

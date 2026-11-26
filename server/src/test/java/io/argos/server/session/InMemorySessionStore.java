@@ -89,6 +89,23 @@ final class InMemorySessionStore implements SessionStore {
         .findFirst();
   }
 
+  boolean startedAtFailing;
+
+  @Override
+  public synchronized java.util.OptionalLong instanceStartedAtMs(int instanceId) {
+    check();
+    if (startedAtFailing) {
+      throw new IllegalStateException("database down");
+    }
+    return instances.stream()
+        .filter(i -> i.id() == instanceId)
+        .findFirst()
+        .map(Instance::metadata)
+        .filter(m -> m != null && m.startedAt() != null)
+        .map(m -> java.util.OptionalLong.of(m.startedAt().toEpochMilli()))
+        .orElse(java.util.OptionalLong.empty());
+  }
+
   @Override
   public synchronized int countInstances(int appId) {
     check();

@@ -79,8 +79,8 @@ class JdbcStepsTest {
 
   @TestFactory
   @DisplayName(
-      "T-AG-030 / T-AG-032 / T-AG-035a / T-SEC-3Aa per database and app (18 §6.3), then T-ACC-22a"
-          + " (D-22) across them")
+      "T-AG-030 / T-AG-032 / T-AG-035a / T-SEC-3Aa / T-ACC-24 per database and app (18 §6.3), then"
+          + " T-ACC-22a (D-22) across them")
   Stream<DynamicNode> perDatabase() {
     List<DynamicNode> nodes = new ArrayList<>();
     for (JdbcDatabase db : JdbcDatabase.values()) {

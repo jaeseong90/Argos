@@ -115,6 +115,7 @@ final class StartupReport {
           double[] premain = values(runs, app, cds, variant, "premainMs");
           row.put("premainMedianMs", Stats.median(premain));
           row.put("premainMaxMs", Stats.max(premain));
+          row.put("premainSources", premainSources(runs, app, cds, variant));
           row.put("offCpuBeforeMedianPercent", Stats.median(before(runs, app, cds, "off")));
           row.put(
               variant + "CpuBeforeMedianPercent", Stats.median(before(runs, app, cds, variant)));
@@ -192,6 +193,25 @@ final class StartupReport {
     return result;
   }
 
+  /**
+   * Where the premain times of a cell come from: each start's {@code premainSource} (the
+   * self-diagnostics premain_ms when the start had the self-diagnostics file, C-95), else the agent
+   * log banner. Starts without a premain time are not counted.
+   */
+  static List<String> premainSources(
+      List<Map<String, Object>> runs, String app, String cds, String variant) {
+    Set<String> sources = new LinkedHashSet<>();
+    for (Map<String, Object> r : runs) {
+      if (app.equals(r.get("app"))
+          && cds.equals(r.get("cds"))
+          && variant.equals(r.get("variant"))
+          && !Double.isNaN(Json.number(r.get("premainMs")))) {
+        sources.add(premainSourceLabel(r.get("premainSource")));
+      }
+    }
+    return new ArrayList<>(sources);
+  }
+
   private static double[] before(
       List<Map<String, Object>> runs, String app, String cds, String variant) {
     return runs.stream()
@@ -266,6 +286,7 @@ final class StartupReport {
           .append(LoadReport.fmt(Json.number(row, v + "SpringStartedMedianS"), 3))
           .append(" | ")
           .append(LoadReport.fmt(Json.number(row, "premainMedianMs"), 1))
+          .append(premainSourceSuffix(row))
           .append(" | ")
           .append(LoadReport.fmt(Json.number(row, "offCpuBeforeMedianPercent"), 0))
           .append(" / ")
@@ -281,6 +302,28 @@ final class StartupReport {
     md.append(
         "\nRaw files per start: runs/<NNN>-<app>-<cds>-<variant>/ (run.json, command.txt, stdout.log, stderr.log, agent-logs/).\n");
     return md.toString();
+  }
+
+  /**
+   * The report label of a start's {@code premainSource}: the harness codes {@code selfdiag-file}
+   * and {@code agent-log-banner} (none recorded: the banner, as before WO-51), other text as is.
+   */
+  static String premainSourceLabel(Object source) {
+    if (source == null || "agent-log-banner".equals(source)) {
+      return LoadReport.PREMAIN_BANNER;
+    }
+    if ("selfdiag-file".equals(source)) {
+      return LoadReport.PREMAIN_SELF_DIAG;
+    }
+    return String.valueOf(source);
+  }
+
+  /** " (source)" after a premain median, empty when there is no premain time. */
+  static String premainSourceSuffix(Object row) {
+    List<Object> sources = Json.array(Json.at(row, "premainSources"));
+    return sources.isEmpty()
+        ? ""
+        : " (" + String.join(", ", sources.stream().map(String::valueOf).toList()) + ")";
   }
 
   private static String orDash(Object o) {

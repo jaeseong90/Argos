@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Trivy ignore file of the SBOM and image scans (16 §10.2, SEC-71). It must list exactly the IDs of
+# the table in docs/security/cve-exceptions.md (one ID per line, comments start with #);
+# test/release/check-sbom.sh fails the release when the two sets differ (ST-71-2).
+# No exception has been approved.

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
+# req: SEC-73, O-S04
+# test-ids: T-BLD-037
 #
 # Tests for .gitleaks.toml through .github/scripts/run-gitleaks.sh: a generated Argos token and a
 # generated GitHub token (default rule set) must be detected; metric names, masked tokens and files

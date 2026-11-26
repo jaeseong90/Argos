@@ -1,0 +1,27 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  ClickHouse backup target of the Docker Compose installation (docs/17 section 10, docs/13 section 10,
+  WO-43). compose.chbackup.yaml mounts this single file read-only as
+  /etc/clickhouse-server/config.d/backups.xml and binds the operator's directory ARGOS_CH_BACKUP_DIR
+  to /backups in the clickhouse service; argos-compose.sh adds that overlay when ARGOS_CH_BACKUP_DIR
+  is set in .env.
+
+  The disk "backups" is the only place BACKUP and RESTORE may use (backups.allowed_disk): no path on
+  the data disk and no remote target. backup.sh refuses to write a backup when /backups is on the same
+  device as /var/lib/clickhouse (DSN-13-16: a backup on the data disk is lost with it). An S3
+  target is not configured here: it would need remote_url_allow_hosts and a credential secret.
+-->
+<clickhouse>
+  <storage_configuration>
+    <disks>
+      <backups>
+        <type>local</type>
+        <path>/backups/</path>
+      </backups>
+    </disks>
+  </storage_configuration>
+  <backups>
+    <allowed_disk>backups</allowed_disk>
+    <allowed_path>/backups/</allowed_path>
+  </backups>
+</clickhouse>

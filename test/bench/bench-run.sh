@@ -26,8 +26,12 @@
 #   --vt                    virtual threads (SAMPLE_VT=true, Boot 3.2+, N-28)
 #   --container             app in a container: --cpus 2 --memory 4g, heap 2g (N-29)
 #   --cpus N, --memory M    container limits (2, 4g)
-#   --reference otel        add the OpenTelemetry Java agent variant (exporters none; reference only)
-#   --otel-agent JAR        opentelemetry-javaagent jar for --reference otel
+#   --reference otel        add the OpenTelemetry Java agent variant (reference only, 18 §7.5): in
+#                           process mode it exports OTLP http/protobuf (traces, metrics) to the
+#                           harness's black-hole receiver on 127.0.0.1; a container keeps exporters none
+#   --otel-agent auto|JAR   opentelemetry-javaagent jar for --reference otel. auto (the default) is
+#                           test/bench/build/otel/opentelemetry-javaagent-2.32.0.jar, SHA-256 checked;
+#                           run test/bench/fetch-otel-agent.sh once first (a run never downloads)
 #   --loader USER@HOST      k6 on the load machine over ssh (01 §7.3 item 1); needs --app-address
 #   --app-address IP        this machine's address as the load machine reaches it
 #   --startup               also the startup set (01 §7.3 item 8, N-04, N-27, N-30)
@@ -37,7 +41,12 @@
 #   --machine-profile ID    the bench machine (-Pbench.machine-profile); none: the report is INVALID
 #   --out DIR               set directories (build/bench/<UTC time>-<commit7>)
 #   --report-dir DIR        report directory (docs/bench)
-#   --baseline FILE         last approved report for the 18 §7.7 regression check
+#   --baseline FILE|auto    report for the 18 §7.7 regression check; auto: the newest approved report
+#                           in the report directory with the same machine profile, app, JDK, exporter
+#                           and encoding (none: NOT COMPARED with the reason)
+#   --latest                also update latest.md and trend.md/.svg in the report directory
+#   --role NAME             directory and label of the load set (default: container, vt, worst or
+#                           main from the options; bench-protocol.sh uses grpc for its grpc set)
 #   --allow-invalid-env     record an unfit machine and continue (the report is INVALID)
 #   --smoke                 end-to-end check of the chain on any machine: 1 round, warm-up 30 s,
 #                           window 60 s, startup 1 start of shop-boot3 with default CDS, no waiting
@@ -70,7 +79,7 @@ container=0
 cpus=2
 memory="4g"
 reference=""
-otel_agent=""
+otel_agent="auto"
 loader=""
 app_address=""
 startup=0
@@ -81,6 +90,8 @@ machine_profile=""
 out=""
 report_dir=""
 baseline=""
+latest=0
+role=""
 allow_invalid=0
 smoke=0
 build=1
@@ -111,6 +122,8 @@ while [[ $# -gt 0 ]]; do
     --out) out="${2:?--out needs a value}"; shift 2 ;;
     --report-dir) report_dir="${2:?--report-dir needs a value}"; shift 2 ;;
     --baseline) baseline="${2:?--baseline needs a value}"; shift 2 ;;
+    --latest) latest=1; shift ;;
+    --role) role="${2:?--role needs a value}"; shift 2 ;;
     --allow-invalid-env) allow_invalid=1; shift ;;
     --smoke) smoke=1; allow_invalid=1; shift ;;
     --no-build) build=0; shift ;;
@@ -122,7 +135,8 @@ done
 [[ "$exporter" =~ ^(noop|drop|grpc)$ ]] || die "--exporter must be noop, drop or grpc"
 [[ "$profile" =~ ^(default|worst)$ ]] || die "--profile must be default or worst"
 [[ -z "$reference" || "$reference" == otel ]] || die "--reference takes otel"
-[[ -z "$reference" || -n "$otel_agent" ]] || die "--reference otel needs --otel-agent JAR"
+[[ -z "$reference" || -n "$otel_agent" ]] || die "--reference otel needs --otel-agent auto|JAR"
+[[ -z "$role" || "$role" =~ ^[a-z][a-z0-9-]*$ ]] || die "--role takes a lower-case name (main, grpc, ...)"
 [[ -z "$loader" || -n "$app_address" ]] || die "--loader needs --app-address (this machine's IP as the load machine sees it)"
 ((container == 0 || ${#loader} == 0)) || die "--container runs k6 in a container on this host; --loader is for process mode"
 cd "$repo_root"
@@ -189,14 +203,17 @@ run_harness() {
 
 # ---- load set (18 §7.3) --------------------------------------------------------------------------
 
-# The set's role in the report: container (N-29), vt (N-28), worst (profile) or main.
-role="main"
-if ((container)); then
-  role="container"
-elif ((vt)); then
-  role="vt"
-elif [[ "$profile" == worst ]]; then
-  role="worst"
+# The set's role in the report: container (N-29), vt (N-28), worst (profile) or main; --role names
+# it explicitly (the grpc set of bench-protocol.sh).
+if [[ -z "$role" ]]; then
+  role="main"
+  if ((container)); then
+    role="container"
+  elif ((vt)); then
+    role="vt"
+  elif [[ "$profile" == worst ]]; then
+    role="worst"
+  fi
 fi
 ((smoke)) && [[ "$rounds" == 3 ]] && rounds=1
 load=(load --out "$out/$role" --app "$app" --java "$java_bin" --rounds "$rounds" --exporter "$exporter"
@@ -241,6 +258,7 @@ set_list=""
 for s in "${sets[@]}"; do set_list+="${set_list:+,}$(native "$s")"; done
 publish=(publish --sets "$set_list" --out "$report_dir" --command "$command_line")
 [[ -n "$baseline" ]] && publish+=(--baseline "$baseline")
+((latest)) && publish+=(--latest --trend)
 log "report: ${publish[*]}"
 code=0
 bash "$script_dir/bench.sh" --no-build "${publish[@]}" || code=$?

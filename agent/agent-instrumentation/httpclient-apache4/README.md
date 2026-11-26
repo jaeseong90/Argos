@@ -14,24 +14,25 @@ Outgoing calls through Apache HttpClient 4 (classic, blocking).
 
 | Library | Supported range | Minimum verified | Maximum verified | Boundary tests |
 |---|---|---|---|---|
-| `org.apache.httpcomponents:httpclient` | 4.5.x | 4.5.14 | 4.5.14 | `test` on JDK 8 (`Apache4AdviceTest`, `HttpClientApache4ModuleTest`); end to end `agent-testing` `httpclient.HttpClientStepsTest` (shop-boot2 on JDK 8, `client=hc4`) |
+| `org.apache.httpcomponents:httpclient` | 4.5.x | 4.5 | 4.5.14 | lower bound `:agent:agent-instrumentation:httpclient-apache4:testLowerBound` on JDK 8 (httpclient 4.5, httpcore 4.4.1: `Apache4AdviceTest`, `HttpClientApache4ModuleTest`, `Apache4VersionTest`); `test` on JDK 8 at 4.5.14 (same classes); end to end `agent-testing` `httpclient.HttpClientStepsTest` (shop-boot2 on JDK 8, `client=hc4`) |
 
 - Witness (`HttpClientApache4Module.witness()`, resource lookup only): `org.apache.http.impl.client.CloseableHttpClient`,
   `org.apache.http.HttpRequest` and `org.apache.http.HttpHost`.
-- Run: `./gradlew :agent:agent-instrumentation:httpclient-apache4:test`; end to end
+- Run: `./gradlew :agent:agent-instrumentation:httpclient-apache4:check` (`test` and
+  `testLowerBound`); end to end
   `./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8 --tests '*httpclient*'`.
-- One version only: the lower boundary (4.5.0) needs artifacts that are not in the build's
-  verification metadata yet.
+- The lower boundary (WO-50, ADR-0010 C-240 (10)) is the first 4.5 release, published as `4.5`
+  (C-240 writes 4.5.0), with the httpcore 4.4.1 it was released with; `testLowerBound` pins both
+  with `strictly`, and `Apache4VersionTest` fails when the class path holds other versions.
 
 ### Details
 
 | Library | Range | Tested (module tests) |
 |---|---|---|
-| `org.apache.httpcomponents:httpclient` | 4.5.x | 4.5.14 |
+| `org.apache.httpcomponents:httpclient` | 4.5.x | 4.5 (`testLowerBound`), 4.5.14 (`test`) |
 
 4.3 and 4.4 have the same entry point but are not tested. The library is a `compileOnly`
-dependency; at run time the application's classes are used. Other boundary versions (4.5.0)
-need artifacts that are not in the build's verification metadata yet.
+dependency; at run time the application's classes are used.
 
 ## What is recorded
 

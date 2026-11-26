@@ -13,7 +13,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -57,7 +56,8 @@ final class StartupSet {
             .toAbsolutePath();
     Path agentJar =
         o.optional("agent").map(Path::of).orElse(LoadSet.defaultAgentJar(repo)).toAbsolutePath();
-    Path otelJar = o.optional("otel-agent").map(Path::of).map(Path::toAbsolutePath).orElse(null);
+    String otelOption = o.optional("otel-agent").orElse(null);
+    Path otelJar = otelOption == null ? null : OtlpBlackHole.resolveOtelAgent(otelOption, repo);
     List<String> jvmOptions = LoadSet.words(o.string("jvm-opts", "-Xms2g -Xmx2g -XX:+UseG1GC"));
     AgentSettings.Exporter exporter =
         AgentSettings.exporter(
@@ -87,6 +87,14 @@ final class StartupSet {
       envRecord = EnvRecord.read(Path.of(o.required("env-record")).toAbsolutePath());
     }
     o.rejectUnknown();
+    if (variants.contains("otel") && otelJar == null) {
+      throw new UsageException(
+          "variant otel needs --otel-agent auto (after test/bench/fetch-otel-agent.sh) or"
+              + " --otel-agent <opentelemetry-javaagent.jar>");
+    }
+    // N-30 premain from the agent's self-diagnostics (development builds only, C-95).
+    boolean selfDiag = LoadSet.selfDiagnostics(agentJar);
+    OtlpBlackHole otlp = variants.contains("otel") ? OtlpBlackHole.start() : null;
 
     Path bin = Files.createDirectories(setDir.resolve("bin"));
     FileTools.copyInto(agentJar, bin);
@@ -115,6 +123,13 @@ final class StartupSet {
     parameters.put("exporter", exporter.name());
     parameters.put("agentConfig", agentConfig);
     parameters.put("variantDefs", variantConfigs);
+    parameters.put("selfDiagnostics", LoadSet.selfDiagDescription(selfDiag));
+    if (otlp != null) {
+      parameters.put(
+          "otelReference",
+          "OpenTelemetry Java agent exporting OTLP http/protobuf (traces, metrics) to the"
+              + " harness's black-hole receiver on 127.0.0.1 (18 §7.5); logs none");
+    }
     parameters.put(
         "definition",
         "C-49 jar apps: process creation to the open port; also to /actuator/health 200");
@@ -165,7 +180,46 @@ final class StartupSet {
             repo,
             0,
             "",
-            "127.0.0.1");
+            "127.0.0.1",
+            selfDiag,
+            otlp == null ? null : otlp.endpoint());
+    try (otlp) {
+      runAll(
+          setup,
+          apps,
+          appJars,
+          cdsModes,
+          runs,
+          variants,
+          settle,
+          maxLoad,
+          maxWait,
+          maxBackground,
+          retries,
+          timeout,
+          otlp);
+    }
+    set.put("finishedAt", Instant.now().toString());
+    FileTools.writeJson(setDir.resolve("set.json"), set);
+    return StartupReport.write(setDir);
+  }
+
+  private static void runAll(
+      Platform.Setup setup,
+      List<String> apps,
+      Map<String, Path> appJars,
+      List<String> cdsModes,
+      int runs,
+      List<String> variants,
+      Duration settle,
+      double maxLoad,
+      Duration maxWait,
+      double maxBackground,
+      int retries,
+      Duration timeout,
+      OtlpBlackHole otlp)
+      throws IOException, InterruptedException {
+    Path setDir = setup.setDir();
     int index = 0;
     for (String app : apps) {
       for (String cds : cdsModes) {
@@ -185,7 +239,7 @@ final class StartupSet {
             for (int attempt = 1; ; attempt++) {
               before = LoadSet.waitQuiet(maxLoad, maxWait);
               Files.createDirectories(runDir);
-              run = startOnce(setup, appJars.get(app), app, cds, variant, runDir, timeout);
+              run = startOnce(setup, appJars.get(app), app, cds, variant, runDir, timeout, otlp);
               run.put("index", index);
               run.put("round", round);
               run.put("before", before);
@@ -224,9 +278,6 @@ final class StartupSet {
         }
       }
     }
-    set.put("finishedAt", Instant.now().toString());
-    FileTools.writeJson(setDir.resolve("set.json"), set);
-    return StartupReport.write(setDir);
   }
 
   static Map<String, Object> startOnce(
@@ -236,9 +287,14 @@ final class StartupSet {
       String cds,
       String variant,
       Path runDir,
-      Duration timeout)
+      Duration timeout,
+      OtlpBlackHole otlp)
       throws IOException, InterruptedException {
     int port = Net.freePort();
+    Path selfDiagFile = runDir.resolve(SelfDiagFile.FILE_NAME);
+    boolean selfDiag = setup.selfDiag() && LoadSet.agentVariant(variant);
+    Map<String, OtlpBlackHole.Counts> otlpStart =
+        otlp != null && variant.equals("otel") ? otlp.snapshot() : null;
     Path tmp = Files.createDirectories(runDir.resolve("tmp"));
     List<String> command = new ArrayList<>();
     command.add(setup.java().toString());
@@ -256,7 +312,8 @@ final class StartupSet {
             setup.otelJar() == null
                 ? null
                 : setup.binDir().resolve(setup.otelJar().getFileName()).toString(),
-            runDir.resolve("agent-logs").toString()));
+            runDir.resolve("agent-logs").toString(),
+            selfDiagFile.toString()));
     command.addAll(
         List.of("-jar", jar.toString(), "--server.address=127.0.0.1", "--server.port=" + port));
     Files.writeString(
@@ -321,10 +378,17 @@ final class StartupSet {
       run.put(
           "springProcessRunningSeconds",
           started.length > 1 && !Double.isNaN(started[1]) ? started[1] : null);
-      OptionalDouble premain =
-          Parsers.premainMillis(
-              FileTools.readLenient(runDir.resolve("agent-logs").resolve("argos-agent.log")));
-      run.put("premainMs", premain.isPresent() ? premain.getAsDouble() : null);
+      // N-30 (18 §7.4): premain_ms of the self-diagnostics snapshot (the agent writes it within 2 s
+      // of its start, so it is there by now or shortly), else the start banner of the agent log.
+      SelfDiagFile.Snapshot diag =
+          selfDiag ? SelfDiagFile.awaitNext(selfDiagFile, -1, SelfDiagFile.DEFAULT_WAIT) : null;
+      if (diag != null && !diag.available()) {
+        run.put("selfDiagMissing", diag.reason());
+      }
+      SelfDiagFile.putPremain(
+          run,
+          diag,
+          FileTools.readLenient(runDir.resolve("agent-logs").resolve("argos-agent.log")));
     } finally {
       monitor.close();
       process.destroy();
@@ -332,6 +396,10 @@ final class StartupSet {
         process.destroyForcibly();
         process.waitFor(15, TimeUnit.SECONDS);
       }
+    }
+    if (otlpStart != null) {
+      // Exports from process start to stop (the OpenTelemetry agent's start-up export path).
+      run.put("otlp", OtlpBlackHole.window(otlpStart, otlp.snapshot()));
     }
     String stderr = FileTools.readLenient(runDir.resolve("stderr.log")).strip();
     run.put("stderrLines", stderr.isEmpty() ? 0 : stderr.lines().count());

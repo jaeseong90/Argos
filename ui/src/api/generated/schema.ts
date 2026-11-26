@@ -3958,6 +3958,8 @@ export interface components {
       user: components['schemas']['UserView'];
     };
     SetupStatusResponse: {
+      /** @description Whether the server runs in demo mode (argos.demo.enabled, Compose demo profile): the UI shows the demo banner on every screen, also before login (WO-41) */
+      demo_mode: boolean;
       needs_setup: boolean;
       server_version: string;
     };

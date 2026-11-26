@@ -36,6 +36,34 @@
 #   FAKE_SIGNAL                 INT or TERM: 'compose ps --format json' and argos-admin send it to
 #                               the outermost process whose arguments contain FAKE_SIGNAL_TARGET
 #                               (for example ./smoke.sh), then answer as usual
+# WO-43 (upgrade, diag):
+#   FAKE_IMAGES                 file of local images, one "reference id version" per line: then
+#                               'docker image inspect' knows only these (by reference or id) and
+#                               answers --format .Id, the version label and RepoDigests from it
+#                               (version "-": the image has no version label)
+#   FAKE_IMAGE_ID_SERVER        .Image (image id) of the server container (default sha256:old)
+#   FAKE_PULL_EXIT              exit code of 'docker pull' (default 1, nothing pulled)
+#   FAKE_AGENT_VERSIONS         file printed by psql in the postgres container (agent_version|count)
+#   FAKE_PSQL_EXIT              exit code of that psql (default 0)
+#   FAKE_CONSISTENCY_EXIT       exit code of argos-admin consistency check (default 0)
+#   FAKE_BUNDLE_EXIT            exit code of argos-admin bundle (default 0: prints the JSON result)
+#   FAKE_BUNDLE_FILE            the "file" of that result (default /data/tmp/argos-diag-fake-<ts>.tar.gz)
+#   FAKE_LOG_DIR                directory with <service>.log printed by 'compose logs ... <service>'
+#   FAKE_DF_EXIT                exit code of 'df -P' in the clickhouse container (default 0)
+#   'compose run --rm --no-deps -T -e .. --entrypoint E SERVICE ARGS' answers as 'compose exec
+#   SERVICE E ARGS'.
+# WO-42 (ops-report.sh; its container shells end with the marker argument argos-ops-report):
+#   FAKE_OPS_STATE              .State.Status of every container (default running)
+#   FAKE_OPS_STARTED_AT         .State.StartedAt of every container
+#                               (default 2026-11-12T08:00:00.123456789Z)
+#   FAKE_OPS_RESTARTS           .RestartCount of every container (default 0)
+#   FAKE_OPS_PSQL               file printed by the psql of ops-report.sh in the postgres container
+#   FAKE_OPS_PSQL_EXIT          exit code of that psql (default 0)
+#   FAKE_OPS_SQL_LOG            file: the SQL that psql received on standard input is appended
+#   FAKE_OPS_PROMETHEUS         file printed by the /actuator/prometheus scrape in the server container
+#   FAKE_OPS_PROM_EXIT          exit code of that scrape (default 0; non-zero: curl's 401 message)
+#   FAKE_OPS_DF_PERCENT         use of the ClickHouse data volume in 'df -P /var/lib/clickhouse'
+#                               (default 40; FAKE_DF_EXIT applies too)
 
 if [ -n "${FAKE_DOCKER_LOG:-}" ]; then
   printf '%s\n' "$*" >>"$FAKE_DOCKER_LOG"
@@ -82,9 +110,31 @@ case ${1:-} in
     ;;
   image)
     [ "${2:-}" = inspect ] || { echo "fake docker: unsupported: $*" >&2; exit 1; }
-    [ -z "${FAKE_IMAGE_MISSING:-}" ] || { echo "Error: No such image: ${3:-}" >&2; exit 1; }
-    echo '[{"Id":"sha256:fake"}]'
+    ref=
+    for a in "$@"; do ref=$a; done # the last argument
+    [ -z "${FAKE_IMAGE_MISSING:-}" ] || { echo "Error: No such image: $ref" >&2; exit 1; }
+    if [ -n "${FAKE_IMAGES:-}" ]; then
+      row=$(awk -v r="$ref" '$1 == r || $2 == r { print; exit }' "$FAKE_IMAGES")
+      [ -n "$row" ] || { echo "Error: No such image: $ref" >&2; exit 1; }
+      img_ref=${row%% *}
+      rest=${row#* }
+      img_id=${rest%% *}
+      img_version=${rest#* }
+      [ "$img_version" != - ] || img_version= # "-": an image without the version label
+      case "$*" in
+        *image.version*) printf '%s\n' "$img_version" ;;
+        *RepoDigests*) printf '  RepoDigests: ["%s@sha256:%s"]\n  Labels: {"org.opencontainers.image.version":"%s"}\n' "${img_ref%%:*}" "${img_id#sha256:}" "$img_version" ;;
+        *.Id*) printf '%s\n' "$img_id" ;;
+        *) printf '[{"Id":"%s"}]\n' "$img_id" ;;
+      esac
+      exit 0
+    fi
+    case "$*" in
+      *RepoDigests*) printf '  RepoDigests: []\n  Labels: {}\n' ;;
+      *) echo '[{"Id":"sha256:fake"}]' ;;
+    esac
     ;;
+  pull) exit "${FAKE_PULL_EXIT:-1}" ;;
   volume)
     [ "${2:-}" = ls ] || { echo "fake docker: unsupported: $*" >&2; exit 1; }
     case "$*" in
@@ -107,6 +157,17 @@ case ${1:-} in
     svc=$(service_of "$4")
     case $format in
       *State.Health*) printf '%s\n' "${FAKE_HEALTH:-healthy}" ;;
+      '{{.Name}} {{.Config.Image}} {{.Image}}')
+        case $svc in
+          server) printf '/argos-server-1 %s %s\n' "${FAKE_IMAGE_SERVER:-argos-server:0.0.0-SNAPSHOT}" "${FAKE_IMAGE_ID_SERVER:-sha256:old}" ;;
+          clickhouse | postgres) printf '/argos-%s-1 %s-image sha256:%s\n' "$svc" "$svc" "$svc" ;;
+          *) exit 1 ;;
+        esac
+        ;;
+      '{{.Image}}')
+        [ "$svc" = server ] || exit 1
+        printf '%s\n' "${FAKE_IMAGE_ID_SERVER:-sha256:old}"
+        ;;
       *Config.Image*)
         case $svc in
           clickhouse) printf '%s\n' "${FAKE_IMAGE_CLICKHOUSE:-}" ;;
@@ -124,6 +185,9 @@ case ${1:-} in
           *) exit 1 ;;
         esac
         ;;
+      *RestartCount*)
+        printf '%s|%s|%s\n' "${FAKE_OPS_STATE:-running}" "${FAKE_OPS_STARTED_AT:-2026-11-12T08:00:00.123456789Z}" "${FAKE_OPS_RESTARTS:-0}"
+        ;;
       *) echo "fake docker inspect: unsupported format: $format" >&2; exit 1 ;;
     esac
     ;;
@@ -135,7 +199,7 @@ case ${1:-} in
     fi
     while [ $# -gt 0 ]; do
       case $1 in
-        -f | -p) shift 2 ;;
+        -f | -p | --profile) shift 2 ;;
         *) break ;;
       esac
     done
@@ -152,7 +216,12 @@ case ${1:-} in
             eval "last=\${$#}"
             # shellcheck disable=SC2154 # assigned by the eval above (the last argument; POSIX sh has no ${@: -1})
             case $last in
-              -q) echo fake-all ;;
+              -q)
+                case "$*" in
+                  *--all* | *" -a "*) printf 'fake-server\nfake-clickhouse\nfake-postgres\n' ;;
+                  *) echo fake-all ;;
+                esac
+                ;;
               *) printf 'fake-%s\n' "$last" ;;
             esac
             ;;
@@ -160,19 +229,91 @@ case ${1:-} in
         esac
         ;;
       up) exit "${FAKE_UP_EXIT:-0}" ;;
-      down | logs) ;;
-      exec)
+      down) ;;
+      logs)
+        eval "last=\${$#}"
+        if [ -n "${FAKE_LOG_DIR:-}" ] && [ -f "$FAKE_LOG_DIR/$last.log" ]; then
+          cat "$FAKE_LOG_DIR/$last.log"
+        fi
+        ;;
+      exec | run)
         shift
+        entry=
         while [ $# -gt 0 ]; do
           case $1 in
-            -T) shift ;;
+            -T | --rm | --no-deps) shift ;;
             -e) shift 2 ;;
+            --entrypoint) entry=$2; shift 2 ;;
             *) break ;;
           esac
         done
         svc=${1:-}
         shift
+        if [ -n "$entry" ]; then
+          set -- "$entry" "$@"
+        fi
         case "$svc $*" in
+          "server java "*" admin consistency check "*)
+            echo "Consistency check: no mismatch (fake)"
+            exit "${FAKE_CONSISTENCY_EXIT:-0}"
+            ;;
+          "server java "*" admin bundle "*)
+            code=${FAKE_BUNDLE_EXIT:-0}
+            if [ "$code" -ne 0 ]; then
+              echo "argos-admin bundle: The bundle cannot be written: IOException" >&2
+              printf '{"command":"bundle","error":"The bundle cannot be written: IOException","code":"write_failed"}\n'
+              exit "$code"
+            fi
+            printf '{"command":"bundle","file":"%s","bytes":321,"sections":[{"name":"log","ok":true,"detail":"server.log"},{"name":"storage","ok":false,"detail":"ClickHouse unreachable"}],"entries":["manifest.json"]}\n' \
+              "${FAKE_BUNDLE_FILE:-/data/tmp/argos-diag-fake-20261126T000000Z.tar.gz}"
+            ;;
+          "server cat /data/tmp/"*)
+            d=$(mktemp -d)
+            printf '{"kind":"argos-diag","masked":true}\n' >"$d/manifest.json"
+            tar -czf - -C "$d" manifest.json
+            rm -rf "$d"
+            ;;
+          "server rm -f /data/tmp/"*) ;;
+          "clickhouse df -P /var/lib/clickhouse")
+            [ "${FAKE_DF_EXIT:-0}" -eq 0 ] || { echo "df: failed" >&2; exit "$FAKE_DF_EXIT"; }
+            p=${FAKE_OPS_DF_PERCENT:-40}
+            printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/sdb1 100000 %s %s %s%% /var/lib/clickhouse\n' \
+              "$((p * 1000))" "$((100000 - p * 1000))" "$p"
+            ;;
+          "postgres sh -c "*psql*" argos-ops-report")
+            if [ -n "${FAKE_OPS_SQL_LOG:-}" ]; then
+              cat >>"$FAKE_OPS_SQL_LOG"
+            else
+              cat >/dev/null
+            fi
+            code=${FAKE_OPS_PSQL_EXIT:-0}
+            if [ "$code" -ne 0 ]; then
+              echo 'psql: error: connection to server at "127.0.0.1", port 5432 failed: FATAL:  password authentication failed for user "argos_backup"' >&2
+              exit "$code"
+            fi
+            if [ -n "${FAKE_OPS_PSQL:-}" ]; then
+              cat "$FAKE_OPS_PSQL"
+            fi
+            ;;
+          "server sh -c "*actuator/prometheus*" argos-ops-report")
+            code=${FAKE_OPS_PROM_EXIT:-0}
+            if [ "$code" -ne 0 ]; then
+              echo "curl: (22) The requested URL returned error: 401" >&2
+              exit "$code"
+            fi
+            cat "${FAKE_OPS_PROMETHEUS:?FAKE_OPS_PROMETHEUS is not set}"
+            ;;
+          "clickhouse df -P")
+            [ "${FAKE_DF_EXIT:-0}" -eq 0 ] || { echo "df: failed" >&2; exit "$FAKE_DF_EXIT"; }
+            printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\noverlay 100000 40000 60000 40%% /\n'
+            ;;
+          "postgres sh -c "*psql*)
+            cat >/dev/null
+            [ "${FAKE_PSQL_EXIT:-0}" -eq 0 ] || { echo "psql: error: connection refused" >&2; exit "$FAKE_PSQL_EXIT"; }
+            if [ -n "${FAKE_AGENT_VERSIONS:-}" ]; then
+              cat "$FAKE_AGENT_VERSIONS"
+            fi
+            ;;
           "server java "*" admin token create "*)
             if [ -n "${FAKE_ADMIN_ARGS:-}" ]; then
               printf '%s\n' "$*" >"$FAKE_ADMIN_ARGS"

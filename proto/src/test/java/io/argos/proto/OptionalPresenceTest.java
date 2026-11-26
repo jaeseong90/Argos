@@ -129,6 +129,32 @@ class OptionalPresenceTest {
   }
 
   @Test
+  @Tag("req:C-240")
+  @DisplayName(
+      "T-AG-068b C-240 (1) AgentHello.check_only is an additive optional field: a Hello without it"
+          + " is a normal session, the set value survives, and its bytes only append field 26")
+  void checkOnlyIsAdditive() throws InvalidProtocolBufferException {
+    assertThat(AgentHello.getDescriptor().findFieldByName("check_only").hasPresence()).isTrue();
+    assertThat(AgentHello.getDescriptor().findFieldByName("check_only").getNumber()).isEqualTo(26);
+    AgentHello normal = AgentHello.newBuilder().setAppName("shop").setAgentEpoch(7).build();
+    AgentHello parsed = AgentHello.parseFrom(normal.toByteArray());
+    assertThat(parsed.hasCheckOnly()).isFalse();
+    assertThat(parsed.getCheckOnly()).isFalse();
+    AgentHello check = normal.toBuilder().setCheckOnly(true).build();
+    AgentHello parsedCheck = AgentHello.parseFrom(check.toByteArray());
+    assertThat(parsedCheck.hasCheckOnly()).isTrue();
+    assertThat(parsedCheck.getCheckOnly()).isTrue();
+    // Buffer compatibility: the normal Hello's bytes are a prefix of the check Hello's bytes (field
+    // 26, varint, tag 0xD0 0x01, value 1), so a receiver that does not know the field keeps it as
+    // an unknown field and reads every other field as before.
+    byte[] base = normal.toByteArray();
+    byte[] withFlag = check.toByteArray();
+    assertThat(withFlag).startsWith(base);
+    assertThat(java.util.Arrays.copyOfRange(withFlag, base.length, withFlag.length))
+        .containsExactly((byte) 0xD0, (byte) 0x01, (byte) 0x01);
+  }
+
+  @Test
   @DisplayName("InstanceUpdate and Throttle: absent fields mean 'unchanged', set values survive")
   void instanceUpdateAndThrottlePresence() throws InvalidProtocolBufferException {
     InstanceUpdate empty =

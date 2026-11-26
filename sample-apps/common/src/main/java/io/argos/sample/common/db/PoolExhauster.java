@@ -102,17 +102,16 @@ public final class PoolExhauster {
   }
 
   /**
-   * {@code SELECT 1}, or {@code SELECT 1 FROM DUAL} on Oracle (SAMPLE_DB=oracle), decided once from
-   * the database product name: the exhauster is built without the {@link DbKind}.
+   * {@code SELECT 1}, or the ping of the database the product name names ({@link
+   * DbKind#fromProductName}: DUAL on Oracle, Tibero and Altibase, SYSIBM.SYSDUMMY1 on Db2), decided
+   * once: the exhauster is built without the {@link DbKind}.
    */
   private String pingSql(Connection connection) throws SQLException {
     String known = pingSql;
     if (known == null) {
       java.sql.DatabaseMetaData metaData = connection.getMetaData();
       String product = metaData == null ? null : metaData.getDatabaseProductName();
-      boolean oracle =
-          product != null && product.toLowerCase(java.util.Locale.ROOT).contains("oracle");
-      known = (oracle ? DbKind.ORACLE : DbKind.H2).pingSql();
+      known = DbKind.fromProductName(product).pingSql();
       pingSql = known;
     }
     return known;

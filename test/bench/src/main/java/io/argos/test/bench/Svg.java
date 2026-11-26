@@ -50,6 +50,8 @@ final class Svg {
         xMin = Math.min(xMin, x);
         xMax = Math.max(xMax, x);
         yMax = Math.max(yMax, p[1]);
+        // The y axis starts at 0 unless a value is negative (trend of relative overheads).
+        yMin = Math.min(yMin, p[1]);
       }
     }
     StringBuilder svg = new StringBuilder();
@@ -88,6 +90,7 @@ final class Svg {
       xMax = xMin + 1;
     }
     double[] yTicks = niceTicks(yMin, yMax <= yMin ? yMin + 1 : yMax, 5);
+    yMin = yTicks[0];
     yMax = yTicks[yTicks.length - 1];
     double[] xTicks = logX ? decadeTicks(xMin, xMax) : niceTicks(xMin, xMax, 6);
     if (!logX) {
@@ -98,9 +101,10 @@ final class Svg {
     double plotH = HEIGHT - TOP - BOTTOM;
     double fxMin = xMin;
     double fxMax = xMax;
+    double fyMin = yMin;
     double fyMax = yMax;
     DoubleUnaryOperator sx = x -> LEFT + (x - fxMin) / (fxMax - fxMin) * plotW;
-    DoubleUnaryOperator sy = y -> TOP + plotH - (y - 0) / (fyMax - 0) * plotH;
+    DoubleUnaryOperator sy = y -> TOP + plotH - (y - fyMin) / (fyMax - fyMin) * plotH;
 
     for (double t : yTicks) {
       double y = sy.applyAsDouble(t);

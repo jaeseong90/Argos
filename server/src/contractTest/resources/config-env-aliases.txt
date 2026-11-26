@@ -10,6 +10,7 @@
 #                for server.address that is every interface), sorted by key
 
 [aliases]
+ARGOS_BOOTSTRAP_APPS_FILE	argos.bootstrap.apps-file
 ARGOS_CH_DATABASE	argos.clickhouse.database
 ARGOS_CH_MIGRATOR_PASSWORD_FILE	argos.clickhouse.migrator.password-file
 ARGOS_CH_MIGRATOR_USER	argos.clickhouse.migrator.user
@@ -18,6 +19,7 @@ ARGOS_CH_READER_USER	argos.clickhouse.reader.user
 ARGOS_CH_URL	argos.clickhouse.url
 ARGOS_CH_WRITER_PASSWORD_FILE	argos.clickhouse.writer.password-file
 ARGOS_CH_WRITER_USER	argos.clickhouse.writer.user
+ARGOS_DEMO_MODE	argos.demo.enabled
 ARGOS_IP_MODE	argos.privacy.default-ip-mode
 ARGOS_LOG_LEVEL	logging.level.root
 ARGOS_PG_OWNER_PASSWORD_FILE	argos.postgres.owner.password-file

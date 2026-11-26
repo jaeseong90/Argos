@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Gate 1 security catalogue (WO-46, T-SEC-93, docs/03 Gate 1 "보안" row): every requirement of
+# docs/06 section 2 whose stage column contains M, the test IDs that verify it, the layers they run
+# in and the command that runs them. SecuritySuiteCatalogSecurityTest (./gradlew :server:securityTest)
+# fails when an M requirement is missing here, when a row names a requirement that is not at stage M,
+# when a listed test ID occurs in no test source, or when a manual row's evidence file is missing.
+#
+# Columns (tab separated, one row per requirement):
+#   sec       requirement ID of docs/06 (SEC-nn)
+#   kind      auto | manual | auto+manual
+#   tests     comma-separated test IDs (18 appendix A, test/README.md section 4) or design test IDs
+#             (ST-nn-n); "-" for a manual row
+#   layers    where the tests run (source sets, UI suites, shell suites)
+#   run       the command that runs them ("-" for a manual row)
+#   evidence  comma-separated repository files a person reviews ("-" when there is none)
+#   note      free text
+#
+# Many T-SEC tests stay in the layer of the code they test (agent integrationTest, Vitest,
+# Playwright, deploy shell suites): this table, not ./gradlew securityTest alone, is the Gate 1
+# security suite. SEC-93 itself (stage G2) is this catalogue plus the CI jobs (T-SEC-93, T-SEC-93a).
+sec	kind	tests	layers	run	evidence	note
+SEC-01	auto	T-SEC-01	server securityTest, server test, server integrationTest	./gradlew :server:securityTest --tests '*AgentTokenSecurityTest'	-	app-scoped token, other app name PERMISSION_DENIED, prefix and length
+SEC-02	auto	T-SEC-02,T-SEC-48b	server securityTest, server integrationTest, server archTest	./gradlew :server:securityTest --tests '*AgentTokenSecurityTest' && ./gradlew :server:archTest	-	ST-02-3 (no token in logs) is the @Sensitive rule T-SEC-48b (IssuedToken, TokenService, TokenHash)
+SEC-04	auto	T-SEC-04	server securityTest	./gradlew :server:securityTest --tests '*AgentTokenSecurityTest'	-	revoke closes sessions within 5 s, rotation grace
+SEC-06	auto	T-SEC-06,T-SEC-06g	agent test, agent integrationTest, server test, server securityTest, deploy shell	./gradlew :agent:agent-testing:integrationTest --tests '*TokenTransportTest' && ./gradlew :server:securityTest --tests '*DiagnosticBundleSecurityTest'	-	token masking in agent logs, diagnostics bundle grep 0, token-file permission WARN
+SEC-07	auto	T-SEC-07,T-SEC-07b	server securityTest, agent integrationTest	./gradlew :server:securityTest --tests '*CollectorTlsSecurityTest' --tests '*Testssl*'	-	TLS 1.1 and CBC refused; testssl container scan added by WO-46
+SEC-08	auto	T-SEC-08,T-SEC-08c	agent test, agent integrationTest	./gradlew :agent:agent-testing:integrationTest --tests '*TlsTransportTest' -Pagent.jdk8u252=<JRE> -Pagent.jdk8u242=<JRE>	-	hostname mismatch fails, skip-verify WARN, plaintext double flag
+SEC-11	auto	T-SEC-11	server securityTest, server test	./gradlew :server:securityTest --tests '*GzipBombSecurityTest' --tests '*AttackIsolationSecurityTest'	-	gzip bomb RSS, batch over limit, field truncation (16 section 15 #5)
+SEC-15	auto	T-SEC-15	server securityTest, server integrationTest	./gradlew :server:securityTest --tests '*CollectorHardeningSecurityTest'	-	reflection off, unauthenticated Send refused
+SEC-20	auto	T-SEC-20,ST-20-1	agent test, agent integrationTest	./gradlew :agent:agent-core:test --tests '*EnvMaskerTest' && ./gradlew :agent:agent-testing:integrationTest --tests '*EnvDumpSeedTest'	-	environment dump masking, 30 cases
+SEC-21	auto	T-SEC-21	server securityTest, server integrationTest, ui e2e	./gradlew :server:securityTest --tests '*CommandSecurityTest'	-	3 roles x commands with real login sessions, other user's result 403
+SEC-23	auto	T-SEC-23	agent test, agent integrationTest, server securityTest	./gradlew :agent:agent-core:test --tests '*ConfigPushApplierTest' && ./gradlew :server:securityTest --tests '*ConfigChangeSecurityTest'	-	remote-config.allow hard cap on both sides
+SEC-25	auto	T-SEC-25,ST-25-1	agent test, agent integrationTest	./gradlew :agent:agent-core:test --tests '*CustomMethodPolicyTest' && ./gradlew :agent:agent-testing:integrationTest --tests '*CustomMethodPolicy*'	-	forbidden prefixes, limit
+SEC-26	auto	T-SEC-26,T-SEC-26a	agent archTest, agent integrationTest	./gradlew :agent:agent-testing:archTest && ./gradlew :agent:agent-testing:integrationTest --tests '*SeedLogTest'	-	INFO log PII grep 0 (LOG-01 rule and seed runs), log directory 0700
+SEC-30	manual	-	-	-	docs/02-architecture.md	data classification table (02 section 5.2) reviewed by hand; the automatic enum vs yaml diff T-SEC-30 belongs to WO-81
+SEC-31	auto	T-SEC-31,T-SEC-47 (UI)	agent test, agent integrationTest, ui e2e	./gradlew :agent:agent-testing:integrationTest --tests '*servlet*' && pnpm -C ui e2e:stack --grep "T-SEC-47"	-	IP modes; the setup wizard forces the IP mode step (16 section 15 #1)
+SEC-32	auto	T-SEC-32	agent test, agent integrationTest, server test, server integrationTest	./gradlew :agent:agent-core:test --tests '*HttpCaptureTest' && ./gradlew :server:integrationTest --tests '*UserIdSaltIT'	-	user_id modes, HMAC salt per app, hashed search
+SEC-34	auto	T-SEC-34	agent test, agent integrationTest	./gradlew :agent:agent-core:test --tests '*HttpCaptureTest'	-	query string modes
+SEC-35	auto	T-SEC-35	agent test	./gradlew :agent:agent-core:test --tests '*NormalizationCasesTest'	-	SQL normalization PII cases, failure never sends the raw SQL
+SEC-39	auto	T-SEC-39	server test, server integrationTest, ui test	./gradlew :server:test --tests '*TemplateRendererTest'	-	alert template variable set
+SEC-40	auto	T-SEC-40	server securityTest, server test, ui test, ui e2e	./gradlew :server:securityTest --tests '*SessionCookieSecurityTest' && pnpm -C ui e2e:stack --grep "T-SEC-40"	-	httpOnly cookies, no token in JS storage
+SEC-41	auto	T-SEC-41	server securityTest, server test, ui test, ui e2e	./gradlew :server:securityTest --tests '*SessionLifecycleSecurityTest'	-	refresh rotation and reuse detection
+SEC-42	auto	T-SEC-42	server securityTest, server test, server integrationTest	./gradlew :server:securityTest --tests '*SessionLifecycleSecurityTest'	-	demotion 403, logout 401, kiosk conditions
+SEC-43	auto	T-SEC-43	server securityTest, server test, ui test, ui e2e	./gradlew :server:securityTest --tests '*CsrfSecurityTest'	-	CSRF double submit and Origin
+SEC-44	auto	T-SEC-44	server securityTest, server test, ui test, ui e2e	./gradlew :server:securityTest --tests '*WebSocketSecurityTest'	-	WS handshake 401/403, close 4401 within 1 s
+SEC-47	auto	T-SEC-47,T-SEC-47 (UI)	server securityTest, server test, deploy shell, ui e2e	./gradlew :server:securityTest --tests '*SetupBootstrapSecurityTest' && pnpm -C ui e2e:stack --grep "T-SEC-47"	-	setup token; the wizard on a fresh-install stack (T-SEC-47 (fresh)) is pnpm -C ui e2e:fresh (WO-46)
+SEC-48	auto	T-SEC-48,T-SEC-48b	server securityTest, server test, server archTest	./gradlew :server:securityTest --tests '*PasswordSecurityTest' --tests '*UnknownNameLockoutSecurityTest' && ./gradlew :server:archTest	-	length, denylist (16 section 15 #10), lockout, @Sensitive
+SEC-49	auto	T-SEC-49	server contractTest, server securityTest, server test	./gradlew :server:contractTest && ./gradlew :server:securityTest --tests '*PermissionMatrixSessionSecurityTest'	-	OpenAPI operation x 3 roles matrix generated from the spec
+SEC-50	auto	T-SEC-50	server securityTest, server test	./gradlew :server:securityTest --tests '*ObjectAccessSecurityTest' --tests '*CommandSecurityTest'	-	other user's object 403, UUIDv4
+SEC-51	auto	T-SEC-51,T-SEC-51b	server securityTest, server test	./gradlew :server:securityTest --tests '*AlertChannelSecurityTest' --tests '*SsrfVectors*'	-	destination validation, redirects not followed; more vector classes added by WO-46
+SEC-52	auto	T-SEC-52	server securityTest, server test, server integrationTest, deploy shell	./gradlew :server:securityTest --tests '*MasterKeySecurityTest' --tests '*AlertChannelSecurityTest'	-	no plaintext secret in PostgreSQL, masked responses, rekey
+SEC-55	auto	T-SEC-55	server securityTest, server test, server integrationTest, deploy shell	./gradlew :server:securityTest --tests '*ActuatorSecurityTest'	-	env 404, prometheus 401
+SEC-60	auto	T-SEC-60	ui lint tests	pnpm -C ui lint && pnpm -C ui test	-	ESLint rules and their rule tests
+SEC-61	auto	T-SEC-61	ui test	pnpm -C ui test	-	safe components with XSS payloads
+SEC-62	auto	T-SEC-62	ui e2e	pnpm -C ui e2e:stack --grep "T-SEC-62"	-	global page hook of e2e/fixtures/fixtures.ts on every stack spec; seeded XSS data over all screens (xss-seed.spec, WO-46)
+SEC-70	auto	T-BLD-008,T-SEC-70a	build-logic test, shell test	bash test/release/check-sbom.test.sh && bash .github/scripts/test/check-workflows.test.sh	-	SBOMs of agent, server and UI; the PR sbom-scan job runs on GitHub (person to confirm)
+SEC-71	auto	ST-71-2,T-SEC-71a	shell test	bash test/release/check-sbom.test.sh && bash .github/scripts/test/check-workflows.test.sh	docs/security/cve-exceptions.md	scan gate and exception list = .trivyignore; approval procedure in the evidence file
+SEC-74	auto	T-SEC-74	deploy shell, server test, storage test	bash deploy/compose/test/run-all.sh	-	.env generation and permissions, forbidden passwords refused
+SEC-75	auto	T-SEC-75	deploy shell	bash deploy/compose/test/run-all.sh	-	published port set {8080, 9100}
+SEC-77	auto	T-BLD-003	build-logic test, agent-dist check	./gradlew check && bash test/agent/check-shading.sh agent/agent-dist/build/libs/argos-agent-<version>.jar	-	argos-deps.txt present and well formed in the agent jar
+SEC-80	auto	T-SEC-80a,T-SEC-80b,T-SEC-80c,T-SEC-80d	server test, server integrationTest, server securityTest	./gradlew :server:securityTest --tests 'io.argos.server.security.audit.*'	-	audit events of login, tokens, commands and configuration (stage M part)
+SEC-81	auto	T-SEC-81	server securityTest, server integrationTest, server test	./gradlew :server:securityTest --tests '*AuditSecurityTest'	-	audit schema columns
+SEC-91	auto+manual	T-SEC-91a,ST-91-1	agent archTest	./gradlew :agent:agent-testing:archTest	docs/security/threat-model.md	threat model draft (review by a person, final at Gate 2); ArchUnit backs the no-arbitrary-code argument

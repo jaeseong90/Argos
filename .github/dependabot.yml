@@ -1,20 +1,29 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Dependency update policy (docs/19 sections 6.1 and 8, SEC-71/73):
-# - version updates are grouped and opened weekly; a 7-day cooldown skips releases younger than a week;
-#   the weekly interval follows docs/19 and conflicts with 01 O-S04 (monthly); PM decision pending (WO-47);
-# - security updates are opened immediately (enable "Dependabot security updates" in the repository settings);
-# - pull requests are labelled "dependencies"; a maintainer decides whether a CHANGELOG line is needed
-#   (security fixes always get one) or adds the no-changelog label.
-# Gradle note: after a Gradle update, regenerate gradle/verification-metadata.xml and lock files in the same
-# pull request (see docs/dev-setup.md), otherwise the build fails dependency verification by design.
+# Dependency update policy (01 O-S04, 16 section 10.2, ADR-0003 C-30, SEC-71/73). Procedure for
+# maintainers: docs/security/supply-chain.md "Dependabot pull requests".
+# - Version updates are grouped per ecosystem and opened once a month (ADR-0003 C-30 replaces the
+#   weekly interval of docs/19 sections 6.1 and 8). Minor and patch updates share one pull request per
+#   ecosystem; major updates open their own pull requests. A 7-day cooldown skips releases younger than
+#   a week (cooldown applies to version updates only).
+# - Security updates do not follow this schedule: GitHub opens them as soon as an advisory affects a
+#   dependency, because "Dependabot alerts" and "Dependabot security updates" are enabled in the
+#   repository settings (.github/scripts/branch-protection.sh). They are grouped per ecosystem too.
+# - Pull requests are labelled "dependencies" (.github/scripts/create-labels.sh); a maintainer decides
+#   whether a CHANGELOG line is needed (security fixes always get one) or adds the no-changelog label.
+# - Gradle: Dependabot cannot regenerate gradle/verification-metadata.xml and the lock files. Until a
+#   maintainer regenerates them on the Dependabot branch (docs/dev-setup.md section 7), the pull request
+#   build fails dependency verification by design.
+# - Docker: only the sample application Dockerfiles. The Compose images (deploy/compose) must stay equal
+#   to deploy/*/image.properties and the Jib base images live in build.gradle.kts, so both are updated
+#   by hand once a month together with the other pins outside Dependabot (docs/security/supply-chain.md).
+# Checked by .github/scripts/test/dependabot-config.test.sh.
 version: 2
 updates:
   - package-ecosystem: gradle
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: "06:00"
       timezone: Asia/Seoul
     cooldown:
@@ -40,8 +49,7 @@ updates:
   - package-ecosystem: npm
     directory: /ui
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: "06:00"
       timezone: Asia/Seoul
     cooldown:
@@ -69,8 +77,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: "06:00"
       timezone: Asia/Seoul
     cooldown:
@@ -81,18 +88,20 @@ updates:
     commit-message:
       prefix: "deps(actions)"
     groups:
-      github-actions:
+      actions-version-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      actions-security-updates:
+        applies-to: security-updates
         patterns:
           - "*"
 
   - package-ecosystem: docker
     directories:
-      - /deploy/**
-      - /sample-apps/**
-      - /test/**
+      - /sample-apps/*
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: "06:00"
       timezone: Asia/Seoul
     cooldown:
@@ -103,6 +112,11 @@ updates:
     commit-message:
       prefix: "deps(docker)"
     groups:
-      docker-images:
+      docker-version-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      docker-security-updates:
+        applies-to: security-updates
         patterns:
           - "*"

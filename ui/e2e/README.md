@@ -58,11 +58,16 @@ fails before the stack starts.
 | `stack`          | Every other `e2e/specs/*.spec.ts`, after `stack-setup`                                                                                                                                                                                                     |
 | `stack-teardown` | One-sided server CSP counter check (a growth beyond the positive controls' reports fails, see [CSP](#csp-t-sec-46)). Then removes the stack                                                                                                                |
 | `initial-load`   | `perf/initial-load.spec.ts`. Defined only when selected with `--project initial-load`                                                                                                                                                                      |
+| `fresh-install`  | `e2e/specs/fresh/*.spec.ts` (WO-46) against a fresh-install stack of its own (`fresh-setup` / `fresh-teardown`); defined only when selected with `--project fresh-install` (`corepack pnpm e2e:fresh`), see [Fresh install](#fresh-install-wo-46)          |
 
 The suite runs with no retries, one worker, traces of failures only, a 1366x768 viewport, the UTC
 time zone and the `en-US` locale (docs/18 §13, §15). CI shards with `--shard=<i>/<n>`; with `CI`
 set, the reporter writes blob reports to `blob-report/` for `playwright merge-reports`.
-`test-results/e2e/results.json` holds the JSON report: per-test durations and annotations.
+`test-results/e2e-json/results-<projects>[-shard-<i>-of-<n>].json` holds the JSON report of a run
+(per-test durations, status and annotations, such as `{ type: 'req' }`): one file per project
+selection (`default` without `--project`) and shard, outside `test-results/e2e/` because Playwright
+empties that directory at the start of every run. e2e:docker writes the same path through the
+mounted `ui/`. The traceability report reads these files (test/README.md section 6).
 
 ## The stack (`e2e/stack/`)
 
@@ -372,6 +377,73 @@ It needs a host JVM 21, so every test skips inside the Playwright image of `e2e:
 `logs/wo17-cmd-shop-boot3.log` and the agent log directory `logs/wo17-cmd-agent/`. Partial run:
 `corepack pnpm e2e:stack --grep "WO-17"`; after changing `liveShop.ts` also run
 `--grep "T-E2E-active|T-E2E-099|T-E2E-async"`.
+
+## XSS seed sweep (T-SEC-62, WO-46)
+
+`specs/xss-seed.spec.ts` (tag `@security`) checks SEC-62 over the whole UI with the XSS payloads of
+docs/18 §4.3 and docs/16 §9.4. The seed traffic keeps the default capture, so most XSS locations
+never reach its data; the sweep seeds two applications of its own once per stack run
+(`fixtures/xssApps.ts`, record `.stack/<run>/xss-seed/xss-seed.json`): `e2e-xss-<suffix>` is
+`shop-boot3` with ext-stub and the captures that keep a payload (`fixtures/xssSeed.ts`
+`xssShopJvmArgs`: `X-Seed` header, user id plain from `X-User-Id`, query string full, every profile
+kept) and every `seed.xss.*` entry of the shop catalog called once; `e2e-xss-batch-<suffix>` is
+`shop-batch` with every `seed.xss.batch.*` entry (the payload as a Spring Batch job name). Both
+stop and their instances are archived when the data is queryable.
+
+- `T-SEC-62 (a)`: every location of `XSS_LOCATIONS` has a payload in the API data (service path,
+  query string, header, user id, exception message, thread name of the command feed's thread dump,
+  external call path, batch job name, deploy event title); a missing one fails naming it. The SQL
+  location is normalized by design: the SQL steps of `GET /seed/xss-sql` exist and neither the
+  detail nor the SQL statistics hold a payload.
+- `T-SEC-62 (b) <location>`: a screen shows the API's value as exactly that text (`getByText`
+  exact) with nothing injected; also the environment dump viewer of the command feed.
+- `T-SEC-62 (c) <route>`: every route of `specs/routes.ts`, once or for the primary, traffic and
+  sweep apps (`XSS_ROUTE_PLAN`), every tab of the transaction and instance details, the alert deep
+  link and a search for a payload. The page hooks check `window.__xss`, dialogs, page errors,
+  console errors and CSP violations after every test; the sweep adds no element or attribute made
+  of collected text (`INJECTED_SELECTOR`). A route of `routes.ts` without a plan entry stops the
+  spec when it loads (and fails `fixtures/xssSeed.test.ts`).
+- `T-SEC-62 (e)`: the server CSP counter does not grow over the sweep beyond the reports of the
+  positive controls recorded for the run (one-sided, C-188).
+
+Needs the five stack jars, `:server:activeFeedJar` and `:sample-apps:shop-batch:sampleAppJar`
+(without it the batch location fails naming the build command), and a host JVM: inside the image of
+`e2e:docker` the locations of the sweep apps and the command feed are skipped with the reason.
+Run: `corepack pnpm e2e:stack --grep "T-SEC-62"` (this laptop 5.8 minutes with a new stack: stack
+start and seed 2.7 minutes, the sweep apps 52 s, 79 sweep tests about 2.4 minutes). Logs:
+`logs/e2e-xss-*.log`, smoke reports below `xss-seed/`.
+
+## Fresh install (WO-46)
+
+ADR-0010 C-192 (1): the setup wizard against a real new installation. `stack/fresh.ts` starts the
+same PostgreSQL, ClickHouse and server containers as the seeded stack (`startStack(..., 'fresh')`:
+same labels, names, memory limits and 127.0.0.1 ports), without `ARGOS_ADMIN_PASSWORD_FILE` and
+`ARGOS_IP_MODE`, without fake alert receivers and without any seed. The server writes its setup token
+to `/data/setup-token`; the setup copies it with `docker exec` into `secrets/setup.token` of the run
+(never printed; the server's one log line with it is redacted when the logs are saved). The fresh
+stack holds the same `server-it` lock and shares `run.json`, so it never runs next to a seeded
+stack; its session is `.stack/fresh-session.json`. It is single-use: a reused one
+(`ARGOS_E2E_FRESH_URL`) must still answer `needs_setup: true`.
+
+`specs/fresh/setup-wizard.spec.ts` (serial, nothing routed, the page hooks of the stack project):
+
+- `T-SEC-47 (fresh)` refusals: API without a token 403, with a wrong token 403, an 11-character
+  password 422 (T-SEC-48) without using the token up; the wizard refuses an empty token before any
+  request, keeps an 11-character password on the administrator step, and brings a wrong token back
+  to the token step with the token message after the server's 403.
+- `T-E2E-059` / `T-SEC-47 (fresh)` the wizard end to end: token, administrator with a 12-character
+  password, the IP collection step (ST-31-3: masked preselected, `off` chosen and stored as
+  `default_ip_mode_source: settings`), the first application with its agent token once (`no-store`,
+  not in the URL, cookies or storage, gone after the step), the finish step; then the used token 403,
+  any other setup request 404, `needs_setup: false`.
+- `T-SEC-47 (fresh)` closed: `/setup` shows the closed view and the new administrator signs in
+  through `/login`.
+- `fresh-teardown` (`T-SEC-46 (fresh)`): any growth of the server CSP counter fails (no positive
+  control in this project), then the stack is removed.
+
+Run: `corepack pnpm e2e:fresh` (server boot jar only; this laptop 54 s including the stack: start
+39 s, wizard tests 8 s, teardown 3 s). In the pinned Linux image: `node e2e/stack/cli.ts docker-fresh` (the host starts the fresh
+stack, the container runs `--project=fresh-install` with `ARGOS_E2E_FRESH_URL`).
 
 ## CSP (T-SEC-46)
 

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
+# req: O-R10
+# test-ids: T-BLD-031
 #
 # Tests for .github/scripts/check-changelog.sh using a throwaway git repository.
 set -euo pipefail

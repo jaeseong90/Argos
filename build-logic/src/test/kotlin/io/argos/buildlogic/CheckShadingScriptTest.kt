@@ -167,7 +167,7 @@ class CheckShadingScriptTest {
     assertFails(check(entries), "native", "libnetty_transport_native_epoll_x86_64.so", "argos.dll")
   }
 
-  @ParameterizedTest(name = "T-BLD-003 rejects a jar without {0}")
+  @ParameterizedTest(name = "T-BLD-003 / T-SEC-77 rejects a jar without {0}")
   @Tag("req:O-L04")
   @Tag("req:SEC-77")
   @ValueSource(
@@ -188,7 +188,7 @@ class CheckShadingScriptTest {
 
   @Test
   @Tag("req:SEC-77")
-  @DisplayName("T-BLD-003 rejects malformed or UNKNOWN argos-deps.txt lines and a non-CycloneDX SBOM")
+  @DisplayName("T-BLD-003 / T-SEC-77 rejects malformed or UNKNOWN argos-deps.txt lines and a non-CycloneDX SBOM")
   fun rejectsMalformedMetadata() {
     val entries = compliantEntries()
     entries["META-INF/argos-deps.txt"] =

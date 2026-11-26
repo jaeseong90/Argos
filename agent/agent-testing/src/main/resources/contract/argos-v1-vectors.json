@@ -178,6 +178,18 @@
         {"action": "data", "token": "valid", "session": "current", "seq": 3, "expected_code": "OK", "expected_status": "ACK_OK", "expected_last_seq": 3},
         {"action": "hello", "token": "valid", "instance_name": "host:4242", "expected_accepted": true, "expected_instance_id": 2}
       ]
+    },
+    {
+      "name": "a check-only hello (AgentHello.check_only, --check) is answered without a session and its stream ends: instance id 0, no session id, data calls stay refused, and it neither registers nor replaces the instance's session",
+      "clause": "11 §5, ADR-0010 C-240 (1)",
+      "steps": [
+        {"action": "hello", "token": "valid", "check_only": true, "expected_accepted": true, "expected_check_only_answer": true, "expected_code": "OK"},
+        {"action": "data", "token": "valid", "session": "none", "seq": 1, "expected_code": "FAILED_PRECONDITION", "expected_description": "SESSION_REQUIRED"},
+        {"action": "hello", "token": "valid", "expected_accepted": true, "expected_instance_id": 1},
+        {"action": "data", "token": "valid", "session": "current", "seq": 1, "expected_code": "OK", "expected_status": "ACK_OK", "expected_last_seq": 1},
+        {"action": "hello", "token": "valid", "check_only": true, "agent_epoch": 9, "expected_accepted": true, "expected_check_only_answer": true, "expected_code": "OK"},
+        {"action": "data", "token": "valid", "session": "current", "seq": 2, "expected_code": "OK", "expected_status": "ACK_OK", "expected_last_seq": 2}
+      ]
     }
   ],
   "status_codes": [

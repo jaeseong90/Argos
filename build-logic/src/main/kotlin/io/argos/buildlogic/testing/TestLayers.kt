@@ -40,8 +40,12 @@ object TestLayers {
       MACHINE_PROFILE_TASKS +
       listOf("storageGenerate", "storageQueries", "sampleImage")
 
-  /** Name prefixes of development tools that never run in check (sampleSmoke*, transportPoc*). */
-  val NOT_IN_CHECK_PREFIXES: List<String> = listOf("sampleSmoke", "transportPoc")
+  /**
+   * Name prefixes of tasks that never run in check: development tools (sampleSmoke*, transportPoc*)
+   * and the compatibility matrix (one matrixTest-<ID> task and one matrixResult-<ID> finalizer per
+   * combination, and matrixReport, which writes docs/compatibility-matrix.md; 18 §6.2, WO-50).
+   */
+  val NOT_IN_CHECK_PREFIXES: List<String> = listOf("sampleSmoke", "transportPoc", "matrixTest", "matrixResult", "matrixReport")
 
   /** Runner label of the trusted self-hosted matrix runner (DSN-19-06, O-S05, 18 §2.3). */
   const val MATRIX_RUNNER_LABEL: String = "argos-matrix"

@@ -13,6 +13,9 @@ export const PROJECTS = [
   'stack',
   'stack-teardown',
   'initial-load',
+  'fresh-setup',
+  'fresh-install',
+  'fresh-teardown',
 ] as const;
 export type ProjectName = (typeof PROJECTS)[number];
 

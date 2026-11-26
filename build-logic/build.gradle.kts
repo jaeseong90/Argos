@@ -53,10 +53,15 @@ testing {
               repositoryRoot.file("test/agent/check-shading.sh"),
               repositoryRoot.file("test/agent/unsafe-allowlist.txt"),
               repositoryRoot.file("test/lint/check-spdx.sh"),
+              repositoryRoot.file("test/lint/check-notice.sh"),
+              repositoryRoot.file("NOTICE"),
               repositoryRoot.file("build-logic/allowed-licenses.json"),
               repositoryRoot.file("build-logic/license-overrides.json"),
               repositoryRoot.file("docs/licenses/dev-only.md"),
               repositoryRoot.dir("agent/agent-dist/src/notices"),
+              // Compatibility matrix definition and nightly workflow (MatrixCatalogTest, WO-50).
+              repositoryRoot.dir("test/matrix"),
+              repositoryRoot.file(".github/workflows/nightly.yml"),
             )
             .withPathSensitivity(PathSensitivity.RELATIVE)
             .withPropertyName("repositoryFiles")

@@ -9,5 +9,7 @@ io.argos.server.bootstrap.StartupFailureReporter
 
 # Packaged application.yml: unset short environment names (17 §3.8) and keys set by default
 # properties are removed, so neither hides a lower-precedence setting (WO-20, ADR-0010 C-96).
+# Demo mode (argos.demo.enabled) supplies the plaintext gRPC defaults of the demo profile (WO-41).
 org.springframework.boot.EnvironmentPostProcessor=\
-io.argos.server.config.PackagedSettingsPostProcessor
+io.argos.server.config.PackagedSettingsPostProcessor,\
+io.argos.server.demo.DemoModeDefaults

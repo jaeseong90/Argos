@@ -28,7 +28,10 @@ import javax.net.ssl.SSLException;
  *       the exit code stays 0), {@code server.tls: false} is WARN "plaintext".
  *   <li>4 {@code hello}: the server accepted the {@code AgentHello} (server version, protocol, the
  *       agent versions it accepts, app and instance ids), or why it refused it (token, app
- *       approval, version, plaintext, limits) with what to do.
+ *       approval, version, plaintext, limits) with what to do. The Hello is check-only ({@code
+ *       AgentHello.check_only}, ADR-0010 C-240 (1)): a server that knows it registers no instance
+ *       for it; an older server registers {@code <instance or host>-check} as an instance and the
+ *       check ends that session with {@code AgentBye}.
  *   <li>5 {@code clock}: the offset {@code server_time_ms - (sent + received) / 2} of the hello
  *       round; WARN at 1 s or more (11 §9, F-S28).
  * </ul>
@@ -151,17 +154,23 @@ final class ConnectionChecks {
     }
     CheckProbe.Result result = prober.probe(config, instanceName);
     rows.addAll(probeRows(config, target, result, nowMillis));
-    if (result.hello != null && result.hello.getAccepted()) {
+    if (CheckProbe.checkOnlyAnswer(result.hello)) {
+      sideEffects.add(
+          "the hello check was a check-only session as instance '"
+              + result.instanceName
+              + "': the server registered no instance for it");
+    } else if (result.hello != null && result.hello.getAccepted()) {
       sideEffects.add(
           "the hello check opened a session as instance '"
               + result.instanceName
-              + "' and ended it with AgentBye; the server lists that instance as stopped");
+              + "' and ended it with AgentBye; the server lists that instance as stopped (this"
+              + " server is older than this agent and does not know check-only sessions)");
     } else if (result.hello != null || answeredByServer(result)) {
       sideEffects.add(
-          "the hello check sent an AgentHello as instance '"
+          "the hello check sent a check-only AgentHello as instance '"
               + result.instanceName
-              + "'; a refused hello may be recorded by the server (for example in the approval"
-              + " queue)");
+              + "'; the server registers nothing for it (a server older than this agent may"
+              + " record a refused hello, for example in the approval queue)");
     }
     return rows;
   }
@@ -309,6 +318,19 @@ final class ConnectionChecks {
               + hello.getProtocolVersion()
               + versions(hello)
               + ")";
+      if (CheckProbe.checkOnlyAnswer(hello)) {
+        return CheckRow.of(
+            4,
+            "hello",
+            CheckRow.Status.PASS,
+            "accepted by "
+                + server
+                + ": app id "
+                + hello.getAppId()
+                + ", check-only (no instance registered), instance '"
+                + result.instanceName
+                + "'");
+      }
       if (hello.getAccepted()) {
         return CheckRow.of(
             4,

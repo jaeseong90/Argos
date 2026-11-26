@@ -7,6 +7,7 @@ import io.argos.proto.v1.CloseReason;
 import io.argos.proto.v1.RejectReason;
 import io.argos.server.admin.token.TokenExpiryJob;
 import io.argos.server.auth.Role;
+import io.argos.server.cli.AdminCli;
 import io.argos.server.security.SecuritySuiteAccess;
 import io.argos.server.testing.ServerTestEnvironment;
 import io.argos.server.testing.ServerTestEnvironment.PgAccount;
@@ -21,6 +22,8 @@ import io.argos.server.testing.fakeagent.FakeAgent;
 import io.argos.server.testing.fakeagent.HelloResult;
 import io.grpc.ManagedChannel;
 import io.grpc.Status;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.sql.Connection;
@@ -30,6 +33,7 @@ import java.sql.ResultSetMetaData;
 import java.sql.Statement;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -43,7 +47,11 @@ import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.springframework.boot.logging.LoggingInitializationContext;
+import org.springframework.boot.logging.LoggingSystem;
+import org.springframework.core.env.StandardEnvironment;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * T-SEC-01 to T-SEC-05 with tokens issued through the token API (WO-26) on a real server, real
@@ -53,7 +61,10 @@ import tools.jackson.databind.JsonNode;
  * after it; a revocation ends its sessions with {@code UNAUTHENTICATED} within 5 seconds and
  * refuses the reconnect; the 61st new session of a token within a minute and the 21st
  * authentication failure of an address are {@code RESOURCE_EXHAUSTED} (the latter with {@code
- * argos-retry-after-ms}, ADR-0010 C-156).
+ * argos-retry-after-ms}, ADR-0010 C-156). T-SEC-05b (WO-43, ADR-0010 C-238 (14)): a revocation by
+ * {@code argos-admin token revoke}, a process without the server's cache and sessions, ends the
+ * token's open sessions and refuses it within the same 5 seconds through the server's revocation
+ * watcher.
  */
 @Tag("req:SEC-01")
 @Tag("req:SEC-02")
@@ -353,5 +364,101 @@ class AgentTokenSecurityTest {
       ch.shutdownNow();
       blocked.close();
     }
+  }
+
+  record CliRun(int code, String out, String err) {}
+
+  /** {@code argos-admin} in this JVM against the suite's PostgreSQL, as the server host runs it. */
+  private static CliRun cli(String... args) {
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    ByteArrayOutputStream err = new ByteArrayOutputStream();
+    Map<String, Object> properties = new LinkedHashMap<>(env.springProperties());
+    properties.put("argos.web.public-url", "http://127.0.0.1:8080");
+    int code =
+        AdminCli.run(
+            args,
+            properties,
+            new PrintStream(out, true, StandardCharsets.UTF_8),
+            new PrintStream(err, true, StandardCharsets.UTF_8));
+    // The command line switched Log4j to log4j2-admin.xml; the server's log goes on (C-226 (11)).
+    LoggingSystem system = LoggingSystem.get(AgentTokenSecurityTest.class.getClassLoader());
+    system.cleanUp();
+    system.beforeInitialize();
+    system.initialize(
+        new LoggingInitializationContext(new StandardEnvironment()),
+        "classpath:log4j2-spring.xml",
+        null);
+    return new CliRun(
+        code, out.toString(StandardCharsets.UTF_8), err.toString(StandardCharsets.UTF_8));
+  }
+
+  private static long auditRows(String action, String targetId) throws Exception {
+    try (Connection c = env.connect(PgAccount.APP);
+        PreparedStatement ps =
+            c.prepareStatement(
+                "SELECT count(*) FROM argos.audit_logs WHERE action = ? AND target_id = ?")) {
+      ps.setString(1, action);
+      ps.setString(2, targetId);
+      try (ResultSet rs = ps.executeQuery()) {
+        assertThat(rs.next()).isTrue();
+        return rs.getLong(1);
+      }
+    }
+  }
+
+  @Test
+  @Order(7)
+  @Tag("req:C-238")
+  @DisplayName(
+      "T-SEC-05b argos-admin token revoke (no access to the server's cache or sessions): the"
+          + " running server ends both open sessions of the token with UNAUTHENTICATED and"
+          + " SessionClose TOKEN_REVOKED_CLOSE within 5 s and refuses the reconnect"
+          + " TOKEN_REVOKED; exactly one TOKEN_REVOKED audit row (the command's); argos-admin token"
+          + " rotate keeps the old token working during its grace")
+  void commandLineRevocation() throws Exception {
+    JsonMapper json = JsonMapper.builder().build();
+    String name = newApp("sec05a");
+    int appId = app(name, "prod");
+    JsonNode revoked = issue(appId, "{}");
+    JsonNode rotated = issue(appId, "{}");
+    String revokedId = revoked.path("token_id").asString();
+    FakeAgent first = agent(revoked.path("token").asString(), name, "cli-1");
+    FakeAgent second = agent(revoked.path("token").asString(), name, "cli-2");
+    FakeAgent onRotated = agent(rotated.path("token").asString(), name, "cli-rot");
+    assertThat(first.connect().accepted()).isTrue();
+    assertThat(second.connect().accepted()).isTrue();
+    assertThat(onRotated.connect().accepted()).isTrue();
+
+    CliRun rotate = cli("token", "rotate", "--id", rotated.path("token_id").asString(), "--json");
+    assertThat(rotate.code()).as(rotate.err()).isZero();
+    String successor = json.readTree(rotate.out()).path("token").asString();
+    TOKENS.add(successor);
+
+    CliRun revoke = cli("token", "revoke", "--id", revokedId, "--reason", "leaked", "--json");
+    long committed = System.nanoTime();
+    assertThat(revoke.code()).as(revoke.err()).isZero();
+    assertThat(revoke.out()).doesNotContain(revoked.path("token").asString());
+    for (FakeAgent a : List.of(first, second)) {
+      HelloResult end = a.awaitSessionEnd(REVOKE_BUDGET);
+      assertThat(end.code()).isEqualTo(Status.Code.UNAUTHENTICATED);
+      assertThat(a.sessionClose().map(c -> c.getReason()))
+          .hasValue(CloseReason.TOKEN_REVOKED_CLOSE);
+    }
+    Duration elapsed = Duration.ofNanos(System.nanoTime() - committed);
+    assertThat(elapsed).as("sessions ended after the command").isLessThanOrEqualTo(REVOKE_BUDGET);
+    HelloResult again = agent(revoked.path("token").asString(), name, "cli-1").connect();
+    assertThat(again.accepted()).isFalse();
+    assertThat(again.code()).isEqualTo(Status.Code.UNAUTHENTICATED);
+    assertThat(again.rejectReason()).isEqualTo(RejectReason.TOKEN_REVOKED);
+    assertThat(auditRows("TOKEN_REVOKED", revokedId))
+        .as("the command's audit row only; the watcher adds none")
+        .isEqualTo(1);
+
+    // The rotated token is in its grace: the watcher (several runs by now) leaves it alone.
+    assertThat(onRotated.sessionOpen()).as("rotated token's session").isTrue();
+    assertThat(agent(rotated.path("token").asString(), name, "cli-rot-2").connect().accepted())
+        .as("old token during its grace")
+        .isTrue();
+    assertThat(agent(successor, name, "cli-new").connect().accepted()).as("successor").isTrue();
   }
 }

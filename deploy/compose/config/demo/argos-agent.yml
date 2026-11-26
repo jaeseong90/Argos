@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Agent configuration of the two demo applications (docs/17 section 3.9, docs/agent-config.md).
+# compose.demo.yaml mounts this directory read-only at /conf/demo and names this file with
+# ARGOS_CONFIG. The collector address, the plaintext switch (demo only), the token file and the
+# application name and environment come from the environment variables of compose.demo.yaml, which
+# win over this file. No token or password here: the token is the file /run/secrets/demo_*_token.
+#
+# Everything else is the production default, written out so that the demo shows what a default
+# installation collects (docs/17 section 3.9): no bind parameter values, masked client addresses,
+# no query strings, no user ids, no request headers.
+
+capture:
+  sql-parameters: masked
+  remote-ip: masked
+  query-string: "off"
+  user-id:
+    mode: "off"
+  http-headers: []
+
+log:
+  level: INFO
+  # The container's root file system is read-only; /tmp is its private tmpfs (uid 10001, 0700).
+  dir: /tmp/argos-agent

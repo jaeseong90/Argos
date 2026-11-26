@@ -21,17 +21,39 @@
 #                            stored only as a SHA-256 hash; it expires after N days (1 to 3650,
 #                            default 365).
 #   compose ARGS...          run docker compose with the files of this installation
-#   upgrade, backup, diag    not provided in this version
+#   files                    print the docker compose file options of this installation (for
+#                            scripts such as diag-bundle.sh)
+#   backup [OPTIONS]         ./backup.sh with the same options: PostgreSQL dump (and optionally
+#                            a ClickHouse backup) into ARGOS_BACKUP_DIR (docs/ops/backup-restore.md)
+#   restore SET [OPTIONS]    ./restore.sh with the same options: restore a backup set
+#   diag [--since 24h] [--out DIR]
+#                            ./diag-bundle.sh: a diagnostic bundle with secrets masked
+#                            (argos-diag-compose-<host>-<time>.tar.gz, owner-only)
+#   upgrade --image REF [--yes]
+#                            replace the server image: checks the stack and the version rules
+#                            (no downgrade, no skipped major version), warns about connected agents
+#                            outside the supported range, takes a PostgreSQL backup
+#                            (backup.sh --label pre-upgrade-<from>-<to>), writes upgrade-state.json,
+#                            sets ARGOS_SERVER_IMAGE in .env, restarts the server (the schema
+#                            migrates at its start) and runs a consistency check of yesterday
+#   upgrade --rollback [--yes]
+#                            back to the image before the last upgrade, with the PostgreSQL data of
+#                            its pre-upgrade backup (./restore.sh); data written since is lost
 #   -h, --help               show this text
 #
 # Compose files: compose.yaml, plus compose.unattended.yaml when ARGOS_UNATTENDED=true,
-# compose.mgmt.yaml when ARGOS_MGMT_EXPOSE=true, compose.proxy.yaml when ARGOS_PROXY=true, and
-# compose.override.yaml when it exists (your own changes). The values come from .env; a variable
-# set in the environment of this script wins, as it does for docker compose.
+# compose.demo.yaml and the profile "demo" when ARGOS_DEMO_MODE=true (argos-env-init.sh --demo;
+# no gRPC certificate then), compose.chbackup.yaml when ARGOS_CH_BACKUP_DIR is set (the ClickHouse
+# backup target), compose.mgmt.yaml when ARGOS_MGMT_EXPOSE=true, compose.proxy.yaml when
+# ARGOS_PROXY=true, and compose.override.yaml when it exists (your own changes). The values come
+# from .env; a variable set in the environment of this script wins, as it does for docker compose.
 #
-# Exit codes: 0 done; 1 failure; 2 missing prerequisite or usage error;
-# 4 refused by a limit (5 active agent tokens per application); 130 or 143 token create
-# interrupted (Ctrl-C, SIGTERM).
+# Exit codes: 0 done (also: upgrade to the version that runs already); 1 failure (upgrade: nothing
+# was changed); 2 missing prerequisite, usage error or refused upgrade (downgrade, skipped major
+# version); 4 refused by a limit (5 active agent tokens per application); 8 upgrade failed after
+# the server was replaced: roll back with ./argos-compose.sh upgrade --rollback; 130 or 143 token
+# create interrupted (Ctrl-C, SIGTERM). backup, restore and diag exit with the codes of their
+# scripts.
 set -eu
 umask 077
 # Git Bash on Windows: keep MSYS from rewriting container paths in arguments.
@@ -39,6 +61,9 @@ MSYS_NO_PATHCONV=1
 export MSYS_NO_PATHCONV
 
 prog=argos-compose.sh
+# backup, restore and diag run their scripts from the caller's directory, so that relative paths
+# mean the same as when the scripts are run directly.
+caller_dir=$(pwd)
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here"
 
@@ -50,6 +75,9 @@ DEFAULT_PROXY_IP=172.16.240.254
 # Bind-mount sources that the containers read as their own users (ClickHouse, the server uid
 # 10001, PostgreSQL), not as the owner of the checkout.
 MOUNTED_CONFIG="../clickhouse/config.d/argos.xml ../clickhouse/users.d/argos.xml ../postgres/roles.sql config/server config/postgres"
+# Demo profile (compose.demo.yaml, WO-41): its secret files and its configuration directory.
+DEMO_SECRETS="demo_order_api_token demo_payment_api_token demo_db_password"
+DEMO_CONFIG="config/demo"
 
 die() {
   code=$1
@@ -87,11 +115,24 @@ is_true() {
   esac
 }
 
-# The compose files of this installation (fixed names without spaces).
+# The demo profile (ARGOS_DEMO_MODE=true, written only by argos-env-init.sh --demo).
+demo_mode() { is_true "$(env_value ARGOS_DEMO_MODE false)"; }
+
+# The compose files of this installation (fixed names without spaces) and, in demo mode, the
+# demo profile.
 compose_files() {
   files="-f compose.yaml"
   if is_true "$(env_value ARGOS_UNATTENDED false)"; then
     files="$files -f compose.unattended.yaml"
+  fi
+  if demo_mode; then
+    # The order of COMPOSE_FILE that argos-env-init.sh --demo writes; the profile starts and stops
+    # the demo services with the rest.
+    files="$files -f compose.demo.yaml --profile demo"
+  fi
+  if [ -n "$(env_value ARGOS_CH_BACKUP_DIR)" ]; then
+    # The ClickHouse backup target (an external mount, backup.sh --clickhouse).
+    files="$files -f compose.chbackup.yaml"
   fi
   if is_true "$(env_value ARGOS_MGMT_EXPOSE false)"; then
     files="$files -f compose.mgmt.yaml"
@@ -182,8 +223,16 @@ require_docker() {
 # [ -r ], because this script runs as root. No execute bit is needed on files: the PostgreSQL
 # entrypoint runs its scripts with /bin/sh or copies them first (config/postgres).
 unreadable_config() {
+  mounted=$MOUNTED_CONFIG
+  if demo_mode; then
+    mounted="$mounted $DEMO_CONFIG"
+  fi
+  if [ -n "$(env_value ARGOS_CH_BACKUP_DIR)" ]; then
+    # compose.chbackup.yaml mounts config/clickhouse/backups.xml for ClickHouse (uid 101).
+    mounted="$mounted config/clickhouse"
+  fi
   # shellcheck disable=SC2086 # fixed paths without spaces
-  find $MOUNTED_CONFIG 2>/dev/null | while IFS= read -r path; do
+  find $mounted 2>/dev/null | while IFS= read -r path; do
     case $(mode_of "$path") in
       d??????r?[xt]) ;;
       d*) printf '%s\n' "$path" ;;
@@ -223,16 +272,25 @@ preflight() {
     needed="$needed admin_password"
     [ -n "$(env_value ARGOS_IP_MODE)" ] || add "ARGOS_UNATTENDED=true needs ARGOS_IP_MODE (masked, full or off) in .env"
   fi
+  # The demo profile has no gRPC TLS (plaintext inside the internal network, compose.demo.yaml)
+  # and needs its own secrets instead of tls/.
+  tls_files="tls/server.key"
+  if demo_mode; then
+    needed="$needed $DEMO_SECRETS"
+    tls_files=
+  fi
   for name in $needed clickhouse.env; do
     if [ ! -s "secrets/$name" ]; then
-      add "secrets/$name is missing or empty: run ./argos-env-init.sh"
+      add "secrets/$name is missing or empty: run ./argos-env-init.sh$(if demo_mode; then printf ' --demo'; fi)"
     fi
   done
-  for name in server.crt server.key; do
-    if [ ! -s "tls/$name" ]; then
-      add "tls/$name is missing: place the gRPC certificate and key (docs/install/compose.md, TLS)"
-    fi
-  done
+  if ! demo_mode; then
+    for name in server.crt server.key; do
+      if [ ! -s "tls/$name" ]; then
+        add "tls/$name is missing: place the gRPC certificate and key (docs/install/compose.md, TLS)"
+      fi
+    done
+  fi
   if posix_modes .; then
     [ "$(mode_of .env)" = "-rw-------" ] || add ".env must have mode 0600 (chmod 600 .env)"
     [ "$(mode_of secrets)" = "drwx------" ] || add "secrets/ must have mode 0700 (chmod 700 secrets)"
@@ -248,8 +306,9 @@ preflight() {
       esac
     fi
     if linux_engine; then
-      # The server (uid 10001) reads its secrets and the TLS files from bind mounts.
-      for path in $(for n in $needed; do printf 'secrets/%s ' "$n"; done) tls/server.key; do
+      # The server and the demo applications (uid 10001) read their secrets and the TLS files from
+      # bind mounts.
+      for path in $(for n in $needed; do printf 'secrets/%s ' "$n"; done) $tls_files; do
         if [ -f "$path" ] && [ "$(owner_of "$path")" != "$SERVER_UID" ]; then
           add "$path must belong to uid $SERVER_UID, the server's user (sudo chown $SERVER_UID:$SERVER_UID $path)"
         fi
@@ -284,6 +343,24 @@ preflight() {
         ;;
     esac
   fi
+  if demo_mode; then
+    # The defaults of compose.demo.yaml are local builds (published images: WO-44).
+    for pair in "ARGOS_DEMO_APP_IMAGE :sample-apps:demo-app:jibDockerBuild" \
+      "ARGOS_DEMO_LOAD_IMAGE :sample-apps:load:jibDockerBuild"; do
+      # shellcheck disable=SC2086 # two words without spaces
+      set -- $pair
+      # The default of the line "image: ${<variable>:-<default>}".
+      default=$(awk -v v="$1" '{ i = index($0, "${" v ":-"); if (i > 0) { s = substr($0, i + length(v) + 4); print substr(s, 1, index(s, "}") - 1); exit } }' compose.demo.yaml)
+      image=$(env_value "$1" "$default")
+      case $image in
+        */*) ;;
+        *)
+          docker image inspect "$image" >/dev/null 2>&1 \
+            || add "the demo image $image is not in the local Docker image store: build it with ./gradlew $2"
+          ;;
+      esac
+    done
+  fi
   if [ -n "$problems" ]; then
     printf '%s: cannot start:%s\n' "$prog" "$problems" >&2
     exit 2
@@ -314,6 +391,10 @@ cmd_up() {
   dc ps
   url=$(env_value ARGOS_WEB_PUBLIC_URL)
   printf '\nArgos is up: %s\n' "$url"
+  if demo_mode; then
+    printf 'Demo mode: plaintext gRPC and sample traffic (evaluation only). Remove it with all its data:\n'
+    printf '  ./argos-compose.sh down --volumes   (or: docker compose --profile demo down -v)\n'
+  fi
   if is_true "$(env_value ARGOS_UNATTENDED false)"; then
     printf 'Unattended setup: sign in as %s with the password in secrets/admin_password.\n' \
       "$(env_value ARGOS_ADMIN_USERNAME admin)"
@@ -527,6 +608,334 @@ EOF
 }
 
 # ---------------------------------------------------------------------------------------------
+# backup, restore, diag (WO-43): the scripts next to this one, with the same arguments
+
+run_script() { # run_script <script> [arguments...]
+  script=$1
+  shift
+  [ -f "$here/$script" ] || die 2 "$script is missing next to $prog"
+  cd "$caller_dir" || die 2 "cannot return to $caller_dir"
+  exec sh "$here/$script" "$@"
+}
+
+# ---------------------------------------------------------------------------------------------
+# upgrade and upgrade --rollback (docs/17 section 4.4 and 8, O-R02; WO-43)
+
+STATE_FILE=upgrade-state.json
+VERSION_LABEL=org.opencontainers.image.version
+UPGRADE_WAIT_SECONDS=600
+
+# version_ok <version>: MAJOR.MINOR.PATCH with an optional -pre-release and +build (SemVer 2.0).
+version_ok() {
+  printf '%s\n' "$1" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+}
+
+# version_cmp <a> <b>: prints -1, 0 or 1 by SemVer precedence (the build part is ignored).
+version_cmp() {
+  awk -v a="$1" -v b="$2" '
+    function cmpid(x, y,   xn, yn) {
+      xn = (x ~ /^[0-9]+$/); yn = (y ~ /^[0-9]+$/)
+      if (xn && yn) { if (x + 0 < y + 0) return -1; return (x + 0 > y + 0) }
+      if (xn) return -1
+      if (yn) return 1
+      if (x < y) return -1
+      return (x > y)
+    }
+    function cmp(a, b,   pa, pb, ca, cb, xa, xb, na, nb, i, r) {
+      sub(/\+.*/, "", a); sub(/\+.*/, "", b)
+      pa = ""; pb = ""
+      i = index(a, "-"); if (i) { pa = substr(a, i + 1); a = substr(a, 1, i - 1) }
+      i = index(b, "-"); if (i) { pb = substr(b, i + 1); b = substr(b, 1, i - 1) }
+      split(a, ca, "."); split(b, cb, ".")
+      for (i = 1; i <= 3; i++) {
+        if (ca[i] + 0 != cb[i] + 0) { if (ca[i] + 0 < cb[i] + 0) return -1; return 1 }
+      }
+      if (pa == "" && pb == "") return 0
+      if (pa == "") return 1
+      if (pb == "") return -1
+      na = split(pa, xa, "."); nb = split(pb, xb, ".")
+      for (i = 1; i <= na && i <= nb; i++) { r = cmpid(xa[i], xb[i]); if (r != 0) return r }
+      if (na < nb) return -1
+      return (na > nb)
+    }
+    BEGIN { print cmp(a, b) }'
+}
+
+major_of() { printf '%s' "${1%%.*}"; }
+minor_of() { m=${1#*.}; printf '%s' "${m%%.*}"; }
+
+image_ref_ok() {
+  case $1 in
+    '' | -* | *[[:space:]]* | *'"'* | *"'"* | *\\* | *,* | *'$'* | *'`'*) return 1 ;;
+  esac
+  return 0
+}
+
+# image_label <image> : the version label of a local image (empty when it has none).
+image_version() {
+  docker image inspect --format "{{index .Config.Labels \"$VERSION_LABEL\"}}" "$1" 2>/dev/null | tr -d '\r' | head -n 1
+}
+image_id() { docker image inspect --format '{{.Id}}' "$1" 2>/dev/null | tr -d '\r' | head -n 1; }
+
+# stack_healthy: every service of compose.yaml runs and is healthy (exit 2 otherwise).
+stack_healthy() {
+  for svc in postgres clickhouse server; do
+    cid=$(dc ps -q "$svc" 2>/dev/null || true)
+    [ -n "$cid" ] || die 2 "the $svc service is not running: start the stack first (./argos-compose.sh up)"
+    health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$cid" 2>/dev/null || true)
+    [ "$health" = healthy ] || die 2 "the $svc service is not healthy (${health:-unknown}): ./argos-compose.sh status"
+  done
+}
+
+# confirm <question>: --yes answers it; otherwise a terminal must (exit 2 without one).
+confirm() {
+  $assume_yes && return 0
+  [ -t 0 ] || die 2 "$1: give --yes to run without a terminal"
+  printf '%s [y/N] ' "$1" >&2
+  answer=
+  read -r answer || true
+  case $answer in
+    y | Y | yes | YES) return 0 ;;
+    *) die 1 "cancelled; nothing was changed" ;;
+  esac
+}
+
+# set_env_image <reference>: ARGOS_SERVER_IMAGE in .env, rewritten in place (owner and mode stay).
+set_env_image() {
+  tmp_env=".env.argos-upgrade.$$"
+  if grep -Eq '^[[:space:]]*(export[[:space:]]+)?ARGOS_SERVER_IMAGE=' .env; then
+    awk -v v="$1" '{
+      if ($0 ~ /^[[:space:]]*(export[[:space:]]+)?ARGOS_SERVER_IMAGE=/) print "ARGOS_SERVER_IMAGE=" v
+      else print
+    }' .env >"$tmp_env" || { rm -f "$tmp_env"; return 1; }
+  else
+    cat .env >"$tmp_env" || { rm -f "$tmp_env"; return 1; }
+    if [ -s "$tmp_env" ] && [ -n "$(tail -c 1 "$tmp_env")" ]; then
+      printf '\n' >>"$tmp_env"
+    fi
+    printf 'ARGOS_SERVER_IMAGE=%s\n' "$1" >>"$tmp_env"
+  fi
+  cat "$tmp_env" >.env || { rm -f "$tmp_env"; return 1; }
+  rm -f "$tmp_env"
+  if [ -n "${ARGOS_SERVER_IMAGE+x}" ] && [ "$ARGOS_SERVER_IMAGE" != "$1" ]; then
+    warn "ARGOS_SERVER_IMAGE is set in the environment ($ARGOS_SERVER_IMAGE) and wins over .env for docker compose: unset it, or later commands start that image"
+  fi
+  ARGOS_SERVER_IMAGE=$1
+  export ARGOS_SERVER_IMAGE
+}
+
+# state_field <name>: a string field of upgrade-state.json (one "name": "value" per line).
+state_field() { sed -n "s/^  \"$1\": \"\\(.*\\)\",\\{0,1\}\$/\\1/p" "$STATE_FILE" | head -n 1; }
+
+# write_state <status>: upgrade-state.json (0600; umask 077), replaced as a whole.
+write_state() {
+  tmp_state="$STATE_FILE.tmp.$$"
+  cat >"$tmp_state" <<EOF
+{
+  "status": "$1",
+  "from_image": "$from_image",
+  "from_image_id": "$from_id",
+  "from_version": "$from_version",
+  "to_image": "$to_image",
+  "to_image_id": "$to_id",
+  "to_version": "$to_version",
+  "backup_set": "$backup_set",
+  "started_at": "$started_at",
+  "updated_at": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+}
+EOF
+  chmod 0600 "$tmp_state" && mv -f "$tmp_state" "$STATE_FILE"
+}
+
+utc_date_days_ago() { # utc_date_days_ago <days>: yyyy-mm-dd (GNU and BusyBox date -d @, BSD -r)
+  t=$(($(date -u +%s) - $1 * 86400))
+  date -u -d "@$t" '+%Y-%m-%d' 2>/dev/null || date -u -r "$t" '+%Y-%m-%d'
+}
+
+# agent_versions_warning <server version>: warns about connected agents outside X.(Y-2) to X.Y
+# (O-R02), read from PostgreSQL as argos_backup inside the postgres container. Never fails.
+agent_versions_warning() {
+  smaj=$(major_of "$1")
+  smin=$(minor_of "$1")
+  # shellcheck disable=SC2016 # the postgres container's shell expands it (the password stays there)
+  rows=$(printf '%s\n' "SELECT coalesce(agent_version, '') || '|' || count(*) FROM argos.instances WHERE archived_at IS NULL AND status IN ('UP', 'STALE') GROUP BY agent_version ORDER BY 1;" \
+    | dc exec -T postgres sh -c 'PGPASSWORD=$(cat /run/secrets/pg_backup_password) psql -X -q -A -t -v ON_ERROR_STOP=1 -h 127.0.0.1 -U argos_backup -d argos -f -' 2>/dev/null) || {
+    warn "could not read the versions of the connected agents from PostgreSQL; check them in the UI before you upgrade (continuing)"
+    return 0
+  }
+  outside=$(printf '%s\n' "$rows" | tr -d '\r' | awk -F'|' -v maj="$smaj" -v min="$smin" '
+    NF >= 2 && $2 ~ /^[0-9]+$/ {
+      v = $1; ok = 0
+      if (v ~ /^[0-9]+\.[0-9]+\./) {
+        split(v, p, "."); am = p[1] + 0; an = p[2] + 0
+        ok = (am == maj + 0 && an >= min - 2 && an <= min + 0)
+      }
+      if (!ok) { n += $2; list = list sep (v == "" ? "unknown" : v) " (" $2 ")"; sep = ", " }
+    }
+    END { if (n > 0) print n " agents: " list }')
+  if [ -n "$outside" ]; then
+    warn "connected agents outside the range the server $1 accepts ($smaj.$((smin - 2 < 0 ? 0 : smin - 2)) to $smaj.$smin, O-R02): ${outside}. The server refuses them after the upgrade; replace those agents"
+  fi
+}
+
+cmd_upgrade() {
+  to_image=
+  rollback=false
+  assume_yes=false
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --image) [ $# -ge 2 ] || die 2 "--image needs an image reference"; to_image=$2; shift 2 ;;
+      --image=*) to_image=${1#*=}; shift ;;
+      --rollback) rollback=true; shift ;;
+      --yes | -y) assume_yes=true; shift ;;
+      *) die 2 "upgrade: unknown option $1 (usage: upgrade --image REF [--yes] | upgrade --rollback [--yes])" ;;
+    esac
+  done
+  if $rollback; then
+    [ -z "$to_image" ] || die 2 "upgrade: --rollback takes no --image (it returns to the image of $STATE_FILE)"
+    upgrade_rollback
+    return
+  fi
+  [ -n "$to_image" ] || die 2 "usage: upgrade --image REF [--yes] | upgrade --rollback [--yes]"
+  image_ref_ok "$to_image" || die 2 "--image is not an image reference: $to_image"
+  [ -f "$here/backup.sh" ] || die 2 "backup.sh is missing next to $prog: an upgrade needs its PostgreSQL backup"
+  [ -f .env ] || die 2 ".env is missing: run ./argos-env-init.sh"
+  require_docker
+  t_start=$(date +%s)
+  stack_healthy
+
+  server_cid=$(dc ps -q server)
+  from_image=$(docker inspect --format '{{.Config.Image}}' "$server_cid" 2>/dev/null | tr -d '\r' | head -n 1)
+  from_id=$(docker inspect --format '{{.Image}}' "$server_cid" 2>/dev/null | tr -d '\r' | head -n 1)
+  [ -n "$from_image" ] && [ -n "$from_id" ] || die 1 "cannot read the image of the running server container"
+  image_ref_ok "$from_image" || die 1 "the running server image has an unexpected reference: $from_image"
+  from_version=$(docker image inspect --format "{{index .Config.Labels \"$VERSION_LABEL\"}}" "$from_id" 2>/dev/null | tr -d '\r' | head -n 1)
+
+  if ! docker image inspect "$to_image" >/dev/null 2>&1; then
+    printf 'Pulling %s...\n' "$to_image"
+    docker pull "$to_image" >&2 || die 2 "the image $to_image is not in the local image store and cannot be pulled"
+  fi
+  to_id=$(image_id "$to_image")
+  to_version=$(image_version "$to_image")
+  [ -n "$to_version" ] || die 2 "the image $to_image has no $VERSION_LABEL label: not an Argos server image of a release"
+  [ -n "$from_version" ] || die 2 "the running server image $from_image has no $VERSION_LABEL label"
+  version_ok "$to_version" || die 2 "the image $to_image has the version '$to_version', which is not MAJOR.MINOR.PATCH"
+  version_ok "$from_version" || die 2 "the running server image has the version '$from_version', which is not MAJOR.MINOR.PATCH"
+
+  case $(version_cmp "$to_version" "$from_version") in
+    0)
+      printf 'The server runs version %s already (%s); nothing to do.\n' "$from_version" "$from_image"
+      return 0
+      ;;
+    -1) die 2 "refused: $to_version is older than the running $from_version (downgrades are not supported; to go back after an upgrade use: ./argos-compose.sh upgrade --rollback)" ;;
+  esac
+  if [ $(($(major_of "$to_version") - $(major_of "$from_version"))) -ge 2 ]; then
+    die 2 "refused: $from_version to $to_version skips a major version; upgrade to the last minor version of each major version in turn"
+  fi
+  agent_versions_warning "$to_version"
+
+  printf 'Upgrade of the Argos server: %s (%s) -> %s (%s)\n' "$from_version" "$from_image" "$to_version" "$to_image"
+  printf 'Steps: PostgreSQL backup, then the server restarts with the new image (the schema migrates at its start;\n'
+  printf 'agents buffer and reconnect), then a consistency check. Target: 10 minutes (docs/17 section 8.2).\n'
+  confirm "Upgrade now?"
+
+  # backup.sh takes 1 to 32 characters A-Z a-z 0-9 . _ - (long pre-release versions are cut).
+  label=$(printf 'pre-upgrade-%s-%s' "$from_version" "$to_version" | sed 's/[^A-Za-z0-9._-]/-/g' | cut -c1-32)
+  printf '\n[1/4] PostgreSQL backup (backup.sh --label %s)\n' "$label"
+  backup_out=$(mktemp 2>/dev/null || mktemp -t argos-upgrade)
+  rc=0
+  sh "$here/backup.sh" --label "$label" --json >"$backup_out" || rc=$?
+  last=$(grep '^{' "$backup_out" | tail -n 1 || true)
+  grep -v '^{' "$backup_out" || true
+  rm -f "$backup_out"
+  backup_set=$(json_field set "$last")
+  if [ "$rc" -ne 0 ] || [ -z "$backup_set" ]; then
+    die 1 "the backup failed (backup.sh exit code $rc); nothing was changed: the server runs $from_version"
+  fi
+  case $backup_set in
+    *'"'* | *\\*) die 1 "backup.sh named an unexpected backup set; nothing was changed" ;;
+  esac
+  printf 'Backup set: %s\n' "$backup_set"
+
+  started_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  write_state started || die 1 "cannot write $STATE_FILE; nothing was changed (the backup set stays)"
+  printf '\n[2/4] ARGOS_SERVER_IMAGE=%s in .env\n' "$to_image"
+  set_env_image "$to_image" || die 1 "cannot update .env; nothing was changed (the backup set stays)"
+
+  printf '\n[3/4] Restarting the server with %s (waiting up to %s s until it is healthy)\n' "$to_image" "$UPGRADE_WAIT_SECONDS"
+  if ! dc up -d --wait --wait-timeout "$UPGRADE_WAIT_SECONDS" server; then
+    write_state failed || true
+    dc ps --all >&2 || true
+    printf '%s: the server did not become healthy with %s; see ./argos-compose.sh logs server.\n' "$prog" "$to_image" >&2
+    printf '%s: roll back to %s and the PostgreSQL data of %s with:\n  ./argos-compose.sh upgrade --rollback --yes\n' \
+      "$prog" "$from_version" "$backup_set" >&2
+    exit 8
+  fi
+
+  check_date=$(utc_date_days_ago 1)
+  printf '\n[4/4] Consistency check of %s (argos-admin consistency check, report only)\n' "$check_date"
+  rc=0
+  # shellcheck disable=SC2086 # ADMIN_JAVA is split into words on purpose
+  dc exec -T -e JAVA_TOOL_OPTIONS= server $ADMIN_JAVA consistency check --date "$check_date" </dev/null || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    warn "the consistency check of $check_date reported a problem (exit code $rc); the upgrade itself is done. Check and rebuild that day with: ./argos-compose.sh compose exec -e JAVA_TOOL_OPTIONS= server $ADMIN_JAVA consistency check --date $check_date --rebuild (docs/ops/admin-cli.md)"
+  fi
+  write_state 'done' || warn "cannot update $STATE_FILE"
+  elapsed=$(($(date +%s) - t_start))
+  printf '\nUpgraded to %s in %s s (docs/17 target: 600 s). The pre-upgrade backup is %s;\n' "$to_version" "$elapsed" "$backup_set"
+  printf 'roll back with ./argos-compose.sh upgrade --rollback (PostgreSQL data written since then is lost).\n'
+}
+
+upgrade_rollback() {
+  [ -f "$STATE_FILE" ] || die 2 "no $STATE_FILE here: there is no upgrade to roll back"
+  [ -f "$here/restore.sh" ] || die 2 "restore.sh is missing next to $prog"
+  status=$(state_field status)
+  from_image=$(state_field from_image)
+  from_id=$(state_field from_image_id)
+  from_version=$(state_field from_version)
+  to_image=$(state_field to_image)
+  to_id=$(state_field to_image_id)
+  to_version=$(state_field to_version)
+  backup_set=$(state_field backup_set)
+  started_at=$(state_field started_at)
+  case $status in
+    started | failed | done) ;;
+    rolled_back) die 2 "the upgrade to $to_version was rolled back already ($STATE_FILE)" ;;
+    *) die 2 "$STATE_FILE is not readable (status '$status')" ;;
+  esac
+  image_ref_ok "$from_image" || die 2 "$STATE_FILE names no previous image"
+  [ -n "$backup_set" ] || die 2 "$STATE_FILE names no backup set"
+  [ -d "$backup_set" ] || die 2 "the pre-upgrade backup set $backup_set does not exist"
+  [ -f .env ] || die 2 ".env is missing"
+  require_docker
+  t_start=$(date +%s)
+  docker image inspect "$from_image" >/dev/null 2>&1 \
+    || die 2 "the previous image $from_image is not in the local image store (pull or load it first)"
+  now_id=$(image_id "$from_image")
+  if [ -n "$from_id" ] && [ "$now_id" != "$from_id" ]; then
+    warn "$from_image now names the image $now_id, not $from_id of the upgrade; tag that image again if it is not the one you want"
+  fi
+  printf 'Rollback of the upgrade %s -> %s: the server returns to %s (%s) and PostgreSQL to the backup %s.\n' \
+    "$from_version" "$to_version" "$from_version" "$from_image" "$backup_set"
+  printf 'PostgreSQL data written since the backup (users, tokens, rules, audit rows) is lost; ClickHouse is kept.\n'
+  confirm "Roll back now?"
+
+  printf '\n[1/3] ARGOS_SERVER_IMAGE=%s in .env\n' "$from_image"
+  set_env_image "$from_image" || die 1 "cannot update .env; nothing was changed"
+  printf '\n[2/3] Restoring PostgreSQL from %s (restore.sh)\n' "$backup_set"
+  rc=0
+  sh "$here/restore.sh" "$backup_set" --yes || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    die 1 "restore.sh failed (exit code $rc); .env names $from_image again. Fix the cause it printed and run ./argos-compose.sh upgrade --rollback --yes again"
+  fi
+  printf '\n[3/3] Server on %s\n' "$from_image"
+  dc up -d --wait --wait-timeout "$UPGRADE_WAIT_SECONDS" server \
+    || die 1 "the server did not become healthy with $from_image; see ./argos-compose.sh logs server"
+  write_state rolled_back || warn "cannot update $STATE_FILE"
+  printf '\nRolled back to %s in %s s.\n' "$from_version" "$(($(date +%s) - t_start))"
+}
+
+# ---------------------------------------------------------------------------------------------
 
 [ $# -ge 1 ] || {
   usage >&2
@@ -541,8 +950,11 @@ case $command in
   logs) cmd_logs "$@" ;;
   token) cmd_token "$@" ;;
   compose) dc "$@" ;;
-  upgrade | backup | diag | restore)
-    die 2 "'$command' is not provided in this version of the Compose installation" ;;
+  files) compose_files; echo ;;
+  backup) run_script backup.sh "$@" ;;
+  restore) run_script restore.sh "$@" ;;
+  diag) run_script diag-bundle.sh "$@" ;;
+  upgrade) cmd_upgrade "$@" ;;
   -h | --help | help) usage ;;
   *) die 2 "unknown command '$command' (see --help)" ;;
 esac

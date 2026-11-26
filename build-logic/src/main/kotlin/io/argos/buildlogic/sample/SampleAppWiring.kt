@@ -46,15 +46,17 @@ object SampleAppWiring {
   const val ARTIFACT_DIR = "sample-app"
 
   /**
-   * Not staged from a Tomcat distribution: the docs and examples web apps, and the Eclipse JDT
-   * compiler (EPL), which only compiles JSPs (the sample apps have none). The rest of the
-   * distribution is listed in docs/licenses/dev-only.md (`org.apache.tomcat:tomcat`).
+   * Not staged from a Tomcat distribution: the docs and examples web apps. The Eclipse JDT compiler
+   * (`lib/ecj-*.jar`, EPL) stays: Jasper compiles the WAR apps' JSP forward target with it
+   * (`GET /api/jsp-forward`, ADR-0010 C-162 (2), WO-50). The distribution is listed in
+   * docs/licenses/dev-only.md (`org.apache.tomcat:tomcat`, `tool:ecj`).
    */
-  private val TOMCAT_EXCLUDES = listOf("*/webapps/docs/**", "*/webapps/examples/**", "*/lib/ecj-*.jar")
+  private val TOMCAT_EXCLUDES = listOf("*/webapps/docs/**", "*/webapps/examples/**")
 
   private const val SMOKE_LIFECYCLE = "sampleSmoke"
   private const val SMOKE_RUNNER_CONFIGURATION = "sampleSmokeRunner"
   private const val APP_JAR_TASK = "sampleAppJar"
+  private const val BOOT_LOADER_CONFIGURATION = "sampleBootLoader"
 
   /** The UI unit tests (Vitest). Always registered; -Pargos.ui.skip=true only skips it. */
   private const val UI_UNIT_TEST_TASK = ":ui:test"
@@ -120,53 +122,97 @@ object SampleAppWiring {
   ) {
     choosePackaging(project, ext, SamplePackaging.BOOT_JAR)
     ext.mainClass.set(mainClass)
+    ext.bootLauncher.set(launcher)
     registerBuildInfo(project, ext)
-    val archives = archiveOperations(project)
     val loaderConfiguration =
-      project.configurations.create("sampleBootLoader") {
+      project.configurations.create(BOOT_LOADER_CONFIGURATION) {
         description = "spring-boot-loader of the app's Spring Boot version (unpacked at the jar root)."
         isCanBeConsumed = false
         isCanBeResolved = true
         isTransitive = false
       }
     project.dependencies.addProvider(loaderConfiguration.name, loader)
+    val jar = registerBootJar(project, ext, "", null)
+    registerArtifact(project, ext, jar.flatMap { it.archiveFile }, jar)
+  }
+
+  /**
+   * `sampleApp<Name>Jar` -> build/sample-app/<app>-<name>.jar: the boot jar of [bootJar] with
+   * [libraries] added to BOOT-INF/lib and the class path index. No launch descriptor and no
+   * outgoing variant: the default jar stays the app's artifact.
+   */
+  fun bootJarVariant(
+    project: Project,
+    ext: SampleAppExtension,
+    name: String,
+    libraries: org.gradle.api.file.FileCollection,
+  ) {
+    if (ext.packaging.get() != SamplePackaging.BOOT_JAR) {
+      throw GradleException("${project.path}: bootJarVariant('$name') needs bootJar() first")
+    }
+    require(name.matches(Regex("[a-z][a-z0-9]*"))) { "Variant name must be like 'devtools': $name" }
+    registerBootJar(project, ext, name, libraries)
+  }
+
+  /** The Spring Boot jar task of the app ([variant] empty) or of one of its jar variants. */
+  private fun registerBootJar(
+    project: Project,
+    ext: SampleAppExtension,
+    variant: String,
+    extraLibraries: org.gradle.api.file.FileCollection?,
+  ): TaskProvider<Jar> {
+    val archives = archiveOperations(project)
+    val loaderConfiguration = project.configurations.getByName(BOOT_LOADER_CONFIGURATION)
     val runtimeClasspath = project.configurations.getByName("runtimeClasspath")
+    val suffix = taskSuffix(variant)
+    val fileName = if (variant.isEmpty()) "${ext.appName}.jar" else "${ext.appName}-$variant.jar"
     val index =
-      project.tasks.register("sampleClasspathIndex", SampleClasspathIndex::class.java) {
+      project.tasks.register("sampleClasspathIndex$suffix", SampleClasspathIndex::class.java) {
         libraries.from(runtimeClasspath)
-        indexFile.set(project.layout.buildDirectory.file("tmp/sampleClasspathIndex/classpath.idx"))
+        if (extraLibraries != null) libraries.from(extraLibraries)
+        indexFile.set(
+          project.layout.buildDirectory.file("tmp/sampleClasspathIndex$suffix/classpath.idx")
+        )
       }
     val main = project.extensions.getByType(SourceSetContainer::class.java).getByName("main")
     val version = project.version.toString()
-    val jar =
-      project.tasks.register(APP_JAR_TASK, Jar::class.java) {
-        group = "build"
-        description = "Spring Boot executable jar build/$ARTIFACT_DIR/${ext.appName}.jar (18 §4.4)."
-        archiveFileName.set("${ext.appName}.jar")
-        destinationDirectory.set(project.layout.buildDirectory.dir(ARTIFACT_DIR))
-        // The Spring Boot loader reads nested jars in place: they must be stored, not deflated.
-        entryCompression = ZipEntryCompression.STORED
-        duplicatesStrategy = DuplicatesStrategy.FAIL
-        manifest.attributes(
-          mapOf(
-            "Main-Class" to launcher.className,
-            "Start-Class" to mainClass,
-            "Spring-Boot-Classes" to "BOOT-INF/classes/",
-            "Spring-Boot-Lib" to "BOOT-INF/lib/",
-            "Spring-Boot-Classpath-Index" to "BOOT-INF/classpath.idx",
-            "Implementation-Title" to ext.appName,
-            "Implementation-Version" to version,
-            "Argos-Sample-App" to ext.appName,
-          )
+    val mainClass = ext.mainClass.get()
+    val launcher = ext.bootLauncher.get()
+    val taskName = if (variant.isEmpty()) APP_JAR_TASK else "sampleApp${suffix}Jar"
+    return project.tasks.register(taskName, Jar::class.java) {
+      group = "build"
+      description =
+        "Spring Boot executable jar build/$ARTIFACT_DIR/$fileName (18 §4.4" +
+          (if (variant.isEmpty()) "" else "; the app jar plus the '$variant' libraries") +
+          ")."
+      archiveFileName.set(fileName)
+      destinationDirectory.set(project.layout.buildDirectory.dir(ARTIFACT_DIR))
+      // The Spring Boot loader reads nested jars in place: they must be stored, not deflated.
+      entryCompression = ZipEntryCompression.STORED
+      duplicatesStrategy = DuplicatesStrategy.FAIL
+      manifest.attributes(
+        mapOf(
+          "Main-Class" to launcher.className,
+          "Start-Class" to mainClass,
+          "Spring-Boot-Classes" to "BOOT-INF/classes/",
+          "Spring-Boot-Lib" to "BOOT-INF/lib/",
+          "Spring-Boot-Classpath-Index" to "BOOT-INF/classpath.idx",
+          "Implementation-Title" to ext.appName,
+          "Implementation-Version" to version,
+          "Argos-Sample-App" to ext.appName,
         )
-        from(loaderConfiguration.elements.map { files -> files.map { archives.zipTree(it.asFile) } }) {
-          exclude("META-INF/**")
-        }
-        into("BOOT-INF/classes") { from(main.output) }
-        into("BOOT-INF/lib") { from(runtimeClasspath) }
-        into("BOOT-INF") { from(index) }
+      )
+      if (variant.isNotEmpty()) manifest.attributes(mapOf("Argos-Sample-Jar-Variant" to variant))
+      from(loaderConfiguration.elements.map { files -> files.map { archives.zipTree(it.asFile) } }) {
+        exclude("META-INF/**")
       }
-    registerArtifact(project, ext, jar.flatMap { it.archiveFile }, jar)
+      into("BOOT-INF/classes") { from(main.output) }
+      into("BOOT-INF/lib") {
+        from(runtimeClasspath)
+        if (extraLibraries != null) from(extraLibraries)
+      }
+      into("BOOT-INF") { from(index) }
+    }
   }
 
   fun executableJar(project: Project, ext: SampleAppExtension, mainClass: String) {

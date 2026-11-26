@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.UUID;
 
 /**
@@ -93,6 +94,19 @@ public interface SessionStore {
 
   /** The id of instance ({@code appId}, {@code name}) when it exists (11 §5: reused). */
   OptionalInt findInstance(int appId, String name);
+
+  /**
+   * {@code instances.started_at} of instance {@code instanceId} in epoch milliseconds (the {@code
+   * AgentHello.process_start_ms} the last Hello stored), empty when the column is NULL or the row
+   * is gone. Read before a Hello writes its metadata, to tell a new agent process from a reconnect
+   * after a server restart (F-A26, S-17, ADR-0010 C-240 (1)).
+   *
+   * @throws RuntimeException when it cannot be read; the default implementation always throws (a
+   *     store without it: the start rule then treats the stored start as unknown)
+   */
+  default OptionalLong instanceStartedAtMs(int instanceId) {
+    throw new UnsupportedOperationException("instanceStartedAtMs");
+  }
 
   /** Instances of {@code appId} that are not archived (11 §5 check 6, SEC-14). */
   int countInstances(int appId);

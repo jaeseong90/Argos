@@ -4,3 +4,8 @@
 secrets/
 tls/
 compose.override.yaml
+# Backup sets (backup.sh default directory), the backup/restore lock and the upgrade state of
+# argos-compose.sh upgrade: operator data, never committed.
+backups/
+.backup-restore.lock/
+upgrade-state.json

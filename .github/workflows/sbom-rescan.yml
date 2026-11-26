@@ -1,0 +1,210 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Weekly full vulnerability rescan with the newest Trivy database (SEC-71 "weekly full rescan",
+# docs/16 section 10.2, T-SEC-71c proposed). A pull request is scanned once, with the database of
+# that day; this workflow rescans what is already merged and released, so a CVE published later is
+# found within a week:
+# - the SBOMs of the agent, the server and the UI built from the checked-out branch (main for the
+#   schedule), with the exception review dates enforced (--review-dates fail: an exception past its
+#   review date in docs/security/cve-exceptions.md fails the run);
+# - the server image and the two demo images built from the same commit (trivy image);
+# - the SBOM assets of the latest published (non-draft) GitHub release, if there is one.
+# When the rescan of main fails, the `report` job comments on the open `kind/security` issue of the
+# same title, or opens one (ADR-0010 C-253 (3)); a manual run on another branch only fails the run. The issue carries the run link, the failed steps and the vulnerability IDs
+# only (public IDs, no assessment; undisclosed issues go through SECURITY.md).
+# GitHub-hosted runners only; no pull request code is ever checked out (schedule and manual runs).
+name: SBOM rescan
+
+on:
+  schedule:
+    # Tuesday 04:23 UTC, apart from CodeQL (Monday 03:17) and the secrets scan (Monday 03:41).
+    - cron: "23 4 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    # bash -eo pipefail: a scan piped into tee keeps its exit status.
+    shell: bash
+
+env:
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+  GRADLE_TOOLCHAINS_FROM_ENV: JAVA_HOME_8_X64,JAVA_HOME_21_X64
+
+jobs:
+  rescan:
+    name: rescan
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    outputs:
+      failed-steps: ${{ steps.summary.outputs.failed-steps }}
+      ids: ${{ steps.summary.outputs.ids }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+      - name: Register JDK toolchains
+        run: |
+          mkdir -p "$HOME/.gradle"
+          echo "org.gradle.java.installations.fromEnv=${GRADLE_TOOLCHAINS_FROM_ENV}" >>"$HOME/.gradle/gradle.properties"
+          mkdir -p "$RUNNER_TEMP/scan-logs"
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ui/.nvmrc
+          package-manager-cache: false
+      - name: Enable pnpm (Corepack)
+        id: pnpm
+        run: |
+          corepack enable
+          corepack install -g "$(node -p "require('./ui/package.json').packageManager")"
+          echo "store=$(pnpm store path --silent)" >>"$GITHUB_OUTPUT"
+      - name: Cache pnpm store
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm.outputs.store }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+      - name: SBOMs of the agent, the server and the UI
+        id: build-sboms
+        run: |
+          ./gradlew :agent:agent-dist:agentSbom :server:serverSbom :ui:pnpmBuild
+          version=$(sed -n 's/^version=//p' gradle.properties)
+          mkdir -p build/sbom-scan
+          cp agent/agent-dist/build/sbom/agent.cdx.json "build/sbom-scan/argos-agent-${version}.cdx.json"
+          cp server/build/sbom/server.cdx.json "build/sbom-scan/argos-server-${version}.cdx.json"
+          cp ui/build/sbom/ui.cdx.json "build/sbom-scan/argos-ui-${version}.cdx.json"
+          ls -l build/sbom-scan
+      - name: SBOM scan and exception review dates
+        id: sboms
+        # Same gate as the pull request sbom-scan job, plus the review dates of the exceptions.
+        run: >-
+          bash test/release/check-sbom.sh --scanner "bash test/release/trivy-scan.sh"
+          --require agent,server,ui --review-dates fail build/sbom-scan
+          2>&1 | tee "$RUNNER_TEMP/scan-logs/sboms.log"
+      - name: Server and demo images (local Docker daemon)
+        id: build-images
+        if: ${{ !cancelled() }}
+        run: ./gradlew :server:jibDockerBuild :sample-apps:demo-app:jibDockerBuild :sample-apps:load:jibDockerBuild
+      - name: Image scan (argos-server, argos-demo-app, argos-demo-load)
+        id: images
+        if: ${{ !cancelled() && steps.build-images.outcome == 'success' }}
+        run: |
+          version=$(sed -n 's/^version=//p' gradle.properties)
+          status=0
+          for name in argos-server argos-demo-app argos-demo-load; do
+            echo "::group::${name}:${version}"
+            bash test/release/trivy-scan.sh --image "${name}:${version}" .trivyignore 2>&1 \
+              | tee -a "$RUNNER_TEMP/scan-logs/images.log" || status=1
+            echo "::endgroup::"
+          done
+          exit "$status"
+      - name: SBOMs of the latest release
+        id: release
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          tag=$(gh release list --repo "$REPO" --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName // ""')
+          if [[ -z "$tag" ]]; then
+            echo "No published release yet: nothing to rescan from a release."
+            exit 0
+          fi
+          if ! [[ "$tag" =~ ^v[0-9A-Za-z.+-]+$ ]]; then
+            echo "::error::unexpected release tag name: $tag"
+            exit 1
+          fi
+          dir="$RUNNER_TEMP/release-sbom"
+          mkdir -p "$dir"
+          gh release download "$tag" --repo "$REPO" --pattern '*.cdx.json' --dir "$dir"
+          ls -l "$dir"
+          bash test/release/check-sbom.sh --scanner "bash test/release/trivy-scan.sh" \
+            --require agent,server,ui "$dir" 2>&1 | tee "$RUNNER_TEMP/scan-logs/release.log"
+      - name: Summary for the report
+        id: summary
+        if: ${{ failure() }}
+        env:
+          BUILD_SBOMS: ${{ steps.build-sboms.outcome }}
+          SBOMS: ${{ steps.sboms.outcome }}
+          BUILD_IMAGES: ${{ steps.build-images.outcome }}
+          IMAGES: ${{ steps.images.outcome }}
+          RELEASE: ${{ steps.release.outcome }}
+        run: |
+          failed=""
+          [[ "$BUILD_SBOMS" == failure ]] && failed+="SBOM build, "
+          [[ "$SBOMS" == failure ]] && failed+="SBOM scan and exception review dates, "
+          [[ "$BUILD_IMAGES" == failure ]] && failed+="image build, "
+          [[ "$IMAGES" == failure ]] && failed+="image scan, "
+          [[ "$RELEASE" == failure ]] && failed+="latest release SBOM scan, "
+          failed=${failed%, }
+          ids=$(cat "$RUNNER_TEMP"/scan-logs/*.log 2>/dev/null \
+            | grep -Eo 'CVE-[0-9]{4}-[0-9]{4,}|GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}' \
+            | sort -u | head -n 100 | tr '\n' ' ' || true)
+          echo "failed-steps=${failed:-setup}" >>"$GITHUB_OUTPUT"
+          echo "ids=${ids% }" >>"$GITHUB_OUTPUT"
+
+  report:
+    # Runs only when the rescan of main failed (ADR-0010 C-253 (3)): a manual run on another branch
+    # reports in the run only. No checkout: it only talks to the issues API.
+    name: report
+    needs: rescan
+    if: ${{ failure() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the kind/security issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REF_NAME: ${{ github.ref_name }}
+          FAILED_STEPS: ${{ needs.rescan.outputs.failed-steps }}
+          IDS: ${{ needs.rescan.outputs.ids }}
+        run: |
+          title="Weekly SBOM and image rescan failed"
+          # Only well-formed vulnerability IDs and step names reach the issue.
+          ids=""
+          for id in $IDS; do
+            [[ "$id" =~ ^(CVE-[0-9]{4}-[0-9]{4,}|GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4})$ ]] && ids+="$id "
+          done
+          ids=${ids% }
+          steps=$(printf '%s' "${FAILED_STEPS:-unknown}" | tr -cd 'A-Za-z ,')
+          ref=$(printf '%s' "$REF_NAME" | tr -cd 'A-Za-z0-9._/-')
+          body=$(printf '%s\n' \
+            "The weekly rescan (.github/workflows/sbom-rescan.yml) failed on \`${ref}\`." \
+            "" \
+            "- Run: ${RUN_URL}" \
+            "- Failed steps: ${steps:-unknown}" \
+            "- Vulnerability IDs: ${ids:-none reported (see the run)}" \
+            "" \
+            "Upgrade the affected component, or follow docs/security/cve-exceptions.md (exception or review date renewal).")
+          number=$(gh issue list --repo "$REPO" --state open --label kind/security \
+            --search "\"${title}\" in:title" --json number,title \
+            --jq "map(select(.title == \"${title}\")) | .[0].number // \"\"")
+          if [[ -n "$number" ]]; then
+            gh issue comment "$number" --repo "$REPO" --body "$body"
+            echo "Commented on issue #${number}"
+          else
+            gh issue create --repo "$REPO" --title "$title" --label kind/security --body "$body"
+          fi

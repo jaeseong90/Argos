@@ -1,0 +1,5 @@
+# Fingerprint of the Argos APM release signing key (the primary key), 40 hexadecimal digits.
+# PLACEHOLDER: the organization release key does not exist yet. A maintainer replaces the line
+# below with the real fingerprint when installing the key (keys/README.md). Until then the release
+# workflow stops before signing and deploy/verify-release.sh needs --fingerprint.
+PLACEHOLDER

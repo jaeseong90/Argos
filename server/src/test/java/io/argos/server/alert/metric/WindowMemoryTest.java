@@ -12,16 +12,16 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * The memory bound of the alert windows (12 §11, §15 #3): an estimate from HdrHistogram's own
- * footprint for full 15-minute windows. Only an estimate: the RSS measurement with 500 services is
- * WO-29's load test on a quiet machine.
+ * The memory bound of the alert windows (12 §11, §15 #3): the provider's own estimate for full
+ * 15-minute windows ({@link WindowHeapBudgetTest} measures the live heap at 12 §11's scale). Only
+ * an estimate: the RSS measurement with 500 services is WO-29's load test on a quiet machine.
  */
 @Tag("req:DSN-12-07")
 class WindowMemoryTest {
 
   @Test
   @DisplayName(
-      "HdrHistogram window estimate (12 §15 #3, no catalogued ID): a service with a request every"
+      "Alert window estimate (12 §15 #3, no catalogued ID): a service with a request every"
           + " second for 15 minutes stays within 1 MiB, so 500 services of an application stay"
           + " within the hundreds of MB of 12 §11")
   void footprintEstimate() {

@@ -38,6 +38,7 @@ site io.argos.agent.core.boot.AgentStarter#run  the start banner: module ids joi
 site io.argos.agent.core.boot.ModuleRegistry#classNames  URLs of the module index inside the agent jar (inst/META-INF/services)
 site io.argos.agent.core.boot.ModuleRegistry#instantiate  class names listed in the agent jar's module index
 site io.argos.agent.core.boot.ModuleRegistry#load  module ids and class names of the agent jar's module index
+site io.argos.agent.core.boot.RetransformFailureListener#report  Class.getName() of a loaded class whose retransformation the JVM rejected (an identifier) and the JVM's Throwable.toString() of that rejection (class and method names, no collected data), cut to 300 characters (C-257 (2))
 site io.argos.agent.core.boot.TestFaults#announce  module ids of argos.test.faults (development builds only, T-BLD-010)
 site io.argos.agent.core.boot.TestFaults#from  fault specs of argos.test.faults (development builds only, T-BLD-010)
 site io.argos.agent.core.boot.TestFaults#reportUnmatched  fault specs and module ids of argos.test.faults (development builds only)

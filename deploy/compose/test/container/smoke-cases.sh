@@ -1,5 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: Apache-2.0
+# req: SEC-47, SEC-55, SEC-73, SEC-74, SEC-75, SEC-76
 #
 # Cases of smoke.sh without a running stack (T-SEC-74, T-SEC-75, SEC-55): the file check on a
 # container-local file system (POSIX modes) and the port check on the JSON of

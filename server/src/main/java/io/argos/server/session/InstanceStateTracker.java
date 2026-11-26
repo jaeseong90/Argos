@@ -45,6 +45,17 @@ import tools.jackson.databind.json.JsonMapper;
  * once (a heartbeat after a STALE period makes the instance UP before its ack is sent); the clock
  * rules need the tick.
  *
+ * <p>Agent start (F-A26, S-17, ADR-0010 C-240 (1)): the first accepted Hello of a new agent process
+ * writes an {@code events} row {@code type = 'start'} (title {@code Agent start}, detail {@code
+ * agent_version}). A process is its {@code agent_epoch}: a reconnect with an epoch this server has
+ * seen writes none. For an epoch it has not seen, the Hello is a new process when it created the
+ * instance, when the instance is tracked under another epoch, or when the instance's stored process
+ * start ({@code instances.started_at}, read before the Hello wrote it) differs from {@code
+ * AgentHello.process_start_ms}; so after a server restart the same process reconnecting writes
+ * none. When the stored start cannot be read (PostgreSQL down) or the agent reports none, no start
+ * is written. A {@code start} row is no state transition: {@code api.events.Outages} reads only
+ * {@code state} rows of instances.
+ *
  * <p>Thread-safe; every hook is short and never blocks: PostgreSQL writes go to the {@link
  * InstanceStateWriter} thread, listeners of the published change must not block. Bounded: an
  * instance is tracked while it has a session or is not {@code DOWN} (sessions are bounded by the
@@ -67,6 +78,13 @@ public final class InstanceStateTracker {
   /** Instances in the {@code argos_clock_offset_ms} gauge (largest offsets, 12 §10). */
   public static final int OFFSET_GAUGE_TOP = 50;
 
+  /**
+   * Agent processes ({@code agent_epoch}) remembered for the start rule, the least recently seen
+   * forgotten beyond it: twice the server's live sessions ({@link HelloService#MAX_SESSIONS}),
+   * about 1 MB at most.
+   */
+  public static final int MAX_SEEN_EPOCHS = 2 * HelloService.MAX_SESSIONS;
+
   private static final Logger LOG = LoggerFactory.getLogger(InstanceStateTracker.class);
   private static final JsonMapper JSON = JsonMapper.builder().build();
 
@@ -76,6 +94,13 @@ public final class InstanceStateTracker {
   private final InstanceStateWriter writer;
   private final Consumer<InstanceStateChange> publisher;
   private final ConcurrentHashMap<Integer, Tracked> tracked = new ConcurrentHashMap<>();
+  private final LinkedHashMap<Long, Boolean> seenEpochs =
+      new LinkedHashMap<>(256, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<Long, Boolean> eldest) {
+          return size() > MAX_SEEN_EPOCHS;
+        }
+      };
 
   /**
    * A tracker.
@@ -160,9 +185,13 @@ public final class InstanceStateTracker {
 
   // --- session hooks ---
 
-  /** An accepted Hello: the instance is UP (or WARN) now (a reconnect ends a Bye grace). */
+  /**
+   * An accepted Hello: the instance is UP (or WARN) now (a reconnect ends a Bye grace); a new agent
+   * process also writes a {@code start} event (the class comment).
+   */
   public InstanceState onSessionStart(AgentSession s) {
     long now = machine.clock().millis();
+    boolean firstSeen = rememberEpoch(s.agentEpoch());
     InstanceStateChange change;
     InstanceState state;
     while (true) {
@@ -173,6 +202,19 @@ public final class InstanceStateTracker {
         }
         t.appId = s.appId();
         t.env = env(s);
+        if (firstSeen && newProcess(t.agentEpoch, s)) {
+          firstSeen = false;
+          writer.enqueue(
+              new EventRow(
+                  UUID.randomUUID(),
+                  s.appId(),
+                  env(s),
+                  s.instanceId(),
+                  "start",
+                  "Agent start",
+                  json(Map.of("agent_version", s.agentVersion())),
+                  Instant.ofEpochMilli(now)));
+        }
         if (t.agentEpoch != s.agentEpoch()) {
           // a new agent process: its modules and kill switch start over
           t.modulesDisabled.clear();
@@ -191,6 +233,31 @@ public final class InstanceStateTracker {
     }
     publish(change);
     return state;
+  }
+
+  /** Records {@code epoch} as seen; true when this server had not seen it (or forgot it). */
+  private boolean rememberEpoch(long epoch) {
+    synchronized (seenEpochs) {
+      return seenEpochs.put(epoch, Boolean.TRUE) == null;
+    }
+  }
+
+  /**
+   * Whether the first Hello of {@code s}'s epoch on this server is a new agent process (the class
+   * comment), given the epoch the instance is tracked under ({@code Long.MIN_VALUE}: untracked).
+   */
+  static boolean newProcess(long trackedEpoch, AgentSession s) {
+    long stored = s.storedStartMs();
+    if (stored == AgentSession.STARTED_NEW_INSTANCE) {
+      return true;
+    }
+    if (trackedEpoch != Long.MIN_VALUE) {
+      return trackedEpoch != s.agentEpoch();
+    }
+    if (stored == AgentSession.STARTED_UNKNOWN || s.processStartMs() <= 0) {
+      return false;
+    }
+    return stored == AgentSession.STARTED_NONE || stored != s.processStartMs();
   }
 
   /**

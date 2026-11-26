@@ -39,6 +39,7 @@ argos.auth.refresh-idle-ttl	duration	8h
 argos.auth.refresh-max-ttl	duration	1d
 argos.auth.setup-token-file	string	conf/setup-token
 argos.auth.setup-token-ttl	duration	30m
+argos.bootstrap.apps-file	string	(none)
 argos.clickhouse.database	string	argos
 argos.clickhouse.migration.repair-checksums	boolean	false
 argos.clickhouse.migrator.password	string	(none)
@@ -91,6 +92,7 @@ argos.commands.max-inflight-per-instance	int	1
 argos.commands.max-per-minute-per-instance	int	10
 argos.commands.result-timeout	duration	2m
 argos.commands.ttl	duration	1m
+argos.demo.enabled	boolean	false
 argos.instance.archive-after	duration	7d
 argos.instance.purge-after	duration	30d
 argos.jwt-key	string	(none)
@@ -102,11 +104,15 @@ argos.master-key-file	string	conf/master.key
 argos.metrics.allow-cidrs	list<string>	[]
 argos.metrics.token	string	(none)
 argos.metrics.token-file	string	(none)
+argos.ops.dictionary-cleanup.cron	string	0 30 3 * * *
+argos.ops.dictionary-cleanup.enabled	boolean	true
 argos.ops.disk.emergency-ratio	double	0.9
 argos.ops.disk.stop-ratio	double	0.95
 argos.ops.disk.warn-ratio	double	0.8
 argos.ops.emergency.drops-per-minute	int	1
 argos.ops.emergency.target-ratio	double	0.85
+argos.ops.error-group-cleanup.cron	string	0 45 3 * * *
+argos.ops.error-group-cleanup.enabled	boolean	true
 argos.ops.reconcile.cron	string	0 0 3 * * *
 argos.ops.reconcile.enabled	boolean	true
 argos.ops.storage-health-interval	duration	1m
@@ -150,6 +156,7 @@ argos.testing.disk-usage-file	string	(none)
 argos.testing.hold-before-phase	enum(config|keys|postgres-migration|clickhouse-migration|wal-recovery|listeners)	(none)
 argos.testing.hold-file	string	(none)
 argos.testing.hold-timeout	duration	5m
+argos.testing.ingest-fault-file	string	(none)
 argos.testing.notify-retry-delays	list<duration>	[]
 argos.ui.active-thresholds-ms	list<int>	[1000, 3000, 8000]
 argos.ui.log-link-template	string	(none)

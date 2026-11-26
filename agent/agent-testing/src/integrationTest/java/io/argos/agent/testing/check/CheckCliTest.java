@@ -32,10 +32,12 @@ import org.junit.jupiter.api.io.TempDir;
  * against the FakeCollector. The five verdicts of the acceptance criterion: connection (a closed
  * port is FAIL), TLS (a CA the agent does not trust is FAIL), token (a token the collector refuses
  * is FAIL), clock (2 s off is WARN with exit code 0) and JDK (8u242, when {@code
- * -Pagent.jdk8u242=<JRE home>} is given, is FAIL); plus a clean run (exit 0, one session with the
- * {@code -check} instance ended by {@code AgentBye}, nothing on stderr, the token never printed), a
- * usage error (exit 2), {@code --json} and {@code --classpath} on shop-boot3. Each case prints one
- * {@code [wo19-check]} line.
+ * -Pagent.jdk8u242=<JRE home>} is given, is FAIL); plus a clean run (exit 0, one check-only Hello
+ * ({@code AgentHello.check_only}, ADR-0010 C-240 (1), T-AG-068b) for the {@code -check} instance
+ * answered without a session, nothing on stderr, the token never printed), the same check against a
+ * collector older than {@code check_only} (the instance is registered and the session ended by
+ * {@code AgentBye}), a usage error (exit 2), {@code --json} and {@code --classpath} on shop-boot3.
+ * Each case prints one {@code [wo19-check]} line.
  */
 @Tag("req:F-A27")
 class CheckCliTest {
@@ -180,9 +182,11 @@ class CheckCliTest {
   }
 
   @Test
+  @Tag("req:C-240")
   @DisplayName(
-      "T-AG-068 clean run: every check PASS (or INFO/SKIP), exit 0, one '-check' session ended by"
-          + " AgentBye, nothing on stderr, no token in the output")
+      "T-AG-068 T-AG-068b clean run: every check PASS (or INFO/SKIP), exit 0, one check-only Hello"
+          + " for '-check' answered without a session (no instance, no AgentBye), nothing on"
+          + " stderr, no token in the output")
   void cleanRun() throws Exception {
     try (FakeCollector collector = collector()) {
       Path config = config("ok", collector, Map.of());
@@ -201,12 +205,14 @@ class CheckCliTest {
           .containsPattern("certificate (valid until|expires on)");
       assertThat(row(cli, "hello"))
           .contains(" PASS ")
-          .contains("accepted by server " + FakeCollector.SERVER_VERSION);
+          .contains("accepted by server " + FakeCollector.SERVER_VERSION)
+          .contains("check-only (no instance registered)");
       assertThat(row(cli, "clock")).contains(" PASS ");
       assertThat(row(cli, "jdk")).doesNotContain(" FAIL ");
       assertThat(row(cli, "log-dir")).contains(" PASS ");
       assertThat(cli.stdout())
-          .contains("Note: the hello check opened a session as instance '")
+          .contains("Note: the hello check was a check-only session as instance '")
+          .contains("the server registered no instance for it")
           .containsPattern("exit code 0");
       assertNoToken(cli, collector.token());
 
@@ -216,6 +222,47 @@ class CheckCliTest {
       assertThat(hello.getInstanceName()).endsWith("-check");
       assertThat(hello.getAppName()).isEqualTo("check-app");
       assertThat(hello.getEnv()).isEqualTo("test");
+      assertThat(hello.hasCheckOnly()).as("T-AG-068b the check's Hello is check-only").isTrue();
+      assertThat(hello.getCheckOnly()).isTrue();
+      assertThat(sessions.get(0).checkOnly()).isTrue();
+      assertThat(sessions.get(0).instanceId()).as("no instance id assigned").isZero();
+      assertThat(sessions.get(0).sessionId()).as("no session registered").isNull();
+      // The collector ended the stream after its answer: the check sends no AgentBye then.
+      Thread.sleep(500);
+      assertThat(collector.byes()).isEmpty();
+      assertThat(collector.batches()).isEmpty();
+    }
+  }
+
+  @Test
+  @Tag("req:C-240")
+  @DisplayName(
+      "T-AG-068b older collector: a server that ignores check_only registers '-check'; the check"
+          + " ends that session with AgentBye SHUTDOWN, says so, exit 0")
+  void olderServer() throws Exception {
+    byte[] random = new byte[32];
+    new SecureRandom().nextBytes(random);
+    String token = "argos_" + Base64.getUrlEncoder().withoutPadding().encodeToString(random);
+    try (FakeCollector collector =
+        FakeCollector.builder()
+            .tls(true)
+            .tlsDirectory(work)
+            .token(token)
+            .ignoreCheckOnly(true)
+            .start()) {
+      Path config = config("older", collector, Map.of());
+      Cli cli = run("older", java21(), "--check", "--config", config.toString());
+      assertThat(cli.exit()).as(cli.stdout()).isZero();
+      assertThat(cli.stderr()).isEmpty();
+      assertThat(row(cli, "hello")).contains(" PASS ").contains("instance id 1");
+      assertThat(cli.stdout())
+          .contains("Note: the hello check opened a session as instance '")
+          .contains("ended it with AgentBye")
+          .contains("does not know check-only sessions");
+      List<SessionInfo> sessions = collector.sessions();
+      assertThat(sessions).hasSize(1);
+      assertThat(((AgentHello) sessions.get(0).hello()).getCheckOnly()).isTrue();
+      assertThat(sessions.get(0).instanceId()).isEqualTo(1);
       long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
       while (collector.byes().isEmpty() && System.nanoTime() < deadline) {
         Thread.sleep(50);
@@ -223,6 +270,7 @@ class CheckCliTest {
       assertThat(collector.byes()).hasSize(1);
       assertThat(collector.byes().get(0).reason()).isEqualTo("SHUTDOWN");
       assertThat(collector.batches()).isEmpty();
+      assertNoToken(cli, collector.token());
     }
   }
 
@@ -314,7 +362,9 @@ class CheckCliTest {
           run("classpath", java21(), "--check", "--config", config.toString(), "--classpath", app);
       assertThat(cli.stdout()).containsPattern("classpath\\s+PASS\\s+Spring Boot 3\\.\\d+\\.\\d+ ");
       assertThat(cli.stdout()).containsPattern("classpath\\s+PASS\\s+Tomcat 10\\.1\\.\\d+ ");
-      assertThat(cli.stdout()).containsPattern("classpath\\s+PASS\\s+Servlet API 6\\.0 ");
+      // Servlet API 6.0 from Tomcat 10.1, or 6.0.x from the jakarta.servlet-api jar that the
+      // Jetty and Undertow variants of shop-boot3 bring (WO-50).
+      assertThat(cli.stdout()).containsPattern("classpath\\s+PASS\\s+Servlet API 6\\.0(\\.\\d+)? ");
       assertThat(cli.stdout()).containsPattern("classpath\\s+PASS\\s+HikariCP \\d");
       assertThat(cli.exit()).as(cli.stdout()).isZero();
       Cli json = run("json", java21(), "--check", "--config", config.toString(), "--json");

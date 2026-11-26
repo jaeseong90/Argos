@@ -66,6 +66,18 @@ pnpmBuild {
   dependsOn(pnpmInstall)
   inputs.files(projectInputs).withPathSensitivity(PathSensitivity.RELATIVE)
   outputs.dir("dist")
+  // scripts/check-licenses.mjs also writes the About list and the UI SBOM (WO-44, C-153). The SBOM
+  // carries the project version (ARGOS_VERSION, so a tag build with -Pversion=X.Y.Z matches the
+  // release assets) and the SOURCE_DATE_EPOCH timestamp.
+  outputs.dir("build/licenses")
+  outputs.dir("build/sbom")
+  val argosVersion = project.version.toString()
+  inputs.property("argosVersion", argosVersion)
+  inputs.property(
+    "sourceDateEpoch",
+    providers.environmentVariable("SOURCE_DATE_EPOCH").orElse(""),
+  )
+  environment("ARGOS_VERSION", argosVersion)
 }
 
 val uiTest = registerPnpm("test", "Runs the UI unit tests (Vitest).", "run", "test")

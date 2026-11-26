@@ -23,11 +23,12 @@ import net.bytebuddy.matcher.ElementMatcher;
  *
  * <p>javax.servlet (3.1, 4.0) and jakarta.servlet (5.0-6.1) are matched by name with one advice and
  * one helper per namespace; the namespace-independent logic is in {@link ServletHelperCommon}.
- * Response flushes (streaming end, ADR-0010 C-127) are matched by Tomcat class names ({@link
- * ContainerResponseInstrumentation}). The async listener is registered here, at the exit of the
- * dispatch that left the request in async mode, so that it works on every container; it follows the
- * switch of the servlet-async module ({@code instrumentation.disabled: servlet-async}), whose
- * container hooks ({@code startAsync}, {@code AsyncContext.start}) complete it.
+ * Response flushes (streaming end, ADR-0010 C-127) are matched by container class names of Tomcat,
+ * Jetty and Undertow ({@link ContainerResponseInstrumentation}). The async listener is registered
+ * here, at the exit of the dispatch that left the request in async mode, so that it works on every
+ * container; it follows the switch of the servlet-async module ({@code instrumentation.disabled:
+ * servlet-async}), whose container hooks ({@code startAsync}, {@code AsyncContext.start}) complete
+ * it.
  */
 public final class ServletModule implements InstrumentationModule {
   public static final int MODULE_ID = ModuleIds.SERVLET;

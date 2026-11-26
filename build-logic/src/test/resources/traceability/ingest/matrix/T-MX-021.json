@@ -1,0 +1,19 @@
+{
+    "format": 1,
+    "id": "T-MX-021",
+    "task": ":agent:agent-testing:matrixTest-T-MX-021",
+    "commit": "eb9693bfc03a8bc8c178bb480cd6288881a24a47",
+    "os": "Linux",
+    "started_at": "2026-11-26T07:00:00.000Z",
+    "finished_at": "2026-11-26T07:05:00.000Z",
+    "duration_seconds": 300,
+    "passed": 41,
+    "failed": 1,
+    "skipped": 0,
+    "skip_reasons": {},
+    "failures": ["io.argos.agent.testing.matrix.MatrixSmokeTest > smoke(): expected 500 transactions"],
+    "metrics": {},
+    "missing_requirements": [],
+    "lines": [],
+    "cases": []
+}

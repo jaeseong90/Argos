@@ -7,6 +7,9 @@ ClickHouse, PostgreSQL을 기본 비밀번호 없이, 네트워크에 포트 두
 
 [English](compose.md)
 
+샘플 애플리케이션과 생성 트래픽으로 Argos를 한 대에서 체험만 하려면 데모 프로파일을 쓰세요
+([14장](#14-데모-프로파일)). 인증서가 필요 없고 약 5분이면 됩니다.
+
 텔레메트리: 없음. Argos는 사용 통계를 보내지 않고 업데이트를 확인하지 않습니다. 서버는 운영자가 설정한
 대상, 곧 데이터베이스 두 개와 나중에 설정하는 알림 채널에만 연결합니다.
 
@@ -117,6 +120,8 @@ Compose 프로젝트 이름이 `argos`(`.env`의 `COMPOSE_PROJECT_NAME`으로 �
 
 미리 빌드되고 다이제스트가 고정된 서버 이미지를 담은 릴리스 패키지는 아직 발행되지 않았습니다. 그때까지는
 서버 이미지를 소스로 빌드합니다.
+
+릴리스를 내려받았다면 먼저 검증하세요: [릴리스 검증](verify-release.md)을 보세요.
 
 1. 소스를 받습니다. 공개 저장소는 아직 없습니다. 메인테이너가 알려 준 위치나 git 번들을 쓰고, 그
    디렉터리로 이동하세요.
@@ -244,6 +249,27 @@ rm -f tls/server.csr tls/server.ext tls/ca.srl
 - `tls/ca.key`: CA 키. 서버에서 안전한 곳으로 옮기세요. 다음 서버 인증서를 발급할 때만 필요하며,
   서버는 이 파일을 읽지 않습니다.
 - `tls/server.crt`, `tls/server.key`: 서버 인증서(1년 유효)와 키.
+
+### 방법 C: 짧은 평가용 자체 서명 인증서
+
+테스트 호스트에서 빨리 평가해 보려면 [1단계](#1단계-설정과-비밀값-생성)에서 `argos-env-init.sh`가 자체
+서명 인증서를 만들게 할 수 있습니다. 에이전트가 쓸 이름과 IP 주소를 모두 쉼표로 구분해
+`--self-signed-tls`에 주세요.
+
+```sh
+sudo ./argos-env-init.sh --public-url http://localhost:8080 --self-signed-tls argos.example.com,192.0.2.10
+```
+
+`tls/server.crt`(`0644`, 365일 유효, 이름은 subject alternative name으로: 이름은 `DNS:`, IPv4·IPv6
+주소는 `IP:`)와 `tls/server.key`(`0600`, Linux Docker Engine에서는 소유자 uid `10001`)를 쓰고, 평가 전용
+인증서라는 경고를 출력합니다. `openssl` 1.1.1 이상이 필요하고(없으면 종료 코드 2), 기존
+`tls/server.crt`나 `tls/server.key`는 바꾸지 않습니다(종료 코드 2). 새로 만들려면 먼저 지우세요. 이
+옵션 없이는 만들지 않습니다.
+
+각 에이전트는 바로 이 인증서를 신뢰해야 합니다. `tls/server.crt`를 에이전트 호스트에 복사하고
+`server.tls.ca-file`에 지정하세요([9장](#9-첫-에이전트-연결)). 뒤에 CA가 없으므로 인증서를 새로 만들면
+새 파일을 모든 에이전트에 다시 복사해야 합니다. 운영 환경에는 쓰지 말고 [방법 A](#방법-a-조직의-인증서)나
+[방법 B](#방법-b-자체-ca로-만든-평가용-인증서)처럼 자체 CA를 쓰세요.
 
 ### 키를 서버에 넘기기
 
@@ -839,6 +865,9 @@ JVM 옵션 하나를 더해 애플리케이션을 시작하세요. Java 8 애플
 | 다시 시작 | `sudo ./argos-compose.sh up` | |
 | 서버만 다시 시작 | `sudo ./argos-compose.sh compose restart server` | |
 | 제거, 데이터 전부 삭제 | `sudo ./argos-compose.sh down --volumes` | **삭제됨**: 모니터링 데이터, 사용자, 앱, 에이전트 토큰, 감사 로그 |
+| 백업, 복구 | `sudo ./argos-compose.sh backup`, `sudo ./argos-compose.sh restore <세트>` | [15장](#151-백업과-복구) |
+| 업그레이드, 롤백 | `sudo ./argos-compose.sh upgrade --image <이미지>`, `upgrade --rollback` | [15장](#152-업그레이드와-롤백) |
+| 지원 요청용 진단 번들 | `sudo ./argos-compose.sh diag` | [15장](#153-진단-번들) |
 
 `down --volumes` 뒤에 그 파일들로 다시 설치하지 않을 거라면 `secrets/`, `tls/`, `.env`도 지우세요.
 
@@ -846,6 +875,8 @@ JVM 옵션 하나를 더해 애플리케이션을 시작하세요. Java 8 애플
 만들어, 볼륨에 저장된 계정과 맞지 않게 됩니다.
 
 ## 11. 문제 해결
+
+설치를 마친 뒤 운영 중의 문제(적재 지연, 디스크, 에이전트 거부, 장애)는 [런북](../ops/runbook.md)(영어)을 보세요.
 
 | 증상 | 원인과 해결 |
 |---|---|
@@ -860,26 +891,28 @@ JVM 옵션 하나를 더해 애플리케이션을 시작하세요. Java 8 애플
 | 로그인 화면이나 설치 마법사의 마지막 단계가 브라우저가 세션 쿠키를 저장하지 않았다고 알려 주거나, 로그인하면 로그인 화면으로 돌아감 | 브라우저가 `localhost`가 아닌 호스트에는 평문 HTTP로 `Secure` 세션 쿠키를 저장하지 않거나(`argos-env-init.sh`가 이 공개 URL에 경고했습니다), `ARGOS_WEB_PUBLIC_URL`이 브라우저 주소와 다릅니다. UI를 `http://localhost:8080`(호스트에서 또는 SSH 터널 경유)이나 HTTPS 리버스 프록시로 열고, 그 주소를 `ARGOS_WEB_PUBLIC_URL`에 두세요([5장](#ui-주소-정하기)) |
 | ClickHouse가 다시 시작되거나 쿼리가 메모리 오류로 실패 | 부하에 비해 ClickHouse 메모리가 부족합니다. 호스트 메모리를 늘리거나, `ARGOS_CH_MEM`을 `ARGOS_CH_MAX_SERVER_MEMORY_USAGE`, 쿼리별 상한 두 개와 함께 올리세요([7.1절](#71-메모리)) |
 | 파일 모드를 검사할 수 없다는 경고 | 파일이 POSIX 모드가 없는 파일 시스템(Windows, NTFS)에 있습니다. 지원하는 운영 구성이 아닙니다. Linux 파일 시스템에 설치하세요 |
+| Windows용 Docker Desktop에서 ClickHouse나 서버가 기동하지 않고 로그에 설정·비밀값·인증서 파일의 `Input/output error`(EIO)가 있음 | 파일의 Windows 경로가 약 180자보다 길면 Docker Desktop이 그 파일 하나를 root가 아닌 사용자로 도는 컨테이너(ClickHouse uid `101`, 서버 uid `10001`)에 넘기지 못합니다. 설치 디렉터리를 짧은 경로에 두세요(예: `C:\argos\deploy\compose`). Docker Desktop은 지원하는 운영 구성이 아닙니다([2장](#2-시작하기-전에)) |
 | 에이전트가 TLS나 인증서 오류를 기록 | `server.address`가 인증서의 이름에 없거나, `server.tls.ca-file`이 그 인증서에 서명한 CA가 아닙니다 |
 | `token create`가 종료 코드 4로 끝남 | 애플리케이션에 이미 활성 에이전트 토큰이 5개 있습니다 |
-| 서버가 기동 중 `argos.master-key-file` 메시지를 남기고 끝남 | `secrets/master_key`가 없거나 형식이 틀렸거나 권한이 `0600`이 아닙니다(Linux Docker Engine에서는 소유자 `10001`). 백업에서 키를 복원하십시오. 기존 설치에 새 키를 만들면 저장된 비밀값을 더는 읽을 수 없습니다([7.4절](#74-보존-감사-로그-마스터-키)) |
+| 서버가 기동 중 `argos.master-key-file` 메시지를 남기고 끝남 | `secrets/master_key`가 없거나 형식이 틀렸거나 권한이 `0600`이 아닙니다(Linux Docker Engine에서는 소유자 `10001`). 백업에서 키를 복원하십시오. 기존 설치에 새 키를 만들면 저장된 비밀값을 더는 읽을 수 없습니다([7.4절](#74-보존-감사-로그-마스터-키)). Docker Desktop(Windows, macOS, WSL. 지원하는 운영 구성이 아님, [2장](#2-시작하기-전에))에서는 `secrets/`의 파일이 컨테이너 안에서 `0777`로 보입니다. `deploy/compose`에서 컨테이너로 소유자와 권한을 준 뒤(PowerShell에서는 `"${PWD}\secrets:/s"`, Git Bash에서는 `docker` 앞에 `MSYS_NO_PATHCONV=1`과 `"$(pwd -W)/secrets:/s"`) 다시 시작하세요: `docker run --rm --network none --user 0 --entrypoint sh -v "$PWD/secrets:/s" argos-server:0.0.0-SNAPSHOT -c 'chown 10001:10001 /s/* && chmod 0600 /s/*'` |
 | `token create`가 server 서비스가 실행 중이 아니거나 healthy가 아니라고 함 | 스택을 시작하고(`sudo ./argos-compose.sh up`) `sudo ./argos-compose.sh status`에서 server가 healthy가 될 때까지 기다리세요. 토큰은 실행 중인 서버가 발급합니다 |
+| `upgrade`가 종료 코드 2로 끝남 | 아무것도 바뀌지 않았습니다. 스택이 healthy가 아니거나, 이미지가 없거나 버전 라벨이 없거나, 새 버전이 더 오래되었거나 메이저 버전을 건너뜁니다(메시지에 이유가 있습니다) |
+| `upgrade`가 종료 코드 1로 끝남 | 아무것도 바뀌지 않았습니다. 업그레이드 전 백업이 실패했습니다(위의 `backup.sh` 메시지가 원인을 알려 줍니다) |
+| `upgrade`가 종료 코드 8로 끝남 | 서버가 새 이미지로 healthy가 되지 않았습니다. `sudo ./argos-compose.sh logs server`를 읽은 뒤 `sudo ./argos-compose.sh upgrade --rollback --yes`로 되돌리세요([15.2절](#152-업그레이드와-롤백)) |
 
 ## 12. 이 버전에 없는 기능
 
 다음은 계획되어 있지만 이 버전에는 없습니다.
 
-- 샘플 애플리케이션과 생성 트래픽이 있는 데모 프로파일(`argos-env-init.sh --demo`는 제공하지 않는다고
-  알립니다)
-- `argos-compose.sh upgrade`, `backup`, `diag`(제공하지 않는다고 알리고 종료 코드 2로 끝남): Compose 설치의
-  업그레이드, 백업, 진단 번들
+- 배포된 데모 이미지(로컬에서 빌드하세요, [14장](#14-데모-프로파일))
 - systemd를 쓰는 `tar.gz` 아카이브 설치와 에어갭 번들
 - 서명된 amd64·arm64 서버 이미지 릴리스
-- UI에서 관리하는 에이전트 토큰과 애플리케이션(`argos-compose.sh token create`를 쓰세요. 토큰 목록·회전·폐기는
-  서버의 관리 API `/api/v1/admin/apps/{appId}/tokens`로도 할 수 있습니다)
-- 그 밖의 `argos-admin` 명령(관리자 비밀번호 재설정 등)과 UI의 사용자 관리
-- 애플리케이션, 인스턴스, 트랜잭션을 보여 주는 UI 화면(에이전트 연결은 [9장](#연결-확인)처럼
-  확인하세요)
+- 관리자 비밀번호를 재설정하는 `argos-admin` 명령
+
+애플리케이션, 에이전트 토큰, 인스턴스, 사용자는 UI의 **관리** 메뉴에서 관리합니다(**애플리케이션**: 설치 안내와
+한 번만 보이는 토큰, **에이전트 토큰**: 회전·폐기, **인스턴스 관리**, **사용자**). `argos-compose.sh token create`와
+관리 API(`/api/v1/admin/apps/{appId}/tokens`)도 그대로 쓸 수 있습니다. 에이전트가 보낸 데이터는 인스턴스 상세,
+XLog 화면, 트랜잭션 상세에서 봅니다([9장](#연결-확인)).
 
 ## 13. 시간 예산과 테스터 체크리스트
 
@@ -935,3 +968,205 @@ Argos 작업에 참여하지 않은 사람이 깨끗한 VM에서 이 가이드�
 - 에이전트 로그에 `collector session established`가 있음(예 / 아니요)
 - 애플리케이션에 요청을 보낸 뒤, 로그인한 브라우저의 `<공개 URL>/api/v1/apps?q=<애플리케이션>`에서
   `instances_up`이 `1` 이상([9장](#연결-확인))(예 / 아니요)
+
+## 14. 데모 프로파일
+
+데모 프로파일은 샘플 애플리케이션 두 개와 생성 트래픽으로 Argos를 한 대에서 실행합니다. 시작하고 1분
+뒤면 모든 화면을 데이터와 함께 볼 수 있습니다. 인증서도 에이전트 설정도 필요 없습니다.
+
+**평가 전용입니다.** 데모에서는 에이전트가 (내부 Docker 네트워크 안에서) 평문 gRPC로 데이터를 보내고,
+UI에 "DEMO MODE: plaintext gRPC enabled, sample traffic" 배너(한국어 화면에서는 번역)가 보이며, 부하
+생성기가 트래픽을 만듭니다. 실제 애플리케이션의 에이전트를 연결하거나 실제 데이터를 두지 마세요. 그런
+용도라면 2~9장대로 설치하세요.
+
+### 실행되는 것
+
+| 서비스 | 하는 일 |
+|---|---|
+| `server`, `clickhouse`, `postgres` | 일반 설치와 같은 Argos를 데모 모드로 실행: 평문 gRPC 허용, 데모 배너, 기동 시 데모 애플리케이션 2개와 에이전트 토큰 등록, 권장 알림 규칙 적용 |
+| `demo-db` | 데모 애플리케이션의 데이터베이스(PostgreSQL, Argos의 것이 아님) |
+| `sample-app-a`(`order-api`) | 에이전트를 붙인 샘플 애플리케이션: 주문, 느린 요청과 실패 요청, N+1 쿼리, `payment-api`를 호출하는 결제, 2분마다 도는 정산 배치(`@Scheduled`) |
+| `sample-app-b`(`payment-api`) | 에이전트를 붙인 두 번째 애플리케이션. 호출 5번 중 약 1번은 일부러 실패해 `order-api`의 에러율 알림이 울립니다 |
+| `load-generator` | `order-api`에 초당 50요청: 정상 70 %, 느림(300 ms~3초) 10 %, 에러(500과 `sendError`) 5 %, N+1(SQL 21개) 5 %, `payment-api`를 거치는 결제 10 % |
+
+데모 서비스는 포트를 게시하지 않고 내부 네트워크에만 붙습니다. 호스트 포트는 평소와 같은 `8080`(UI)과
+`9100`(gRPC)이며 기본은 `127.0.0.1`에 게시합니다. 에이전트 설정은 운영 기본값(바인드 파라미터 값 없음,
+클라이언트 주소 마스킹)이라, 데모가 곧 기본 설치가 수집하는 내용을 보여 줍니다.
+
+### 시작하기 전에
+
+- Docker Engine 24 이상과 Compose 플러그인 v2.24 이상, 또는 Docker Desktop
+- Docker에 보이는 메모리 7396 MiB 이상("8 GB" Docker Desktop이면 됩니다. 많을수록 데모가 빠릅니다)과
+  여유 디스크 20 GB. `argos-env-init.sh --demo`는 데모 서비스에 1.5 GiB를 떼어 두고 나머지를
+  [7.1절](#71-메모리)처럼 나눕니다.
+- 이미지가 배포되기 전까지는 이미지를 빌드할 JDK 21과 소스 트리(3장)
+
+### 실행
+
+1. 저장소 루트에서 이미지 세 개를 한 번 빌드합니다(첫 빌드는 빌드 의존성을 내려받느라 몇 분 걸립니다).
+
+   ```sh
+   ./gradlew :server:jibDockerBuild :sample-apps:demo-app:jibDockerBuild :sample-apps:load:jibDockerBuild
+   ```
+
+2. 데모를 준비합니다. Linux Docker Engine에서는 아래 모든 명령처럼 `sudo`로 실행하세요(비밀값 파일을
+   컨테이너 사용자 uid `10001`에게 넘깁니다).
+
+   ```sh
+   cd deploy/compose
+   ./argos-env-init.sh --demo
+   ```
+
+   `--demo`는 일반 설치의 비밀값, 관리자 비밀번호(`secrets/admin_password`), 데모 애플리케이션마다
+   에이전트 토큰(`secrets/demo_order_api_token`, `secrets/demo_payment_api_token`), 데모 데이터베이스
+   비밀번호(`secrets/demo_db_password`)를 모두 `0600`으로 만듭니다. `.env`에는
+   `ARGOS_DEMO_MODE=true`, (`compose.demo.yaml`을 넣은) `COMPOSE_FILE`, `COMPOSE_PROFILES=demo`를 써서
+   이 디렉터리의 평범한 `docker compose` 명령이 데모를 쓰게 합니다. `.env`에는 비밀값을 쓰지 않습니다.
+   옵션: `--http-bind`·`--grpc-bind`(기본 `127.0.0.1`), `--public-url`(기본 `http://localhost:8080`),
+   `--ip-mode`(기본 `masked`).
+
+   **Docker Desktop(Windows, macOS, WSL):** 따로 할 일이 없습니다. 그곳에서는 `secrets/`의 파일이
+   컨테이너 안에서 `0777`로 보이는데, 데모 오버레이(`compose.demo.yaml`)가
+   `ARGOS_SECURITY_MASTERKEY_PERMISSIVE=true`를 주므로 서버는 마스터 키 파일의 권한 검사를 건너뛰고
+   기동마다 경고를 남깁니다(키가 없거나 형식이 틀리면 여전히 멈춥니다). 데모만 이렇게 하며, 운영 설치는
+   검사를 유지합니다(문제 해결은 [11장](#11-문제-해결)).
+
+3. 시작합니다.
+
+   ```sh
+   docker compose --profile demo up -d
+   ```
+
+   (`./argos-compose.sh up`도 같은 일을 하며, 먼저 파일을 검사하고 모든 서비스가 healthy가 될 때까지
+   기다립니다.)
+
+4. `http://localhost:8080`을 열고 `admin`과 파일의 비밀번호로 로그인합니다.
+
+   ```sh
+   cat secrets/admin_password
+   ```
+
+   UI가 먼저 새 비밀번호를 정하라고 합니다. 시작 후 약 1분 안에 `order-api`와 `payment-api`의 XLog
+   점이 들어옵니다.
+
+5. 둘러봅니다: `order-api` 대시보드, 느린 점과 에러가 있는 XLog, 결제 트랜잭션과 `payment-api`를
+   거치는 트레이스, 트랜잭션 상세의 N+1 트랜잭션(`/api/orders/{id}/items`, SQL 21개), SQL·에러 통계,
+   배치 트랜잭션(종류 `BATCH`, 2분마다), 그리고 약 8분 뒤 `order-api` 에러율 알림.
+
+6. 데모와 모든 데이터를 지웁니다.
+
+   ```sh
+   docker compose --profile demo down -v
+   ```
+
+   처음부터 다시 하려면 `.env`와 `secrets/`도 지우고 2단계부터 하세요.
+
+### 데모 문제 해결
+
+| 증상 | 원인과 해결 |
+|---|---|
+| `up`이 `argos-server`, `argos-demo-app`, `argos-demo-load`에 `pull access denied`라고 함 | 이미지를 빌드하지 않았습니다: 1단계 |
+| `argos-env-init.sh`가 종료 코드 2로 끝나며 메모리를 지목함 | Docker에 보이는 메모리가 7396 MiB 미만입니다. Docker Desktop(Settings, Resources)이나 호스트에 메모리를 더 주세요 |
+| `up`이 `port is already allocated`로 실패 | 다른 프로그램이 `127.0.0.1`의 `8080`이나 `9100`을 씁니다. 그 프로그램을 멈추거나 다른 바인드 주소로 데모를 다시 준비하세요 |
+| 서버 로그에 마스터 키 파일을 그룹이나 다른 사용자가 읽을 수 있다는 경고(`argos.security.master-key.permissive`)가 있음 | 데모에서는 정상입니다. Docker Desktop에서는 `secrets/`의 파일이 컨테이너 안에서 `0777`로 보이고, 데모 오버레이가 이 검사를 건너뜁니다. 운영 설치는 그렇지 않습니다([11장](#11-문제-해결)) |
+| 2분이 지나도 데이터가 없음 | `docker compose --profile demo ps`로 실행되지 않거나 healthy가 아닌 서비스를 찾고, `docker compose --profile demo logs sample-app-a`(또는 `server`)로 이유를 보세요 |
+
+## 15. 백업, 업그레이드, 진단
+
+이 명령들은 `deploy/compose`에서 실행하고, Linux Docker Engine에서는 다른 명령처럼 `sudo`를 붙입니다.
+
+### 15.1 백업과 복구
+
+`sudo ./argos-compose.sh backup`은 같은 옵션으로 `./backup.sh`를 실행합니다. PostgreSQL 데이터베이스(사용자,
+애플리케이션, 에이전트 토큰 해시, 알림 규칙, 암호화된 채널 설정과 명령 결과, 감사 로그)는 항상 덤프하고,
+`--clickhouse`를 주면 ClickHouse에 수집된 데이터를 외부 디렉터리 `ARGOS_CH_BACKUP_DIR`에 백업합니다(ClickHouse
+데이터와 같은 디스크의 디렉터리는 거부합니다). 백업 세트는 `ARGOS_BACKUP_DIR`(기본 `./backups`. 다른 디스크나
+다른 머신에 두세요)에 세트마다 디렉터리 하나(모드 `0700`, 파일 `0600`)로 쓰이고, 7일이 지난 세트는 지워집니다.
+`--encrypt age:<수신자>`나 `--encrypt gpg:<키 id>`를 주면 호스트에 이미 설치된 `age`나 GnuPG로 덤프를
+암호화합니다. 아무것도 내려받지 않습니다.
+
+백업에는 `secrets/`와 `tls/`가 들어 있지 않습니다. `secrets/master_key`는 따로 안전한 곳에 보관하세요. 이 키가
+없으면 복원한 백업의 채널 설정과 명령 결과를 읽을 수 없습니다. 백업에는 에이전트가 수집한 개인정보(IP 주소,
+사용자 ID, SQL 원문)와 명령 결과가 들어 있으니 설치 자체처럼 보호하세요.
+
+`sudo ./argos-compose.sh restore <백업 세트>`는 `./restore.sh`를 실행합니다. 먼저 마스터 키가 그 백업의
+키인지 확인하고, 아니면 아무것도 바꾸지 않고 종료 코드 1로 거부합니다. 그다음 서버를 멈추고 PostgreSQL을
+(`--clickhouse`면 ClickHouse도) 복원하고, 서버가 스키마를 앞으로 마이그레이션하게 한 뒤 기동하고 정합 검사를
+실행합니다. PostgreSQL 백업이 ClickHouse 데이터보다 오래되었으면 시점 불일치를 경고합니다.
+
+매일 백업하려면 root의 crontab(`sudo crontab -e`)에 다음과 같은 줄을 넣으세요.
+
+```
+0 1 * * * cd /opt/argos/deploy/compose && ./argos-compose.sh backup >>/var/log/argos-backup.log 2>&1
+```
+
+옵션 전체, 종료 코드, 새 호스트에서의 복원, 복구 리허설은
+[docs/ops/backup-restore.md](../ops/backup-restore.md)와
+[docs/ops/recovery-rehearsal.md](../ops/recovery-rehearsal.md)에 있습니다.
+
+### 15.2 업그레이드와 롤백
+
+서버를 먼저 올리고, 에이전트는 애플리케이션을 다시 시작할 때 따라 올립니다. 서버 `X.Y`는 에이전트
+`X.(Y-2)`부터 `X.Y`까지 받습니다. 계획 정지(최대 약 10분) 동안 알림 발송을 멈춰 두세요. 에이전트는 약 2분
+분량의 데이터를 쌓아 두었다가 다시 접속합니다.
+
+1. 새 서버 이미지를 로컬 이미지 저장소에 준비합니다(또는 pull할 수 있는 레지스트리 참조를 줍니다).
+2. 실행합니다.
+
+   ```sh
+   sudo ./argos-compose.sh upgrade --image argos-server:<새 버전>
+   ```
+
+명령은 스택이 healthy인지 확인하고 이미지 라벨 `org.opencontainers.image.version`에서 버전을 읽습니다. 더
+오래된 버전과 메이저 버전 건너뛰기는 거부하고(종료 코드 2, 바뀐 것 없음), 이미 그 버전이 실행 중이면 아무것도
+하지 않습니다(종료 코드 0). 새 서버가 받지 않을 버전의 에이전트가 접속해 있으면 경고합니다. 확인을 받은 뒤
+(또는 `--yes`로):
+
+1. `backup.sh --label pre-upgrade-<이전>-<새>`: PostgreSQL 백업. 실패하면 종료 코드 1로 멈추고 아무것도
+   바꾸지 않습니다.
+2. `upgrade-state.json`(`0600`: 이전 이미지와 그 id, 백업 세트)을 쓰고 `.env`의 `ARGOS_SERVER_IMAGE`를
+   바꿉니다(모드와 소유자는 그대로). 환경변수 `ARGOS_SERVER_IMAGE`가 있으면 `.env`보다 우선하므로 경고합니다.
+3. 새 이미지로 서버를 시작하고 healthy가 될 때까지(최대 10분) 기다립니다. 서버는 기동하면서 PostgreSQL과
+   ClickHouse 스키마를 마이그레이션합니다.
+4. 어제 날짜로 `argos-admin consistency check`를 실행해 결과(보고만)와 소요 시간을 보여 줍니다.
+
+새 서버가 healthy가 되지 않으면 종료 코드 8로 끝납니다. `sudo ./argos-compose.sh logs server`를 읽은 뒤
+되돌리세요.
+
+```sh
+sudo ./argos-compose.sh upgrade --rollback
+```
+
+롤백은 `.env`에 이전 이미지를 다시 쓰고, 업그레이드 전 백업으로 PostgreSQL을 복원하고(`restore.sh`), 서버를
+다시 시작합니다. 백업 이후 PostgreSQL에 생긴 변경(사용자, 토큰, 규칙, 감사 행)은 사라지고, ClickHouse 데이터는
+남습니다(이전 버전은 새 컬럼을 무시합니다). 롤백은 업그레이드마다 한 번 할 수 있습니다.
+
+| 종료 코드 | 의미 |
+|---|---|
+| 0 | 업그레이드됨, 롤백됨, 또는 이미 그 버전이 실행 중 |
+| 1 | 백업이나 롤백이 실패함. 무엇이 바뀌었는지 메시지에 있음 |
+| 2 | 거부했거나 사전 조건이 없음. 바뀐 것 없음 |
+| 8 | 서버를 교체했지만 healthy가 되지 않음. 롤백하세요 |
+
+### 15.3 진단 번들
+
+문제를 보고할 때는 진단 번들을 만들고, 보내기 전에 내용을 확인하세요.
+
+```sh
+sudo ./argos-compose.sh diag --since 24h --out /tmp
+```
+
+`--out`(기본은 현재 디렉터리)에 `argos-diag-compose-<호스트>-<시각>.tar.gz`(모드 `0600`)를 씁니다. 내용:
+
+- 서버 자체의 번들(서버 컨테이너에서, 서버가 실행 중이 아니면 서버 이미지의 새 컨테이너에서 실행한
+  `argos-admin bundle`): 기간(`--since`, 1시간~7일)의 서버 로그, 유효 설정, 버전, 마이그레이션, 저장소 상태,
+  인스턴스와 토큰 접두사. 비밀값은 서버가 마스킹합니다.
+- 서버가 볼 수 없는 것: `docker compose ps`, 이미지와 그 id·다이제스트·라벨, compose 파일 이름과 SHA-256,
+  비밀번호·토큰·secret·key·credential을 가리키는 키의 값을 `****`로 바꾼 `.env`, ClickHouse와 PostgreSQL
+  컨테이너 로그의 마지막 1000줄, Docker와 Compose 버전, ClickHouse가 보는 디스크 사용량.
+- 어느 부분을 수집했는지 알려 주는 `manifest.json`.
+
+토큰(`argos_...`), URL의 사용자 정보, 64자리 16진수 값, `password=` 형태의 값도 마스킹합니다. `secrets/`와
+`tls/`의 내용, `docker compose config` 출력(ClickHouse 비밀번호 해시가 드러남), 서버 콘솔(새 설치의 설정 토큰이
+보임)은 넣지 않습니다. 내용은 `tar -tzf <파일>`로 확인하세요. 종료 코드: 0 작성(일부를 수집하지 못한 경우 포함),
+1 작성 못 함, 2 사용법 오류 또는 Docker 없음.

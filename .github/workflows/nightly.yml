@@ -1,0 +1,518 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Nightly compatibility matrix and long server suites (docs/18 section 6, DSN-18-11; docs/19 sections
+# 6.3 and 6.6; WO-50). test/README.md and test/matrix/README.md describe the jobs.
+#
+#   plan            GitHub-hosted, read-only. Reads the group names of test/matrix/matrix.yaml (no
+#                   repository code runs) or takes the dispatch inputs, and says which jobs work.
+#   matrix          self-hosted [self-hosted, linux, argos-matrix], one job per matrix.yaml group
+#                   (max-parallel 4): `./gradlew :agent:agent-testing:matrixTest -Pmatrix.group=<group>` (dispatch:
+#                   combo). Failing combinations are results, not job errors: the job fails only when no
+#                   combination result was written (a build or configuration error). The report job
+#                   turns gate failures red after publishing them. Uploads build/matrix/ and the JUnit XML.
+#   server-nightly  self-hosted: :server:integrationTest with -Pserver.nightly=true (T-SV-002, ADR-0010 C-100).
+#   security-full   self-hosted: securityTest with the default 10,000 PII seed requests (N-10c, C-251 (2)).
+#   sample-smoke    self-hosted: every sample app variant without the agent (root sampleSmoke, C-47).
+#   compose-smoke   self-hosted: Compose end-to-end smoke (:deploy:composeSmoke, C-200 (2)).
+#   demo-first      self-hosted: demo profile, first XLog point within 60 s (:deploy:demoSmoke enforce, T-NFR-16).
+#   report          self-hosted, read-only: gathers the matrix artifacts, runs matrixReport and uploads
+#                   docs/compatibility-matrix.md; fails when a gate combination failed.
+#   publish         GitHub-hosted, executes no repository code: commits the page to a
+#                   matrix/nightly-* branch and opens a pull request (contents: write and
+#                   pull-requests: write, allowed by check-workflows.sh W4 PERMISSION_ALLOWLIST,
+#                   ADR-0010 C-256 (4)). It needs the repository setting "Allow GitHub Actions to
+#                   create and approve pull requests" (C-253 (5)); without it the job fails and a
+#                   maintainer commits the `compatibility-matrix` artifact by hand.
+#
+# Not here: the monthly egress-zero run on an isolated VM (docs/19 section 6.3) has no implementation
+# and no owning work order yet (WO-50 report, PM decision); the in-house database runner label
+# 'argos-db' of docs/19 section 6.3 does not exist yet, so the in-house JDBC rows run on argos-matrix
+# with their credentials from the 'trusted' environment.
+#
+# Triggers: schedule (daily 17:00 UTC), workflow_dispatch and pushes to main and release/** only
+# (ADR-0010 C-253 (6), check-workflows.sh W8). Never pull_request, workflow_run or workflow_call: fork
+# code must never reach the self-hosted runners (O-S05, docs/19 section 6.6). Every self-hosted job
+# has the trusted-ref guard, checks out without persisted credentials, has no write scope, and only
+# the matrix job reads secrets (job-level environment: trusted).
+#
+# Runner preparation (a person, test/matrix/README.md "Runner preparation"): Linux x86_64, Docker
+# Engine (cgroup v2), at least 16 GiB of memory per concurrent job, outbound HTTPS to GitHub, Maven
+# Central, the Gradle and Node distributions and Docker Hub (docs/19 section 13 open item 10).
+# Repository variables (all optional; without them the rows that need them are △ with the reason):
+#   ARGOS_MATRIX_JDK8U242_HOME, ARGOS_MATRIX_JDK8U252_HOME  old JRE homes on the runner (T-MX-140, 141)
+#   ARGOS_TEST_JDBC_DRIVER_DIR                               vendor JDBC driver jars on the runner (T-MX-105..108)
+# Environment 'trusted' secrets (optional): ARGOS_TEST_<DB>_URL, _USER, _PASSWORD for ORACLE, TIBERO,
+# ALTIBASE, CUBRID and DB2 (in-house databases, T-MX-104..108).
+#
+# Policy (docs/19 section 6.6, .github/scripts/check-workflows.sh): actions pinned to commit SHAs,
+# read-only token, values from inputs, variables and secrets reach run scripts through env: only.
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 17 * * *"
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "Jobs to run: all, matrix (combinations only) or server (server suites and smokes only)"
+        type: choice
+        options:
+          - all
+          - matrix
+          - server
+        default: all
+      group:
+        description: "Matrix group of test/matrix/matrix.yaml (empty: every group)"
+        type: string
+        default: ""
+      combo:
+        description: "One matrix combination, T-MX-nnn (empty: by group); implies scope matrix"
+        type: string
+        default: ""
+  push:
+    branches:
+      - main
+      - "release/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+env:
+  GRADLE_TOOLCHAINS_FROM_ENV: JAVA_HOME_8_X64,JAVA_HOME_11_X64,JAVA_HOME_17_X64,JAVA_HOME_21_X64,JAVA_HOME_25_X64
+
+jobs:
+  plan:
+    name: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      groups: ${{ steps.plan.outputs.groups }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      server: ${{ steps.plan.outputs.server }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Plan the jobs
+        id: plan
+        env:
+          SCOPE: ${{ inputs.scope || 'all' }}
+          GROUP: ${{ inputs.group }}
+          COMBO: ${{ inputs.combo }}
+        run: |
+          fail() { echo "::error::$*"; exit 2; }
+          [[ "$SCOPE" =~ ^(all|matrix|server)$ ]] || fail "scope '$SCOPE': all, matrix or server"
+          [[ -z "$GROUP" || "$GROUP" =~ ^[a-z0-9-]+$ ]] || fail "group '$GROUP': a matrix.yaml group name"
+          [[ -z "$COMBO" || "$COMBO" =~ ^T-MX-[0-9]{3}$ ]] || fail "combo '$COMBO': T-MX-nnn"
+          [[ -z "$GROUP" || -z "$COMBO" ]] || fail "give either group or combo"
+          # Group names exactly as MatrixCatalog reads them (MatrixCatalogTest checks this extraction).
+          mapfile -t all < <(sed -nE 's/^[[:space:]]+group: ([a-z0-9-]+)[[:space:]]*$/\1/p' test/matrix/matrix.yaml | awk '!seen[$0]++')
+          [[ ${#all[@]} -gt 0 ]] || fail "no groups in test/matrix/matrix.yaml"
+          if [[ -n "$COMBO" ]]; then
+            groups='["selected"]'; SCOPE=matrix
+          elif [[ -n "$GROUP" ]]; then
+            printf '%s\n' "${all[@]}" | grep -qxF "$GROUP" || fail "group '$GROUP' is not in test/matrix/matrix.yaml (${all[*]})"
+            groups=$(jq -cn --arg g "$GROUP" '[$g]'); SCOPE=matrix
+          else
+            groups=$(printf '%s\n' "${all[@]}" | jq -R . | jq -cs .)
+          fi
+          matrix=false; server=false
+          [[ "$SCOPE" == all || "$SCOPE" == matrix ]] && matrix=true
+          [[ "$SCOPE" == all || "$SCOPE" == server ]] && server=true
+          {
+            echo "groups=$groups"
+            echo "matrix=$matrix"
+            echo "server=$server"
+          } >>"$GITHUB_OUTPUT"
+          echo "groups $groups, matrix $matrix, server $server"
+
+  matrix:
+    name: matrix (${{ matrix.group }})
+    needs: plan
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    runs-on: [self-hosted, linux, argos-matrix]
+    environment: trusted
+    timeout-minutes: 480
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        group: ${{ fromJSON(needs.plan.outputs.groups) }}
+    env:
+      ARGOS_RUNNER_LABELS: argos-matrix
+    steps:
+      - name: Check out
+        if: needs.plan.outputs.matrix == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8, 11, 17, 25 and 21 (21 runs Gradle; all are toolchains)
+        if: needs.plan.outputs.matrix == 'true'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            11
+            17
+            25
+            21
+      - name: Fetch the pinned coexistence agents (group coexist)
+        if: needs.plan.outputs.matrix == 'true' && (matrix.group == 'coexist' || matrix.group == 'selected')
+        run: bash test/matrix/fetch-coexist-agents.sh
+      - name: Run the combinations
+        id: run
+        if: needs.plan.outputs.matrix == 'true'
+        env:
+          GROUP: ${{ matrix.group }}
+          COMBO: ${{ inputs.combo }}
+          JDK8U242: ${{ vars.ARGOS_MATRIX_JDK8U242_HOME }}
+          JDK8U252: ${{ vars.ARGOS_MATRIX_JDK8U252_HOME }}
+          ARGOS_TEST_JDBC_DRIVER_DIR: ${{ vars.ARGOS_TEST_JDBC_DRIVER_DIR }}
+          ARGOS_TEST_ORACLE_URL: ${{ secrets.ARGOS_TEST_ORACLE_URL }}
+          ARGOS_TEST_ORACLE_USER: ${{ secrets.ARGOS_TEST_ORACLE_USER }}
+          ARGOS_TEST_ORACLE_PASSWORD: ${{ secrets.ARGOS_TEST_ORACLE_PASSWORD }}
+          ARGOS_TEST_TIBERO_URL: ${{ secrets.ARGOS_TEST_TIBERO_URL }}
+          ARGOS_TEST_TIBERO_USER: ${{ secrets.ARGOS_TEST_TIBERO_USER }}
+          ARGOS_TEST_TIBERO_PASSWORD: ${{ secrets.ARGOS_TEST_TIBERO_PASSWORD }}
+          ARGOS_TEST_ALTIBASE_URL: ${{ secrets.ARGOS_TEST_ALTIBASE_URL }}
+          ARGOS_TEST_ALTIBASE_USER: ${{ secrets.ARGOS_TEST_ALTIBASE_USER }}
+          ARGOS_TEST_ALTIBASE_PASSWORD: ${{ secrets.ARGOS_TEST_ALTIBASE_PASSWORD }}
+          ARGOS_TEST_CUBRID_URL: ${{ secrets.ARGOS_TEST_CUBRID_URL }}
+          ARGOS_TEST_CUBRID_USER: ${{ secrets.ARGOS_TEST_CUBRID_USER }}
+          ARGOS_TEST_CUBRID_PASSWORD: ${{ secrets.ARGOS_TEST_CUBRID_PASSWORD }}
+          ARGOS_TEST_DB2_URL: ${{ secrets.ARGOS_TEST_DB2_URL }}
+          ARGOS_TEST_DB2_USER: ${{ secrets.ARGOS_TEST_DB2_USER }}
+          ARGOS_TEST_DB2_PASSWORD: ${{ secrets.ARGOS_TEST_DB2_PASSWORD }}
+        run: |
+          args=(--continue -Pargos.ui.skip=true "-Porg.gradle.java.installations.fromEnv=$GRADLE_TOOLCHAINS_FROM_ENV")
+          if [[ "$GROUP" == selected ]]; then
+            [[ "$COMBO" =~ ^T-MX-[0-9]{3}$ ]] || { echo "::error::combo '$COMBO'"; exit 2; }
+            args+=("-Pmatrix.combo=$COMBO")
+          else
+            [[ "$GROUP" =~ ^[a-z0-9-]+$ ]] || { echo "::error::group '$GROUP'"; exit 2; }
+            args+=("-Pmatrix.group=$GROUP")
+          fi
+          [[ -n "$JDK8U242" ]] && args+=("-Pagent.jdk8u242=$JDK8U242")
+          [[ -n "$JDK8U252" ]] && args+=("-Pagent.jdk8u252=$JDK8U252")
+          rm -rf build/matrix
+          set +e
+          ./gradlew "${args[@]}" :agent:agent-testing:matrixTest
+          code=$?
+          set -e
+          echo "code=$code" >>"$GITHUB_OUTPUT"
+          shopt -s nullglob
+          results=(build/matrix/T-MX-*.json)
+          echo "./gradlew matrixTest exit code $code, ${#results[@]} combination results"
+          if [[ ${#results[@]} -eq 0 ]]; then
+            echo "::error::no combination result was written (build or configuration error, exit code $code)"
+            exit 1
+          fi
+          # Test failures are results: the report job publishes them and then fails on gate rows.
+      - name: Upload the combination results
+        if: always() && needs.plan.outputs.matrix == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: matrix-results-${{ matrix.group }}
+          path: build/matrix/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Upload the JUnit XML and harness logs (diagnosis)
+        if: always() && needs.plan.outputs.matrix == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: matrix-junit-${{ matrix.group }}
+          path: |
+            agent/agent-testing/build/test-results/matrixTest-*/
+            agent/agent-testing/build/reports/agent-e2e-matrix/
+          if-no-files-found: warn
+          retention-days: 14
+
+  server-nightly:
+    name: server-nightly
+    needs: plan
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    runs-on: [self-hosted, linux, argos-matrix]
+    timeout-minutes: 120
+    steps:
+      - name: Check out
+        if: needs.plan.outputs.server == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21
+        if: needs.plan.outputs.server == 'true'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Server integration tests with the nightly suites (T-SV-002)
+        if: needs.plan.outputs.server == 'true'
+        run: |
+          ./gradlew -Pargos.ui.skip=true -Porg.gradle.java.installations.fromEnv=JAVA_HOME_8_X64,JAVA_HOME_21_X64 \
+            :server:integrationTest -Pserver.nightly=true
+      - name: Upload the test results
+        if: always() && needs.plan.outputs.server == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: server-nightly-results
+          path: |
+            server/build/test-results/integrationTest/
+            server/build/reports/migration/
+          if-no-files-found: warn
+          retention-days: 14
+
+  security-full:
+    name: security-full
+    needs: plan
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    runs-on: [self-hosted, linux, argos-matrix]
+    timeout-minutes: 90
+    steps:
+      - name: Check out
+        if: needs.plan.outputs.server == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21
+        if: needs.plan.outputs.server == 'true'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Security suite with the default 10,000 PII seed requests (N-10c)
+        if: needs.plan.outputs.server == 'true'
+        run: |
+          ./gradlew -Pargos.ui.skip=true -Porg.gradle.java.installations.fromEnv=JAVA_HOME_8_X64,JAVA_HOME_21_X64 \
+            securityTest
+      - name: Upload the test results
+        if: always() && needs.plan.outputs.server == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: security-full-results
+          path: |
+            **/build/test-results/securityTest/
+            server/build/reports/rate-limits.md
+            server/build/reports/permission-matrix-session.md
+          if-no-files-found: warn
+          retention-days: 14
+
+  sample-smoke:
+    name: sample-smoke
+    needs: plan
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    runs-on: [self-hosted, linux, argos-matrix]
+    timeout-minutes: 120
+    steps:
+      - name: Check out
+        if: needs.plan.outputs.server == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8, 11, 17, 25 and 21
+        if: needs.plan.outputs.server == 'true'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            11
+            17
+            25
+            21
+      - name: Every sample app variant without the agent (endpoint catalog)
+        if: needs.plan.outputs.server == 'true'
+        run: ./gradlew -Pargos.ui.skip=true "-Porg.gradle.java.installations.fromEnv=$GRADLE_TOOLCHAINS_FROM_ENV" sampleSmoke
+
+  compose-smoke:
+    name: compose-smoke
+    needs: plan
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    runs-on: [self-hosted, linux, argos-matrix]
+    timeout-minutes: 60
+    # Binds the host ports 8080 and 9100, like demo-first: one at a time.
+    concurrency:
+      group: nightly-host-ports-${{ github.run_id }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out
+        if: needs.plan.outputs.server == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21
+        if: needs.plan.outputs.server == 'true'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Set up Node.js
+        if: needs.plan.outputs.server == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ui/.nvmrc
+          package-manager-cache: false
+      - name: Enable pnpm (Corepack)
+        if: needs.plan.outputs.server == 'true'
+        run: |
+          corepack enable
+          corepack install -g "$(node -p "require('./ui/package.json').packageManager")"
+      - name: Compose end-to-end smoke
+        if: needs.plan.outputs.server == 'true'
+        run: ./gradlew -Porg.gradle.java.installations.fromEnv=JAVA_HOME_8_X64,JAVA_HOME_21_X64 :deploy:composeSmoke
+
+  demo-first:
+    name: demo-first
+    needs: plan
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    runs-on: [self-hosted, linux, argos-matrix]
+    timeout-minutes: 60
+    concurrency:
+      group: nightly-host-ports-${{ github.run_id }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out
+        if: needs.plan.outputs.server == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21
+        if: needs.plan.outputs.server == 'true'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Set up Node.js
+        if: needs.plan.outputs.server == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ui/.nvmrc
+          package-manager-cache: false
+      - name: Enable pnpm (Corepack)
+        if: needs.plan.outputs.server == 'true'
+        run: |
+          corepack enable
+          corepack install -g "$(node -p "require('./ui/package.json').packageManager")"
+      - name: Demo profile, first XLog point within 60 s (T-NFR-16)
+        if: needs.plan.outputs.server == 'true'
+        run: ./gradlew -Porg.gradle.java.installations.fromEnv=JAVA_HOME_8_X64,JAVA_HOME_21_X64 :deploy:demoSmoke -Pdemo.smoke.enforce=true
+      - name: Upload the first-point report
+        if: always() && needs.plan.outputs.server == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: demo-first-xlog
+          path: build/reports/demo/
+          if-no-files-found: warn
+          retention-days: 14
+
+  report:
+    name: report
+    needs: [plan, matrix]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    runs-on: [self-hosted, linux, argos-matrix]
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        if: needs.plan.outputs.matrix == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21
+        if: needs.plan.outputs.matrix == 'true'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Download the combination results
+        if: needs.plan.outputs.matrix == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: matrix-results-*
+          path: build/matrix-artifacts
+      - name: Generate docs/compatibility-matrix.md
+        if: needs.plan.outputs.matrix == 'true'
+        run: |
+          ./gradlew -Pargos.ui.skip=true -Porg.gradle.java.installations.fromEnv=JAVA_HOME_8_X64,JAVA_HOME_21_X64 \
+            :agent:agent-testing:matrixReport -Pmatrix.results=build/matrix-artifacts
+          {
+            echo "## Compatibility matrix"
+            echo
+            grep -E '^Summary:|^Results:' docs/compatibility-matrix.md || true
+          } >>"$GITHUB_STEP_SUMMARY"
+          mkdir -p build/matrix-publish/docs
+          cp docs/compatibility-matrix.md build/matrix-publish/docs/
+      - name: Upload the page
+        if: needs.plan.outputs.matrix == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: compatibility-matrix
+          path: build/matrix-publish/
+          if-no-files-found: error
+          retention-days: 90
+      - name: Fail on gate combinations that failed
+        if: needs.plan.outputs.matrix == 'true'
+        run: |
+          failures=agent/agent-testing/build/matrix-report/gate-failures.txt
+          if [[ -s "$failures" ]]; then
+            echo "::error::gate combinations failed (docs/compatibility-matrix.md):"
+            cat "$failures"
+            exit 1
+          fi
+          echo "no gate combination failed"
+
+  # GitHub-hosted follow-up of report (see the header); executes no repository code.
+  publish:
+    name: publish
+    needs: report
+    if: needs.report.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check out (the token pushes the report branch)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+      - name: Download the page
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: compatibility-matrix
+          path: ${{ runner.temp }}/matrix-page
+      - name: Commit the page and open the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.ref_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          art="$RUNNER_TEMP/matrix-page"
+          if [[ -n "$(find "$art" -type l)" ]]; then echo "::error::links in the artifact"; exit 1; fi
+          [[ "$(cd "$art" && find . -type f)" == "./docs/compatibility-matrix.md" ]] || { echo "::error::unexpected files"; exit 1; }
+          cp "$art/docs/compatibility-matrix.md" docs/compatibility-matrix.md
+          if git diff --quiet -- docs/compatibility-matrix.md; then echo "unchanged"; exit 0; fi
+          branch="matrix/nightly-$(date -u +%Y-%m-%d)-$GITHUB_RUN_ID"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add -- docs/compatibility-matrix.md
+          git commit -s -m "docs: nightly compatibility matrix"
+          git push origin "$branch"
+          gh pr create --repo "$REPO" --base "$BASE" --head "$branch" \
+            --title "docs: nightly compatibility matrix" --body "Generated by $RUN_URL (test/matrix/README.md)."

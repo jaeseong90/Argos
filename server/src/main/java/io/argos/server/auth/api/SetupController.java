@@ -7,6 +7,7 @@ import io.argos.server.audit.AuditEvent;
 import io.argos.server.auth.RequiresRole;
 import io.argos.server.auth.Role;
 import io.argos.server.auth.setup.SetupService;
+import io.argos.server.config.ArgosProperties;
 import io.argos.server.config.ServerBuild;
 import io.argos.server.storage.postgres.auth.UserRecord;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,17 +31,20 @@ public class SetupController {
 
   private final SetupService setup;
   private final ServerBuild build;
+  private final boolean demoMode;
 
-  public SetupController(SetupService setup, ServerBuild build) {
+  public SetupController(SetupService setup, ServerBuild build, ArgosProperties properties) {
     this.setup = setup;
     this.build = build;
+    this.demoMode = properties.demo().enabled();
   }
 
-  /** Whether the wizard is open, and the server version. */
+  /** Whether the wizard is open, the server version and whether demo mode is on (WO-41). */
   @GetMapping("/status")
   @RequiresRole(Role.PUBLIC)
   public Envelope<AuthDtos.SetupStatusResponse> status() {
-    return Envelope.of(new AuthDtos.SetupStatusResponse(setup.needsSetup(), build.version()));
+    return Envelope.of(
+        new AuthDtos.SetupStatusResponse(setup.needsSetup(), build.version(), demoMode));
   }
 
   /** Creates the first administrator with the setup token; the response is logged in. */

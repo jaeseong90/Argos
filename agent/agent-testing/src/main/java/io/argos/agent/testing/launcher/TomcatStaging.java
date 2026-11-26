@@ -9,15 +9,18 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 /**
  * A CATALINA_BASE for one {@link AppLauncher} run of a WAR app (18 §4.1 shop-war-javax and
@@ -49,10 +52,58 @@ import java.util.Map;
  *
  * The JVM presets, the agent, {@code java.io.tmpdir}, the environment and the output redirection
  * are the launcher's, as for jar apps.
+ *
+ * <p>With a {@link ManagerAccess} (the launcher's {@code tomcatManager(true)}, WAR redeploy of the
+ * compatibility matrix, 18 §5.9, WO-50) the base also has the distribution's manager web
+ * application under {@code /manager}: its {@code META-INF/context.xml} is replaced by one that
+ * admits requests from 127.0.0.1 only ({@code RemoteAddrValve}), {@code conf/tomcat-users.xml} is
+ * generated with a single {@value ManagerAccess#ROLE} user whose password is random per run (owner
+ * read and write only where the file system has POSIX permissions; the harness never logs it), and
+ * {@code server.xml} gets the {@code UserDatabase} resource and realm that the manager's basic
+ * authentication needs. Everything else of the distribution, including Jasper and the JDT compiler
+ * when the distribution has it ({@code lib/ecj-*.jar}), is used as it is.
  */
 public final class TomcatStaging {
   /** The class Tomcat's scripts start. */
   public static final String BOOTSTRAP_CLASS = "org.apache.catalina.startup.Bootstrap";
+
+  /** Context (and directory) of the manager web application in the base. */
+  public static final String MANAGER_CONTEXT = "manager";
+
+  /**
+   * The manager user of one staged Tomcat.
+   *
+   * @param user the user name
+   * @param password the random password of this run (never logged by the harness)
+   */
+  public record ManagerAccess(String user, String password) {
+    /** The role of Tomcat's manager text interface ({@code /manager/text/*}). */
+    public static final String ROLE = "manager-script";
+
+    /** User name of every run. */
+    public static final String USER = "argos-matrix";
+
+    public ManagerAccess {
+      if (user == null || !user.matches("[A-Za-z0-9._-]+")) {
+        throw new IllegalArgumentException("manager user must be [A-Za-z0-9._-]+");
+      }
+      if (password == null || !password.matches("[A-Za-z0-9]{16,}")) {
+        throw new IllegalArgumentException("manager password must be 16+ letters or digits");
+      }
+    }
+
+    /** {@value #USER} with a random 128-bit password (hex). */
+    public static ManagerAccess random() {
+      byte[] bytes = new byte[16];
+      new SecureRandom().nextBytes(bytes);
+      return new ManagerAccess(USER, HexFormat.of().formatHex(bytes));
+    }
+
+    @Override
+    public String toString() {
+      return "ManagerAccess[user=" + user + ", password=****]";
+    }
+  }
 
   /** The JULI console handler (writes to {@code System.err}). */
   static final String CONSOLE_HANDLER = "java.util.logging.ConsoleHandler";
@@ -114,6 +165,34 @@ public final class TomcatStaging {
   public static void stage(
       SampleApp app, Path home, Path base, int port, Shutdown shutdown, Map<String, Path> webapps)
       throws IOException {
+    stage(app, home, base, port, shutdown, webapps, null);
+  }
+
+  /**
+   * {@link #stage(SampleApp, Path, Path, int, Shutdown, Map)}, plus the manager web application and
+   * its user when {@code manager} is not null (class comment).
+   */
+  public static void stage(
+      SampleApp app,
+      Path home,
+      Path base,
+      int port,
+      Shutdown shutdown,
+      Map<String, Path> webapps,
+      ManagerAccess manager)
+      throws IOException {
+    if (manager != null) {
+      if (!Files.isDirectory(home.resolve("webapps").resolve(MANAGER_CONTEXT))) {
+        throw new IllegalStateException(
+            "the Tomcat distribution at " + home + " has no webapps/" + MANAGER_CONTEXT);
+      }
+      if (webapps.keySet().stream().map(TomcatStaging::warName).anyMatch(MANAGER_CONTEXT::equals)
+          || app.contexts().stream()
+              .map(TomcatStaging::warName)
+              .anyMatch(MANAGER_CONTEXT::equals)) {
+        throw new IllegalArgumentException("context " + MANAGER_CONTEXT + " is already in use");
+      }
+    }
     Path conf = Files.createDirectories(base.resolve("conf"));
     Files.createDirectories(base.resolve("logs"));
     Files.createDirectories(base.resolve("temp"));
@@ -136,7 +215,18 @@ public final class TomcatStaging {
       }
     }
     Files.writeString(
-        conf.resolve("server.xml"), serverXml(port, shutdown), StandardCharsets.UTF_8);
+        conf.resolve("server.xml"),
+        serverXml(port, shutdown, manager != null),
+        StandardCharsets.UTF_8);
+    if (manager != null) {
+      writeOwnerOnly(conf.resolve("tomcat-users.xml"), tomcatUsersXml(manager));
+      Path managerApp = webappsDir.resolve(MANAGER_CONTEXT);
+      copyTree(home.resolve("webapps").resolve(MANAGER_CONTEXT), managerApp);
+      Files.writeString(
+          Files.createDirectories(managerApp.resolve("META-INF")).resolve("context.xml"),
+          MANAGER_CONTEXT_XML,
+          StandardCharsets.UTF_8);
+    }
     Map<String, Path> wars = new LinkedHashMap<>();
     for (String context : app.contexts()) {
       wars.put(warName(context), app.artifact());
@@ -209,6 +299,15 @@ public final class TomcatStaging {
    * on 127.0.0.1 with its command, or disabled ({@code port="-1"}) when null.
    */
   static String serverXml(int port, Shutdown shutdown) {
+    return serverXml(port, shutdown, false);
+  }
+
+  /**
+   * {@link #serverXml(int, Shutdown)}, with the {@code UserDatabase} resource ({@code
+   * conf/tomcat-users.xml}) and its realm when {@code userDatabase} (the manager's basic
+   * authentication).
+   */
+  static String serverXml(int port, Shutdown shutdown, boolean userDatabase) {
     String server =
         shutdown == null
             ? "<Server port=\"-1\" shutdown=\"SHUTDOWN\">"
@@ -217,23 +316,94 @@ public final class TomcatStaging {
                 + "\" address=\"127.0.0.1\" shutdown=\""
                 + shutdown.command()
                 + "\">";
+    String resources =
+        userDatabase
+            ? """
+              <GlobalNamingResources>
+                <Resource name="UserDatabase" auth="Container" type="org.apache.catalina.UserDatabase"
+                          factory="org.apache.catalina.users.MemoryUserDatabaseFactory"
+                          pathname="conf/tomcat-users.xml" readonly="true" />
+              </GlobalNamingResources>
+            """
+            : "";
+    String realm =
+        userDatabase
+            ? """
+                    <Realm className="org.apache.catalina.realm.LockOutRealm">
+                      <Realm className="org.apache.catalina.realm.UserDatabaseRealm" resourceName="UserDatabase" />
+                    </Realm>
+            """
+            : "";
     return """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!-- SPDX-License-Identifier: Apache-2.0 -->
-        <!-- Generated by the Argos agent test harness (one run, 127.0.0.1 only). -->
-        %s
-          <Listener className="org.apache.catalina.startup.VersionLoggerListener" />
-          <Listener className="org.apache.catalina.core.JreMemoryLeakPreventionListener" />
-          <Listener className="org.apache.catalina.core.ThreadLocalLeakPreventionListener" />
-          <Service name="Catalina">
-            <Connector port="%d" address="127.0.0.1" protocol="HTTP/1.1" connectionTimeout="20000" />
-            <Engine name="Catalina" defaultHost="localhost">
-              <Host name="localhost" appBase="webapps" unpackWARs="true" autoDeploy="false" />
-            </Engine>
-          </Service>
-        </Server>
-        """
-        .formatted(server, port);
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!-- SPDX-License-Identifier: Apache-2.0 -->
+    <!-- Generated by the Argos agent test harness (one run, 127.0.0.1 only). -->
+    %s
+      <Listener className="org.apache.catalina.startup.VersionLoggerListener" />
+      <Listener className="org.apache.catalina.core.JreMemoryLeakPreventionListener" />
+      <Listener className="org.apache.catalina.core.ThreadLocalLeakPreventionListener" />
+    %s  <Service name="Catalina">
+        <Connector port="%d" address="127.0.0.1" protocol="HTTP/1.1" connectionTimeout="20000" />
+        <Engine name="Catalina" defaultHost="localhost">
+    %s      <Host name="localhost" appBase="webapps" unpackWARs="true" autoDeploy="false" />
+        </Engine>
+      </Service>
+    </Server>
+    """
+        .formatted(server, resources, port, realm);
+  }
+
+  /**
+   * The manager's {@code META-INF/context.xml} in the base: privileged (the manager servlet needs
+   * it), requests from 127.0.0.1 only.
+   */
+  static final String MANAGER_CONTEXT_XML =
+      """
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!-- SPDX-License-Identifier: Apache-2.0 -->
+      <!-- Generated by the Argos agent test harness: the manager answers 127.0.0.1 only. -->
+      <Context antiResourceLocking="false" privileged="true" ignoreAnnotations="true">
+        <Valve className="org.apache.catalina.valves.RemoteAddrValve" allow="127\\.0\\.0\\.1" />
+      </Context>
+      """;
+
+  /** {@code conf/tomcat-users.xml} with the single {@link ManagerAccess#ROLE} user. */
+  static String tomcatUsersXml(ManagerAccess manager) {
+    return """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!-- Generated by the Argos agent test harness: one run, random password, owner only. -->
+    <tomcat-users xmlns="http://tomcat.apache.org/xml" version="1.0">
+      <role rolename="%s" />
+      <user username="%s" password="%s" roles="%s" />
+    </tomcat-users>
+    """
+        .formatted(ManagerAccess.ROLE, manager.user(), manager.password(), ManagerAccess.ROLE);
+  }
+
+  /** Writes {@code text} to a new {@code file} that only its owner can read (POSIX systems). */
+  static void writeOwnerOnly(Path file, String text) throws IOException {
+    Files.deleteIfExists(file);
+    if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+      Files.createFile(
+          file, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
+    } else {
+      Files.createFile(file);
+    }
+    Files.writeString(file, text, StandardCharsets.UTF_8);
+  }
+
+  /** Copies the directory tree {@code source} to {@code target}. */
+  static void copyTree(Path source, Path target) throws IOException {
+    try (Stream<Path> paths = Files.walk(source)) {
+      for (Path path : paths.toList()) {
+        Path copy = target.resolve(source.relativize(path).toString());
+        if (Files.isDirectory(path)) {
+          Files.createDirectories(copy);
+        } else {
+          Files.copy(path, copy, StandardCopyOption.REPLACE_EXISTING);
+        }
+      }
+    }
   }
 
   /**

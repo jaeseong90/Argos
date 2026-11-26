@@ -1,0 +1,238 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Demo profile of the Docker Compose installation (docs/17 section 3.9, N-16, O-A01; WO-41).
+# Evaluation only: the agents send over PLAINTEXT gRPC inside the internal network "back", the
+# server runs in demo mode (ARGOS_DEMO_MODE: plaintext gRPC allowed, demo banner in the UI, the two
+# demo applications and their agent tokens registered at the start) and a load generator sends
+# sample traffic. Never add this file to a production installation.
+#
+# Use (README.md, docs/install/compose.md "Demo"):
+#   ./argos-env-init.sh --demo            writes .env (ARGOS_DEMO_MODE=true, COMPOSE_FILE with this
+#                                         file, COMPOSE_PROFILES=demo) and secrets/, including
+#                                         the two demo agent tokens and the demo database password
+#   docker compose --profile demo up -d   (or ./argos-compose.sh up)
+#   docker compose --profile demo down -v removes everything, data included
+#
+# Rules this file keeps (SEC-73..76, docs/17 DSN-17-03/04):
+#   * The demo services publish no port and sit on the internal network "back" only: no route out,
+#     no host port (the published ports stay 8080 and 9100, on 127.0.0.1 by default in demo mode).
+#   * Every secret is a file in secrets/ (0600) mounted under /run/secrets: the agent tokens and the
+#     demo database password never appear in .env, an environment variable, a log or an image.
+#   * The demo application and load images are the local builds (./gradlew
+#     :sample-apps:demo-app:jibDockerBuild :sample-apps:load:jibDockerBuild) until WO-44 publishes
+#     them pinned by digest; demo-db is the pinned PostgreSQL image of deploy/postgres/image.properties.
+#   * mem_limit of the four demo services adds up to the 1536 MiB that argos-env-init.sh --demo
+#     reserves in its memory plan (DEMO_RESERVE_MB; deploy/compose/test checks the sum).
+#   * Only the server leaves through "front" (alert channels); nothing of the demo does.
+
+services:
+  server:
+    environment:
+      # Demo mode (argos.demo.enabled): plaintext gRPC allowed (the server logs a WARN at every
+      # start), the UI banner, and the applications of the bootstrap file below.
+      ARGOS_DEMO_MODE: "true"
+      # argos.bootstrap.apps-file: order-api and payment-api in the environment "demo", each with
+      # its agent token file (only the SHA-256 hash and the prefix are stored).
+      ARGOS_BOOTSTRAP_APPS_FILE: /conf/demo/bootstrap-apps.yaml
+      # argos.security.master-key.permissive (demo only, ADR-0010 C-243 (1)): Docker Desktop
+      # (Windows, macOS, WSL) shows the bind-mounted secrets/ as 0777, which the master key check
+      # refuses; the demo starts anyway and the server logs a WARN at every start. Only the
+      # permission check is skipped (a missing or malformed key still stops the start). Never set
+      # it in compose.yaml or another overlay: a production host is a Linux Docker Engine, where
+      # argos-env-init.sh gives the key file mode 0600 and owner 10001.
+      ARGOS_SECURITY_MASTERKEY_PERMISSIVE: "true"
+    # The volumes of compose.yaml without the TLS certificate and key: the demo has no gRPC TLS
+    # (tls/ is not needed).
+    volumes: !override
+      - argos-data:/data
+      - argos-logs:/logs
+      - type: bind
+        source: ./config/server
+        target: /conf/server
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./config/demo
+        target: /conf/demo
+        read_only: true
+        bind:
+          create_host_path: false
+    secrets:
+      - demo_order_api_token
+      - demo_payment_api_token
+    # A shorter check interval than production: the demo apps wait for a healthy server, and the
+    # first XLog point should arrive within 60 seconds of `up` (N-16).
+    healthcheck:
+      interval: 3s
+
+  clickhouse:
+    healthcheck:
+      interval: 3s
+
+  postgres:
+    healthcheck:
+      interval: 3s
+
+  # Database of the demo applications (not the Argos PostgreSQL): one schema per application,
+  # created by the applications. Its data volume goes with `down -v`.
+  demo-db:
+    profiles: [demo]
+    image: postgres:16.15@sha256:5db6dac2ef5dcff512f4f00a009c3c332b9f2f28f24277175bf3e4a3d02ef83a
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - shared_buffers=32MB
+      - -c
+      - max_connections=40
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_DB: demo
+      POSTGRES_PASSWORD_FILE: /run/secrets/demo_db_password
+    volumes:
+      - demo-db-data:/var/lib/postgresql/data
+    shm_size: 64m
+    secrets:
+      - demo_db_password
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "pg_isready", "-q", "-h", "127.0.0.1", "-U", "demo", "-d", "demo"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+    networks:
+      - back
+    mem_limit: 256m
+
+  # order-api: the entry application. Its checkout calls payment-api (PEER_URL), so a trace holds
+  # transactions of both applications.
+  sample-app-a:
+    profiles: [demo]
+    image: ${ARGOS_DEMO_APP_IMAGE:-argos-demo-app:0.0.0-SNAPSHOT}
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+      demo-db:
+        condition: service_healthy
+    environment:
+      # The agent (docs/agent-config.md): the file below holds the production defaults; these
+      # variables win over it.
+      ARGOS_CONFIG: /conf/demo/argos-agent.yml
+      ARGOS_APP_NAME: order-api
+      ARGOS_APP_ENV: demo
+      ARGOS_SERVER_ADDRESS: server:9100
+      # Demo only: plaintext gRPC inside the internal network back (the server accepts it in demo
+      # mode only).
+      ARGOS_SERVER_TLS: "false"
+      ARGOS_SERVER_TOKEN_FILE: /run/secrets/demo_order_api_token
+      DEMO_ROLE: order
+      PEER_URL: http://sample-app-b:8080
+      DEMO_DB_URL: jdbc:postgresql://demo-db:5432/demo
+      DEMO_DB_USER: demo
+      DEMO_DB_PASSWORD_FILE: /run/secrets/demo_db_password
+    volumes:
+      - &demo-config
+        type: bind
+        source: ./config/demo
+        target: /conf/demo
+        read_only: true
+        bind:
+          create_host_path: false
+    secrets:
+      - demo_order_api_token
+      - demo_db_password
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=0700,uid=10001,gid=10001
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck: &demo-app-healthcheck
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 60s
+    networks:
+      - back
+    mem_limit: 512m
+
+  # payment-api: called by order-api; about one call in five fails on purpose (5xx).
+  sample-app-b:
+    profiles: [demo]
+    image: ${ARGOS_DEMO_APP_IMAGE:-argos-demo-app:0.0.0-SNAPSHOT}
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+      demo-db:
+        condition: service_healthy
+    environment:
+      ARGOS_CONFIG: /conf/demo/argos-agent.yml
+      ARGOS_APP_NAME: payment-api
+      ARGOS_APP_ENV: demo
+      ARGOS_SERVER_ADDRESS: server:9100
+      ARGOS_SERVER_TLS: "false"
+      ARGOS_SERVER_TOKEN_FILE: /run/secrets/demo_payment_api_token
+      DEMO_ROLE: payment
+      DEMO_DB_URL: jdbc:postgresql://demo-db:5432/demo
+      DEMO_DB_USER: demo
+      DEMO_DB_PASSWORD_FILE: /run/secrets/demo_db_password
+    volumes:
+      - *demo-config
+    secrets:
+      - demo_payment_api_token
+      - demo_db_password
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=0700,uid=10001,gid=10001
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck: *demo-app-healthcheck
+    networks:
+      - back
+    mem_limit: 512m
+
+  # 50 requests a second to order-api with the mix of docs/17 section 3.9 (MIX=demo): normal 70 %,
+  # slow 10 %, errors 5 %, N+1 5 %, checkout (order-api -> payment-api) 10 %.
+  load-generator:
+    profiles: [demo]
+    image: ${ARGOS_DEMO_LOAD_IMAGE:-argos-demo-load:0.0.0-SNAPSHOT}
+    restart: unless-stopped
+    depends_on:
+      sample-app-a:
+        condition: service_healthy
+      sample-app-b:
+        condition: service_healthy
+    environment:
+      TARGET_URL: http://sample-app-a:8080
+      RATE: "50"
+      MIX: demo
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=0700,uid=10001,gid=10001
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - back
+    mem_limit: 256m
+
+secrets:
+  demo_order_api_token:
+    file: ./secrets/demo_order_api_token
+  demo_payment_api_token:
+    file: ./secrets/demo_payment_api_token
+  demo_db_password:
+    file: ./secrets/demo_db_password
+
+volumes:
+  demo-db-data: {}

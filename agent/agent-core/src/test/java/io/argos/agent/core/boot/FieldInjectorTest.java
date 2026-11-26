@@ -52,7 +52,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The context field of DSN-02-05 through the real agent builder pipeline ({@link
- * ArgosAgentBuilder}, {@code disableClassFormatChanges()} = {@code REDEFINE_FROZEN}, {@link
+ * ArgosAgentBuilder}, {@code disableClassFormatChanges()} keeps {@code DECORATE}, {@link
  * ModuleTransformer} with advice): the raw class file transformer is called the way the JVM calls
  * it, the result is defined and verified by a class loader of its own, and the task stores of
  * {@link ContextStore} are checked against the defined classes.

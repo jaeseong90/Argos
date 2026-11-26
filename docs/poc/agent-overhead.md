@@ -390,7 +390,9 @@ k6 CPU는 측정 구간마다 294~420 CPU초였다(약 0.5~0.7코어, `run.json`
 
 Gate 0 판정과 WO-02 수동 수락("사람이 1회 재실행해 재현")을 위한 절차다. WO-05 수동 수락("사람이 벤치 러너로 WO-02 수치를 1회 재현")도 이 절차로 채운다. 하네스는 WO-05에서 `test/bench`로 옮겼고(`bench.sh`, 옵션은 WO-02와 같다), 18 §7.1 환경 기록 `bench-env.sh`와 18 §7.6 보고서 생성 `bench.sh publish`가 더해졌다. 같은 순서를 한 번에 도는 `benchTest`(`bench-protocol.sh`)도 있다(`test/bench/README.md`). 바뀌는 것은 장비와 옵션 값뿐이다.
 
-- 익스포터: WO-02는 `-Dargos.exporter=noop`(기록 후 인코딩 없이 버림)으로 쟀다. WO-02 수치 재현은 이 설정인 `--exporter drop`으로 잰다. 18 §5.4의 no-op(`--exporter noop`, 기본값)은 인코딩까지 하고 버리므로 그 비용만큼 수치가 다를 수 있다. 아래 1~5단계 명령에는 `--exporter drop`을 붙였다.
+WO-51에서 더해진 것: 자가 진단 파일(`-Dargos.test.selfdiag-file`, C-95)에서 에이전트 스레드 CPU·직접 메모리·premain을 읽는다(개발 jar 전제, 없으면 `jcmd`·NMT·배너로 대체하고 출처를 적는다). OTel 참조 변형은 하네스의 OTLP 블랙홀 수신기로 내보낸다. `grpc` 전송 세트, `--baseline auto`(직전 승인 보고서 자동 선택), `--latest`(`docs/bench/latest.md`·추세), `bench.sh gate1`·`noise`, 주간 워크플로 `.github/workflows/bench.yml`(9.5~9.8).
+
+- 익스포터: WO-02는 `-Dargos.exporter=noop`(기록 후 인코딩 없이 버림)으로 쟀다. WO-02 수치 재현은 이 설정인 `--exporter drop`으로 잰다. 18 §5.4의 no-op(`--exporter noop`, 기본값)은 protobuf 인코딩까지 하고 버리므로(ADR-0010 C-145 (4)) 그 비용만큼 수치가 다를 수 있다. 아래 1~5단계 명령에는 WO-02 재현용으로 `--exporter drop`을 붙였다. Gate 1 판정과 주간 실행은 `noop`이다(ADR-0009 C-80, `bench-protocol.sh` 기본값). WO-02 시절(JSONL 인코딩·인코딩 없음) 수치와 protobuf 시대 `noop` 수치는 서로 비교하지 않는다.
 
 ### 9.1 준비물
 
@@ -404,9 +406,10 @@ Gate 0 판정과 WO-02 수동 수락("사람이 1회 재실행해 재현")을 �
 - 앱 서버에서 부하기로 키 인증 ssh가 되어야 한다. `ssh -o BatchMode=yes <user>@<부하기> 'k6 version && head -n1 /proc/stat'`가 암호 없이 끝나야 한다.
 - 방화벽은 부하기에서 앱 서버의 임시 포트(TCP)로 들어오는 연결을 허용한다. 하네스가 실행마다 빈 포트를 고른다.
 - OTel 참조점용 `opentelemetry-javaagent-2.32.0.jar`
-  - Maven Central `io.opentelemetry.javaagent:opentelemetry-javaagent:2.32.0`에서 받는다.
-  - 2026-10-24에 받은 파일의 SHA-256은 `f787eb6c7f3d18e69a431e108a15278d25ee37f83d68b678f621e063f3988f82`다.
-  - Apache-2.0이고 측정에만 쓰며, 배포물에 넣지 않는다.
+  - `test/bench/fetch-otel-agent.sh`가 Maven Central `io.opentelemetry.javaagent:opentelemetry-javaagent:2.32.0`에서 `test/bench/build/otel/`로 받는다. 버전과 SHA-256은 스크립트에 고정되어 있고, 다르면 파일을 지우고 실패한다.
+  - SHA-256은 `f787eb6c7f3d18e69a431e108a15278d25ee37f83d68b678f621e063f3988f82`다(2026-10-24에 받은 파일과 같다).
+  - `--otel-agent auto`는 그 파일만 찾는다. 측정 중에는 내려받지 않고, 파일이 없으면 사용 오류다.
+  - Apache-2.0이고 측정에만 쓰며, 배포물에 넣지 않는다. Argos 에이전트·서버는 실행 중에 이 jar를 받지 않는다.
 
 ### 9.2 앱 서버 설정과 빌드
 
@@ -483,21 +486,58 @@ test/bench/bench-env.sh --out "$OUT/env-record.json" --machine-profile "$PROFILE
 6. **otel**(11항 참조점, 판정 아님)
    ```bash
    $R --no-build load --out $OUT/otel --java "$J" "${SSH[@]}" "${QUIET[@]}" "${EXP[@]}" \
-     --variants off,on,otel --otel-agent /path/opentelemetry-javaagent-2.32.0.jar --label "otel reference"
+     --variants off,on,otel --otel-agent auto --label "otel reference"
    ```
+   먼저 `test/bench/fetch-otel-agent.sh`를 한 번 돌린다. otel 변형은 traces·metrics를 OTLP/HTTP protobuf로 하네스의 블랙홀 수신기(127.0.0.1 무작위 포트, 200 + 빈 응답, 본문 저장 안 함)에 내보내고 logs는 `none`이다. `run.json`의 `measure.otlp.requests`가 0보다 커야 실제로 내보낸 것이다.
    프로토콜 길이 그대로 3회차 × 3변형이면 약 2시간이다. 시간이 부족하면 `--rounds 2 --warmup 2m --duration 5m`(약 50분)로 줄이고, 단축했다고 기록한다.
 
 합계는 약 7.5시간(OTel 단축 시 약 6.5시간)이다. 세트 사이에 장비를 쉬게 할 필요는 없다(하네스가 실행마다 조용한 구간을 확인한다).
 
 ### 9.4 결과 처리
 
-1. 세트가 INVALID면(예: off CV > 2%) 원인을 없앤 뒤 **세트 전체를** 다시 돌린다. 실행을 골라 쓰지 않는다. 판정을 다시 계산할 때는 `$R --no-build report --out $OUT/<세트>`를 쓴다. 18 §7.6 보고서는 `$R --no-build publish --sets $OUT/main,$OUT/startup,$OUT/container,$OUT/vt --out docs/bench`로 만든다(`docs/bench/<YYYY-MM-DD>-<commit7>.md`, N-01~N-04·N-26~N-30 판정, 그래프, 재현 명령. 직전 승인 보고서가 있으면 `--baseline`으로 18 §7.7 WARN을 본다).
+1. 세트가 INVALID면(예: off CV > 2%) 원인을 없앤 뒤 **세트 전체를** 다시 돌린다. 실행을 골라 쓰지 않는다. 판정을 다시 계산할 때는 `$R --no-build report --out $OUT/<세트>`를 쓴다. 18 §7.6 보고서는 `$R --no-build publish --sets $OUT/main,$OUT/startup,$OUT/container,$OUT/vt --out docs/bench --baseline auto --latest --trend`로 만든다(`docs/bench/<YYYY-MM-DD>-<commit7>.md`, N-01~N-04·N-26~N-30 판정, 그래프, 재현 명령). `--baseline auto`는 머신 프로필·앱·JDK·익스포터·인코딩이 같은 가장 최근 승인 보고서와 비교해 18 §7.7 WARN을 보고, 없으면 NOT COMPARED와 사유를 적는다. 승인·비교 규칙은 `docs/bench/README.md`에 있다.
 2. 원시 자료를 `docs/bench/<YYYY-MM-DD>-<커밋>/`에 넣는다(01 §7.3 11항). 이번 디렉터리의 README 규칙을 따른다.
    - 넣는 것: `set.json`·`result.json`·`report.md`·하네스 콘솔 출력, 실행별 `run.json`·`attempt.json`·k6 요약·`machine.json`·NMT·메타스페이스·`argos-*` 스레드와 `io.argos.agent.*` 히스토그램 발췌
    - 빼는 것: gc 로그, 앱 로그, jar, 1MB 초과 파일
    - 로컬 경로의 사용자 이름은 지운다.
 3. 이 문서 8장 표의 "참고값" 칸을 전용 장비 값으로 바꾸고, Gate 0 판정(PASS/FAIL)과 근거 파일을 적는다. 결과가 FAIL이면 해당 N 항목과 함께 PM에게 보고한다.
-4. WO-02 수동 수락의 "사람이 1회 재실행해 재현"은 같은 장비에서 다른 날(또는 다른 사람이) main과 startup을 한 번 더 돌린다. 재현 판단 기준은 설계 문서에 없다. 제안: 두 실행이 같은 Gate 0 판정을 내고, 상대 CPU 차이가 첫 세트의 95% 신뢰구간 안이며, 기동 증가 중앙값 차이가 ±5% 안이면 재현으로 본다. 기준은 PM이 확정한다.
+4. WO-02 수동 수락의 "사람이 1회 재실행해 재현"은 같은 장비에서 다른 날(또는 다른 사람이) main과 startup을 한 번 더 돌린다. 재현 판단 기준: 두 실행이 같은 Gate 0 판정을 내고, 상대 CPU 차이가 첫 세트의 95% 신뢰구간 안이며, 기동 증가 중앙값 차이가 ±5% 안이면 재현으로 본다(ADR-0009 C-80에서 이 제안을 채택했다).
+
+### 9.5 주간 실행 (`.github/workflows/bench.yml`, WO-51)
+
+- 트리거는 `schedule`(매주 토요일 18:00 UTC)과 `workflow_dispatch`뿐이다. `pull_request` 계열이 없어 포크 코드가 self-hosted 러너에 닿지 않는다(O-S05, 19 §6.6). `main`·`release/*`에서만 측정한다.
+- 잡 `bench`: `[self-hosted, linux, argos-bench-app]`, 읽기 전용 토큰, 제한 420분. 하네스·에이전트·샘플 앱을 빌드하고 `./gradlew --stop`으로 데몬을 끈 뒤 `bench-protocol.sh --no-build --machine-profile argos-bench-app --sets main,startup --loader … --app-address … --baseline auto --latest`를 돈다. 주간 세트는 main·startup이다(ADR-0009 C-80). container·vt·worst·otel·grpc는 릴리스 후보마다 `sets` 입력으로 돌린다(grpc는 `collector` 입력 필요).
+- 종료 코드 0·3·4(PASS·FAIL·INVALID)는 결과다. 보고서·디렉터리·`latest.md`·추세를 아티팩트 `bench-report`로 올린다(원시 세트는 k6 원시 파일을 빼고 `bench-raw`, 30일). 1·2는 잡 실패다.
+- 잡 `publish`: GitHub-hosted이고 쓰기 권한(`contents`·`pull-requests`)은 이 잡에만 있다. 아티팩트의 docs/bench 파일만 `bench/weekly-<YYYY-MM-DD>-<commit7>` 브랜치에 커밋하고 PR을 연다. 본문에 판정과 회귀 결과를 적고, FAIL·WARN이면 맨 위에 경고를 단다. 저장소 코드는 실행하지 않는다.
+- 사람이 PR을 검토해 측정한 세트가 유효하면 보고서 끝 요약 주석의 `"approved": true`로 승인하고 머지한다. 주간 보고서는 main·startup만 재므로 전체 판정은 INVALID(미측정)가 정상이고, 이것은 승인 보류 사유가 아니다.
+- 러너 준비(사람): governor `performance`, Docker Engine(cgroup v2), 러너 사용자의 ssh 키를 `argos-bench-load`에 등록(GitHub 비밀값 없음), 부하기에 k6 v2.3.0, 저장소 변수 `ARGOS_BENCH_LOADER`(`user@host`)·`ARGOS_BENCH_APP_ADDRESS`.
+- publish 잡의 쓰기 권한 두 개는 `check-workflows.sh` W4 허용 목록(WO-47)에 올라 있고, 커스텀 러너 라벨 `argos-bench-app`은 `.github/actionlint.yaml`에 있다(pr.yml actionlint). 미결: 워크플로 토큰으로 만든 PR에는 `pr.yml`이 돌지 않는다(docs/bench만 바뀜, PM 결정 사항).
+
+### 9.6 Gate 1 조각
+
+전용 장비 실행 뒤 다음을 돈다.
+
+```bash
+$R --no-build gate1 --reports docs/bench/<YYYY-MM-DD>-<commit7>.md \
+  --out docs/bench/gate1-agent-<YYYY-MM-DD>-<commit7>.md
+```
+
+T-NFR-01~04·26~30 9행(요구, 한도, 수치, 판정, 근거 보고서·세트)을 쓴다. 수치 없는 PASS는 없고, INVALID 세트의 행은 INVALID다. 끝에 사람 확인 목록이 붙는다: N-30 전용 장비 1회 실행 판정(`PremainTimeAttachTest`는 참고, ADR-0010 C-240 (7)), 같은 목표 장비의 `serverLoadTest` full 실행 뒤 17 미결 9·§7.3 비율 결정(C-244 (7))과 알림 창 메모리 class histogram 재확인(C-245 (1)). `docs/bench/gate1.md` 취합은 WO-53이다.
+
+### 9.7 잡음 임계 보정 (18 §18 미결 3)
+
+`$R --no-build noise --sets $OUT/main[,…]`는 off 실행 CPU 변동계수, off↔off(A-A) 상대 CPU·p99 차이의 부트스트랩 구간, 최소 검출 효과(MDE), 권고 임계를 낸다. 입력이 INVALID면 결과도 참고값으로 표시한다. WO-02 세트(공유 노트북, off CV 26.17%·4.39%)는 근거가 될 수 없으므로 임계는 전용 장비 첫 유효 실행의 main 세트로 보정한다. 그때까지는 off CV 2% 상수를 유지하고, 상대 CPU 95% 구간 반폭(18 §7.7 WARN +1.5%p를 검출할 수 있는지)은 보고만 한다. 최종 임계는 PM이 정한다.
+
+### 9.8 하네스 관찰 H-1~H-6 처리 상태 (11장)
+
+| 항목 | 상태 |
+|---|---|
+| H-1 기동 0회 세트 PASS | 고침(WO-05, `StartupReportTest`: 기동이 없으면 INVALID) |
+| H-2 부하기 소켓 오류를 unexpected로 셈 | 잠정 규칙 구현(WO-51, ADR-0009 C-80): dial 단계 로컬 주소 오류(EADDRNOTAVAIL·EADDRINUSE·WSAEADDRINUSE 등)는 "loader error"로 세고 실행을 FAIL이 아니라 INVALID로. 첫 유효 전용 장비 실행 뒤 재결정 |
+| H-3 Windows 파일 잠금으로 세트 정지 | 고침(WO-02 측정 중, `FileTools.moveDirectory` 재시도) |
+| H-4 `--k6-ssh`·`--loader` 두 머신 경로 미실행 | 열림. 9.3 0단계 파일럿과 주간 실행 첫 회가 확인한다(사람) |
+| H-5 혼합 p99가 느린 경로에 묶임 | 잠정 규칙(C-80): 경로별 p99는 참고로만 보고. 첫 유효 실행 뒤 재결정 |
+| H-6 컨테이너 `--cpus 2`에서 1,000/s 유지 여부 | 잠정 규칙(C-80): 1,000/s 유지, off가 C-46 게이트를 못 넘으면 세트 INVALID와 사유. 첫 유효 실행 뒤 재결정 |
 
 ## 10. 측정하지 못한 것
 
@@ -517,7 +557,7 @@ test/bench/bench-env.sh --out "$OUT/env-record.json" --machine-profile "$PROFILE
 
 ## 11. 관찰과 후속 제안
 
-하네스(이번 정리 범위 밖이라 고치지 않았다. WO-05에서 다룬다)
+하네스(이번 정리 범위 밖이라 고치지 않았다. WO-05에서 다룬다. 처리 상태는 9.8)
 
 - **H-1** 기동이 0회인 기동 세트를 `report`로 다시 계산하면 PASS(사유 없음)가 나온다(`startup-1`로 확인, 결과 파일은 지움). 행이 없으면 INVALID로 해야 한다.
 - **H-2** 부하기 쪽 소켓 오류(Windows WSAEADDRINUSE, Linux EADDRNOTAVAIL 등)도 "unexpected"로 세어 on 실행 FAIL이 된다(`main-9/06-on`, 60만 건 중 2건). C-46 취지로는 부하기 문제이므로 INVALID가 맞다. 해석은 PM이 정한다.

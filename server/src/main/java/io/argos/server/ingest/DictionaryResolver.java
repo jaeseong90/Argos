@@ -105,6 +105,9 @@ public class DictionaryResolver implements DictionaryIntake, DisposableBean {
 
   private static final Logger LOG = LoggerFactory.getLogger(DictionaryResolver.class);
 
+  /** Protocol kind of each PostgreSQL {@code dict_kind} name. */
+  private static final Map<String, DictionaryKind> KINDS_BY_PG_NAME = kindsByPgName();
+
   /** A dictionary key. */
   record Key(int appId, DictionaryKind kind, long hash) {}
 
@@ -144,6 +147,8 @@ public class DictionaryResolver implements DictionaryIntake, DisposableBean {
   private final List<Key> retryKeys = new ArrayList<>();
   private volatile Thread thread;
   private volatile boolean stopping;
+  // Set by forgetStored (any thread); the writer thread then reloads the app totals.
+  private volatile boolean appTotalsStale;
 
   /** The bean of the server. */
   @Autowired
@@ -239,6 +244,29 @@ public class DictionaryResolver implements DictionaryIntake, DisposableBean {
     return overflowed.getIfPresent(new Key(appId, kind, id)) != null;
   }
 
+  /**
+   * Forgets that the entry {@code (appId, kind, hash)} is stored: the dictionary clean-up (SEC-13,
+   * 17 §9.3, {@code io.argos.server.ops.dictionary}) deleted its row. A key left in the known cache
+   * would never be looked up or requested again, so rows that still name it would stay unresolved;
+   * forgotten, the next row that names it looks it up in PostgreSQL and then asks the agent ({@code
+   * DictionaryRequest}), and an agent that sends it again has it stored again. The per-app totals
+   * of the cap are reloaded from PostgreSQL by the writer thread. Thread-safe.
+   *
+   * @param kind the PostgreSQL {@code dict_kind} name
+   * @return whether the key was in the known cache
+   */
+  public boolean forgetStored(int appId, String kind, long hash) {
+    appTotalsStale = true;
+    DictionaryKind k = KINDS_BY_PG_NAME.get(kind);
+    if (k == null) {
+      return false;
+    }
+    Key key = new Key(appId, k, hash);
+    boolean cached = known.getIfPresent(key) != null;
+    known.invalidate(key);
+    return cached;
+  }
+
   /** Ids given up (the gauge {@code argos_dictionary_unresolved}). */
   public int unresolvedCount() {
     return unresolved.size();
@@ -322,6 +350,10 @@ public class DictionaryResolver implements DictionaryIntake, DisposableBean {
   }
 
   private void processIncoming(List<Incoming> batch) {
+    if (appTotalsStale) {
+      appTotalsStale = false;
+      appTotals.clear();
+    }
     long now = clock.millis();
     List<IngestStore.DictionaryRow> rows = new ArrayList<>(retry);
     List<Key> rowKeys = new ArrayList<>(retryKeys);
@@ -548,6 +580,16 @@ public class DictionaryResolver implements DictionaryIntake, DisposableBean {
             : null;
     return new IngestStore.DictionaryRow(
         in.appId(), pgName(entry.getKind()), entry.getHash(), text, truncated, norm);
+  }
+
+  private static Map<String, DictionaryKind> kindsByPgName() {
+    Map<String, DictionaryKind> m = new HashMap<>();
+    for (DictionaryKind k : DictionaryKind.values()) {
+      if (k != DictionaryKind.UNRECOGNIZED) {
+        DictKinds.pgName(k).ifPresent(name -> m.put(name, k));
+      }
+    }
+    return Map.copyOf(m);
   }
 
   private static String pgName(DictionaryKind kind) {

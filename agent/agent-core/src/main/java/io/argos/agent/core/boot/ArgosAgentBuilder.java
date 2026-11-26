@@ -8,6 +8,7 @@ import java.util.List;
 import net.bytebuddy.ByteBuddy;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.dynamic.ClassFileLocator;
+import net.bytebuddy.pool.TypePool;
 
 /**
  * Creates the agent builder with Argos defaults from the first instance on.
@@ -22,13 +23,44 @@ import net.bytebuddy.dynamic.ClassFileLocator;
  * advice is inlined (no auxiliary types), helpers are defined by {@link HelperInjector}, and
  * ByteBuddy never initialises its class injectors.
  *
- * <p>Arguments are chosen by parameter type (ByteBuddy 1.18 defaults, except the type strategy
- * {@code REDEFINE_FROZEN} and the ignore matcher); a parameter type this class does not know (a new
- * ByteBuddy version) fails with an exception that names it, so the agent starts disabled instead of
- * reaching the removed classes.
+ * <p>Arguments are chosen by parameter type (ByteBuddy 1.18 defaults, except the type strategy, the
+ * pool strategy and the ignore matcher); a parameter type this class does not know (a new ByteBuddy
+ * version) fails with an exception that names it, so the agent starts disabled instead of reaching
+ * the removed classes.
+ *
+ * <p>Type strategy {@code DECORATE} (ADR-0010 C-256 (1); {@code disableClassFormatChanges()} keeps
+ * it): the agent only applies ASM visitors (advice, {@link FieldInjector}), and a decorated class
+ * keeps the header of the class file it is given (superclass, interfaces, generic signature).
+ * {@code REDEFINE_FROZEN} writes the header from the type description instead, which for a loaded
+ * class comes from reflection. The OpenTelemetry agent adds {@code VirtualFieldAccessor} interfaces
+ * to classes such as {@code FutureTask}, {@code CompletableFuture} or {@code HttpURLConnection}
+ * when they are defined and filters them out of {@code Class.getInterfaces()}; the header written
+ * from reflection lacked them, and the JVM rejected the retransformation of such a class
+ * ("attempted to change superclass or interfaces") together with every other class of the premain
+ * batch (T-MX-112: HTTP step 0). Decoration also skips the method graph, which needs every
+ * supertype resolved.
+ *
+ * <p>An instance of this class is also the pool strategy ({@link #POOL_STRATEGY}): the pool of
+ * {@code PoolStrategy.Default.FAST} with a fallback to types the bootstrap loader defined without a
+ * class file ({@link BootstrapTypeFallbackPool}, ADR-0010 C-256 (1)). It replaces {@code
+ * PoolStrategy.Default} without one more class on the premain path (C-79 budget).
  */
-final class ArgosAgentBuilder {
+final class ArgosAgentBuilder implements AgentBuilder.PoolStrategy {
+  /** The pool strategy of the agent builder. */
+  static final AgentBuilder.PoolStrategy POOL_STRATEGY = new ArgosAgentBuilder();
+
   private ArgosAgentBuilder() {}
+
+  @Override
+  public TypePool typePool(ClassFileLocator classFileLocator, ClassLoader classLoader) {
+    return new TypePool.LazyFacade(new BootstrapTypeFallbackPool(classFileLocator));
+  }
+
+  @Override
+  public TypePool typePool(
+      ClassFileLocator classFileLocator, ClassLoader classLoader, String name) {
+    return typePool(classFileLocator, classLoader);
+  }
 
   static AgentBuilder create(ByteBuddy byteBuddy, AgentBuilder.RawMatcher ignored) {
     Constructor<?> full = null;
@@ -67,10 +99,10 @@ final class ArgosAgentBuilder {
       return new AgentBuilder.CircularityLock.Default();
     }
     if (type == AgentBuilder.PoolStrategy.class) {
-      return AgentBuilder.PoolStrategy.Default.FAST;
+      return POOL_STRATEGY;
     }
     if (type == AgentBuilder.TypeStrategy.class) {
-      return AgentBuilder.TypeStrategy.Default.REDEFINE_FROZEN;
+      return AgentBuilder.TypeStrategy.Default.DECORATE;
     }
     if (type == AgentBuilder.LocationStrategy.class) {
       return AgentBuilder.LocationStrategy.ForClassLoader.STRONG;

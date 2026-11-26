@@ -248,6 +248,67 @@ class ServletModuleTest {
     assertThat(streamMethods).containsExactly("flush");
   }
 
+  @Test
+  @Tag("req:F-A34")
+  @DisplayName(
+      "T-AG-016c C-127 (WO-50): flush hooks also on the named Jetty 9.4, Jetty 12 ee10/ee11 and"
+          + " Undertow response, stream and writer classes, same methods; their package neighbours"
+          + " and wrappers are not matched")
+  void jettyAndUndertowResponseClasses() {
+    List<TypeInstrumentation> responses = new ArrayList<TypeInstrumentation>();
+    for (TypeInstrumentation instrumentation : module.types()) {
+      if (instrumentation instanceof ContainerResponseInstrumentation) {
+        responses.add(instrumentation);
+      }
+    }
+    assertThat(responses).hasSize(2);
+    String[] facades = {
+      "org.eclipse.jetty.server.Response",
+      "org.eclipse.jetty.ee10.servlet.ServletApiResponse",
+      "org.eclipse.jetty.ee11.servlet.ServletApiResponse",
+      "io.undertow.servlet.spec.HttpServletResponseImpl"
+    };
+    String[] streams = {
+      "org.eclipse.jetty.server.HttpOutput",
+      "org.eclipse.jetty.server.ResponseWriter",
+      "org.eclipse.jetty.ee10.servlet.HttpOutput",
+      "org.eclipse.jetty.ee10.servlet.ResponseWriter",
+      "org.eclipse.jetty.ee11.servlet.HttpOutput",
+      "org.eclipse.jetty.ee11.servlet.ResponseWriter",
+      "io.undertow.servlet.spec.ServletOutputStreamImpl",
+      "io.undertow.servlet.spec.ServletPrintWriterDelegate"
+    };
+    for (String name : facades) {
+      TypeDescription facade = renamed(FacadeShape.class, name);
+      assertThat(responses.get(0).typeMatcher().matches(facade)).as(name).isTrue();
+      assertThat(responses.get(1).typeMatcher().matches(facade)).as(name).isFalse();
+    }
+    for (String name : streams) {
+      TypeDescription stream = renamed(StreamShape.class, name);
+      assertThat(responses.get(1).typeMatcher().matches(stream)).as(name).isTrue();
+      assertThat(responses.get(0).typeMatcher().matches(stream)).as(name).isFalse();
+    }
+    // The container's internal or wrapper classes next to them are not matched (exact names).
+    String[] neighbours = {
+      "org.eclipse.jetty.server.Response$Wrapper",
+      "org.eclipse.jetty.ee10.servlet.ServletContextResponse",
+      "org.eclipse.jetty.ee11.servlet.ServletContextResponse",
+      "org.eclipse.jetty.ee10.servlet.ServletApiResponse$1",
+      "io.undertow.servlet.spec.HttpServletResponseImpl$Wrapper",
+      "io.undertow.server.HttpServerExchange",
+      "org.eclipse.jetty.server.HttpOutputX"
+    };
+    for (String name : neighbours) {
+      for (TypeInstrumentation instrumentation : responses) {
+        assertThat(instrumentation.typeMatcher().matches(renamed(StreamShape.class, name)))
+            .as(name)
+            .isFalse();
+      }
+    }
+    assertThat(ContainerResponseInstrumentation.RESPONSES).hasSize(5).doesNotHaveDuplicates();
+    assertThat(ContainerResponseInstrumentation.STREAMS).hasSize(10).doesNotHaveDuplicates();
+  }
+
   /** A type of binary name {@code name} (the type matchers look at names only). */
   private static TypeDescription renamed(Class<?> shape, String name) {
     return new TypeDescription.Latent(

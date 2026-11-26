@@ -40,10 +40,14 @@ public final class SeedService {
     return result;
   }
 
-  /** GET /seed/phone: bind parameters; {@code fail=true} puts the phone in an exception message. */
+  /**
+   * GET /seed/phone: bind parameters; {@code fail=true} throws {@link Seeds#PHONE_ERROR_MESSAGE}
+   * instead: the real-shaped phone sentinel, not the query value (ADR-0010 C-250 (1); the query
+   * string keeps the {@code ARGOS_SEED} seed).
+   */
   public Map<String, Object> phone(String phone, boolean fail) {
     if (fail) {
-      throw new IllegalStateException("payment declined for phone " + phone);
+      throw new IllegalStateException(Seeds.PHONE_ERROR_MESSAGE);
     }
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("seed", jdbc.seedBindAndLiteral(phone));
@@ -59,11 +63,13 @@ public final class SeedService {
     return result;
   }
 
-  /** GET /seed/card: card shapes as bind parameters; {@code fail=true}: exception message. */
+  /**
+   * GET /seed/card: card shapes as bind parameters; {@code fail=true} throws {@link
+   * Seeds#CARD_ERROR_MESSAGE} (the Luhn-valid card sentinel, ADR-0010 C-250 (1)).
+   */
   public Map<String, Object> card(boolean fail) {
     if (fail) {
-      throw new IllegalStateException(
-          "card " + Seeds.CARD + " declined (pattern " + Seeds.CARD_PATTERN + ")");
+      throw new IllegalStateException(Seeds.CARD_ERROR_MESSAGE);
     }
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("seed", jdbc.seedBindAndLiteral(Seeds.CARD));

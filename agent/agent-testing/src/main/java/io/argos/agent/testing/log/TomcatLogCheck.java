@@ -160,14 +160,24 @@ public final class TomcatLogCheck {
   static final String THREAD_STACK_SOURCE = "WebappClassLoaderBase.clearReferencesThreads";
 
   /**
-   * A record line without its date and time and with every {@code @<hex>} object hash code as
-   * {@code @#}: the same message of two runs compares equal.
+   * A record line without its date and time, with its thread as {@code [*]} and every
+   * {@code @<hex>} object hash code as {@code @#}: the same message of two runs compares equal. The
+   * thread name carries the run's port and pool number ({@code http-nio-127.0.0.1-61476-exec-8}),
+   * so the same leak report written while the manager undeploys an application differs only there
+   * (WO-50 redeploy runs).
    */
   static String normalized(String line) {
     Matcher matcher = RECORD.matcher(line);
-    String text = matcher.find() ? line.substring(matcher.start(1)) : line;
+    String text = line;
+    if (matcher.find()) {
+      text = line.substring(matcher.start(1));
+      text = THREAD.matcher(text).replaceFirst("$1 [*]");
+    }
     return HASH_CODE.matcher(text).replaceAll("@#");
   }
+
+  /** The level and the bracketed thread name at the start of a normalized record. */
+  private static final Pattern THREAD = Pattern.compile("^(\\S+) \\[[^\\]]*\\]");
 
   private static final Pattern HASH_CODE = Pattern.compile("@[0-9a-fA-F]+");
 

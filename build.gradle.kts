@@ -10,6 +10,7 @@
 plugins {
   id("argos.repository-checks")
   id("argos.test-layers")
+  id("argos.release") // releaseArtifacts, compareReleaseOutputs (WO-44, build-logic/.../argos.release.gradle.kts)
 }
 
 description = "Argos APM: on-premises Java APM (agent, collector server, UI)."

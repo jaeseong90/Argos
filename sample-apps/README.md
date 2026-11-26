@@ -4,14 +4,19 @@ Realistic target applications shared by the agent integration tests, the compati
 the overhead benchmarks, E2E and security tests (docs/18 §4, C-18). They are development-only:
 their dependencies are checked by `checkDevOnlyLicenses` against
 [docs/licenses/dev-only.md](../docs/licenses/dev-only.md), and nothing here is shipped, with two
-exceptions:
+exceptions, the demo images of the demo profile (docs/17 §3.2, §3.9, WO-41). Both are built by Jib
+(`jibDockerBuild`, convention `argos.demo-image`), and `checkLicenses` checks their runtime classpath
+against the allow list (`ArgosProject.PUBLISHED_SAMPLE_APPS`, T-BLD-007):
 
-- `load` is the published demo load generator image `argos-demo-load` (ADR-0003 C-33): its runtime
-  uses allow-listed licenses only, checked by `checkDemoLoadDependencies`.
-- The published demo app image `argos-demo-app` is to be built from `shop-boot3` (docs/17 §3.9),
-  but the `shop-boot3` stack of docs/18 §4.1 (Hibernate, Logback, H2, MySQL Connector/J, ...) is
-  not allow-listed (dev-only.md condition 2). The image must not be built from this configuration;
-  the conflict is open for a maintainer decision (WO-41).
+- `load` is the demo load generator image `argos-demo-load` (ADR-0003 C-33): no runtime
+  dependency at all (`checkDemoLoadDependencies`).
+- `demo-app` is the demo app image `argos-demo-app` (order-api and payment-api with the agent).
+  docs/17 §3.9 names `shop-boot3`, but its stack of docs/18 §4.1 (Hibernate, Logback, H2, MySQL
+  Connector/J, ...) is not allow-listed (dev-only.md condition 2). Decided in ADR-0004 C-43 and
+  ADR-0010 C-186 (1): the public image is a dedicated build with the same kind of endpoints on
+  Spring Boot web, Spring JDBC, HikariCP, the PostgreSQL driver and Log4j 2
+  (`checkDemoAppDependencies` keeps the shop apps and their stack out); `shop-boot3` stays the
+  development reference app and is never published.
 
 ## Projects
 
@@ -27,7 +32,8 @@ exceptions:
 | `shop-batch` | Spring Boot 3.5, `@Scheduled` ×3, Quartz ×2, Spring Batch (Tasklet + chunk of 5,000), one shared DataSource | Java 17 | 17, 21, 25 | Spring Boot jar | batch |
 | `shop-war-javax` | `shop-boot2` code as a WAR on a standalone Tomcat 9 | Java 8 | 8, 11, 17, 21 | WAR | shop |
 | `shop-war-jakarta` | `shop-boot3` code as a WAR on a standalone Tomcat 10.1 or 11, deployed twice (`/shop-a`, `/shop-b`) | Java 17 | 17, 21, 25 | WAR | shop |
-| `load` | Demo load generator (fixed arrival rate, own code, allow-listed licenses only) and the k6 benchmark scenario `bench.js` with its runner `run-bench.sh` | Java 17 | 17+ | `java -jar` | – |
+| `load` | Demo load generator (fixed arrival rate, own code, allow-listed licenses only; image `argos-demo-load`) and the k6 benchmark scenario `bench.js` with its runner `run-bench.sh` | Java 17 | 17+ | `java -jar`, Jib image | – |
+| `demo-app` | Demo app of the demo profile, image `argos-demo-app` with the agent: Spring Boot 3.5 web, Spring JDBC, HikariCP, PostgreSQL driver, Log4j 2 (allow-listed only, ADR-0004 C-43); roles order-api and payment-api, `@Scheduled` batch | Java 17 | 21 (image base) | Spring Boot jar, Jib image | demo (`DemoCatalog`) |
 
 The WAR apps use the names of docs/18 §4.1 (`shop-war-*`; docs/04 says `war-*`).
 
@@ -35,7 +41,7 @@ Each app has its own README with the stack details, its smoke variants and what 
 [shop-boot2](shop-boot2/README.md), [shop-boot4](shop-boot4/README.md),
 [shop-heavy](shop-heavy/README.md), [shop-batch](shop-batch/README.md),
 [shop-war-javax](shop-war-javax/README.md), [shop-war-jakarta](shop-war-jakarta/README.md),
-[load](load/README.md); the seed traffic script is described in [test/seed](../test/seed/README.md).
+[load](load/README.md), [demo-app](demo-app/README.md); the seed traffic script is described in [test/seed](../test/seed/README.md).
 `shop-boot3` is the reference app and is described in this file.
 
 Every module is compiled by the JDK 21 compiler with `--release <Java version>` (as the agent is);
@@ -57,6 +63,15 @@ Use a JDK the app supports (`java -version`): `shop-boot2` needs Java 8+, `shop-
 with `build/sample-app/<app>.properties` (kind, artifact, main class, JDK, catalog, WAR contexts),
 which the agent test harness reads.
 
+`./gradlew :sample-apps:shop-boot3:sampleAppDevtoolsJar` builds
+`build/sample-app/shop-boot3-devtools.jar` (WO-50, the devtools coexistence row of the
+compatibility matrix): the same classes, loader and manifest as `shop-boot3.jar` plus
+`spring-boot-devtools` in `BOOT-INF/lib` (manifest `Argos-Sample-Jar-Variant: devtools`;
+`sampleApp { bootJarVariant(...) }` of the convention plugin). DevTools stays off in a packaged jar
+unless the JVM gets `-Dspring.devtools.restart.enabled=true`; then the app runs on DevTools'
+`restartedMain` thread and restart class loader. `shop-boot3.jar` itself, the benchmark and E2E
+reference app, has no DevTools.
+
 A WAR app runs in the Tomcat distribution that Gradle stages:
 
 ```sh
@@ -70,7 +85,9 @@ The `sampleSmoke` tasks below do all of this (port, CATALINA_BASE, ext-stub) aut
 
 | Variable | Values | Default | Effect |
 |---|---|---|---|
-| `SAMPLE_DB` | `h2`, `postgres`, `mysql`; `mariadb`, `mssql` (also `sqlserver`), `oracle` in `shop-boot3` only (its drivers, WO-13) | `h2` | Database. H2 is in memory (one database per app). The schema and seed script is per dialect (`schema-<db>.sql` of `sample-apps/common`); default URLs point to `127.0.0.1` with the database `shop` (SQL Server: `databaseName=shop`, Oracle: service `FREEPDB1`). |
+| `SAMPLE_DB` | `h2`, `postgres`, `mysql`; `mariadb`, `mssql` (also `sqlserver`), `oracle` in `shop-boot3` only (its drivers, WO-13); `tibero`, `altibase`, `cubrid`, `db2` with the vendor driver jar from `SAMPLE_JDBC_DRIVER_DIR` (WO-50, the nine databases of docs/18 §6.3; meant for `shop-boot3`, whose JPA layer gets a Hibernate dialect for them) | `h2` | Database. H2 is in memory (one database per app). The schema and seed script is per dialect (`schema-<db>.sql` of `sample-apps/common`); default URLs point to `127.0.0.1` with the database `shop` (SQL Server: `databaseName=shop`, Oracle: service `FREEPDB1`). The four vendor scripts have plain `CREATE` statements that run only for objects the JDBC metadata does not list yet; Tibero and Altibase take `audit_log` ids from the sequence `audit_log_seq`. Their dialect values (sleep, paging, ping, generated keys) are a first version that no run has checked yet: in-house databases of trusted runners only (human check). |
+| `SAMPLE_JDBC_DRIVER_DIR` (or `ARGOS_TEST_JDBC_DRIVER_DIR`) | folder | none | The vendor driver jars of `SAMPLE_DB` `tibero`, `altibase`, `cubrid` or `db2` (never committed, `docs/licenses/dev-only.md` condition 4). The app loads every `*.jar` of the folder in a class loader below its own (`VendorDriver` of common: the Spring Boot jar launcher has no external class path) and configures the pool with a delegating driver; a vendor driver that is already on the class path is used directly. Without the folder the start fails with the variable name. The agent test harness drops `ARGOS_*` variables from app processes, so `VendorDatabaseTest` passes the runner's `ARGOS_TEST_JDBC_DRIVER_DIR` as `SAMPLE_JDBC_DRIVER_DIR`. |
+| `SAMPLE_CONTAINER` | `tomcat`, `jetty`, `undertow` | `tomcat` | Embedded servlet container of the jar apps (WO-50, ADR-0010 C-127): `shop-boot2` Jetty 9.4 (Servlet 3.1) or Undertow 2.2, `shop-boot3` Jetty 12.0 ee10 or Undertow 2.3, `shop-boot4` Jetty 12.1 ee11 (Spring Boot 4 has no Undertow; `undertow` fails the start). The containers are on the jar's runtime class path (not on `shop-heavy`'s or the WAR apps'); `ServletContainers` of each app registers the server factory, the container's WebSocket customizer and a WebSocket handshake handler before the context starts (`shop-boot4`: it excludes the other container's auto-configuration), Jetty with Tomcat's URI handling (`UriCompliance.LEGACY` on Jetty 12, for the seed paths with `//`). `/api/runtime` reports `container` (from the server info) and `containerRequested`; the `default` smoke variants check `container=tomcat`. WAR apps and `shop-heavy` ignore the switch. |
 | `SAMPLE_DB_URL`, `SAMPLE_DB_USER`, `SAMPLE_DB_PASSWORD` | JDBC URL and account | per database (user `shop`, SQL Server `sa`) | Testcontainers inject these (the agent-testing `jdbc` suite: a random password per run, never logged). |
 | `SAMPLE_POOL` | `hikari`, `tomcat`, `dbcp2` | `hikari` | Connection pool. |
 | `SAMPLE_POOL_MAX` | 1–200 | 10 | Pool size (`/api/pool/exhaust` takes size + 1). |
@@ -159,6 +176,22 @@ result. Highlights:
   context; the agent harness starts it from the unpacked jar (T-AG-055). By hand:
   `java -Dloader.main=io.argos.sample.boot3.http.webflux.WebFluxFixture -cp shop-boot3.jar
   org.springframework.boot.loader.launch.PropertiesLauncher`.
+- `GET /api/stream` (WO-50, ADR-0010 C-162 (3)): a `StreamingResponseBody` of three lines `chunk N`,
+  each flushed, 20 ms apart (`common/.../diag/StreamChunks.java`): the output stream is opened on the
+  request thread before `startAsync`, the writes run on the MVC async executor.
+- `/api/any` (WO-50, C-162 (3)): a `@RequestMapping` without a method condition; every method
+  reaches it and the answer names it (`{"method":"GET"}`); the catalog calls `GET` and `POST`.
+- `GET /api/jsp-forward` (WAR apps only, WO-50, C-162 (2)): `RequestDispatcher.forward` to the WAR's
+  `/WEB-INF/jsp/forward.jsp`, which Tomcat's Jasper compiles with the distribution's `ecj` at the
+  first request (the staged Tomcat keeps `lib/ecj-*.jar` since WO-50, `docs/licenses/dev-only.md`
+  `tool:ecj`); the page prints `argos-jsp-forward dispatcher=FORWARD`. `/api/runtime` reports the
+  capability `jsp` when the JSP is there; the jar apps skip the entry.
+- WAR shutdown cleanup (WO-50, C-162 (1)), so that an undeploy without an agent leaves no leak report
+  in the standalone Tomcat (`WarAppConfiguration` of each WAR, `common/.../datasource/WebAppCleanup.java`):
+  the JDBC drivers of `WEB-INF/lib` leave `DriverManager` at context close (and MySQL's cleanup
+  thread stops), `shop-war-jakarta` also shuts the in-memory H2 database down (shop-boot2 has its
+  own `EmbeddedDatabaseShutdown`) and removes Netty's thread-local map (Reactor Netty of the
+  WebClient) from Tomcat's request threads at the end of every dispatch.
 - `GET /api/pool/exhaust?hold=5000`: the pool size + 1 connections, the last one waits for a holder.
   The answer counts the holders that really took a connection (`held`, `failedHolders`); `allHeld`
   is true only when all of them did.
@@ -222,9 +255,9 @@ the build JDK of the app):
 
 | App | Variants |
 |---|---|
-| `shop-boot2` | `default` (JDK 8), `jdk11`, `jdk17`, `jdk21`, `routing-ds`, `pool-tomcat`, `pool-dbcp2`, `seeds` (with the fixed clock), `vt-not-applicable` (JDK 21) |
-| `shop-boot3` | `default` (JDK 17), `jdk25` (with `--sun-misc-unsafe-memory-access=deny`), `vt` (JDK 21), `routing-ds`, `pool-tomcat`, `pool-dbcp2`, `seeds` |
-| `shop-boot4` | `default` (JDK 21), `jdk17`, `jdk25`, `vt`, `vt-jdk17`, `vt-jdk25`, `routing-ds`, `pool-tomcat`, `pool-dbcp2`, `seeds` (JDK 25 with `--sun-misc-unsafe-memory-access=deny`) |
+| `shop-boot2` | `default` (JDK 8), `jdk11`, `jdk17`, `jdk21`, `routing-ds`, `pool-tomcat`, `pool-dbcp2`, `seeds` (with the fixed clock), `jetty` (Jetty 9.4), `undertow` (Undertow 2.2), `vt-not-applicable` (JDK 21) |
+| `shop-boot3` | `default` (JDK 17), `jdk25` (with `--sun-misc-unsafe-memory-access=deny`), `vt` (JDK 21), `routing-ds`, `pool-tomcat`, `pool-dbcp2`, `seeds`, `jetty` (Jetty 12.0 ee10), `undertow` (Undertow 2.3) |
+| `shop-boot4` | `default` (JDK 21), `jdk17`, `jdk25`, `vt`, `vt-jdk17`, `vt-jdk25`, `jetty` (Jetty 12.1 ee11), `routing-ds`, `pool-tomcat`, `pool-dbcp2`, `seeds` (JDK 25 with `--sun-misc-unsafe-memory-access=deny`) |
 | `shop-heavy` | `default` (JDK 17), `jdk21`, `jdk25` (with `--sun-misc-unsafe-memory-access=deny`), `no-warmup` |
 | `shop-batch` | `default` (JDK 17), `jdk21`, `jdk25` (with `--sun-misc-unsafe-memory-access=deny`), `vt`, `routing-ds` |
 | `shop-war-javax` | standalone Tomcat 9, context `/shop-war-javax`: `default` (JDK 8), `jdk11`, `jdk17`, `jdk21`, `routing-ds` (JDK 21), `seeds` (JDK 8) |
@@ -236,7 +269,7 @@ Where they run (docs/18 §2.1, §2.4):
 |---|---|---|
 | `./gradlew build` / `check` | unit tests of the sample modules; no app is started | every pull request (`build-java`) |
 | `./gradlew integrationTest` | `shop-boot3` variants `default`, `vt` and `routing-ds` (one sample app in the integration layer); ext-stub over HTTP, in-process and as the packaged `java -jar ext-stub.jar` (options, `EXT_STUB_PORT`, unknown option); `load`: the generator over HTTP, then `shop-boot3` with the seed environment (the `ARGOS_SEED` sentinel in every seed answer, `test/seed/seed-traffic.sh`, both mixes of `load.jar`); `shop-heavy` report rendering; the tests over 1 s (`@Tag("slow")`, docs/18 §2.2) of `common`, `shop-boot2` and `shop-batch` | every pull request (`integration`) |
-| `./gradlew sampleSmoke` | every variant of every app (50) | by hand before changing a sample app; no workflow runs it yet (its JDK, virtual thread and pool combinations belong to the nightly matrix layer of docs/18 §2.1) |
+| `./gradlew sampleSmoke` | every variant of every app (60 since WO-50, which added the `jetty` and `undertow` variants) | by hand before changing a sample app; no workflow runs it yet (its JDK, virtual thread and pool combinations belong to the nightly matrix layer of docs/18 §2.1) |
 
 The smokes are not part of `check` (PR time budget, docs/18 §2.4: the pull request gate takes at
 most 25 minutes, the integration layer at most 12). Measured on 2026-10-24 on a Linux container

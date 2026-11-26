@@ -36,7 +36,8 @@ area/docs:
           - "*.md"
 
 # Core paths (docs/19 section 6.8, O-Q03): the nightly compatibility matrix and the overhead
-# benchmark must pass on a trusted branch before merge.
+# benchmark must pass on a trusted branch before merge. Same set as the CODEOWNERS "Core paths"
+# block (6.8 "security" = auth/, web/security/, secrets/; "command" = admin/command/; WAL = wal/).
 needs-matrix:
   - changed-files:
       - any-glob-to-any-file:
@@ -46,9 +47,12 @@ needs-matrix:
           - proto/**
           - server/src/main/java/io/argos/server/collector/**
           - server/src/main/java/io/argos/server/storage/**
-          - server/src/main/java/io/argos/server/security/**
+          - server/src/main/java/io/argos/server/wal/**
+          - server/src/main/java/io/argos/server/auth/**
+          - server/src/main/java/io/argos/server/web/security/**
+          - server/src/main/java/io/argos/server/secrets/**
           - server/src/main/java/io/argos/server/admin/token/**
-          - server/src/main/java/io/argos/server/command/**
+          - server/src/main/java/io/argos/server/admin/command/**
           - server/src/main/java/io/argos/server/privacy/**
           - server/src/main/java/io/argos/server/alert/channel/**
           - server/src/main/resources/db/**

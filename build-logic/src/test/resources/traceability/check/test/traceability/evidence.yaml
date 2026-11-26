@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+# Fixture: evidence registry (WO-53 checkTraceability tests)
+format: 1
+entries:
+  - ids: [T-NFR-01~02]
+    requirements: [N-01, N-02]
+    kind: measurement
+    source: "docs/bench/gate1-agent-*.md (approved)"
+    owner: WO-51
+    gate: Gate 1
+  - ids: [T-SOAK-001]
+    requirements: [N-02]
+    kind: deferred
+    source: soakTest 72 hours
+    owner: WO-52
+    gate: Gate 1
+  - requirements: [N-09]
+    kind: design
+    source: 02 single node
+    owner: PM
+    gate: Gate 1
+  - requirements: [N-10a, N-11]
+    kind: human
+    source: ASVS review, non-participant install
+    owner: WO-62
+    gate: Gate 2
+  - requirements: [SEC-30, SEC-91]
+    kind: human
+    source: 02 data classification table, threat model draft
+    owner: WO-46
+    gate: Gate 1

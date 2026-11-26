@@ -24,12 +24,20 @@ final class WsFixture {
     final CountDownLatch closed = new CountDownLatch(1);
     volatile boolean open = true;
     volatile CountDownLatch blockSend;
+
+    /** Counted down when a send starts to wait on {@link #blockSend} (the frame is being sent). */
+    volatile CountDownLatch sendBlocked;
+
     volatile long closedAtNanos;
 
     @Override
     public void send(String text) throws IOException {
       CountDownLatch block = blockSend;
       if (block != null) {
+        CountDownLatch entered = sendBlocked;
+        if (entered != null) {
+          entered.countDown();
+        }
         try {
           block.await();
         } catch (InterruptedException e) {

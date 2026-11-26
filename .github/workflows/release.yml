@@ -1,0 +1,516 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Release pipeline for 0.x pre-releases (docs/19 section 7.2, docs/16 section 10, SEC-70..73, WO-44).
+# A maintainer pushes the tag vX.Y.Z[-beta.N|-rc.N] on main or release/X.Y; this workflow builds,
+# checks, signs and publishes the container images, and leaves a DRAFT GitHub pre-release that a
+# maintainer reviews and publishes by hand (O-R11). Nothing else triggers it.
+#
+#   prepare          tag -> SemVer (0.x only), SOURCE_DATE_EPOCH = tag commit time, CHANGELOG section,
+#                    release key installed (the placeholder key stops the release here)
+#   gate             pull request checks green on the tagged commit (pr.yml push run), securityTest.
+#                    Not run for 0.x (no dedicated runners yet): nightly matrix, benchmark, 72-hour
+#                    soak, chaos, upgrade path, air-gap egress (docs/19 section 6.5)
+#   build (a, b)     ./gradlew releaseArtifacts twice on separate runners
+#   reproducibility  the two builds are identical (test/release/verify-reproducible.sh compare)
+#   sbom-scan        three CycloneDX SBOMs, Critical/High fixable vulnerabilities 0 or listed in
+#                    docs/security/cve-exceptions.md (test/release/check-sbom.sh, Trivy by digest)
+#   images           Jib multi-arch (linux/amd64, linux/arm64) push to GHCR: argos-server,
+#                    argos-demo-app, argos-demo-load; cosign keyless signatures, provenance
+#                    attestations, server SBOM attestation; Compose asset with the digests
+#   sign             (environment "release") SHA256SUMS over every asset, OpenPGP detached
+#                    signatures with the organization key, cosign keyless bundles, provenance
+#   draft            GitHub Release draft, marked pre-release, with the notes of release-notes.sh
+#
+# The images are pushed before the signing job so that the Compose asset with their digests is
+# covered by SHA256SUMS and its signature. If a later job fails, re-tag the pushed images
+# X.Y.Z-failed and run again (docs/19 section 7.2; users pin images by digest).
+#
+# Policy (docs/19 section 6.6, check-workflows.sh): GitHub-hosted runners only, actions pinned to
+# commit SHAs, containers pinned by digest, read-only token by default and write scopes per job
+# (images: packages, id-token, attestations; sign: id-token, attestations; draft: contents). No
+# dependency or build cache is restored in this workflow.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+  GRADLE_TOOLCHAINS_FROM_ENV: JAVA_HOME_8_X64,JAVA_HOME_21_X64
+
+jobs:
+  prepare:
+    name: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      minor-tag: ${{ steps.version.outputs.minor_tag }}
+      source-date-epoch: ${{ steps.version.outputs.source_date_epoch }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Version from the tag (SemVer, 0.x only)
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ "$REF_TYPE" != tag ]; then
+            echo "::error::the release workflow runs for tags only"
+            exit 1
+          fi
+          if ! [[ $TAG =~ ^v(([0-9]+)\.([0-9]+)\.([0-9]+))(-(beta|rc)\.[0-9]+)?$ ]]; then
+            echo "::error::tag '$TAG' is not vX.Y.Z, vX.Y.Z-beta.N or vX.Y.Z-rc.N (docs/19 section 7.1)"
+            exit 1
+          fi
+          major=${BASH_REMATCH[2]}
+          minor=${BASH_REMATCH[3]}
+          suffix=${BASH_REMATCH[5]}
+          if [ "$major" != 0 ]; then
+            echo "::error::this workflow publishes 0.x pre-releases only; 1.0 and later need the full release gate of docs/19 section 6.5"
+            exit 1
+          fi
+          version=${TAG#v}
+          # Images: X.Y.Z, plus X.Y for a release without a pre-release suffix; never latest in 0.x.
+          minor_tag=
+          [ -z "$suffix" ] && minor_tag=$major.$minor
+          epoch=$(git log -1 --format=%ct "$GITHUB_SHA")
+          {
+            echo "version=$version"
+            echo "minor_tag=$minor_tag"
+            echo "source_date_epoch=$epoch"
+            echo "minor=$major.$minor"
+          } >>"$GITHUB_OUTPUT"
+          echo "Release $version of commit $GITHUB_SHA, SOURCE_DATE_EPOCH=$epoch, image tags: $version ${minor_tag}"
+      - name: The tagged commit is on main or release/X.Y
+        env:
+          MINOR: ${{ steps.version.outputs.minor }}
+        run: |
+          branches=$(git branch -r --contains "$GITHUB_SHA" --format='%(refname:short)')
+          printf '%s\n' "$branches"
+          if ! printf '%s\n' "$branches" | grep -Eqx "origin/(main|release/${MINOR//./\\.})"; then
+            echo "::error::tags are created on release/$MINOR (or main); $GITHUB_SHA is on neither (docs/19 section 7.1)"
+            exit 1
+          fi
+      - name: CHANGELOG section and upgrade notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/release-notes.sh --check "$VERSION"
+      - name: Release key installed (the placeholder key stops the release)
+        run: bash scripts/check-release-key.sh
+
+  gate:
+    name: gate
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Pull request checks passed on the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          count=$(gh api -X GET "repos/$REPO/actions/workflows/pr.yml/runs" \
+            -f head_sha="$GITHUB_SHA" -f event=push -f status=success --jq '.total_count')
+          if [ "${count:-0}" -lt 1 ]; then
+            echo "::error::no successful 'PR checks' run (push to main or release/*) for $GITHUB_SHA"
+            exit 1
+          fi
+          echo "PR checks passed for $GITHUB_SHA ($count run(s))"
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Set up Gradle (no cache)
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+          cache-disabled: true
+      - name: Register JDK toolchains
+        run: |
+          mkdir -p "$HOME/.gradle"
+          echo "org.gradle.java.installations.fromEnv=${GRADLE_TOOLCHAINS_FROM_ENV}" >>"$HOME/.gradle/gradle.properties"
+      - name: Security tests
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: ./gradlew securityTest -Pversion="$VERSION" --no-build-cache
+      - name: Gates not run for 0.x
+        if: always()
+        run: |
+          {
+            echo "## Release gate (0.x pre-release)"
+            echo
+            echo "Run: pull request checks on the tagged commit, securityTest, reproducible build comparison, SBOM scan."
+            echo
+            echo "Not run (no dedicated self-hosted runners yet, WO-52): nightly compatibility matrix,"
+            echo "overhead benchmark, 72-hour soak, chaos tests, upgrade path test, air-gap egress test."
+            echo "The release notes list them under Known limitations."
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: build (${{ matrix.copy }})
+    needs: [prepare, gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: true
+      matrix:
+        # Two independent builds on two runners; the reproducibility job compares them.
+        copy: [a, b]
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Set up Gradle (no cache)
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+          cache-disabled: true
+      - name: Register JDK toolchains
+        run: |
+          mkdir -p "$HOME/.gradle"
+          echo "org.gradle.java.installations.fromEnv=${GRADLE_TOOLCHAINS_FROM_ENV}" >>"$HOME/.gradle/gradle.properties"
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ui/.nvmrc
+          package-manager-cache: false
+      - name: Enable pnpm (Corepack)
+        run: |
+          corepack enable
+          corepack install -g "$(node -p "require('./ui/package.json').packageManager")"
+      - name: Release artifacts (jars, SBOMs, SHA256SUMS)
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SOURCE_DATE_EPOCH: ${{ needs.prepare.outputs.source-date-epoch }}
+        run: ./gradlew releaseArtifacts -Pversion="$VERSION" --no-build-cache
+      - name: Upload the release artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.copy }}
+          path: build/release/
+          if-no-files-found: error
+          retention-days: 7
+
+  reproducibility:
+    name: reproducibility
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Set up Gradle (no cache)
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+          cache-disabled: true
+      - name: Register JDK toolchains
+        run: |
+          mkdir -p "$HOME/.gradle"
+          echo "org.gradle.java.installations.fromEnv=${GRADLE_TOOLCHAINS_FROM_ENV}" >>"$HOME/.gradle/gradle.properties"
+      - name: Download build a
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-a
+          path: ${{ runner.temp }}/repro/a
+      - name: Download build b
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-b
+          path: ${{ runner.temp }}/repro/b
+      - name: Both builds are identical (file hashes and archive entries)
+        run: bash test/release/verify-reproducible.sh compare "$RUNNER_TEMP/repro/a" "$RUNNER_TEMP/repro/b"
+
+  sbom-scan:
+    name: sbom-scan
+    needs: reproducibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download the release artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-a
+          path: build/release
+      - name: SBOMs and vulnerability scan (Critical and High, fixable, outside the exception list)
+        # Scanner contract of check-sbom.sh: <scanner> <sbom-file> <ignorefile>, exit 0 clean,
+        # 1 findings. test/release/trivy-scan.sh runs Trivy 0.76.2 pinned by digest.
+        run: >-
+          bash test/release/check-sbom.sh --scanner "bash test/release/trivy-scan.sh"
+          --require agent,server,ui build/release
+
+  images:
+    name: images
+    needs: [prepare, sbom-scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Set up Gradle (no cache)
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+          cache-disabled: true
+      - name: Register JDK toolchains
+        run: |
+          mkdir -p "$HOME/.gradle"
+          echo "org.gradle.java.installations.fromEnv=${GRADLE_TOOLCHAINS_FROM_ENV}" >>"$HOME/.gradle/gradle.properties"
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ui/.nvmrc
+          package-manager-cache: false
+      - name: Enable pnpm (Corepack)
+        run: |
+          corepack enable
+          corepack install -g "$(node -p "require('./ui/package.json').packageManager")"
+      - name: Install cosign
+        uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
+      - name: Download the release artifacts (server SBOM)
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-a
+          path: build/release
+      - name: Log in to GHCR (job token)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$ACTOR" --password-stdin
+      - name: Build and push the multi-arch images (Jib)
+        id: push
+        env:
+          OWNER: ${{ github.repository_owner }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          MINOR_TAG: ${{ needs.prepare.outputs.minor-tag }}
+          SOURCE_DATE_EPOCH: ${{ needs.prepare.outputs.source-date-epoch }}
+        run: |
+          owner=${OWNER,,}
+          tags=()
+          [ -n "$MINOR_TAG" ] && tags=("-Djib.to.tags=$MINOR_TAG")
+          images=$RUNNER_TEMP/images.txt
+          : >"$images"
+          # push <gradle project> <project dir> <image name> <output name>
+          push() {
+            ./gradlew "$1:jib" -Pversion="$VERSION" --no-build-cache \
+              -Pargos.image.platforms=linux/amd64,linux/arm64 \
+              "-Djib.to.image=ghcr.io/$owner/$3:$VERSION" "${tags[@]}"
+            digest=$(tr -d '[:space:]' <"$2/build/jib-image.digest")
+            if ! [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::no image digest for $3 in $2/build/jib-image.digest"
+              exit 1
+            fi
+            echo "$3=ghcr.io/$owner/$3:$VERSION@$digest" >>"$images"
+            echo "$4=ghcr.io/$owner/$3" >>"$GITHUB_OUTPUT"
+            echo "$4-digest=$digest" >>"$GITHUB_OUTPUT"
+          }
+          push :server server argos-server server
+          push :sample-apps:demo-app sample-apps/demo-app argos-demo-app demo-app
+          push :sample-apps:load sample-apps/load argos-demo-load demo-load
+          cat "$images"
+      - name: Sign the images (cosign keyless) and attest the server SBOM
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SERVER: ${{ steps.push.outputs.server }}
+          SERVER_DIGEST: ${{ steps.push.outputs.server-digest }}
+        run: |
+          while IFS='=' read -r _ ref; do
+            repository=${ref%:*@*}
+            cosign sign --yes "$repository@${ref##*@}"
+          done <"$RUNNER_TEMP/images.txt"
+          cosign attest --yes --type cyclonedx --predicate "build/release/argos-server-$VERSION.cdx.json" "$SERVER@$SERVER_DIGEST"
+      - name: Provenance attestation (argos-server)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.server }}
+          subject-digest: ${{ steps.push.outputs.server-digest }}
+          push-to-registry: true
+          create-storage-record: false
+      - name: Provenance attestation (argos-demo-app)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.demo-app }}
+          subject-digest: ${{ steps.push.outputs.demo-app-digest }}
+          push-to-registry: true
+          create-storage-record: false
+      - name: Provenance attestation (argos-demo-load)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.demo-load }}
+          subject-digest: ${{ steps.push.outputs.demo-load-digest }}
+          push-to-registry: true
+          create-storage-record: false
+      - name: Compose asset with the image digests
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SOURCE_DATE_EPOCH: ${{ needs.prepare.outputs.source-date-epoch }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/images-out"
+          cp "$RUNNER_TEMP/images.txt" "$RUNNER_TEMP/images-out/argos-images-$VERSION.txt"
+          bash scripts/release-compose.sh "$VERSION" "$RUNNER_TEMP/images.txt" "$RUNNER_TEMP/images-out/argos-compose-$VERSION.tar.gz"
+      - name: Upload the image assets
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: images-out
+          path: ${{ runner.temp }}/images-out/
+          if-no-files-found: error
+          retention-days: 7
+
+  sign:
+    name: sign
+    needs: [prepare, images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The OpenPGP signing subkey and its passphrase are secrets of this environment only
+    # (docs/19 section 7.4); the environment requires a reviewer's approval.
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install cosign
+        uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
+      - name: Download the release artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-a
+          path: build/release
+      - name: Download the image assets
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: images-out
+          path: build/release
+      - name: Add the public key, its fingerprint and verify-release.sh
+        run: cp keys/ARGOS-RELEASE-KEY.asc keys/ARGOS-RELEASE-KEY.fingerprint deploy/verify-release.sh build/release/
+      - name: SHA256SUMS and OpenPGP signatures (organization key)
+        env:
+          ARGOS_RELEASE_GPG_KEY: ${{ secrets.ARGOS_RELEASE_GPG_KEY }}
+          ARGOS_RELEASE_GPG_PASSPHRASE: ${{ secrets.ARGOS_RELEASE_GPG_PASSPHRASE }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          fpr=$(bash scripts/check-release-key.sh --print)
+          if [ -z "$ARGOS_RELEASE_GPG_KEY" ]; then
+            echo "::error::the release environment has no ARGOS_RELEASE_GPG_KEY secret (keys/README.md)"
+            exit 1
+          fi
+          GNUPGHOME=$(mktemp -d "$RUNNER_TEMP/gnupg.XXXXXX")
+          export GNUPGHOME
+          trap 'gpgconf --kill all >/dev/null 2>&1 || true; rm -rf "$GNUPGHOME"' EXIT
+          chmod 700 "$GNUPGHOME"
+          printf '%s\n' "$ARGOS_RELEASE_GPG_KEY" | gpg --batch --import
+          (umask 077 && printf '%s' "$ARGOS_RELEASE_GPG_PASSPHRASE" >"$GNUPGHOME/passphrase")
+          # release-sign.sh checks that the secret key belongs to the primary key of
+          # keys/ARGOS-RELEASE-KEY.fingerprint and verifies every signature it writes.
+          bash scripts/release-sign.sh --fingerprint "$fpr" --passphrase-file "$GNUPGHOME/passphrase" build/release
+          # What users run: the published public key verifies the signed release.
+          bash deploy/verify-release.sh --offline --key keys/ARGOS-RELEASE-KEY.asc --fingerprint "$fpr" "$VERSION" build/release
+      - name: cosign keyless signatures (one bundle per asset)
+        run: |
+          cd build/release
+          while read -r _ name; do
+            cosign sign-blob --yes --bundle "$name.sigstore.json" "$name"
+          done <SHA256SUMS
+      - name: Provenance attestation (every asset of SHA256SUMS)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: build/release/SHA256SUMS
+      - name: Upload the signed release
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signed-release
+          path: build/release/
+          if-no-files-found: error
+          retention-days: 7
+
+  draft:
+    name: draft
+    needs: [prepare, sign]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download the signed release
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: signed-release
+          path: build/release
+      - name: Draft pre-release (a maintainer reviews and publishes it)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          notes=$RUNNER_TEMP/release-notes.md
+          bash scripts/release-notes.sh --repo "$REPO" --assets build/release "$VERSION" >"$notes"
+          gh release create "$TAG" --repo "$REPO" --draft --prerelease --verify-tag \
+            --title "Argos APM $VERSION" --notes-file "$notes" build/release/*

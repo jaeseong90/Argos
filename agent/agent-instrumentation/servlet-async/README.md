@@ -72,5 +72,5 @@ container's own classes are used at run time).
 |---|---|---|
 | Tomcat 9 | javax.servlet 4.0 | supported; integration cases in agent-testing (results: WO-12 report) |
 | Tomcat 10.1, 11 | jakarta.servlet 6.0, 6.1 | supported; integration cases in agent-testing (results: WO-12 report) |
-| Jetty ee8/ee10 | javax/jakarta | **not yet verified**: no hook names yet (WO-50); the servlet module's listener still ends async requests |
-| Undertow 2.3 | jakarta | **not yet verified**: no hook names yet (WO-50); the servlet module's listener still ends async requests |
+| Jetty 9.4, 12.0 ee10, 12.1 ee11 | javax 3.1, jakarta 6.0/6.1 | **not yet verified**: no hook of this module (it stays off); the servlet module's listener ends async requests, and since WO-50 its flush list has the Jetty response classes, linked to the transaction at the suspending exit. The shop jar apps run on Jetty with `SAMPLE_CONTAINER=jetty` (compatibility matrix rows) |
+| Undertow 2.2, 2.3 | javax 4.0, jakarta 6.0 | **not yet verified**: as Jetty (`SAMPLE_CONTAINER=undertow`, shop-boot2 and shop-boot3) |

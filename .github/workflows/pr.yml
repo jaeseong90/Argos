@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Required pull request checks (docs/19 section 6.2, O-Q02). Branch protection on main and release/*
-# requires every job below. All jobs run on GitHub-hosted runners (O-S05); pull_request_target is
+# requires every job below (sbom-scan, WO-46, once a maintainer adds it after its first green run). All jobs run on GitHub-hosted runners (O-S05); pull_request_target is
 # never used. Action versions are pinned to commit SHAs and updated by Dependabot (SEC-73).
 #
 # Label-dependent jobs (changelog, openapi-diff) read the labels from the API when they run. After a
@@ -206,16 +206,30 @@ jobs:
         env:
           ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         # deploy/compose: the installation scripts, their tests and the test doubles without an
-        # extension (fake docker, curl and df; ADR-0010 C-200 (2)).
+        # extension (fake docker, curl and df; ADR-0010 C-200 (2); the docker and age doubles of the
+        # backup and restore cases, WO-43).
         run: |
           shopt -s globstar
           docker run --rm --network none -v "$PWD:/repo:ro" -w /repo --entrypoint shellcheck "$ACTIONLINT_IMAGE" \
             -x .github/scripts/*.sh .github/scripts/test/*.sh test/agent/*.sh test/lint/*.sh \
-            deploy/compose/**/*.sh deploy/compose/test/container/fake-bin/* deploy/compose/test/container/fake-df/*
+            deploy/compose/**/*.sh deploy/compose/test/container/fake-bin/* deploy/compose/test/container/fake-df/* \
+            deploy/compose/test/container/fake-backup-bin/docker deploy/compose/test/container/fake-backup-bin/age-shim/age
       - name: CI script tests
         env:
           REQUIRE_DOCKER: "1"
         run: bash .github/scripts/test/run-all.sh
+      - name: Release script tests (verify-release.sh, signing, release notes, Compose asset, release.yml)
+        # Throwaway OpenPGP keys generated in temporary GnuPG homes; cosign and gh are stubs (no
+        # network). shellcheck covers the same scripts. The release key placeholder is allowed here
+        # but must be consistent (scripts/check-release-key.sh --allow-placeholder).
+        env:
+          ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        run: |
+          docker run --rm --network none -v "$PWD:/repo:ro" -w /repo --entrypoint shellcheck "$ACTIONLINT_IMAGE" \
+            -x deploy/verify-release.sh deploy/test/*.sh scripts/*.sh scripts/test/*.sh
+          bash scripts/check-release-key.sh --allow-placeholder
+          bash test/traceability/shell-results.sh deploy-test deploy/test/verify-release.test.sh
+          bash scripts/test/run-all.sh
       - name: Compose installation script tests
         # env-init, smoke.sh, argos-compose.sh and the Compose files in pinned Linux containers
         # without network (about 1 minute). The end-to-end :deploy:composeSmoke is not run here
@@ -275,6 +289,49 @@ jobs:
         run: pnpm -C ui check:licenses
       - name: UI development tools outside the allow list are listed in docs/licenses/dev-only.md
         run: pnpm -C ui check:licenses:dev
+
+  traceability:
+    # Requirement <-> test traceability (docs/18 sections 3 and 16, appendix A; WO-53). Runs on the
+    # clean checkout and downloads no test results: every test is NOT RUN, which is not a failure.
+    # It fails only on a catalogue or 18 section 16 mapping difference, or a required requirement
+    # (D-01..D-26, N-xx, stage-M SEC) without a test or registered evidence. The reports (and the
+    # Gate 1 evidence table of docs/gates/gate1-evidence.md, docs/bench/gate1.md) are kept 90 days.
+    name: traceability
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+      - name: Register JDK toolchains
+        run: |
+          mkdir -p "$HOME/.gradle"
+          echo "org.gradle.java.installations.fromEnv=${GRADLE_TOOLCHAINS_FROM_ENV}" >>"$HOME/.gradle/gradle.properties"
+      - name: Catalogue and mapping check, traceability report, Gate 1 table
+        # --continue: the reports are written (and uploaded) even when the check fails.
+        run: ./gradlew --continue checkTraceability traceabilityReport gate1Report -Pargos.ui.skip=true
+      - name: Upload traceability reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: traceability-reports
+          path: |
+            build/reports/traceability*
+            build/reports/gate1.md
+          retention-days: 90
+          if-no-files-found: ignore
 
   agent-dist-checks:
     name: agent-dist-checks
@@ -412,6 +469,12 @@ jobs:
         env:
           SHARD: ${{ matrix.shard }}
         run: pnpm -C ui e2e:docker -- "--shard=${SHARD}/4"
+      - name: Fresh-install project (setup wizard against a server with no administrator yet)
+        # WO-46, ADR-0010 C-192 (1): the host starts the fresh stack variant (setup token file, no
+        # seed) under the same lock, and the fresh-install project runs in the pinned Linux image
+        # (T-SEC-47 (fresh), T-E2E-059). Once per run, after the stack shard on the same runner.
+        if: matrix.shard == 1
+        run: pnpm -C ui exec node e2e/stack/cli.ts docker-fresh
       - name: Upload Playwright traces and reports
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -449,8 +512,116 @@ jobs:
         run: |
           mkdir -p "$HOME/.gradle"
           echo "org.gradle.java.installations.fromEnv=${GRADLE_TOOLCHAINS_FROM_ENV}" >>"$HOME/.gradle/gradle.properties"
+      - name: Set up Node.js
+        # The server boot jar that the security suite starts carries the UI bundle (pnpm build).
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ui/.nvmrc
+          package-manager-cache: false
+      - name: Enable pnpm (Corepack)
+        id: pnpm
+        run: |
+          corepack enable
+          corepack install -g "$(node -p "require('./ui/package.json').packageManager")"
+          echo "store=$(pnpm store path --silent)" >>"$GITHUB_OUTPUT"
+      - name: Cache pnpm store
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm.outputs.store }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
       - name: Security tests (PR subset)
-        run: ./gradlew securityTest
+        # The server suite (Testcontainers, Docker of the runner) including the Gate 1 catalogue
+        # test (T-SEC-93: every docs/06 stage-M requirement maps to existing test IDs,
+        # test/security/sec-gate1.tsv). The security tests of the other layers run in their own
+        # jobs (agent integration, UI unit and E2E, Compose script tests). The PII seed grep
+        # (T-NFR-10c) sends 2,000 seed requests here (PR budget, ADR-0010 C-250 (2)); nightly and
+        # the release gate keep the default 10,000 of N-10c.
+        run: ./gradlew securityTest -Psecurity.pii.requests=2000
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: security-light-reports
+          path: |
+            **/build/reports/
+            **/build/test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  sbom-scan:
+    # SBOM vulnerability gate on every pull request (16 section 10.2, SEC-70, SEC-71, ADR-0010
+    # C-246 (4)): the CycloneDX SBOMs of the agent, the server and the UI, under their release names,
+    # checked and scanned by the same scripts as the release (test/release/check-sbom.sh with the
+    # digest-pinned Trivy of test/release/trivy-scan.sh). Critical or High findings with a fix fail
+    # unless the ID is in docs/security/cve-exceptions.md and .trivyignore (both sets equal).
+    # The server image built from the same commit is scanned the same way (SEC-71 "SBOM and image
+    # scan per commit", T-SEC-71d proposed); the demo images are rescanned weekly
+    # (.github/workflows/sbom-rescan.yml).
+    name: sbom-scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+      - name: Register JDK toolchains
+        run: |
+          mkdir -p "$HOME/.gradle"
+          echo "org.gradle.java.installations.fromEnv=${GRADLE_TOOLCHAINS_FROM_ENV}" >>"$HOME/.gradle/gradle.properties"
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ui/.nvmrc
+          package-manager-cache: false
+      - name: Enable pnpm (Corepack)
+        id: pnpm
+        run: |
+          corepack enable
+          corepack install -g "$(node -p "require('./ui/package.json').packageManager")"
+          echo "store=$(pnpm store path --silent)" >>"$GITHUB_OUTPUT"
+      - name: Cache pnpm store
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm.outputs.store }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+      - name: SBOMs of the agent, the server and the UI
+        run: ./gradlew :agent:agent-dist:agentSbom :server:serverSbom :ui:pnpmBuild
+      - name: Collect the SBOMs under their release names
+        run: |
+          version=$(sed -n 's/^version=//p' gradle.properties)
+          mkdir -p build/sbom-scan
+          cp agent/agent-dist/build/sbom/agent.cdx.json "build/sbom-scan/argos-agent-${version}.cdx.json"
+          cp server/build/sbom/server.cdx.json "build/sbom-scan/argos-server-${version}.cdx.json"
+          cp ui/build/sbom/ui.cdx.json "build/sbom-scan/argos-ui-${version}.cdx.json"
+          ls -l build/sbom-scan
+      - name: SBOMs and vulnerability scan (Critical and High, fixable, outside the exception list)
+        # Scanner contract of check-sbom.sh: <scanner> <sbom-file> <ignorefile>, exit 0 clean,
+        # 1 findings. Trivy downloads its vulnerability database (the only network access).
+        run: >-
+          bash test/release/check-sbom.sh --scanner "bash test/release/trivy-scan.sh"
+          --require agent,server,ui build/sbom-scan
+      - name: Server image (local Docker daemon)
+        run: ./gradlew :server:jibDockerBuild
+      - name: Server image vulnerability scan (Critical and High, fixable, outside the exception list)
+        # trivy-scan.sh --image saves the local image to a tar file and scans it with the same
+        # digest-pinned Trivy and the same .trivyignore (no Docker socket in the scanner container).
+        run: |
+          version=$(sed -n 's/^version=//p' gradle.properties)
+          bash test/release/trivy-scan.sh --image "argos-server:${version}" .trivyignore
 
   openapi-diff:
     name: openapi-diff

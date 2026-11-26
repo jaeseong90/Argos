@@ -6,6 +6,7 @@ import org.gradle.api.Action
 import org.gradle.api.NamedDomainObjectContainer
 import org.gradle.api.Project
 import org.gradle.api.artifacts.MinimalExternalModuleDependency
+import org.gradle.api.file.FileCollection
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.MapProperty
 import org.gradle.api.provider.Property
@@ -86,6 +87,9 @@ abstract class SampleAppExtension @Inject constructor(private val project: Proje
    */
   abstract val expectedClients: ListProperty<String>
 
+  /** BOOT_JAR packaging: the Spring Boot loader entry point of the jar (set by [bootJar]). */
+  abstract val bootLauncher: Property<BootLauncher>
+
   /** Spring Boot executable jar. [loader] is the spring-boot-loader of the app's Boot version. */
   fun bootJar(
     mainClass: String,
@@ -93,6 +97,15 @@ abstract class SampleAppExtension @Inject constructor(private val project: Proje
     launcher: BootLauncher = BootLauncher.LAUNCH,
   ) {
     SampleAppWiring.bootJar(project, this, mainClass, loader, launcher)
+  }
+
+  /**
+   * A second Spring Boot jar `build/sample-app/<app>-<name>.jar` (task `sampleApp<Name>Jar`): the
+   * same classes, loader and manifest as [bootJar], plus [libraries] in BOOT-INF/lib. The default
+   * jar, its launch descriptor and its smoke are unchanged (e.g. shop-boot3 `devtools`, WO-50).
+   */
+  fun bootJarVariant(name: String, libraries: FileCollection) {
+    SampleAppWiring.bootJarVariant(project, this, name, libraries)
   }
 
   /** Plain executable jar (`java -jar`), runtime dependencies merged. */

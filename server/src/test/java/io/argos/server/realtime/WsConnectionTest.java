@@ -134,10 +134,17 @@ class WsConnectionTest {
           }
         }
       }
-      // A close while a send blocks: the close comes after that frame.
+      // A close while a send blocks: the close comes after that frame. The close is requested only
+      // once the drain task is inside send() with frame 9999: a frame still queued when the close
+      // is
+      // requested is dropped by design (requestClose), so a fixed sleep raced with a slow drain
+      // thread under CPU load (ADR-0010 C-246 (10)).
+      transport.sendBlocked = new CountDownLatch(1);
       transport.blockSend = new CountDownLatch(1);
       c.sendControl(ServerFrames.pong(9_999, clock.instant()));
-      Thread.sleep(50);
+      assertThat(transport.sendBlocked.await(10, TimeUnit.SECONDS))
+          .as("the drain task is sending frame 9999")
+          .isTrue();
       c.requestClose(WsConnection.CLOSE_RESTART, "Server restart", false);
       Thread.sleep(50);
       assertThat(transport.closes).isEmpty();

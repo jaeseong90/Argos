@@ -48,7 +48,7 @@ record LoadConfig(
 
   static final String USAGE =
       """
-      usage: java -jar load.jar [--target-url URL] [--rate N] [--mix default|bench] [--duration D]
+      usage: java -jar load.jar [--target-url URL] [--rate N] [--mix default|demo|bench] [--duration D]
                                 [--warmup D] [--max-in-flight N] [--request-timeout D]
                                 [--connect-timeout D] [--report-interval D] [--summary FILE]
                                 [--http-threads N] [--max-unexpected-rate R]
@@ -57,8 +57,9 @@ record LoadConfig(
       MAX_IN_FLIGHT (max(64, rate) up to 4096), REQUEST_TIMEOUT (10s), CONNECT_TIMEOUT (3s),
       REPORT_INTERVAL (10s, 0 disables), SUMMARY_PATH, HTTP_THREADS (4),
       MAX_UNEXPECTED_RATE (unset: no gate, e.g. 0.01).
-      Durations: 500ms, 30s, 1m30s, 2h. MIX=default is the demo mix of docs/17 §3.9, MIX=bench the
-      benchmark mix of docs/18 §7.2 (same as sample-apps/load/bench.js).
+      Durations: 500ms, 30s, 1m30s, 2h. MIX=default: the docs/17 §3.9 shares over the shop apps,
+      MIX=demo: the docs/17 §3.9 demo profile over argos-demo-app (order-api -> payment-api),
+      MIX=bench: the benchmark mix of docs/18 §7.2 (same as sample-apps/load/bench.js).
       """;
 
   private static final Map<String, String> OPTIONS = options();

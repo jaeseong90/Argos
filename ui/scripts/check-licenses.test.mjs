@@ -11,12 +11,17 @@ import {
   checkLicenses,
   collectInstalledPackages,
   collectProductionPackages,
+  DEFAULT_SBOM_TIMESTAMP,
   devOnlyMatches,
   evaluateLicense,
   licenseOf,
+  npmPurl,
   parseBundleManifest,
   parseDevOnlyNpm,
   parsePolicy,
+  renderAboutJson,
+  renderSbom,
+  sbomTimestamp,
 } from './check-licenses.mjs';
 import { createFixture } from './test-fixtures.mjs';
 
@@ -520,5 +525,182 @@ describe('check-licenses CLI', () => {
     const text = readFileSync(notices, 'utf8');
     expect(text).toContain('a@1.0.0\nLicense: MIT');
     expect(text).toContain('MIT text of a');
+  }, 30_000);
+});
+
+// WO-44: the About list (ADR-0010 C-153) and the CycloneDX SBOM of the bundle.
+const SHIPPED = [
+  { name: 'zeta', version: '2.0.0', license: '(MIT OR Apache-2.0)' },
+  { name: '@scope/pkg', version: '1.2.3', license: 'MIT' },
+  { name: 'alpha', version: '1.0.0', license: 'ISC' },
+  { name: 'alpha', version: '1.0.0', license: 'ISC' },
+  { name: 'nolicense', version: '0.1.0', license: null },
+];
+
+describe('About list and SBOM of the bundle (T-BLD-003c, T-BLD-008)', () => {
+  it('T-BLD-009 SBOM time: SOURCE_DATE_EPOCH, otherwise the fixed archive instant', () => {
+    expect(sbomTimestamp(undefined)).toBe(DEFAULT_SBOM_TIMESTAMP);
+    expect(sbomTimestamp('')).toBe('1980-02-01T00:00:00Z');
+    expect(sbomTimestamp('1700000000')).toBe('2023-11-14T22:13:20Z');
+    expect(() => sbomTimestamp('yesterday')).toThrow(/whole seconds/);
+  });
+
+  it('T-BLD-003c the About list is the LicenseCatalog form [{name, version, license}], sorted and distinct', () => {
+    const list = JSON.parse(renderAboutJson(SHIPPED));
+
+    expect(list).toEqual([
+      { name: '@scope/pkg', version: '1.2.3', license: 'MIT' },
+      { name: 'alpha', version: '1.0.0', license: 'ISC' },
+      { name: 'nolicense', version: '0.1.0', license: 'UNKNOWN' },
+      { name: 'zeta', version: '2.0.0', license: '(MIT OR Apache-2.0)' },
+    ]);
+    // Input order does not matter (reproducible output).
+    expect(renderAboutJson([...SHIPPED].reverse())).toBe(renderAboutJson(SHIPPED));
+  });
+
+  it('T-BLD-008 the SBOM is CycloneDX 1.6 with one component per bundled package (> 0), purls and SPDX licenses', () => {
+    const text = renderSbom({
+      name: '@argos-apm/ui',
+      version: '0.1.0',
+      packages: SHIPPED,
+      timestamp: '2026-11-20T08:00:00Z',
+    });
+    const bom = JSON.parse(text);
+
+    expect(bom.bomFormat).toBe('CycloneDX');
+    expect(bom.specVersion).toBe('1.6');
+    expect(bom.serialNumber).toBeUndefined();
+    expect(bom.metadata.timestamp).toBe('2026-11-20T08:00:00Z');
+    expect(bom.metadata.component).toMatchObject({
+      type: 'application',
+      name: '@argos-apm/ui',
+      version: '0.1.0',
+      purl: 'pkg:npm/%40argos-apm/ui@0.1.0',
+    });
+    expect(bom.components.length).toBeGreaterThan(0);
+    expect(bom.components).toEqual([
+      {
+        type: 'library',
+        'bom-ref': 'pkg:npm/%40scope/pkg@1.2.3',
+        group: '@scope',
+        name: 'pkg',
+        version: '1.2.3',
+        purl: 'pkg:npm/%40scope/pkg@1.2.3',
+        licenses: [{ license: { id: 'MIT' } }],
+      },
+      {
+        type: 'library',
+        'bom-ref': 'pkg:npm/alpha@1.0.0',
+        name: 'alpha',
+        version: '1.0.0',
+        purl: 'pkg:npm/alpha@1.0.0',
+        licenses: [{ license: { id: 'ISC' } }],
+      },
+      {
+        type: 'library',
+        'bom-ref': 'pkg:npm/nolicense@0.1.0',
+        name: 'nolicense',
+        version: '0.1.0',
+        purl: 'pkg:npm/nolicense@0.1.0',
+      },
+      {
+        type: 'library',
+        'bom-ref': 'pkg:npm/zeta@2.0.0',
+        name: 'zeta',
+        version: '2.0.0',
+        purl: 'pkg:npm/zeta@2.0.0',
+        licenses: [{ expression: '(MIT OR Apache-2.0)' }],
+      },
+    ]);
+    expect(bom.dependencies).toEqual([
+      {
+        ref: 'pkg:npm/%40argos-apm/ui@0.1.0',
+        dependsOn: bom.components.map((/** @type {{ purl: string }} */ c) => c.purl),
+      },
+    ]);
+    expect(npmPurl('a', '1.0.0+build')).toBe('pkg:npm/a@1.0.0%2Bbuild');
+    expect(
+      renderSbom({
+        name: '@argos-apm/ui',
+        version: '0.1.0',
+        packages: [...SHIPPED].reverse(),
+        timestamp: '2026-11-20T08:00:00Z',
+      }),
+    ).toBe(text);
+  });
+
+  // Spawns node processes, which can exceed Vitest's 5 s default on a loaded machine.
+  it('T-BLD-003c CLI: --about-json and --sbom write the bundle lists; without the manifest they exit 1', () => {
+    const projectDir = fixture({
+      ...GPL_PROJECT,
+      'package.json': { name: 'app', version: '3.4.5', dependencies: { a: '1.0.0', c: '1.0.0' } },
+      'node_modules/a/package.json': pkg('a', 'MIT'),
+    });
+    const manifest = createFixture({
+      'license.json': [
+        { name: 'c', version: '1.0.0', identifier: '(MIT OR GPL-3.0-only)' },
+        { name: 'a', version: '1.0.0', identifier: 'MIT', text: 'MIT text of a' },
+      ],
+    });
+    cleanups.push(manifest.cleanup);
+    const about = join(projectDir, 'build', 'licenses', 'ui.json');
+    const sbom = join(projectDir, 'build', 'sbom', 'ui.cdx.json');
+    const args = [
+      SCRIPT,
+      '--project',
+      projectDir,
+      '--require-bundle',
+      '--about-json',
+      about,
+      '--sbom',
+      sbom,
+    ];
+    const env = {
+      ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'ARGOS_VERSION')),
+      SOURCE_DATE_EPOCH: '1700000000',
+    };
+
+    const missing = spawnSync(
+      process.execPath,
+      [...args, '--bundle', join(projectDir, 'none.json')],
+      {
+        encoding: 'utf8',
+        env,
+      },
+    );
+    expect(missing.status).toBe(1);
+    expect(existsSync(sbom)).toBe(false);
+
+    const run = spawnSync(
+      process.execPath,
+      [...args, '--bundle', join(manifest.root, 'license.json')],
+      {
+        encoding: 'utf8',
+        env,
+      },
+    );
+    expect(run.status, run.stderr).toBe(0);
+    expect(JSON.parse(readFileSync(about, 'utf8'))).toEqual([
+      { name: 'a', version: '1.0.0', license: 'MIT' },
+      { name: 'c', version: '1.0.0', license: '(MIT OR GPL-3.0-only)' },
+    ]);
+    const bom = JSON.parse(readFileSync(sbom, 'utf8'));
+    expect(bom.metadata.timestamp).toBe('2023-11-14T22:13:20Z');
+    expect(bom.metadata.component.version).toBe('3.4.5');
+    expect(bom.components.map((/** @type {{ purl: string }} */ c) => c.purl)).toEqual([
+      'pkg:npm/a@1.0.0',
+      'pkg:npm/c@1.0.0',
+    ]);
+
+    const released = spawnSync(
+      process.execPath,
+      [...args, '--bundle', join(manifest.root, 'license.json')],
+      {
+        encoding: 'utf8',
+        env: { ...env, ARGOS_VERSION: '0.1.0' },
+      },
+    );
+    expect(released.status, released.stderr).toBe(0);
+    expect(JSON.parse(readFileSync(sbom, 'utf8')).metadata.component.version).toBe('0.1.0');
   }, 30_000);
 });

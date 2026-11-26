@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 package io.argos.buildlogic.traceability
 
+import io.argos.buildlogic.testing.MatrixCatalog
+import io.argos.buildlogic.testing.MatrixDefinitionException
+import io.argos.buildlogic.testing.MatrixRunResult
 import io.argos.buildlogic.traceability.JUnitXmlResults.Status
 import java.io.File
 import java.nio.file.FileVisitResult
@@ -13,18 +16,24 @@ import java.time.temporal.ChronoUnit
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
 
 /**
- * Walks the repository for test sources and JUnit XML results (no Gradle model needed, so the
- * included build build-logic and the UI are covered too):
+ * Walks the repository for test sources and results (no Gradle model needed, so the included build
+ * build-logic and the UI are covered too):
  * - Java/Kotlin sources of test source sets: `<project>/src/<set>/` where `<set>` is `test` or
  *   ends with `Test` (integrationTest, archTest, matrixTest, securityTest, contractTest, ...);
  * - UI tests: `*.test.*` (Vitest) and `*.spec.*` (Playwright) below ui/, outside node_modules;
- * - results: the XML files in `build/test-results/<task>` of every project.
+ * - shell test scripts ([ShellTestScanner.isShellTest]) and the matrix rows of test/matrix/matrix.yaml;
+ * - results: the XML files in `build/test-results/<task>` of every project (JUnit; Vitest writes
+ *   ui/build/test-results/vitest/junit.xml), the shell TAP files `build/test-results/shell/<suite>/<script>.tap`,
+ *   the Playwright JSON files `results*.json` at any depth below ui/test-results and the matrix results
+ *   `build/matrix/T-MX-*.json`.
  * Skipped: node_modules, VCS and IDE directories, every other build output, docs/.
  */
 object RepositoryScan {
@@ -32,12 +41,29 @@ object RepositoryScan {
   private val skippedDirectories = setOf("node_modules", ".git", ".gradle", ".kotlin", ".idea", ".vscode", "dist", "coverage", "playwright-report", "docs")
   private val scriptTest = Regex("""^.+\.(test|spec)\.(ts|tsx|mts|js|mjs)$""")
 
-  data class Collected(val junitSources: List<File>, val scriptSources: List<File>, val resultFiles: List<File>)
+  data class Collected(
+    val junitSources: List<File>,
+    val scriptSources: List<File>,
+    val resultFiles: List<File>,
+    val shellSources: List<File> = emptyList(),
+    val shellResults: List<File> = emptyList(),
+    val playwrightResults: List<File> = emptyList(),
+    val matrixResults: List<File> = emptyList(),
+    val matrixCatalog: File? = null,
+  )
 
-  fun collect(root: File): Collected {
+  /**
+   * Files of the repository below [root]; with [includeResults] false no result file is collected
+   * (a clean checkout: every test NOT RUN, `-Ptraceability.results=none`).
+   */
+  fun collect(root: File, includeResults: Boolean = true): Collected {
     val junit = mutableListOf<File>()
     val scripts = mutableListOf<File>()
     val results = mutableListOf<File>()
+    val shells = mutableListOf<File>()
+    val shellResults = mutableListOf<File>()
+    val playwright = mutableListOf<File>()
+    val matrix = mutableListOf<File>()
     val rootPath = root.toPath()
     Files.walkFileTree(
       rootPath,
@@ -50,9 +76,27 @@ object RepositoryScan {
           if (name == "node_modules") return FileVisitResult.SKIP_SUBTREE
           // A "build" directory outside src/ is a build output: only its test results are read.
           if (name == "build" && !relative.contains("/src/") && !relative.startsWith("src/")) {
+            if (!includeResults) return FileVisitResult.SKIP_SUBTREE
             val testResults = dir.resolve("test-results").toFile()
             testResults.listFiles { f -> f.isDirectory }.orEmpty().sortedBy { it.name }.forEach { task ->
               results += task.listFiles { f -> f.isFile && f.name.endsWith(".xml") }.orEmpty().sortedBy { it.name }
+            }
+            testResults.resolve("shell").listFiles { f -> f.isDirectory }.orEmpty().sortedBy { it.name }.forEach { suite ->
+              shellResults += suite.listFiles { f -> f.isFile && f.name.endsWith(".tap") }.orEmpty().sortedBy { it.name }
+            }
+            dir.resolve("matrix").toFile().listFiles { f -> f.isFile }.orEmpty().sortedBy { it.name }.forEach { f ->
+              if (MatrixEvidence.isResultFile(rootPath.relativize(f.toPath()).toString().replace('\\', '/'))) matrix += f
+            }
+            return FileVisitResult.SKIP_SUBTREE
+          }
+          // Playwright output: only the JSON reports are read, never the attachments.
+          if (name == "test-results" && relative.startsWith("ui/")) {
+            if (includeResults) {
+              Files.walk(dir).use { paths ->
+                paths.filter { Files.isRegularFile(it) }.forEach { p ->
+                  if (PlaywrightResults.isResultsFile(rootPath.relativize(p).toString().replace('\\', '/'))) playwright += p.toFile()
+                }
+              }
             }
             return FileVisitResult.SKIP_SUBTREE
           }
@@ -66,12 +110,23 @@ object RepositoryScan {
             junit += file.toFile()
           } else if (relative.startsWith("ui/") && scriptTest.matches(name)) {
             scripts += file.toFile()
+          } else if (name.endsWith(".sh") && ShellTestScanner.isShellTest(relative)) {
+            shells += file.toFile()
           }
           return FileVisitResult.CONTINUE
         }
       },
     )
-    return Collected(junit.sortedBy { it.path }, scripts.sortedBy { it.path }, results.sortedBy { it.path })
+    return Collected(
+      junit.sortedBy { it.path },
+      scripts.sortedBy { it.path },
+      results.sortedBy { it.path },
+      shells.sortedBy { it.path },
+      shellResults.sortedBy { it.path },
+      playwright.sortedBy { it.path },
+      matrix.sortedBy { it.path },
+      root.resolve(MatrixEvidence.CATALOG_PATH).takeIf { it.isFile },
+    )
   }
 
   /** "a/src/integrationTest/java/X.java" -> "integrationTest"; null when not a test source set. */
@@ -89,9 +144,15 @@ object RepositoryScan {
       if (relativePath.startsWith("build/test-results/")) "" else it
     }
 
-  /** Scans everything below [root] into a model. */
-  fun model(root: File): TraceabilityModel {
-    val files = collect(root)
+  /** Scans everything below [root] into a model, results included. */
+  fun model(root: File): TraceabilityModel = model(root, includeResults = true)
+
+  /**
+   * Scans everything below [root] into a model; with [includeResults] false every test is NOT RUN
+   * (no result file is read: the state of a clean checkout, `-Ptraceability.results=none`).
+   */
+  fun model(root: File, includeResults: Boolean): TraceabilityModel {
+    val files = collect(root, includeResults)
     val classes = mutableListOf<SourceClass>()
     val tests = mutableListOf<SourceTest>()
     var withoutId = 0
@@ -109,24 +170,77 @@ object RepositoryScan {
       tests += scan.tests
       withoutId += scan.untitledTests
     }
+    for (file in files.shellSources) {
+      val relative = file.relativeTo(root).invariantSeparatorsPath
+      tests += ShellTestScanner.scan(relative, file.readText()).tests
+    }
     val unreadable = mutableListOf<String>()
+    val matrixCatalog =
+      files.matrixCatalog?.let {
+        try {
+          MatrixCatalog.load(it)
+        } catch (e: MatrixDefinitionException) {
+          unreadable += MatrixEvidence.CATALOG_PATH
+          null
+        }
+      }
+    matrixCatalog?.let { tests += MatrixEvidence.sources(it) }
     val results = mutableListOf<Pair<String, JUnitXmlResults.Case>>()
+    var vitestResultFiles = 0
     for (file in files.resultFiles) {
       val relative = file.relativeTo(root).invariantSeparatorsPath
       val cases = JUnitXmlResults.read(file)
       if (cases.isEmpty() && file.length() > 0 && !file.readText().contains("<testsuite")) unreadable += relative
       val project = projectDirOfResult(relative)
+      if (project == "ui") vitestResultFiles++
       cases.forEach { results += project to it.copy(file = File(relative)) }
     }
+    val scriptResults = mutableListOf<ScriptCase>()
+    for (file in files.playwrightResults) {
+      val relative = file.relativeTo(root).invariantSeparatorsPath
+      PlaywrightResults.read(file, relative)?.let { scriptResults += it } ?: run { unreadable += relative }
+    }
+    for (file in files.shellResults) {
+      val relative = file.relativeTo(root).invariantSeparatorsPath
+      ShellResults.read(file, relative)?.let { scriptResults += it } ?: run { unreadable += relative }
+    }
+    for (file in files.matrixResults) {
+      val relative = file.relativeTo(root).invariantSeparatorsPath
+      try {
+        scriptResults += MatrixEvidence.result(MatrixRunResult.fromJson(file), matrixCatalog, relative)
+      } catch (e: MatrixDefinitionException) {
+        unreadable += relative
+      } catch (e: groovy.json.JsonException) {
+        unreadable += relative
+      }
+    }
     withoutId += tests.count { it.methodName != null && it.testIds.isEmpty() && it.requirements.isEmpty() }
+    val playwrightSources = files.scriptSources.count { it.name.contains(".spec.") }
     return Traceability.build(
       classes,
       tests,
       results,
-      sourceFiles = files.junitSources.size + files.scriptSources.size,
-      resultFiles = files.resultFiles.size,
+      sourceFiles = files.junitSources.size + files.scriptSources.size + files.shellSources.size + (if (matrixCatalog != null) 1 else 0),
+      resultFiles = files.resultFiles.size + files.playwrightResults.size + files.shellResults.size + files.matrixResults.size,
       unreadableResultFiles = unreadable,
       testsWithoutId = withoutId,
+      scriptResults = scriptResults,
+      sourceFileCounts =
+        mapOf(
+          Traceability.SOURCE_JUNIT to files.junitSources.size,
+          Traceability.SOURCE_VITEST to files.scriptSources.size - playwrightSources,
+          PlaywrightResults.SOURCE to playwrightSources,
+          ShellTestScanner.SOURCE to files.shellSources.size,
+          MatrixEvidence.SOURCE to (if (matrixCatalog != null) 1 else 0),
+        ),
+      resultFileCounts =
+        mapOf(
+          Traceability.SOURCE_JUNIT to files.resultFiles.size - vitestResultFiles,
+          Traceability.SOURCE_VITEST to vitestResultFiles,
+          PlaywrightResults.SOURCE to files.playwrightResults.size,
+          ShellTestScanner.SOURCE to files.shellResults.size,
+          MatrixEvidence.SOURCE to files.matrixResults.size,
+        ),
     )
   }
 }
@@ -135,6 +249,18 @@ object RepositoryScan {
 object TraceabilityRenderer {
 
   const val QUARANTINE_LIMIT = 10
+
+  /** Display names of [Traceability.SOURCES]. */
+  val SOURCE_NAMES: Map<String, String> =
+    mapOf(
+      Traceability.SOURCE_JUNIT to "JUnit (Gradle test tasks)",
+      Traceability.SOURCE_VITEST to "Vitest (ui)",
+      PlaywrightResults.SOURCE to "Playwright (ui/e2e)",
+      ShellTestScanner.SOURCE to "Shell suites (TAP)",
+      MatrixEvidence.SOURCE to "Compatibility matrix",
+    )
+
+  private const val REASON_LIMIT = 120
 
   fun markdown(model: TraceabilityModel, generatedAt: String): String {
     val sb = StringBuilder()
@@ -145,17 +271,34 @@ object TraceabilityRenderer {
     sb.appendLine()
     sb.appendLine(
       "Generated by `./gradlew traceabilityReport` at $generatedAt from ${model.sourceFiles} test source " +
-        "files and ${model.resultFiles} JUnit XML result files of this workspace (docs/18 §3, §16, DSN-18-01)."
+        "files and ${model.resultFiles} result files of this workspace (JUnit XML, Vitest JUnit XML, Playwright " +
+        "JSON, shell TAP, matrix JSON; docs/18 §3, §16, DSN-18-01)."
     )
     sb.appendLine(
-      "Test IDs come from display names, method names and test titles; requirements from " +
-        "`@Tag(\"req:<ID>\")` and Playwright `{ type: 'req' }` annotations. \"Last result\" is the newest " +
-        "JUnit XML in this workspace; NOT RUN means no result file (run the suite first)."
+      "Test IDs come from display names, method names, test titles, shell assertion descriptions with their " +
+        "`# test-ids:` headers and matrix rows; requirements from `@Tag(\"req:<ID>\")`, Playwright `req` " +
+        "annotations (per test in the JSON results, per file in the sources), shell `# req:` headers and N-13 for " +
+        "matrix rows. \"Last result\" aggregates the result files in this workspace; NOT RUN means no result file " +
+        "(run the suite first; a clean checkout shows every test NOT RUN, never FAILED)."
     )
     sb.appendLine(
-      "Skeleton (WO-05): the comparison with the 18 §16 table and the failing CI job are WO-53."
+      "The comparison with the 18 §16 table and the catalogue rules are `./gradlew checkTraceability`."
     )
     sb.appendLine()
+    if (model.sources.isNotEmpty()) {
+      sb.appendLine("## Sources")
+      sb.appendLine()
+      sb.appendLine("| Source | Test source files | Result files | Result cases | Unlisted result cases (no ID, no requirement) | PASSED | FAILED | SKIPPED | NOT RUN |")
+      sb.appendLine("|---|---|---|---|---|---|---|---|---|")
+      for (s in model.sources) {
+        val c = model.statusCounts(s.source)
+        sb.appendLine(
+          "| ${SOURCE_NAMES[s.source] ?: s.source} | ${s.sourceFiles} | ${s.resultFiles} | ${s.resultCases} | ${s.unlistedResultCases} | " +
+            "${c["PASSED"]} | ${c["FAILED"]} | ${c["SKIPPED"]} | ${c["NOT RUN"]} |"
+        )
+      }
+      sb.appendLine()
+    }
     sb.appendLine("## Summary")
     sb.appendLine()
     sb.appendLine("| Item | Count |")
@@ -250,7 +393,12 @@ object TraceabilityRenderer {
   private fun result(result: ResultSummary?): String =
     when (result) {
       null -> "NOT RUN"
-      else -> result.status.name + (result.lastRun?.let { " ($it)" } ?: "") + if (result.runs > 1) " x${result.runs}" else ""
+      else ->
+        result.status.name + (result.lastRun?.let { " ($it)" } ?: "") + (if (result.runs > 1) " x${result.runs}" else "") +
+          if (result.status != Status.PASSED && result.reasons.isNotEmpty()) {
+            val reason = result.reasons.first()
+            " [" + (if (reason.length > REASON_LIMIT) reason.take(REASON_LIMIT - 3) + "..." else reason) + "]"
+          } else ""
     }
 
   private fun escape(cell: String): String = cell.replace("|", "\\|").replace("\r", " ").replace("\n", " ")
@@ -267,9 +415,12 @@ object TraceabilityRenderer {
           "file" to e.file,
           "line" to e.line,
           "suite" to e.suite,
+          "source" to e.source,
           "result" to
             e.result?.let {
-              linkedMapOf("status" to it.status.name, "runs" to it.runs, "lastRun" to it.lastRun, "suites" to it.suites)
+              linkedMapOf<String, Any?>("status" to it.status.name, "runs" to it.runs, "lastRun" to it.lastRun, "suites" to it.suites).apply {
+                if (it.reasons.isNotEmpty()) put("reasons", it.reasons)
+              }
             },
         )
       // C-182: the catalogue IDs this test checks only partly and no full test has passed.
@@ -291,7 +442,19 @@ object TraceabilityRenderer {
             "quarantined" to model.entries.count { it.quarantined },
             "quarantineLimit" to QUARANTINE_LIMIT,
             "partiallyCoveredTestIds" to model.partiallyCovered.size,
+            "lastResults" to model.statusCounts(),
           ),
+        "sources" to
+          model.sources.map { s ->
+            linkedMapOf(
+              "source" to s.source,
+              "sourceFiles" to s.sourceFiles,
+              "resultFiles" to s.resultFiles,
+              "resultCases" to s.resultCases,
+              "unlistedResultCases" to s.unlistedResultCases,
+              "lastResults" to model.statusCounts(s.source),
+            )
+          },
         "requirements" to model.byRequirement.map { (req, list) -> linkedMapOf("id" to req, "tests" to list.map(::entry)) },
         "testIdsWithoutRequirement" to model.withoutRequirement.map(::entry),
         "partiallyCoveredTestIds" to model.partiallyCovered.map { (id, partial) -> linkedMapOf("id" to id, "partialIds" to partial) },
@@ -385,17 +548,21 @@ abstract class TraceabilityReport : DefaultTask() {
 
   @get:OutputFile abstract val jsonReport: RegularFileProperty
 
+  /** False: read no result file, every test NOT RUN (a clean checkout; `-Ptraceability.results=none`). */
+  @get:Input abstract val includeResults: Property<Boolean>
+
   init {
     group = "reporting"
     description =
       "Writes build/reports/traceability.md and .json: requirement -> tests -> last result (18 §3, §16)."
-    doNotTrackState("Scans test sources and JUnit XML results of the whole workspace on every run")
+    includeResults.convention(true)
+    doNotTrackState("Scans test sources and results (JUnit, Vitest, Playwright, shell, matrix) of the whole workspace on every run")
   }
 
   @TaskAction
   fun generate() {
     val root = repositoryRoot.get().asFile
-    val model = RepositoryScan.model(root)
+    val model = RepositoryScan.model(root, includeResults.get())
     val now = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString()
     val md = markdownReport.get().asFile.apply { parentFile.mkdirs() }
     md.writeText(TraceabilityRenderer.markdown(model, now))
@@ -406,5 +573,15 @@ abstract class TraceabilityReport : DefaultTask() {
         "${model.entries.count { it.requirements.isNotEmpty() }} tagged tests ($failed failed in the last results). " +
         "Report: ${md.toURI()}"
     )
+    for (s in model.sources) {
+      val c = model.statusCounts(s.source)
+      logger.lifecycle(
+        "  ${s.source}: ${s.sourceFiles} source files, ${s.resultFiles} result files; " +
+          "PASSED ${c["PASSED"]}, FAILED ${c["FAILED"]}, SKIPPED ${c["SKIPPED"]}, NOT RUN ${c["NOT RUN"]}"
+      )
+    }
+    if (model.unreadableResultFiles.isNotEmpty()) {
+      logger.warn("Traceability: ${model.unreadableResultFiles.size} unreadable result files: ${model.unreadableResultFiles.joinToString(", ")}")
+    }
   }
 }

@@ -11,6 +11,7 @@ import io.argos.server.storage.postgres.auth.UserRepository;
 import io.argos.server.storage.postgres.command.CommandRepository;
 import io.argos.server.storage.postgres.instance.InstanceRetentionRepository;
 import io.argos.server.storage.postgres.secrets.SecretsRekeyService;
+import io.argos.server.storage.postgres.secrets.StoredSecretScan;
 import io.argos.server.storage.postgres.token.AgentTokenStore;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -51,9 +52,6 @@ public final class AdminCommandDatabase implements AutoCloseable {
   /** {@code application_name} of the connection. */
   public static final String APPLICATION_NAME = "argos-admin";
 
-  /** Dictionary rows deleted per statement of {@link #deleteDictionaryUnseenSince}. */
-  static final int DICTIONARY_BATCH = 10_000;
-
   /** Rows a diagnostic query returns at most. */
   public static final int DIAGNOSTIC_ROWS = 10_000;
 
@@ -86,6 +84,22 @@ public final class AdminCommandDatabase implements AutoCloseable {
    */
   public static AdminCommandDatabase open(ArgosProperties.Postgres postgres)
       throws AdminCommandDatabaseException {
+    return open(postgres, false);
+  }
+
+  /**
+   * Opens a read-only connection of the runtime account ({@code secrets verify}, WO-43).
+   *
+   * @throws AdminCommandDatabaseException when the URL or password is missing or the connection
+   *     fails
+   */
+  public static AdminCommandDatabase openReadOnly(ArgosProperties.Postgres postgres)
+      throws AdminCommandDatabaseException {
+    return open(postgres, true);
+  }
+
+  private static AdminCommandDatabase open(ArgosProperties.Postgres postgres, boolean readOnly)
+      throws AdminCommandDatabaseException {
     String url = postgres.url();
     if (url == null || url.isBlank()) {
       throw new AdminCommandDatabaseException(
@@ -106,7 +120,11 @@ public final class AdminCommandDatabase implements AutoCloseable {
       throw new AdminCommandDatabaseException(e.getMessage(), e);
     }
     try {
-      Connection connection = DriverManager.getConnection(url, properties(app.user(), password));
+      Properties p = properties(app.user(), password);
+      if (readOnly) {
+        p.setProperty("readOnly", "true");
+      }
+      Connection connection = DriverManager.getConnection(url, p);
       connection.setAutoCommit(true);
       return new AdminCommandDatabase(new SingleConnectionDataSource(connection, true));
     } catch (SQLException e) {
@@ -195,6 +213,11 @@ public final class AdminCommandDatabase implements AutoCloseable {
     return new SecretsRekeyService(dataSource, ring);
   }
 
+  /** The read-only scan of the stored secrets over this connection ({@code secrets verify}). */
+  public StoredSecretScan storedSecrets() {
+    return new StoredSecretScan(dataSource);
+  }
+
   // --- statements of the commands -------------------------------------------------------------
 
   /**
@@ -210,26 +233,15 @@ public final class AdminCommandDatabase implements AutoCloseable {
   }
 
   /**
-   * Deletes dictionary entries not seen since {@code cutoff} (SEC-13, 17 §9.3), in batches of
-   * {@value #DICTIONARY_BATCH} rows.
+   * Deletes dictionary entries not seen since {@code cutoff} (SEC-13, 17 §9.3) with the statement
+   * of the nightly job ({@link DictionaryCleanupRepository}, {@value
+   * DictionaryCleanupRepository#BATCH} rows per statement). The command line has no dictionary
+   * cache, so the keys of the deleted rows are not used.
    *
    * @return the rows deleted
    */
   public long deleteDictionaryUnseenSince(Instant cutoff) {
-    long total = 0;
-    while (true) {
-      int n =
-          jdbc.update(
-              "DELETE FROM argos.dictionary WHERE ctid IN (SELECT ctid FROM argos.dictionary WHERE"
-                  + " last_seen < ? LIMIT "
-                  + DICTIONARY_BATCH
-                  + ")",
-              Timestamp.from(cutoff));
-      total += n;
-      if (n < DICTIONARY_BATCH) {
-        return total;
-      }
-    }
+    return DictionaryCleanupRepository.deleteUnseenSince(jdbc, cutoff, keys -> {});
   }
 
   /** The ids of the unrevoked tokens with {@code prefix} ({@code argos_} and 8 characters). */

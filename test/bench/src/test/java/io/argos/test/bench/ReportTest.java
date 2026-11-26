@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -124,6 +125,38 @@ class ReportTest {
     assertThat(Json.number(on, "routesP99", "orders.get", "diffMean")).isCloseTo(0.1, within(1e-9));
     assertThat(LoadReport.markdown(set("process"), List.of(), result))
         .contains("| app CPU s (mean) | 600.00 | 618.00 | +3.00%");
+  }
+
+  @Test
+  @Tag("req:N-01")
+  @DisplayName(
+      "T-BLD-015f report: self-diagnostics count only when every agent run has them, else jcmd")
+  void selfDiagnosticsNeedEveryRun() {
+    List<Map<String, Object>> runs =
+        Fixtures.withSelfDiag(
+            runs(
+                new double[] {600, 606, 594},
+                new double[] {618, 624, 612},
+                new double[] {300.5, 300.6, 300.4},
+                new double[] {300.7, 300.9, 300.5}),
+            72.0,
+            1024L * 1024,
+            300.0);
+    Map<String, Object> all = LoadReport.analyze(set("process"), runs);
+    // 72 s of 600 s on 12 CPUs: exactly 1% of the host, still within the limit
+    assertThat(Json.number(all, "comparisons", "on", "agentThreadCpu", "value"))
+        .isCloseTo(1.0, within(1e-12));
+    assertThat(Json.at(all, "comparisons", "on", "agentThreadCpu", "verdict")).isEqualTo("PASS");
+    Map<String, Object> measure = new LinkedHashMap<>(Json.object(runs.get(3).get("measure")));
+    measure.remove("selfDiag");
+    runs.get(3).put("measure", measure);
+    Map<String, Object> partial = LoadReport.analyze(set("process"), runs);
+    assertThat(Json.at(partial, "comparisons", "on", "agentThreadCpu", "source"))
+        .isEqualTo(LoadReport.AGENT_CPU_JCMD);
+    assertThat(Json.at(partial, "comparisons", "on", "startup", "premainSource"))
+        .isEqualTo(LoadReport.PREMAIN_BANNER);
+    assertThat(Json.object(Json.at(partial, "comparisons", "on", "memory")))
+        .doesNotContainKey("selfDiagDirectMemoryMb");
   }
 
   @Test

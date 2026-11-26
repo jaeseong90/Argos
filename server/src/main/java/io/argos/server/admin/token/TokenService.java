@@ -8,9 +8,12 @@ import io.argos.server.audit.AuditEvent;
 import io.argos.server.audit.AuditResult;
 import io.argos.server.audit.AuditService;
 import io.argos.server.audit.Target;
+import io.argos.server.auth.Sensitive;
 import io.argos.server.auth.token.SecureTokens;
 import io.argos.server.collector.api.TokenHash;
 import io.argos.server.collector.api.TokenLookup;
+import io.argos.server.collector.api.TokenStatus;
+import io.argos.server.session.AgentSession;
 import io.argos.server.session.SessionRegistry;
 import io.argos.server.storage.postgres.token.AgentTokenStore;
 import io.argos.server.storage.postgres.token.AgentTokenStore.NewToken;
@@ -20,16 +23,20 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.locks.ReentrantLock;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -51,6 +58,9 @@ import org.springframework.stereotype.Service;
  *   <li>{@link #expireDue}: the expiry job's sweep ({@link TokenExpiryJob}, every 60 s): a token
  *       past {@code expires_at}, or {@code GRACE} past {@code grace_until}, becomes {@code EXPIRED}
  *       and its sessions end the same way.
+ *   <li>{@link #endSessionsOfUnauthenticated}: the revocation watcher's check ({@link
+ *       TokenRevocationWatcher}, every 2 s): the sessions of a token revoked or expired by another
+ *       process (the command line, another server) end the same way (ADR-0010 C-238 (14)).
  * </ul>
  *
  * Audit events (16 §11.1): {@code TOKEN_ISSUED}, {@code TOKEN_ROTATED}, {@code TOKEN_REVOKED},
@@ -87,6 +97,14 @@ public class TokenService {
   private final @Nullable SessionRegistry sessions;
   private final Clock clock;
 
+  /**
+   * Held while a token's row change and the end of its sessions happen together ({@link #revoke},
+   * {@link #revokeAllForApp}, {@link #expireDue}) and while the revocation watcher checks ({@link
+   * #endSessionsOfUnauthenticated}). A lock rather than {@code synchronized}: requests run on
+   * virtual threads and the section waits on PostgreSQL.
+   */
+  private final ReentrantLock sessionChanges = new ReentrantLock();
+
   /** The server's service: the cache and the live sessions are those of the collector. */
   @Autowired
   public TokenService(
@@ -119,10 +137,11 @@ public class TokenService {
   }
 
   /**
-   * A service outside the running server ({@code argos-admin token create}): no token cache and no
-   * live sessions in this process. Issuance needs neither (a new token is in no cache); a
-   * revocation through it would reach the server's cache only after its 60 s, so the command line
-   * offers issuance only.
+   * A service outside the running server ({@code argos-admin token create|issue|revoke|rotate}): no
+   * token cache and no live sessions in this process. Issuance needs neither (a new token is in no
+   * cache); a revocation through it changes the row only, and the running server's {@link
+   * TokenRevocationWatcher} drops its cache entry and closes its sessions within {@value
+   * TokenRevocationWatcher#PERIOD_MILLIS} ms of the next check (ADR-0010 C-238 (14)).
    */
   public static TokenService offline(AgentTokenStore store, AuditService audit, Clock clock) {
     return new TokenService(store, audit, null, null, clock, false);
@@ -179,6 +198,109 @@ public class TokenService {
     logIssued(row);
     return new IssuedToken(
         row.id(), appId, generated.token(), row.prefix(), row.expiresAt(), null, null);
+  }
+
+  // --- register (WO-41) -------------------------------------------------------------------------
+
+  /** What {@link #register} did. */
+  public enum Registration {
+    /** The token was stored (hash and prefix only) and {@code TOKEN_ISSUED} recorded. */
+    REGISTERED,
+    /** The application has this token already and it authenticates: nothing changed. */
+    ALREADY_ACTIVE,
+    /**
+     * The application has this token already but it no longer authenticates (revoked, expired, or
+     * past its rotation grace): nothing changed; the installation needs a new token.
+     */
+    ALREADY_INACTIVE
+  }
+
+  /**
+   * Registers a token generated outside the server ({@code argos.bootstrap.apps-file}: the token
+   * files of an installation, 17 §3.8, §6.4; WO-41) for {@code appId}, idempotently: a token whose
+   * hash the application has already is left as it is, so a restart changes nothing. A new one is
+   * stored like an issued token: SHA-256 and the 14-character prefix only, within the limit of
+   * {@value #MAX_ACTIVE_PER_APP} active tokens, audited {@code TOKEN_ISSUED} (result code {@code
+   * registered}). Never logs.
+   *
+   * @param expiresInDays 1 to {@value #MAX_EXPIRES_IN_DAYS}; null for {@value
+   *     #DEFAULT_EXPIRES_IN_DAYS}
+   * @throws ApiException 400 {@code invalid_request} (detail {@code token: invalid_format}) for a
+   *     token that is not {@code argos_} + 43 base64url characters or an expiry out of range, 404
+   *     when the app does not exist, 409 {@code invalid_state} (detail {@code app_id: token_limit})
+   *     at the limit, 409 {@code already_exists} (detail {@code token: registered_elsewhere}) when
+   *     another application has the token
+   */
+  public Registration register(
+      Actor actor, int appId, @Sensitive String token, @Nullable Integer expiresInDays) {
+    if (!TokenHash.isWellFormed(token)) {
+      throw new ApiException(
+              ErrorCode.INVALID_REQUEST,
+              "An agent token is argos_ followed by 43 base64url characters")
+          .detail("token", "invalid_format");
+    }
+    int days = expiresInDays == null ? DEFAULT_EXPIRES_IN_DAYS : expiresInDays;
+    if (days < 1 || days > MAX_EXPIRES_IN_DAYS) {
+      throw new ApiException(
+              ErrorCode.INVALID_REQUEST, "expires_in_days must be from 1 to 3650 days")
+          .detail("expires_in_days", "out_of_range");
+    }
+    if (!store.appExists(appId)) {
+      throw new ApiException(ErrorCode.NOT_FOUND, "The application does not exist");
+    }
+    TokenHash hash = TokenHash.of(token);
+    Instant now = clock.instant();
+    for (StoredToken t : store.listByApp(appId, AgentTokenStore.MAX_LISTED)) {
+      if (t.hash().matches(hash)) {
+        TokenState state =
+            TokenState.of(t.status(), t.expiresAt(), t.graceUntil(), t.revokedAt(), now);
+        return state.authenticates() ? Registration.ALREADY_ACTIVE : Registration.ALREADY_INACTIVE;
+      }
+    }
+    NewToken row =
+        new NewToken(
+            UUID.randomUUID(),
+            appId,
+            hash,
+            TokenHash.displayPrefix(token),
+            userId(actor),
+            now,
+            now.plus(Duration.ofDays(days)));
+    WriteResult result;
+    try {
+      result = store.insert(row, MAX_ACTIVE_PER_APP, now);
+    } catch (DuplicateKeyException e) {
+      audit.record(
+          AuditEvent.TOKEN_ISSUED,
+          actor,
+          new Target("app", Integer.toString(appId), null),
+          AuditResult.rejected("registered_elsewhere"),
+          null,
+          Map.of("app_id", appId, "token_prefix", row.prefix()));
+      throw new ApiException(ErrorCode.ALREADY_EXISTS, "Another application has this agent token")
+          .detail("token", "registered_elsewhere");
+    }
+    switch (result.outcome()) {
+      case NOT_FOUND ->
+          throw new ApiException(ErrorCode.NOT_FOUND, "The application does not exist");
+      case LIMIT_REACHED -> {
+        audit.record(
+            AuditEvent.TOKEN_ISSUED,
+            actor,
+            new Target("app", Integer.toString(appId), null),
+            AuditResult.rejected("token_limit"),
+            null,
+            Map.of("app_id", appId, "active_tokens", result.active()));
+        throw limitReached();
+      }
+      default -> {
+        // DONE
+      }
+    }
+    // A Hello with this token before it existed may have left a negative cache entry.
+    invalidate(row.hash());
+    recordIssued(actor, row, null, "registered");
+    return Registration.REGISTERED;
   }
 
   // --- list -------------------------------------------------------------------------------------
@@ -321,14 +443,21 @@ public class TokenService {
     if (store.find(tokenId).isEmpty()) {
       throw new ApiException(ErrorCode.NOT_FOUND, "The token does not exist");
     }
-    StoredToken revoked =
-        store
-            .revoke(tokenId, userId(actor), why, clock.instant())
-            .orElseThrow(
-                () ->
-                    new ApiException(ErrorCode.INVALID_STATE, "The token is revoked already")
-                        .detail("token_id", "revoked"));
-    int closed = endSessions(revoked);
+    StoredToken revoked;
+    int closed;
+    sessionChanges.lock();
+    try {
+      revoked =
+          store
+              .revoke(tokenId, userId(actor), why, clock.instant())
+              .orElseThrow(
+                  () ->
+                      new ApiException(ErrorCode.INVALID_STATE, "The token is revoked already")
+                          .detail("token_id", "revoked"));
+      closed = endSessions(revoked);
+    } finally {
+      sessionChanges.unlock();
+    }
     recordRevoked(actor, revoked, why.length(), closed, null);
   }
 
@@ -345,9 +474,18 @@ public class TokenService {
     Instant now = clock.instant();
     int revoked = 0;
     for (StoredToken t : store.unrevokedOfApp(appId)) {
-      Optional<StoredToken> done = store.revoke(t.id(), userId(actor), why, now);
+      Optional<StoredToken> done;
+      int closed = 0;
+      sessionChanges.lock();
+      try {
+        done = store.revoke(t.id(), userId(actor), why, now);
+        if (done.isPresent()) {
+          closed = endSessions(done.get());
+        }
+      } finally {
+        sessionChanges.unlock();
+      }
       if (done.isPresent()) {
-        int closed = endSessions(done.get());
         recordRevoked(actor, done.get(), why.length(), closed, "app_revocation");
         revoked++;
       }
@@ -364,9 +502,23 @@ public class TokenService {
    * @return the number of tokens expired
    */
   public int expireDue() {
+    sessionChanges.lock();
+    try {
+      return expireDueLocked().tokens();
+    } finally {
+      sessionChanges.unlock();
+    }
+  }
+
+  /** What one expiry sweep did: tokens expired and their sessions closed. */
+  private record Expiry(int tokens, int sessions) {}
+
+  private Expiry expireDueLocked() {
     List<StoredToken> expired = store.expireDue(clock.instant());
+    int sessionsClosed = 0;
     for (StoredToken t : expired) {
       int closed = endSessions(t);
+      sessionsClosed += closed;
       Map<String, Object> after = new LinkedHashMap<>();
       after.put("app_id", t.appId());
       after.put("state", TokenState.EXPIRED.apiName());
@@ -380,7 +532,98 @@ public class TokenService {
           after);
       logExpired(t.prefix(), closed);
     }
-    return expired.size();
+    return new Expiry(expired.size(), sessionsClosed);
+  }
+
+  // --- changes made outside this server (ADR-0010 C-238 (14)) ------------------------------------
+
+  /**
+   * The result of one {@link #endSessionsOfUnauthenticated} run.
+   *
+   * @param checked token rows read
+   * @param ended tokens that no longer authenticate whose sessions this run closed (at least one
+   *     session each)
+   * @param sessionsClosed sessions closed by this run, the expiry sweep's included
+   * @param expired tokens the expiry sweep set to {@code EXPIRED} in this run
+   */
+  public record Sweep(int checked, int ended, int sessionsClosed, int expired) {
+
+    /** Nothing to do (no live sessions in this process). */
+    static final Sweep NONE = new Sweep(0, 0, 0, 0);
+  }
+
+  /**
+   * The revocation watcher's check ({@link TokenRevocationWatcher}, every {@value
+   * TokenRevocationWatcher#PERIOD_MILLIS} ms): a token can stop authenticating through another
+   * process ({@code argos-admin token revoke} on the server host, another server of the same
+   * database), which reaches neither this server's token cache nor its sessions. One query reads
+   * the tokens of the live sessions and the tokens revoked within {@code recentRevocations} ({@link
+   * AgentTokenStore#revocationCheck}); for each that no longer authenticates at this server's clock
+   * ({@link TokenState#authenticates()}):
+   *
+   * <ul>
+   *   <li>{@code REVOKED} or {@code EXPIRED} in the database: the cache entry is dropped (a new
+   *       Hello reads the row and is refused) and the token's live sessions get {@code
+   *       SessionClose{TOKEN_REVOKED_CLOSE}} and {@code UNAUTHENTICATED}, as {@link #revoke} does.
+   *       No audit record: the process that changed the row recorded it.
+   *   <li>still {@code ACTIVE} or {@code GRACE} but past its expiry or grace: the expiry sweep
+   *       ({@link #expireDue}) runs now instead of at its next minute, with its {@code
+   *       TOKEN_EXPIRED} records.
+   * </ul>
+   *
+   * Runs under the same lock as {@link #revoke}, {@link #revokeAllForApp} and {@link #expireDue},
+   * so that a revocation of this server closes its sessions (and counts them in its audit record)
+   * before the watcher can see the row.
+   *
+   * @param recentRevocations how far back a revocation without a live session of this server is
+   *     still dropped from the cache (longer than the cache lifetime)
+   * @throws org.springframework.dao.DataAccessException when PostgreSQL cannot be read
+   */
+  public Sweep endSessionsOfUnauthenticated(Duration recentRevocations) {
+    if (sessions == null || lookup == null) {
+      return Sweep.NONE;
+    }
+    sessionChanges.lock();
+    try {
+      Set<UUID> live = new HashSet<>();
+      for (AgentSession s : sessions.all()) {
+        live.add(s.tokenId());
+      }
+      List<StoredToken> rows = store.revocationCheck(live, recentRevocations);
+      Instant now = clock.instant();
+      int ended = 0;
+      int closed = 0;
+      boolean due = false;
+      for (StoredToken t : rows) {
+        TokenState state =
+            TokenState.of(t.status(), t.expiresAt(), t.graceUntil(), t.revokedAt(), now);
+        if (state.authenticates()) {
+          continue;
+        }
+        if (t.revokedAt() == null
+            && (t.status() == TokenStatus.ACTIVE || t.status() == TokenStatus.GRACE)) {
+          // Past its expiry or grace: the expiry sweep changes the row and audits it.
+          due |= live.contains(t.id());
+          continue;
+        }
+        invalidate(t.hash());
+        int n = live.contains(t.id()) ? sessions.closeByToken(t.id()) : 0;
+        if (n > 0) {
+          ended++;
+          closed += n;
+          logEndedElsewhere(t.prefix(), state, n);
+        }
+      }
+      int expired = 0;
+      if (due) {
+        Expiry expiry = expireDueLocked();
+        expired = expiry.tokens();
+        closed += expiry.sessions();
+      }
+      return new Sweep(rows.size(), ended, closed, expired);
+    } finally {
+      sessionChanges.unlock();
+    }
   }
 
   // --- helpers ----------------------------------------------------------------------------------
@@ -413,6 +656,11 @@ public class TokenService {
   }
 
   private void recordIssued(Actor actor, NewToken row, @Nullable UUID rotatedFrom) {
+    recordIssued(actor, row, rotatedFrom, rotatedFrom == null ? null : "rotation");
+  }
+
+  private void recordIssued(
+      Actor actor, NewToken row, @Nullable UUID rotatedFrom, @Nullable String code) {
     Map<String, Object> after = new LinkedHashMap<>();
     after.put("app_id", row.appId());
     after.put("token_prefix", row.prefix());
@@ -424,7 +672,7 @@ public class TokenService {
         AuditEvent.TOKEN_ISSUED,
         actor,
         tokenTarget(row.id(), row.prefix()),
-        AuditResult.success(rotatedFrom == null ? null : "rotation"),
+        AuditResult.success(code),
         null,
         after);
   }
@@ -507,5 +755,13 @@ public class TokenService {
 
   private static void logExpired(String prefix, int closed) {
     LOG.info("Agent token expired: prefix={} sessions closed={}", prefix, closed);
+  }
+
+  private static void logEndedElsewhere(String prefix, TokenState state, int closed) {
+    LOG.info(
+        "Agent token {} outside this server: prefix={} sessions closed={}",
+        state.apiName(),
+        prefix,
+        closed);
   }
 }

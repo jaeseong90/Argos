@@ -151,7 +151,8 @@ class HelloServiceTest {
 
   @Test
   @DisplayName(
-      "11 §5 check 1: missing, expired and revoked tokens are UNAUTHENTICATED TOKEN_* with retry 300 (C-140)")
+      "11 §5 check 1: missing, expired and revoked tokens are UNAUTHENTICATED TOKEN_* with retry"
+          + " 300 (C-140)")
   void check1Token() {
     HelloService s = service(x -> x);
     rejected(
@@ -184,7 +185,8 @@ class HelloServiceTest {
 
   @Test
   @DisplayName(
-      "11 §5 check 3: a plaintext transport while allow-plaintext=false is PLAINTEXT_NOT_ALLOWED, decided from the transport")
+      "11 §5 check 3: a plaintext transport while allow-plaintext=false is PLAINTEXT_NOT_ALLOWED,"
+          + " decided from the transport")
   void check3Plaintext() {
     rejected(
         run(service(x -> x), hello().setPlaintext(false), accepted(), true),
@@ -258,8 +260,8 @@ class HelloServiceTest {
   @Test
   @Tag("req:F-S30")
   @DisplayName(
-      "T-SV-043 a failed approval-queue write does not change the answer: APP_NOT_REGISTERED, stream"
-          + " OK, retry 300 (the agent's retry queues it)")
+      "T-SV-043 a failed approval-queue write does not change the answer: APP_NOT_REGISTERED,"
+          + " stream OK, retry 300 (the agent's retry queues it)")
   void queueFailureKeepsAnswer() {
     store.pendingFailing = true;
     HelloService off =
@@ -440,7 +442,8 @@ class HelloServiceTest {
 
   @Test
   @DisplayName(
-      "T-SV-014 11 §5 check 6: instances per app and new instances per hour are INSTANCE_LIMIT, retry 60")
+      "T-SV-014 11 §5 check 6: instances per app and new instances per hour are INSTANCE_LIMIT,"
+          + " retry 60")
   @Tag("req:SEC-14")
   void check6Instances() {
     store.addInstance(home.id(), "other:1", clock.instant().minus(Duration.ofHours(2)));
@@ -654,7 +657,8 @@ class HelloServiceTest {
 
   @Test
   @DisplayName(
-      "11 §10 (contract vectors) a Hello during the shutdown is UNAVAILABLE SERVER_SHUTTING_DOWN, retry 5")
+      "11 §10 (contract vectors) a Hello during the shutdown is UNAVAILABLE SERVER_SHUTTING_DOWN,"
+          + " retry 5")
   void shuttingDown() {
     state.beginShutdown();
     rejected(
@@ -731,7 +735,8 @@ class HelloServiceTest {
 
   @Test
   @DisplayName(
-      "11 §5 the accepted ServerHello: ids, versions, server time, intervals, Limits, empty config and salt (C-125)")
+      "11 §5 the accepted ServerHello: ids, versions, server time, intervals, Limits, empty config"
+          + " and salt (C-125)")
   void acceptedHello() {
     HelloOutcome o = run(service(x -> x), hello(), accepted(), false);
     ServerHello h = o.hello();
@@ -756,7 +761,8 @@ class HelloServiceTest {
 
   @Test
   @DisplayName(
-      "11 §5 the instance id is reused for (app, instance_name); unchanged metadata is not rewritten")
+      "11 §5 the instance id is reused for (app, instance_name); unchanged metadata is not"
+          + " rewritten")
   void instanceReuse() {
     HelloService s = service(x -> x);
     HelloOutcome a = run(s, hello(), accepted(), false);
@@ -794,5 +800,197 @@ class HelloServiceTest {
                 .count())
         .isEqualTo(1);
     assertThat(store.instances.get(0).metadata().ipMode()).isEqualTo("off");
+  }
+
+  // --- check-only Hello (ADR-0010 C-240 (1), T-SV-022b) ---
+
+  private static AgentHello.Builder checkHello() {
+    return hello().setInstanceName("host-a-check").setCheckOnly(true);
+  }
+
+  @Test
+  @Tag("req:C-240")
+  @Tag("req:F-A27")
+  @DisplayName(
+      "T-SV-022b a check-only Hello is accepted without a session: app id, instance id 0, no"
+          + " session id, versions, server time, Limits, empty config and salt; no instance row, no"
+          + " registry entry, no pending row, nothing counted as rejected, stream ends OK")
+  void checkOnlyAccepted() {
+    HelloService s = service(x -> x);
+    HelloOutcome o = run(s, checkHello(), accepted(), false);
+    assertThat(o.checkOnly()).isTrue();
+    assertThat(o.accepted()).as("no session").isFalse();
+    assertThat(o.session()).isNull();
+    assertThat(o.status().getCode()).isEqualTo(Status.Code.OK);
+    assertThat(o.trailers().keys()).isEmpty();
+    ServerHello h = o.hello();
+    assertThat(h.getAccepted()).isTrue();
+    assertThat(h.getAppId()).isEqualTo(home.id());
+    assertThat(h.getInstanceId()).isZero();
+    assertThat(h.getSessionId()).isEmpty();
+    assertThat(h.getServerVersion()).isEqualTo("1.4.0");
+    assertThat(h.getProtocolVersion()).isEqualTo(ProtocolVersion.CURRENT);
+    assertThat(h.getMinAgentVersion()).isNotEmpty();
+    assertThat(h.getServerTimeMs()).isEqualTo(clock.millis());
+    assertThat(h.getHeartbeatIntervalS()).isEqualTo(30);
+    assertThat(h.getLimits()).isEqualTo(ProtocolLimits.defaults());
+    assertThat(h.getConfigMap()).isEmpty();
+    assertThat(h.getUserIdSalt().isEmpty()).isTrue();
+    assertThat(store.instances).isEmpty();
+    assertThat(store.pending).isEmpty();
+    assertThat(registry.size()).isZero();
+    assertThat(store.touched).containsExactly(token.tokenId());
+    assertThat(meters.find("argos.collector.rejected").counters()).isEmpty();
+
+    // An open session of the same instance name stays (no check 7 replacement).
+    HelloOutcome live = run(s, hello().setInstanceName("host-a-check"), accepted(), false);
+    assertThat(live.accepted()).isTrue();
+    HelloOutcome again = run(s, checkHello(), accepted(), false);
+    assertThat(again.checkOnly()).isTrue();
+    assertThat(registry.find(live.session().instanceId())).contains(live.session());
+    assertThat(registry.size()).isEqualTo(1);
+    assertThat(store.instances).hasSize(1);
+  }
+
+  @Test
+  @Tag("req:C-240")
+  @DisplayName(
+      "T-SV-022b check-only and the caps: accepted at the server's MAX_SESSIONS and at the"
+          + " per-token session cap (it takes no session); the per-token Hello rate applies and"
+          + " counts it; the Hello caps apply")
+  void checkOnlyCaps() {
+    HelloService s =
+        service(
+            x -> {
+              x.perToken = 0;
+              return x;
+            });
+    AppRef other = store.addApp("filler", "prod");
+    UUID otherToken = UUID.randomUUID();
+    for (int id = 1_000_000; registry.size() < HelloService.MAX_SESSIONS; id++) {
+      registry.register(filler(other, otherToken, id));
+    }
+    rejected(
+        run(s, hello(), accepted(), false),
+        RejectReason.RATE_LIMITED,
+        Status.Code.RESOURCE_EXHAUSTED,
+        60);
+    HelloOutcome o = run(s, checkHello(), accepted(), false);
+    assertThat(o.checkOnly()).as("no session: neither cap applies").isTrue();
+    assertThat(registry.size()).isEqualTo(HelloService.MAX_SESSIONS);
+    assertThat(store.instances).isEmpty();
+
+    HelloService rate =
+        service(
+            x -> {
+              x.perMinute = 2;
+              return x;
+            });
+    assertThat(run(rate, checkHello(), accepted(), false).checkOnly()).isTrue();
+    assertThat(run(rate, checkHello(), accepted(), false).checkOnly()).isTrue();
+    rejected(
+        run(rate, checkHello(), accepted(), false),
+        RejectReason.RATE_LIMITED,
+        Status.Code.RESOURCE_EXHAUSTED,
+        60);
+    assertThat(rejectedCount("session_rate")).isEqualTo(1);
+
+    HelloOutcome big =
+        run(service(x -> x), checkHello().setInstanceName("x".repeat(3_000)), accepted(), false);
+    assertThat(big.checkOnly()).as("the Hello caps apply first").isFalse();
+    assertThat(big.status().getCode()).isNotEqualTo(Status.Code.OK);
+  }
+
+  @Test
+  @Tag("req:C-240")
+  @DisplayName(
+      "T-SV-022b check-only and checks 1 to 5: token, app, plaintext and version refuse as for a"
+          + " normal Hello; a missing app with automatic registration is answered with app id 0"
+          + " (nothing created), without it APP_NOT_REGISTERED and nothing queued; PostgreSQL down"
+          + " is UNAVAILABLE")
+  void checkOnlyChecks() {
+    HelloService s = service(x -> x);
+    rejected(
+        run(s, checkHello(), null, false),
+        RejectReason.TOKEN_INVALID,
+        Status.Code.UNAUTHENTICATED,
+        300);
+    rejected(
+        run(s, checkHello().setAppName("other-app"), accepted(), false),
+        RejectReason.APP_MISMATCH,
+        Status.Code.PERMISSION_DENIED,
+        0);
+    rejected(
+        run(s, checkHello(), accepted(), true),
+        RejectReason.PLAINTEXT_NOT_ALLOWED,
+        Status.Code.FAILED_PRECONDITION,
+        0);
+    rejected(
+        run(s, checkHello().setAgentVersion("0.1.0"), accepted(), false),
+        RejectReason.AGENT_VERSION_TOO_OLD,
+        Status.Code.FAILED_PRECONDITION,
+        0);
+
+    HelloService auto =
+        service(
+            x -> {
+              x.autoRegister = Map.of("staging", true);
+              return x;
+            });
+    int apps = store.apps.size();
+    HelloOutcome variant = run(auto, checkHello().setEnv("staging"), accepted(), false);
+    assertThat(variant.checkOnly()).isTrue();
+    assertThat(variant.hello().getAppId()).as("not registered yet").isZero();
+    assertThat(store.apps).as("no app variant created").hasSize(apps);
+
+    HelloService manual =
+        service(
+            x -> {
+              x.autoRegister = Map.of("default", false);
+              return x;
+            });
+    rejected(
+        run(manual, checkHello().setEnv("qa"), accepted(), false),
+        RejectReason.APP_NOT_REGISTERED,
+        Status.Code.OK,
+        300);
+    assertThat(store.pending).as("nothing queued for approval").isEmpty();
+    assertThat(store.instances).isEmpty();
+
+    store.failing = true;
+    rejected(
+        run(service(x -> x), checkHello().setEnv("qa2"), accepted(), false),
+        RejectReason.REJECT_REASON_UNSPECIFIED,
+        Status.Code.UNAVAILABLE,
+        30);
+  }
+
+  // --- start facts (F-A26, S-17, ADR-0010 C-240 (1), T-SV-023b) ---
+
+  @Test
+  @Tag("req:F-A26")
+  @DisplayName(
+      "T-SV-023b the session carries the Hello's process start and the instance's stored start"
+          + " before the Hello: new instance, the previous process start, none, unreadable")
+  void startFacts() {
+    HelloService s = service(x -> x);
+    HelloOutcome first = run(s, hello().setProcessStartMs(5_000), accepted(), false);
+    assertThat(first.session().processStartMs()).isEqualTo(5_000);
+    assertThat(first.session().storedStartMs()).isEqualTo(AgentSession.STARTED_NEW_INSTANCE);
+    HelloOutcome again = run(s, hello().setProcessStartMs(5_000), accepted(), false);
+    assertThat(again.session().storedStartMs()).isEqualTo(5_000);
+    HelloOutcome restarted = run(s, hello().setProcessStartMs(9_000), accepted(), false);
+    assertThat(restarted.session().storedStartMs())
+        .as("read before the Hello wrote it")
+        .isEqualTo(5_000);
+    assertThat(store.instances.get(0).metadata().startedAt().toEpochMilli()).isEqualTo(9_000);
+    HelloOutcome none = run(s, hello().setInstanceName("b:1"), accepted(), false);
+    HelloOutcome noneAgain = run(s, hello().setInstanceName("b:1"), accepted(), false);
+    assertThat(none.session().storedStartMs()).isEqualTo(AgentSession.STARTED_NEW_INSTANCE);
+    assertThat(noneAgain.session().storedStartMs()).isEqualTo(AgentSession.STARTED_NONE);
+    store.startedAtFailing = true;
+    HelloOutcome unknown = run(s, hello().setProcessStartMs(9_000), accepted(), false);
+    assertThat(unknown.accepted()).as("an unreadable start does not refuse the session").isTrue();
+    assertThat(unknown.session().storedStartMs()).isEqualTo(AgentSession.STARTED_UNKNOWN);
   }
 }

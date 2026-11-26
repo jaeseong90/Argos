@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
+# req: SEC-74, N-16
 #
 # Tests of argos-env-init.sh in pinned Linux containers on a container-local file system (POSIX
 # modes): Ubuntu 22.04 (dash, no openssl: the /dev/urandom path), Alpine (BusyBox ash) and the

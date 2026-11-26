@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="6" failures="1" errors="0" time="1.234" timestamp="2026-11-26T03:00:00.000Z">
+    <testsuite name="src/xlog/coords.test.ts" timestamp="2026-11-26T03:00:00.000Z" hostname="host" tests="3" failures="1" errors="0" skipped="0" time="0.5">
+        <testcase classname="src/xlog/coords.test.ts" name="T-UI-001 coordinate transforms &gt; T-UI-021 maps x" time="0.01">
+        </testcase>
+        <testcase classname="src/xlog/coords.test.ts" name="T-UI-001 coordinate transforms &gt; nested &gt; T-UI-022 maps y" time="0.01">
+            <failure message="expected 2 to be 3" type="AssertionError">AssertionError: expected 2 to be 3</failure>
+        </testcase>
+        <testcase classname="src/xlog/coords.test.ts" name="T-UI-001 coordinate transforms &gt; clamps without an id" time="0.01">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/stats/table.test.tsx" timestamp="2026-11-26T03:00:01.000Z" hostname="host" tests="3" failures="0" errors="0" skipped="1" time="0.5">
+        <testcase classname="src/stats/table.test.tsx" name="table &gt; T-UI-021 maps x" time="0.01">
+        </testcase>
+        <testcase classname="src/stats/table.test.tsx" name="T-UI-040 sorts by p95 for user 7" time="0.01">
+        </testcase>
+        <testcase classname="src/stats/table.test.tsx" name="table &gt; renders the empty state" time="0.0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+</testsuites>

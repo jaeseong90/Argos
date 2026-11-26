@@ -22,9 +22,9 @@ import org.junit.jupiter.api.TestFactory;
 
 /**
  * Runs every agent rule against the classes of the agent modules (19 §5.3, PR-required through
- * check). Rule names start with their test or rule ID (T-AG-001..004, ADV-04, AGT-01..03,
- * B-1..B-4). Until the modules have code (WO-02, WO-10) the rules find nothing to check; the
- * fixture tests ({@link AdviceRulesTest}, {@link AgentBoundaryRulesTest}) show that each rule
+ * check). Rule names start with their test or rule ID (T-AG-001..004, ADV-04, AGT-01..03, B-1..B-4,
+ * SEC-91 [ST-91-1]). Until the modules have code (WO-02, WO-10) the rules find nothing to check;
+ * the fixture tests ({@link AdviceRulesTest}, {@link AgentBoundaryRulesTest}) show that each rule
  * rejects violations.
  */
 class AgentArchitectureTest {
@@ -42,7 +42,8 @@ class AgentArchitectureTest {
     return Stream.of(
             AdviceRules.all(layout),
             AgentBoundaryRules.all(layout),
-            AgentCodeRules.all(layout, LogAllowlist.production()))
+            AgentCodeRules.all(layout, LogAllowlist.production()),
+            RemoteControlRules.all(layout))
         .flatMap(List::stream)
         .toList();
   }

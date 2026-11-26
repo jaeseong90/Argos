@@ -6,22 +6,25 @@ import io.argos.server.alert.rule.RuleSpec.Kind;
 import io.argos.server.alert.rule.RuleSpec.TargetType;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import org.HdrHistogram.Histogram;
-import org.HdrHistogram.PackedHistogram;
 
 /**
  * The in-memory request windows of the alert engine (12 §5.2 {@code WindowProvider}, DSN-12-07):
  * per application, (kind, instance), (kind, service) and outgoing call host, a ring of one-second
  * slots covering {@code argos.alert.window-retention} (15 minutes). A slot holds the counts
- * (transactions, errors, Apdex satisfied and tolerating; calls, failures, timeouts) and an
- * HdrHistogram of the elapsed times ({@link PackedHistogram}, 1 ms to 1 h, 2 significant digits,
- * created only for slots with samples); the percentiles of a window merge the histograms of its
- * slots (12 §15 #7: alert percentiles are the windows', not the rollups' estimates).
+ * (transactions, errors, Apdex satisfied and tolerating; calls, failures, timeouts) and the elapsed
+ * times as the bucket counts of an HdrHistogram (1 ms to 1 h, 2 significant digits): a slot keeps
+ * only its non-empty buckets, packed as (lowest equivalent value, count) longs, and the percentiles
+ * of a window record them into one histogram of the same layout, so they equal those of a histogram
+ * that recorded every value of the window (12 §15 #7: alert percentiles are the windows', not the
+ * rollups' estimates). A slot holds no HdrHistogram object: each one costs about 650 bytes of
+ * iterators and packed-array context before its first value (12 open item 3, ADR-0010 C-244 (1)).
  *
  * <p>An application keeps at most {@value #MAX_SERVICES_PER_APP} service series and {@value
  * #MAX_HOSTS_PER_APP} host series (12 §11); samples of further ones are dropped and counted ({@link
@@ -46,6 +49,13 @@ public final class WindowProvider implements MetricProvider {
 
   private final int capacity;
   private final Map<Integer, AppWindows> apps = new HashMap<>();
+
+  /**
+   * The bucket layout of every slot (read-only: only its value-to-bucket arithmetic is used, which
+   * keeps no state).
+   */
+  static final Histogram LAYOUT = new Histogram(HIGHEST_MS, DIGITS);
+
   private final Histogram scratch = new Histogram(HIGHEST_MS, DIGITS);
   private long droppedSeries;
 
@@ -130,17 +140,16 @@ public final class WindowProvider implements MetricProvider {
     }
     long sec = Math.floorDiv(nowMs, 1000);
     Slot s = ring.slot(sec);
-    s.count += count;
-    s.errors += errors;
-    s.extra += timeoutsAndConnectFailures;
+    s.count = Slot.add(s.count, count);
+    s.errors = Slot.add(s.errors, errors);
+    s.satisfiedOrTimeouts = Slot.add(s.satisfiedOrTimeouts, timeoutsAndConnectFailures);
     s.maxMs = (int) Math.max(s.maxMs, Math.min(Integer.MAX_VALUE, maxMs));
-    Histogram h = s.histogram();
     for (int i = 0; i < buckets.size() && i < LatencyBuckets.COUNT; i++) {
       long n = Integer.toUnsignedLong(buckets.get(i));
       if (n > 0) {
         long bound = LatencyBuckets.upperBoundMs(i);
         long v = bound == Long.MAX_VALUE ? Math.max(maxMs, 1) : bound;
-        h.recordValueWithCount(clamp(v), n);
+        s.record(clamp(v), n);
       }
     }
   }
@@ -309,8 +318,8 @@ public final class WindowProvider implements MetricProvider {
   }
 
   /**
-   * Estimated heap bytes of the windows: slot arrays, slots and histograms (HdrHistogram's own
-   * estimate), for the 12 §15 #3 memory bound.
+   * Estimated heap bytes of the windows: slot arrays, slots and their bucket arrays, for the 12 §15
+   * #3 memory bound.
    */
   public long estimatedFootprintBytes() {
     long bytes = 0;
@@ -379,19 +388,26 @@ public final class WindowProvider implements MetricProvider {
     private final Slot[] slots;
     long lastSec = Long.MIN_VALUE;
 
+    /** The second of the first slot; slots keep their second relative to it (int: 68 years). */
+    private long base = Long.MIN_VALUE;
+
     Ring(int capacity) {
       this.slots = new Slot[capacity];
     }
 
     Slot slot(long sec) {
+      if (base == Long.MIN_VALUE) {
+        base = sec;
+      }
+      int rel = (int) (sec - base);
       int i = (int) Math.floorMod(sec, (long) slots.length);
       Slot s = slots[i];
       if (s == null) {
         s = new Slot();
         slots[i] = s;
-        s.sec = sec;
-      } else if (s.sec != sec) {
-        s.reset(sec);
+        s.sec = rel;
+      } else if (s.sec != rel) {
+        s.reset(rel);
       }
       if (sec > lastSec) {
         lastSec = sec;
@@ -405,74 +421,124 @@ public final class WindowProvider implements MetricProvider {
       if (error) {
         s.errors++;
       } else if (apdexTMs > 0 && elapsedMs <= apdexTMs) {
-        s.satisfied++;
+        s.satisfiedOrTimeouts++;
       } else if (apdexTMs > 0 && elapsedMs <= 4L * apdexTMs) {
         s.tolerating++;
       }
       s.maxMs = Math.max(s.maxMs, elapsedMs);
-      s.histogram().recordValue(clamp(elapsedMs));
+      s.record(clamp(elapsedMs), 1);
     }
 
     /** Adds the slots with {@code fromSec < sec <= toSec} to {@code a} and {@code merged}. */
     void aggregate(long fromSec, long toSec, Agg a, Histogram merged) {
       for (Slot s : slots) {
-        if (s != null && s.sec > fromSec && s.sec <= toSec && s.count > 0) {
+        if (s == null) {
+          continue;
+        }
+        long sec = base + s.sec;
+        if (sec > fromSec && sec <= toSec && s.count > 0) {
           a.count += s.count;
           a.errors += s.errors;
-          a.extra += s.extra;
-          a.satisfied += s.satisfied;
+          // one field: Apdex satisfied of a transaction series, timeouts of a host series
+          a.extra += s.satisfiedOrTimeouts;
+          a.satisfied += s.satisfiedOrTimeouts;
           a.tolerating += s.tolerating;
           a.maxMs = Math.max(a.maxMs, s.maxMs);
-          if (s.hist != null && s.hist.getTotalCount() > 0) {
-            merged.add(s.hist);
-          }
+          s.addTo(merged);
         }
       }
     }
 
     long footprint() {
-      long bytes = 16 + 8L * slots.length;
+      long bytes = 16 + 4L * slots.length;
       for (Slot s : slots) {
         if (s != null) {
-          bytes += Slot.BYTES + (s.hist == null ? 0 : s.hist.getEstimatedFootprintInBytes());
+          bytes += Slot.BYTES + (s.more == null ? 0 : 16 + 8L * s.more.length);
         }
       }
       return bytes;
     }
   }
 
-  /** One second of one series. */
+  /**
+   * One second of one series. The counters are ints (one second of one series stays far below 2^31;
+   * the outgoing call statistics, which come as longs, saturate); the second is relative to the
+   * ring's {@code base}. The elapsed times are the non-empty buckets of {@link #LAYOUT}: entry =
+   * lowest equivalent value of the bucket {@code <<} {@value #COUNT_BITS} | count, the first in
+   * {@link #first}, the others in {@link #more} (unsorted, 0 ends them; a slot has at most one
+   * entry per bucket, so at most as many as it has values).
+   */
   static final class Slot {
-    /** Object header and fields, without the histogram. */
-    static final int BYTES = 72;
+    /** Object header and fields, without {@link #more}. */
+    static final int BYTES = 48;
 
-    long sec;
-    long count;
-    long errors;
-    long extra;
-    long satisfied;
-    long tolerating;
+    static final int COUNT_BITS = 40;
+    static final long COUNT_MASK = (1L << COUNT_BITS) - 1;
+
+    int sec;
+    int count;
+    int errors;
+
+    /** Apdex satisfied (transaction series) or timeouts and connect failures (host series). */
+    int satisfiedOrTimeouts;
+
+    int tolerating;
     int maxMs;
-    PackedHistogram hist;
+    long first;
+    long[] more;
 
-    Histogram histogram() {
-      if (hist == null) {
-        hist = new PackedHistogram(HIGHEST_MS, DIGITS);
-      }
-      return hist;
+    static int add(int a, long b) {
+      return (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, a + b));
     }
 
-    void reset(long newSec) {
+    /** Adds {@code n} values of {@code ms} (already clamped to 1..{@link #HIGHEST_MS}). */
+    void record(long ms, long n) {
+      long key = LAYOUT.lowestEquivalentValue(ms) << COUNT_BITS;
+      if (first == 0 || (first & ~COUNT_MASK) == key) {
+        first = key | Math.min(COUNT_MASK, (first & COUNT_MASK) + n);
+        return;
+      }
+      if (more == null) {
+        more = new long[2];
+      }
+      int i = 0;
+      for (; i < more.length && more[i] != 0; i++) {
+        if ((more[i] & ~COUNT_MASK) == key) {
+          more[i] = key | Math.min(COUNT_MASK, (more[i] & COUNT_MASK) + n);
+          return;
+        }
+      }
+      if (i == more.length) {
+        more = Arrays.copyOf(more, more.length * 2);
+      }
+      more[i] = key | Math.min(COUNT_MASK, n);
+    }
+
+    /** Records the elapsed times of this slot into {@code merged} (layout {@link #LAYOUT}). */
+    void addTo(Histogram merged) {
+      if (first == 0) {
+        return;
+      }
+      merged.recordValueWithCount(first >>> COUNT_BITS, first & COUNT_MASK);
+      if (more != null) {
+        for (long e : more) {
+          if (e == 0) {
+            break;
+          }
+          merged.recordValueWithCount(e >>> COUNT_BITS, e & COUNT_MASK);
+        }
+      }
+    }
+
+    void reset(int newSec) {
       sec = newSec;
       count = 0;
       errors = 0;
-      extra = 0;
-      satisfied = 0;
+      satisfiedOrTimeouts = 0;
       tolerating = 0;
       maxMs = 0;
-      if (hist != null) {
-        hist.reset();
-      }
+      first = 0;
+      more = null;
     }
   }
 }

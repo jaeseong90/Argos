@@ -21,6 +21,9 @@ import java.time.Instant;
  * @param token the {@code authorization} token (masked in {@code toString}; null when absent)
  * @param agentEpoch {@code AgentHello.agent_epoch}
  * @param plaintext the connection had no TLS
+ * @param checkOnly {@code AgentHello.check_only} (ADR-0010 C-240 (1), {@code --check}): answered
+ *     without a session or an instance (instance id 0, no session id) unless the collector ignores
+ *     the field
  */
 public record SessionInfo(
     int number,
@@ -36,7 +39,42 @@ public record SessionInfo(
     String rejectReason,
     ReceivedToken token,
     long agentEpoch,
-    boolean plaintext) {
+    boolean plaintext,
+    boolean checkOnly) {
+
+  /** The WO-11 shape (no check-only flag: a normal Hello). */
+  public SessionInfo(
+      int number,
+      long instanceId,
+      boolean accepted,
+      String appName,
+      String env,
+      String appVersion,
+      String agentVersion,
+      Instant openedAt,
+      Message hello,
+      String sessionId,
+      String rejectReason,
+      ReceivedToken token,
+      long agentEpoch,
+      boolean plaintext) {
+    this(
+        number,
+        instanceId,
+        accepted,
+        appName,
+        env,
+        appVersion,
+        agentVersion,
+        openedAt,
+        hello,
+        sessionId,
+        rejectReason,
+        token,
+        agentEpoch,
+        plaintext,
+        false);
+  }
 
   /** The WO-05 shape (no session id, token or epoch). */
   public SessionInfo(
@@ -63,6 +101,7 @@ public record SessionInfo(
         null,
         null,
         0,
+        false,
         false);
   }
 }

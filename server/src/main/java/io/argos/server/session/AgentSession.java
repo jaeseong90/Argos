@@ -20,6 +20,18 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public final class AgentSession {
 
+  /**
+   * {@link #storedStartMs}: the stored process start of the instance could not be read (the new
+   * process rule of {@code InstanceStateTracker} then cannot tell a restarted process apart).
+   */
+  public static final long STARTED_UNKNOWN = -1;
+
+  /** {@link #storedStartMs}: the instance row had no {@code started_at} before this Hello. */
+  public static final long STARTED_NONE = 0;
+
+  /** {@link #storedStartMs}: this Hello created the instance row (a new instance). */
+  public static final long STARTED_NEW_INSTANCE = -2;
+
   private final UUID sessionId;
   private final UUID tokenId;
   private final String tokenPrefix;
@@ -42,6 +54,8 @@ public final class AgentSession {
   private volatile String configHash;
   private volatile long lastHeartbeatMs;
   private volatile long lastActivityNanos;
+  private volatile long processStartMs;
+  private volatile long storedStartMs = STARTED_UNKNOWN;
 
   /**
    * A session in {@code SQL_PARAM_MASKED} mode (test convenience; the Hello path passes the mode).
@@ -267,6 +281,33 @@ public final class AgentSession {
   /** Server time of the ServerHello. */
   public long acceptedAtMs() {
     return acceptedAtMs;
+  }
+
+  /**
+   * The start facts of the Hello (F-A26, S-17, ADR-0010 C-240 (1)): set by {@code HelloService}
+   * before the session is registered, read by {@code InstanceStateTracker} to tell a new agent
+   * process (an events row {@code type = 'start'}) from a reconnect of the same one.
+   *
+   * @param processStartMs {@code AgentHello.process_start_ms} (0 when not reported)
+   * @param storedStartMs the instance's {@code started_at} in ms before this Hello wrote it, or
+   *     {@link #STARTED_NONE}, {@link #STARTED_NEW_INSTANCE}, {@link #STARTED_UNKNOWN}
+   */
+  public void startFacts(long processStartMs, long storedStartMs) {
+    this.processStartMs = processStartMs;
+    this.storedStartMs = storedStartMs;
+  }
+
+  /** {@code AgentHello.process_start_ms} (0 when not reported or not set). */
+  public long processStartMs() {
+    return processStartMs;
+  }
+
+  /**
+   * The instance's stored process start before this Hello ({@link #startFacts}); {@link
+   * #STARTED_UNKNOWN} unless set.
+   */
+  public long storedStartMs() {
+    return storedStartMs;
   }
 
   /** Server time of the last heartbeat (the ServerHello before the first). */

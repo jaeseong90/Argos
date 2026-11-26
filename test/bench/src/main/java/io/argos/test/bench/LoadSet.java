@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.LongSupplier;
@@ -69,7 +68,8 @@ final class LoadSet {
     Path extJar =
         path(o, "ext-jar", repo.resolve("sample-apps/ext-stub/build/sample-app/ext-stub.jar"));
     Path agentJar = path(o, "agent", defaultAgentJar(repo));
-    Path otelJar = o.optional("otel-agent").map(Path::of).map(Path::toAbsolutePath).orElse(null);
+    String otelOption = o.optional("otel-agent").orElse(null);
+    Path otelJar = otelOption == null ? null : OtlpBlackHole.resolveOtelAgent(otelOption, repo);
     Path java =
         path(
             o,
@@ -138,8 +138,17 @@ final class LoadSet {
           "--k6-ssh needs --mode process and an --app-address the load machine reaches");
     }
     if (variants.contains("otel") && otelJar == null) {
-      throw new UsageException("variant otel needs --otel-agent <opentelemetry-javaagent.jar>");
+      throw new UsageException(
+          "variant otel needs --otel-agent auto (after test/bench/fetch-otel-agent.sh) or"
+              + " --otel-agent <opentelemetry-javaagent.jar>");
     }
+    // 01 §7.3 item 5, 18 §7.4: the agent's own CPU, direct memory and premain from its
+    // self-diagnostics file (test-only key, development builds only, C-88, C-95).
+    boolean selfDiag = selfDiagnostics(agentJar);
+    // 18 §7.5: the otel reference exports OTLP to a loopback black hole (process mode only: a
+    // container cannot reach this machine's loopback, so it keeps exporters none).
+    OtlpBlackHole otlp =
+        variants.contains("otel") && mode.equals("process") ? OtlpBlackHole.start() : null;
 
     Path bin = Files.createDirectories(setDir.resolve("bin"));
     // Copies: other work on the machine may rebuild the jars while the set runs.
@@ -172,7 +181,9 @@ final class LoadSet {
             benchJs,
             cpus,
             memory,
-            appAddress);
+            appAddress,
+            selfDiag,
+            otlp == null ? null : otlp.endpoint());
     Platform platform =
         mode.equals("container")
             ? new ContainerPlatform(setup)
@@ -195,9 +206,23 @@ final class LoadSet {
     parameters.put("preAllocatedVUs", preVus);
     parameters.put("maxVUs", maxVus);
     parameters.put("jvmOptions", jvmOptions);
-    parameters.put(
-        "jvmOptionsAddedByHarness",
-        List.of("-Xlog:gc:file=<run>/gc.log", "-XX:NativeMemoryTracking=summary"));
+    List<String> added =
+        new ArrayList<>(List.of("-Xlog:gc:file=<run>/gc.log", "-XX:NativeMemoryTracking=summary"));
+    if (selfDiag) {
+      added.add(SelfDiagFile.jvmOption("<run>/" + SelfDiagFile.FILE_NAME) + " (agent variants)");
+    }
+    parameters.put("jvmOptionsAddedByHarness", added);
+    parameters.put("selfDiagnostics", selfDiagDescription(selfDiag));
+    if (variants.contains("otel")) {
+      parameters.put(
+          "otelReference",
+          otlp == null
+              ? "OpenTelemetry Java agent with exporters none (container mode: no loopback"
+                  + " receiver)"
+              : "OpenTelemetry Java agent exporting OTLP http/protobuf (traces, metrics) to the"
+                  + " harness's black-hole receiver on 127.0.0.1 (18 §7.5); logs none");
+      parameters.put("otelOptions", OtlpBlackHole.otelOptions(otlp == null ? null : "<receiver>"));
+    }
     parameters.put("appEnv", appEnv);
     parameters.put("exporter", exporter.name());
     parameters.put("exporterDescription", exporter.description());
@@ -278,7 +303,8 @@ final class LoadSet {
             },
             "bench-shutdown");
     Runtime.getRuntime().addShutdownHook(hook);
-    try (platform) {
+    try (platform;
+        otlp) {
       platform.startDependencies();
       int index = 0;
       for (int round = 1; round <= rounds; round++) {
@@ -304,7 +330,8 @@ final class LoadSet {
                     maxLoad,
                     maxWait,
                     keepLog,
-                    noise);
+                    noise,
+                    new Probes(selfDiag && agentVariant(variant), otlp));
             if (agentVariant(variant)) {
               result.put("expectedExporter", exporter.bannerExporter());
             }
@@ -334,6 +361,38 @@ final class LoadSet {
   /** True for variants that run the Argos agent (on and the diagnostic --variant-defs ones). */
   static boolean agentVariant(String variant) {
     return !variant.equals("off") && !variant.equals("otel");
+  }
+
+  /**
+   * Side channels of one run's measured window: the agent's self-diagnostics file ({@code
+   * selfDiag}, agent variants of a development build) and the OTLP receiver of the otel variant.
+   */
+  record Probes(boolean selfDiag, OtlpBlackHole otlp) {}
+
+  /**
+   * Whether the agent variants get {@code argos.test.selfdiag-file}: only a development (-SNAPSHOT)
+   * build honours test-only keys (T-BLD-010, C-88); a release jar measures without it (the gauges
+   * then come from jcmd and NMT, and the report says so).
+   */
+  static boolean selfDiagnostics(Path agentJar) throws IOException {
+    return !AgentSettings.isReleaseVersion(AgentSettings.implementationVersion(agentJar));
+  }
+
+  static String selfDiagDescription(boolean selfDiag) {
+    return selfDiag
+        ? SelfDiagFile.KEY
+            + "=<run>/"
+            + SelfDiagFile.FILE_NAME
+            + " on agent variants (C-95): agent thread CPU (window delta of "
+            + SelfDiagFile.AGENT_THREADS_CPU
+            + "), "
+            + SelfDiagFile.DIRECT_MEMORY
+            + ", "
+            + SelfDiagFile.PREMAIN
+            + "; jcmd Thread.print CPU and NMT kept as cross-checks"
+        : "off: the agent jar is a release build, which ignores argos.test.* (T-BLD-010); agent"
+            + " thread CPU from jcmd Thread.print, direct memory from NMT, premain from the start"
+            + " banner";
   }
 
   /** The k6 windows of one run and the HDR re-aggregation settings (18 §7.2). */
@@ -375,6 +434,11 @@ final class LoadSet {
     out.put("count", raw.points());
     out.put("otherPhasePoints", raw.otherPhase());
     out.put("unreadablePoints", raw.unreadable());
+    // http_req_failed points of the measured phase and the loader-side socket errors among them
+    // (ADR-0009 C-80 H-2 provisional rule).
+    out.put("failedPoints", raw.failed());
+    out.put("loaderSocketErrors", raw.loaderSocketErrors());
+    out.put("failureSamples", raw.failureSamples());
     Map<String, Object> quantiles = new LinkedHashMap<>();
     Map<String, Object> intervals = new LinkedHashMap<>();
     for (Map.Entry<String, Double> q : LoadReport.QUANTILES.entrySet()) {
@@ -402,7 +466,8 @@ final class LoadSet {
       double maxLoad,
       Duration maxWait,
       boolean keepLog,
-      Noise noise)
+      Noise noise,
+      Probes probes)
       throws Exception {
     Duration warmup = window.warmup();
     Duration duration = window.duration();
@@ -472,8 +537,17 @@ final class LoadSet {
       }
 
       log("run " + index + ": measured window " + duration.toSeconds() + " s");
+      Path selfDiagFile = runDir.resolve(SelfDiagFile.FILE_NAME);
+      // The agent rewrites the file every 2 s: the window starts right after a fresh snapshot.
+      SelfDiagFile.Snapshot diagStart =
+          probes.selfDiag()
+              ? SelfDiagFile.awaitNext(
+                  selfDiagFile, SelfDiagFile.modified(selfDiagFile), SelfDiagFile.DEFAULT_WAIT)
+              : null;
       Parsers.ThreadDump threadsStart =
           Parsers.threadDump(save(runDir, "threads-start.txt", app.jcmd("Thread.print")));
+      boolean otlpWindow = variant.equals("otel") && probes.otlp() != null;
+      Map<String, OtlpBlackHole.Counts> otlpStart = otlpWindow ? probes.otlp().snapshot() : null;
       long cpu0 = app.cpuNanos();
       Map<String, LongSupplier> counters = new LinkedHashMap<>();
       if (platform.mode().equals("process")) {
@@ -495,6 +569,12 @@ final class LoadSet {
         samples = monitor.stop();
       }
       long cpu1 = app.cpuNanos();
+      Map<String, OtlpBlackHole.Counts> otlpEnd = otlpWindow ? probes.otlp().snapshot() : null;
+      SelfDiagFile.Snapshot diagEnd =
+          probes.selfDiag()
+              ? SelfDiagFile.awaitNext(
+                  selfDiagFile, SelfDiagFile.modified(selfDiagFile), SelfDiagFile.DEFAULT_WAIT)
+              : null;
       long osThreads = app.osThreads();
       Parsers.ThreadDump threadsEnd =
           Parsers.threadDump(save(runDir, "threads-end.txt", app.jcmd("Thread.print")));
@@ -528,14 +608,29 @@ final class LoadSet {
         m.put("loaderTimelineCpuPercentMax", Stats.max(vm));
       }
       double agentCpuMs = agentThreadCpuMs(threadsStart, threadsEnd);
+      // jcmd Thread.print: the cross-check of measure.selfDiag.agentThreadsCpuSeconds.
       m.put("agentThreadCpuSeconds", agentCpuMs / 1000);
       m.put("agentThreads", new ArrayList<>(threadsEnd.agentThreadCpuMs().keySet()));
       m.put("javaThreadsAtEnd", threadsEnd.javaThreads());
       m.put("osThreadsAtEnd", osThreads < 0 ? null : osThreads);
-      m.put("gate", gate(m, rate, duration, loaderCpu));
+      if (probes.selfDiag()) {
+        Map<String, Object> selfDiag = SelfDiagFile.window(diagStart, diagEnd);
+        if (selfDiag != null) {
+          m.put("selfDiag", selfDiag);
+        } else {
+          m.put("selfDiagMissing", diagEnd.reason());
+        }
+      }
+      if (otlpWindow) {
+        m.put("otlp", OtlpBlackHole.window(otlpStart, otlpEnd));
+      }
       if (window.raw()) {
         m.put("latencyHdr", reaggregate(runDir, m, window.seed()));
       }
+      LoaderErrors loaderErrors =
+          loaderErrors(runDir, "k6", window.raw() ? Json.object(m.get("latencyHdr")) : null);
+      m.put("loaderErrors", loaderErrors.toJson());
+      m.put("gate", gate(m, rate, duration, loaderCpu, loaderErrors.count()));
       double background =
           noise.background(
               Json.number(machine.get("systemCpuPercentMean")),
@@ -587,8 +682,7 @@ final class LoadSet {
       memory.put("osThreads", osThreads < 0 ? null : osThreads);
       run.put("memory", memory);
       String agentLog = app.agentLog();
-      OptionalDouble premain = Parsers.premainMillis(agentLog);
-      run.put("premainMs", premain.isPresent() ? premain.getAsDouble() : null);
+      SelfDiagFile.putPremain(run, diagEnd, agentLog);
       if (agentVariant(variant)) {
         run.put("agentExporter", AgentSettings.bannerExporter(agentLog));
       }
@@ -634,23 +728,107 @@ final class LoadSet {
   /** C-46: dropped <= 1% of planned, unexpected 0%, loader not saturated (mean CPU < 80%). */
   static Map<String, Object> gate(
       Map<String, Object> measure, int rate, Duration duration, double loaderCpu) {
+    return gate(measure, rate, duration, loaderCpu, 0);
+  }
+
+  /**
+   * C-46 with the H-2 provisional rule of ADR-0009 C-80: {@code loaderSocketErrors} failed requests
+   * of the measured window are k6's own local socket errors at dial (the load machine ran out of
+   * ephemeral ports or could not bind, {@link K6Raw#isLoaderSocketError}). They are a fault of the
+   * load generator, not of the app: they are left out of the unexpected outcomes and make the run
+   * INVALID (like a saturated loader, C-46 intent), never FAIL. Unexpected outcomes beyond them
+   * still count. -1 means "not known" (no raw output and no k6 log) and changes nothing.
+   */
+  static Map<String, Object> gate(
+      Map<String, Object> measure,
+      int rate,
+      Duration duration,
+      double loaderCpu,
+      long loaderSocketErrors) {
     Map<String, Object> gate = new LinkedHashMap<>();
     double planned = (double) rate * duration.toSeconds();
     double dropped = Json.number(measure.get("dropped"));
     double unexpected = Json.number(measure.get("unexpectedRate"));
+    double requests = Json.number(measure.get("requests"));
+    boolean loaderFault = loaderSocketErrors > 0;
+    double unexpectedBeyondLoader = unexpected;
+    if (loaderFault && requests > 0) {
+      long unexpectedCount = Math.round(unexpected * requests);
+      unexpectedBeyondLoader = Math.max(0, unexpectedCount - loaderSocketErrors) / requests;
+    }
     boolean droppedOk = dropped <= 0.01 * planned;
-    boolean unexpectedOk = unexpected == 0;
+    boolean unexpectedOk = unexpectedBeyondLoader == 0;
     boolean saturated = loaderCpu >= 80;
     gate.put("plannedIterations", (long) planned);
     gate.put("dropped", dropped);
     gate.put("droppedLimit", (long) Math.floor(0.01 * planned));
     gate.put("droppedOk", droppedOk);
     gate.put("unexpectedRate", unexpected);
+    if (loaderSocketErrors >= 0) {
+      gate.put("loaderSocketErrors", loaderSocketErrors);
+      gate.put("unexpectedRateBeyondLoader", unexpectedBeyondLoader);
+    }
     gate.put("unexpectedOk", unexpectedOk);
     gate.put("loaderCpuPercentMean", loaderCpu);
     gate.put("loaderSaturated", saturated);
-    gate.put("verdict", saturated ? "INVALID" : droppedOk && unexpectedOk ? "PASS" : "FAIL");
+    String verdict;
+    if (saturated || loaderFault) {
+      verdict = "INVALID";
+      List<String> reasons = new ArrayList<>();
+      if (saturated) {
+        reasons.add(String.format(Locale.ROOT, "load generator saturated (CPU %.0f%%)", loaderCpu));
+      }
+      if (loaderFault) {
+        reasons.add(
+            loaderSocketErrors
+                + " loader-side socket errors at dial (H-2 provisional rule, ADR-0009 C-80)");
+      }
+      gate.put("reason", String.join("; ", reasons));
+    } else {
+      verdict = droppedOk && unexpectedOk ? "PASS" : "FAIL";
+    }
+    gate.put("verdict", verdict);
     return gate;
+  }
+
+  /**
+   * Loader-side socket errors of a measured window (H-2): from the raw k6 output when the harness
+   * re-aggregated it ({@code latencyHdr.loaderSocketErrors}), else from k6's "Request Failed"
+   * warnings in {@code <label>.log}; {@code count} -1 when neither exists.
+   */
+  record LoaderErrors(long count, long failed, String source, Map<String, Long> samples) {
+    Map<String, Object> toJson() {
+      Map<String, Object> out = new LinkedHashMap<>();
+      out.put("loaderSocketErrors", count < 0 ? null : count);
+      out.put("failedRequests", failed < 0 ? null : failed);
+      out.put("source", source);
+      out.put("rule", "H-2 provisional (ADR-0009 C-80): loader socket errors make the run INVALID");
+      out.put("samples", samples);
+      return out;
+    }
+  }
+
+  static LoaderErrors loaderErrors(Path runDir, String label, Map<String, Object> latencyHdr) {
+    if (latencyHdr != null && latencyHdr.get("loaderSocketErrors") instanceof Number n) {
+      Map<String, Long> samples = new LinkedHashMap<>();
+      Json.object(latencyHdr.get("failureSamples"))
+          .forEach((k, v) -> samples.put(k, (long) Json.number(v)));
+      return new LoaderErrors(
+          n.longValue(),
+          (long) Json.number(latencyHdr.get("failedPoints")),
+          K6Raw.FILE_NAME + " (http_req_failed points, phase measure)",
+          samples);
+    }
+    Path log = runDir.resolve(label + ".log");
+    if (!Files.isRegularFile(log)) {
+      return new LoaderErrors(-1, -1, "none (no raw output, no k6 log)", Map.of());
+    }
+    K6Raw.Failures f = K6Raw.failuresInLog(FileTools.readLenient(log));
+    return new LoaderErrors(
+        f.loaderSocketErrors(),
+        f.failed(),
+        label + ".log (k6 'Request Failed' warnings)",
+        f.samples());
   }
 
   /** The subset of bench.js's summary that the report uses (the full file stays next to it). */

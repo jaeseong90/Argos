@@ -11,6 +11,8 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.zip.GZIPInputStream;
@@ -34,7 +36,36 @@ final class K6Raw {
   static final String FILE_NAME = "k6-raw.json.gz";
 
   private static final String METRIC = "\"metric\":\"http_req_duration\"";
+  private static final String FAILED_METRIC = "\"metric\":\"http_req_failed\"";
   private static final String POINT = "\"type\":\"Point\"";
+
+  /** Distinct failure messages kept as samples (bounded: the raw file may hold millions). */
+  static final int MAX_FAILURE_SAMPLES = 20;
+
+  /** Longest failure message kept in a sample. */
+  static final int MAX_SAMPLE_LENGTH = 200;
+
+  /**
+   * Local socket errors of the load generator at dial (ADR-0009 C-80 H-2): the load machine has no
+   * free ephemeral port or cannot bind its local address. Linux {@code EADDRNOTAVAIL} ("cannot
+   * assign requested address") and {@code EADDRINUSE} ("address already in use"), Windows {@code
+   * WSAEADDRINUSE} (10048, "Only one usage of each socket address ...") and {@code
+   * WSAEADDRNOTAVAIL} (10049, "The requested address is not valid in its context"), and the errno
+   * names themselves. Lower case; matched against the lower-cased message.
+   */
+  static final List<String> LOADER_SOCKET_ERRORS =
+      List.of(
+          "cannot assign requested address",
+          "address already in use",
+          "only one usage of each socket address",
+          "the requested address is not valid in its context",
+          "eaddrnotavail",
+          "eaddrinuse",
+          "wsaeaddrinuse",
+          "wsaeaddrnotavail");
+
+  /** Words that place an error at connection set-up on the load machine (Go: dial, connectex). */
+  private static final List<String> DIAL_WORDS = List.of("dial", "connect", "bind");
 
   /**
    * Histograms of one raw file.
@@ -43,6 +74,12 @@ final class K6Raw {
    * @param otherPhase points of another phase (warm-up, setup) skipped
    * @param discarded points skipped by {@code discardSeconds}
    * @param unreadable points whose value could not be read
+   * @param failed {@code http_req_failed} points of value 1 in the measured phase (bench.js counts
+   *     them as unexpected outcomes)
+   * @param loaderSocketErrors those of {@code failed} whose {@code error} tag is a loader-side
+   *     socket error ({@link #isLoaderSocketError})
+   * @param failureSamples count per distinct {@code error} tag (at most {@value
+   *     #MAX_FAILURE_SAMPLES}, the rest under "(other)")
    */
   record Result(
       LatencyHistogram all,
@@ -52,7 +89,33 @@ final class K6Raw {
       long discarded,
       long unreadable,
       String firstTime,
-      String lastTime) {
+      String lastTime,
+      long failed,
+      long loaderSocketErrors,
+      Map<String, Long> failureSamples) {
+
+    Result(
+        LatencyHistogram all,
+        Map<String, LatencyHistogram> routes,
+        long points,
+        long otherPhase,
+        long discarded,
+        long unreadable,
+        String firstTime,
+        String lastTime) {
+      this(
+          all,
+          routes,
+          points,
+          otherPhase,
+          discarded,
+          unreadable,
+          firstTime,
+          lastTime,
+          0,
+          0,
+          Map.of());
+    }
 
     /** JSON form written as {@code latency-hdr.json} next to the raw file. */
     Map<String, Object> toJson(String source, double discardSeconds) {
@@ -67,6 +130,9 @@ final class K6Raw {
       out.put("unreadablePoints", unreadable);
       out.put("firstTime", firstTime);
       out.put("lastTime", lastTime);
+      out.put("failedPoints", failed);
+      out.put("loaderSocketErrors", loaderSocketErrors);
+      out.put("failureSamples", failureSamples);
       out.put("all", all.toJson());
       Map<String, Object> r = new LinkedHashMap<>();
       routes.forEach((k, v) -> r.put(k, v.toJson()));
@@ -97,7 +163,17 @@ final class K6Raw {
     Instant start = null;
     String firstTime = null;
     String lastTime = null;
+    Failures failures = new Failures();
     for (String line = reader.readLine(); line != null; line = reader.readLine()) {
+      if (line.contains(FAILED_METRIC) && line.contains(POINT)) {
+        // Every failed request of the measured phase (the whole k6 run, like bench.js's
+        // unexpectedRate): discardSeconds does not apply.
+        String phase = tag(line, "phase");
+        if ((phase == null || phase.equals("measure")) && number(line, "\"value\":") == 1) {
+          failures.add(tagValue(line, "error"));
+        }
+        continue;
+      }
       if (!line.contains(METRIC) || !line.contains(POINT)) {
         continue;
       }
@@ -135,7 +211,133 @@ final class K6Raw {
         routes.computeIfAbsent(route, k -> new LatencyHistogram()).recordMillis(value);
       }
     }
-    return new Result(all, routes, points, otherPhase, discarded, unreadable, firstTime, lastTime);
+    return new Result(
+        all,
+        routes,
+        points,
+        otherPhase,
+        discarded,
+        unreadable,
+        firstTime,
+        lastTime,
+        failures.failed(),
+        failures.loaderSocketErrors(),
+        failures.samples());
+  }
+
+  /**
+   * Whether a k6 request error message is a loader-side local socket error at dial (H-2): one of
+   * {@link #LOADER_SOCKET_ERRORS} together with a dial, connect or bind step. Everything else
+   * (connection refused, reset, timeout, HTTP status) stays an unexpected outcome of the app.
+   */
+  static boolean isLoaderSocketError(String message) {
+    if (message == null || message.isEmpty()) {
+      return false;
+    }
+    String m = message.toLowerCase(Locale.ROOT);
+    return LOADER_SOCKET_ERRORS.stream().anyMatch(m::contains)
+        && DIAL_WORDS.stream().anyMatch(m::contains);
+  }
+
+  /** Failed requests and their classification (bounded samples of distinct messages). */
+  static final class Failures {
+    private long failed;
+    private long loader;
+    private final Map<String, Long> samples = new LinkedHashMap<>();
+
+    void add(String error) {
+      failed++;
+      if (isLoaderSocketError(error)) {
+        loader++;
+      }
+      String key = error == null || error.isEmpty() ? "(no error tag)" : error;
+      if (key.length() > MAX_SAMPLE_LENGTH) {
+        key = key.substring(0, MAX_SAMPLE_LENGTH) + "...";
+      }
+      if (!samples.containsKey(key) && samples.size() >= MAX_FAILURE_SAMPLES) {
+        key = "(other)";
+      }
+      samples.merge(key, 1L, Long::sum);
+    }
+
+    long failed() {
+      return failed;
+    }
+
+    long loaderSocketErrors() {
+      return loader;
+    }
+
+    Map<String, Long> samples() {
+      return new LinkedHashMap<>(samples);
+    }
+  }
+
+  private static final String LOG_FAILED = "Request Failed";
+  private static final String LOG_ERROR = "error=\"";
+
+  /**
+   * Failed requests from k6's log ({@code level=warning msg="Request Failed" error="..."}), the
+   * fallback when the raw output is off ({@code --raw off}). k6 logs every failed request that does
+   * not throw; the measured k6 invocation has no warm-up phase, only its setup request.
+   */
+  static Failures failuresInLog(String log) {
+    Failures failures = new Failures();
+    for (String line : log.split("\\R", -1)) {
+      if (!line.contains(LOG_FAILED)) {
+        continue;
+      }
+      int at = line.indexOf(LOG_ERROR);
+      failures.add(at < 0 ? null : unquote(line, at + LOG_ERROR.length()));
+    }
+    return failures;
+  }
+
+  /**
+   * The string value of tag {@code name} with JSON escapes resolved (an {@code error} tag may hold
+   * quoted URLs), or null.
+   */
+  static String tagValue(String line, String name) {
+    int tags = line.indexOf("\"tags\":{");
+    if (tags < 0) {
+      return null;
+    }
+    String key = "\"" + name + "\":\"";
+    int at = line.indexOf(key, tags);
+    return at < 0 ? null : unquote(line, at + key.length());
+  }
+
+  /** The rest of a quoted string starting at {@code from} (after the opening quote), unescaped. */
+  private static String unquote(String line, int from) {
+    StringBuilder out = new StringBuilder();
+    for (int i = from; i < line.length(); i++) {
+      char c = line.charAt(i);
+      if (c == '"') {
+        return out.toString();
+      }
+      if (c == '\\' && i + 1 < line.length()) {
+        char next = line.charAt(++i);
+        switch (next) {
+          case 'n' -> out.append('\n');
+          case 't' -> out.append('\t');
+          case 'r' -> out.append('\r');
+          case 'u' -> {
+            if (i + 4 < line.length()) {
+              try {
+                out.append((char) Integer.parseInt(line.substring(i + 1, i + 5), 16));
+                i += 4;
+              } catch (NumberFormatException e) {
+                out.append('u');
+              }
+            }
+          }
+          default -> out.append(next);
+        }
+        continue;
+      }
+      out.append(c);
+    }
+    return out.toString();
   }
 
   /** The string value of tag {@code name} in a point line, or null. */

@@ -26,6 +26,11 @@ import org.testcontainers.utility.DockerImageName;
  *   <li>{@link #ORACLE}: {@code gvenzl/oracle-free} pinned by digest, only with {@code
  *       -Pagent.jdbc.oracle=true} (C-149 (3)), or the in-house Oracle 19c of {@code
  *       ARGOS_TEST_ORACLE_URL/USER/PASSWORD} (human check, C-149 (4)).
+ *   <li>{@link #TIBERO}, {@link #ALTIBASE}, {@link #CUBRID}, {@link #DB2} (WO-50, the nine
+ *       databases of 18 §6.3): in-house databases of a trusted host ({@code ARGOS_TEST_<DB>_URL,
+ *       _USER, _PASSWORD}) with the vendor driver jar from {@value #DRIVER_DIR}; only {@link
+ *       VendorDatabaseTest} reaches them (human check), {@link JdbcStepsTest} lists them as
+ *       skipped.
  * </ul>
  *
  * Containers run one at a time, each with a memory limit at or under 5 GiB, a name {@code
@@ -73,7 +78,26 @@ enum JdbcDatabase {
           + "@sha256:f5ff19033860d662c821cb04eb10483fa94f14f78eae252d054291ea07028093",
       1521,
       4096,
-      ".*DATABASE IS READY TO USE!.*");
+      ".*DATABASE IS READY TO USE!.*"),
+  /** In-house TmaxTibero of a trusted host ({@link VendorDatabaseTest}, human check). */
+  TIBERO("tibero", null, 0, 0, null),
+  /** In-house Altibase of a trusted host ({@link VendorDatabaseTest}, human check). */
+  ALTIBASE("altibase", null, 0, 0, null),
+  /** In-house CUBRID of a trusted host ({@link VendorDatabaseTest}, human check). */
+  CUBRID("cubrid", null, 0, 0, null),
+  /** In-house IBM Db2 of a trusted host ({@link VendorDatabaseTest}, human check). */
+  DB2("db2", null, 0, 0, null);
+
+  /**
+   * The vendor databases without a container image whose driver jar comes from {@value #DRIVER_DIR}
+   * (WO-50, 18 §6.3 nine databases): reached only by {@link VendorDatabaseTest}.
+   */
+  static final List<JdbcDatabase> VENDORS = List.of(TIBERO, ALTIBASE, CUBRID, DB2);
+
+  /**
+   * The trusted runner's folder of vendor driver jars (never committed, dev-only.md condition 4).
+   */
+  static final String DRIVER_DIR = "ARGOS_TEST_JDBC_DRIVER_DIR";
 
   /** The database containers of {@code -Pagent.jdbc.containers=true}. */
   static final List<JdbcDatabase> CONTAINERS = List.of(MYSQL, MARIADB, POSTGRES, MSSQL);
@@ -136,6 +160,15 @@ enum JdbcDatabase {
     if (this == H2) {
       return Optional.empty();
     }
+    if (VENDORS.contains(this)) {
+      return Optional.of(
+          id
+              + ": an in-house database with a vendor driver jar, run by VendorDatabaseTest when "
+              + vendorVariable("URL")
+              + " and "
+              + DRIVER_DIR
+              + " are set (ADR-0010 C-149 (4), human check)");
+    }
     if (this == ORACLE) {
       if (Boolean.getBoolean(ORACLE_PROPERTY) || inHouseOracle()) {
         return Optional.empty();
@@ -153,6 +186,25 @@ enum JdbcDatabase {
         id
             + ": DB containers run with -Pagent.jdbc.containers=true (or a list such as"
             + " -Pagent.jdbc.containers=postgres,mysql), nightly or by hand (ADR-0010 C-149 (2))");
+  }
+
+  /** {@code ARGOS_TEST_<DB>_<suffix>} of this database (URL, USER, PASSWORD). */
+  String vendorVariable(String suffix) {
+    return "ARGOS_TEST_" + id.toUpperCase(Locale.ROOT) + "_" + suffix;
+  }
+
+  /** The in-house database of a trusted host ({@link #vendorVariable} URL, USER, PASSWORD). */
+  Server inHouse() {
+    return new Server(
+        this,
+        null,
+        "in-house",
+        0,
+        System.getenv(vendorVariable("URL")),
+        System.getenv(vendorVariable("USER")),
+        System.getenv(vendorVariable("PASSWORD")),
+        true,
+        Duration.ZERO);
   }
 
   /** Whether the Oracle runs use the in-house database instead of the container. */
@@ -174,6 +226,8 @@ enum JdbcDatabase {
       case POSTGRES -> "postgresql://" + hostPort + "/shop";
       case MSSQL -> "sqlserver://" + hostPort + "/shop";
       case ORACLE -> server.inHouse ? null : "oracle://" + hostPort + "/FREEPDB1";
+      // In-house: host and database of the runner's URL, checked only for shape (no '@', no ';').
+      case TIBERO, ALTIBASE, CUBRID, DB2 -> null;
     };
   }
 
@@ -182,17 +236,8 @@ enum JdbcDatabase {
     if (this == H2) {
       return new Server(this, null, null, 0, null, null, null, false, Duration.ZERO);
     }
-    if (this == ORACLE && inHouseOracle()) {
-      return new Server(
-          this,
-          null,
-          "in-house",
-          0,
-          System.getenv(IN_HOUSE_ORACLE),
-          System.getenv("ARGOS_TEST_ORACLE_USER"),
-          System.getenv("ARGOS_TEST_ORACLE_PASSWORD"),
-          true,
-          Duration.ZERO);
+    if ((this == ORACLE && inHouseOracle()) || VENDORS.contains(this)) {
+      return inHouse();
     }
     String password = password();
     String name = "argos-wo13-jdbc-" + id + "-" + nextStart() + "-" + ProcessHandle.current().pid();

@@ -17,17 +17,21 @@
                     readonly = 1: no INSERT, no DDL, no setting changes except the query limits
                     below, which a query may only lower (changeable_in_readonly constraints).
     argos_migrator  CREATE DATABASE, CREATE TABLE, CREATE VIEW, DROP DATABASE, DROP TABLE, DROP VIEW,
-                    ALTER, INSERT, SELECT, BACKUP on argos.*, and SELECT on system.mutations (the
-                    deletion job polls the completion of its own mutations, C-60). Migration runner,
-                    rollup rebuild, privacy deletion mutations, emergency DROP PARTITION (13 section
-                    7.3).
+                    ALTER, INSERT, SELECT, BACKUP on argos.*, SELECT on system.mutations (the
+                    deletion job polls the completion of its own mutations, C-60), and READ, WRITE
+                    ON DISK (backup.sh and restore.sh). Migration runner, rollup rebuild, privacy
+                    deletion mutations, emergency DROP PARTITION (13 section 7.3), ClickHouse backup
+                    and restore.
                     Materialized views are created by this account and run with its rights
                     (SQL SECURITY DEFINER). No CREATE/DROP DICTIONARY, FUNCTION or NAMED COLLECTION:
                     Argos uses no ClickHouse dictionary (DSN-13-09), and a dictionary source would
                     let the server open connections to arbitrary hosts.
-                    BACKUP alone is not sufficient on 26.8: BACKUP TO Disk/S3 also needs WRITE ON
-                    DISK / WRITE ON S3 and a backups.allowed_disk entry; fixed with tests in the
-                    backup work order (docs/17).
+                    Backup and restore (docs/17 section 10, WO-43): READ and WRITE ON DISK as well.
+                    ClickHouse 26.8 checks BACKUP/RESTORE ... Disk(...) against the unfiltered
+                    source privilege (a grant filtered to the disk name is refused), so the disks
+                    a backup may use are limited by the server setting backups.allowed_disk instead
+                    (deploy/compose/config/clickhouse/backups.xml: the disk "backups" only). No READ
+                    or WRITE ON FILE, URL or S3: file(), url() and s3() stay refused.
     default         removed (SEC-74).
 
   No password is written in this file. Substitution variables (ClickHouse from_env); ClickHouse
@@ -195,6 +199,9 @@
       <grants>
         <query>GRANT CREATE DATABASE, CREATE TABLE, CREATE VIEW, DROP DATABASE, DROP TABLE, DROP VIEW, ALTER, INSERT, SELECT, BACKUP ON argos.*</query>
         <query>GRANT SELECT ON system.mutations</query>
+        <!-- BACKUP ... TO Disk('backups', ...), RESTORE ... FROM Disk('backups', ...) and the
+             base_backup of an incremental backup (WO-43). -->
+        <query>GRANT READ, WRITE ON DISK</query>
       </grants>
     </argos_migrator>
   </users>

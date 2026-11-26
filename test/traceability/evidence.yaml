@@ -1,0 +1,107 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Non-test evidence of the traceability check (WO-53, `./gradlew checkTraceability`, test/README.md
+# section 6). One entry per evidence that is not a JUnit, Vitest, Playwright, shell or matrix result:
+# a dedicated-machine measurement, a person's check, a design check, or evidence a later work order
+# owns. An entry covers its requirements (R3) and its test IDs (R2: 18 §16.1 expectations); every ID
+# here must be in the docs/18 catalogue (R1). When a test with the same ID exists, the test is shown
+# first ("sources win"); the entry stays as the record of where the verdict comes from.
+#
+# Keys: ids (test ID expressions), requirements, kind (measurement | human | design | deferred),
+# source (where the result comes from), owner (work order), gate, note (optional).
+format: 1
+entries:
+  - ids: [T-NFR-01~04, T-NFR-26~30]
+    requirements: [N-01, N-02, N-03, N-04, N-26, N-27, N-28, N-29, N-30]
+    kind: measurement
+    source: "bench.sh gate1 fragment docs/bench/gate1-agent-<date>-<commit7>.md over approved reports (\"approved\": true) of benchTest on argos-bench-app + argos-bench-load"
+    owner: WO-51
+    gate: Gate 1
+    note: "ADR-0010 C-252 (5): only approved dedicated-machine reports count; N-30 from one dedicated run (C-240 (7)). gate1Report aggregates into docs/bench/gate1.md."
+  - ids: [T-NFR-06]
+    requirements: [N-06]
+    kind: measurement
+    source: "serverLoadTest -Pserver.load.profile=full -Pserver.load.publish=true on 13 §7.1 hardware: docs/bench/server-load.md with an approved summary comment"
+    owner: WO-29
+    gate: Gate 1
+    note: "C-244 (7) and C-245 (1) after the full run. The smoke report in docs/bench is INVALID by construction."
+  - ids: [T-NFR-07, T-NFR-24]
+    requirements: [N-07, N-24]
+    kind: measurement
+    source: "QueryApiBenchIT -Pserver.apiBench=true -Pserver.apiBench.profile=full -Pserver.apiBench.enforce=true on argos-storage, copied to docs/bench/api-bench-<date>-<commit7>.md with an approved summary comment"
+    owner: WO-23
+    gate: Gate 1
+    note: "ADR-0010 C-180: warm median of 3 <= target and cold <= 2 x target for every call."
+  - ids: [T-NFR-14]
+    requirements: [N-14]
+    kind: measurement
+    source: "pnpm -C ui perf (XLOG_PERF_TARGET=route) and Lighthouse initial load on a quiet machine"
+    owner: WO-33
+    gate: Gate 2
+    note: "Shared-laptop results are INVALID references (ui/perf/results)."
+  - ids: [T-NFR-16]
+    requirements: [N-16]
+    kind: human
+    source: "./gradlew :deploy:demoSmoke -Pdemo.smoke.enforce=true on a quiet machine (60 s to the first XLog point) and two non-participants following the README in 5 minutes"
+    owner: WO-41
+    gate: Gate 1.5
+    note: "ADR-0010 C-243 (8). T-NFR-16a~e are the automated parts."
+  - requirements: [N-09]
+    kind: design
+    source: "02 architecture: 1.0 is a single node with planned stops allowed; multi-node collectors are 1.x (18 §16.1 '설계 확인, 테스트 없음')"
+    owner: PM
+    gate: Gate 1
+  - ids: [T-ACPT-01~18]
+    requirements: [N-11]
+    kind: human
+    source: "18 §14 acceptance checklists done by a person in the WO-42 environment; N-11: a non-participant installs with docs/install/compose.md in 30 minutes (03 Gate 1 '설치')"
+    owner: WO-42
+    gate: Gate 1
+    note: "Gate 1 needs the M range of T-ACPT-01~18. Automated parts are named in 18 §14."
+  - requirements: [N-10a]
+    kind: human
+    source: "docs/security/asvs-checklist.md review: ASVS 4.0 L2 V2, V3, V4, V5, V7, V9, V14 mapped to T-SEC tests"
+    owner: WO-62
+    gate: Gate 2
+    note: "ADR-0010 C-250 (8): threat model and ASVS content review at Gate 2."
+  - requirements: [N-20]
+    kind: human
+    source: "backup and restore rehearsal by a non-participant (docs/ops/recovery-rehearsal.md); automated parts T-NFR-20a~c"
+    owner: WO-43
+    gate: Gate 2
+    note: "ADR-0010 C-247 (13)."
+  - ids: [T-NFR-12]
+    requirements: [N-12]
+    kind: deferred
+    source: "air-gap VM install from the offline bundle (17 §5)"
+    owner: WO-76
+    gate: Gate 1.5
+    note: "Air-gap bundle draft is WO-63; the install test comes with the tar + systemd install of WO-76."
+  - ids: [T-NFR-17]
+    requirements: [N-17]
+    kind: deferred
+    source: "packet capture in the isolated network: egress 0 except operator-configured targets (17 §5.3)"
+    owner: WO-64
+    gate: Gate 1.5
+    note: "Static half today: T-BLD-011 and T-BLD-011a (no proxy or network class outside the allow-list)."
+  - ids: [T-ST-050]
+    requirements: [N-19]
+    kind: measurement
+    source: "storageBench Q20 bytes per row against the N-19 formula (+-30%) on argos-storage (13 §14, 18 §9)"
+    owner: WO-03
+    gate: Gate 2
+    note: "The 1/20 local profile of the PoC is a reference only."
+  - ids: [T-CH-001~009]
+    requirements: [N-05]
+    kind: deferred
+    source: "chaosTest on the dedicated machine (18 §11.1); report docs/bench/chaos-<date>.md with an approved summary comment"
+    owner: WO-52
+    gate: Gate 1
+    note: "In progress in WO-52. When its tests carry these IDs the tests are shown first."
+  - ids: [T-SOAK-001]
+    requirements: [N-02, N-18]
+    kind: deferred
+    source: "soakTest 72 hours (18 §11.2): heap slope, NMT, FD, threads, OOM 0; report docs/bench/soak-<date>.md"
+    owner: WO-52
+    gate: Gate 1
+    note: "In progress in WO-52."

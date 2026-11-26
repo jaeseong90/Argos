@@ -703,7 +703,7 @@ Argos agent 1.0.0 (commit 3f2a1c9, protocol 1)
  3   dns         PASS    collector.example.com -> 10.0.0.5
  3   tcp         PASS    connected to collector.example.com:9100
  3   tls         PASS    TLSv1.3, chain (server.tls.ca-file) and host name verified, certificate valid until 2027-06-30
- 4   hello       PASS    accepted by server 1.0.0 (protocol 1, accepts agents 0.8.0 to 1.0.0): app id 3, instance id 41, instance 'shop-1-check'
+ 4   hello       PASS    accepted by server 1.0.0 (protocol 1, accepts agents 0.8.0 to 1.0.0): app id 3, check-only (no instance registered), instance 'shop-1-check'
  5   clock       PASS    offset +12 ms (server minus this host, round trip 4 ms)
  6   jdk         PASS    JDK 21.0.5 (Eclipse Adoptium): supported
  7   classpath   PASS    Spring Boot 3.5.16 (shop.jar): supported
@@ -711,7 +711,7 @@ Argos agent 1.0.0 (commit 3f2a1c9, protocol 1)
  8   log-dir     PASS    /opt/argos/logs is writable (default)
  8   token-file  PASS    /etc/argos/token is rw------- (owner only)
 Result: PASS (12 passed, 0 warnings, 0 failed, 0 skipped); exit code 0
-Note: the hello check opened a session as instance 'shop-1-check' and ended it with AgentBye; the server lists that instance as stopped
+Note: the hello check was a check-only session as instance 'shop-1-check': the server registered no instance for it
 Configuration (keys not at their default):
   server.address = collector.example.com:9100 (file)
   ...
@@ -722,10 +722,13 @@ Configuration (keys not at their default):
 `check`, `status`, `detail`, `notes`), `side_effects` and `configuration`.
 
 Side effects and network: the check connects only to `server.address` (its name lookup and one
-session). The hello check registers an instance named `<app.instance or host name>-check` and
-ends its session at once with `AgentBye`, so the server shows that instance as stopped, not as
-down; a refused hello may still be recorded by the server (for example in the approval queue).
-The output says so in a `Note:` line. The token never appears: it is shown as `argos_****`, also
+session). The hello check sends a check-only Hello (`AgentHello.check_only`) as
+`<app.instance or host name>-check`: the server runs its session checks (token, app, TLS, versions,
+app registration) and answers, but registers no instance, adds nothing to the approval queue,
+tracks no state and evaluates no alert for it. A server older than the agent does not know
+check-only Hellos: it registers that instance, and the check ends its session at once with
+`AgentBye`, so the server shows the instance as stopped, not as down (a refused hello may then be
+recorded, for example in the approval queue). The output says which in a `Note:` line. The token never appears: it is shown as `argos_****`, also
 inside server messages. The check prints to standard output only; it writes no log file and
 creates no directory.
 
@@ -973,11 +976,22 @@ may change at any time.
   jar. When neither `log.dir` nor that directory is writable, it falls back to
   `<java.io.tmpdir>/argos-agent-<pid>` (owner-only). Set `log.dir` to a writable directory to keep
   the agent out of the temporary directory.
+- **No return to the log file after stderr.** When the agent cannot write its log file (for
+  example, the disk is full), it writes its log lines to stderr instead, at most a few lines per
+  minute. It does not go back to the file when space is freed later. Restart the application to
+  write to the log file again. A later 1.x release will retry the file.
 - **Token file permissions on Windows.** The group/others check of `server.token-file` needs POSIX
   permissions; on NTFS it is skipped (INFO), so restrict the file with the operating system's own
   access control.
 - **YAML subset.** Only the subset in [The YAML file](#the-yaml-file) is read; anything else makes
   the agent ignore the whole file with a WARN.
+- **OpenTelemetry Java agent attached first.** When the OpenTelemetry Java agent's `-javaagent`
+  option comes before the Argos agent's, the Argos code runs first on an outgoing HTTP call and
+  OpenTelemetry then replaces the `traceparent` header. The request leaves with the OpenTelemetry
+  `traceparent` (it is never overwritten by Argos), but the Argos HTTP step is recorded as if
+  Argos had sent its own, so a downstream service joins the OpenTelemetry trace rather than the
+  Argos one. Put the Argos `-javaagent` option first when both agents are used; in that order the
+  step records the `traceparent` that was sent.
 - **Servlet containers.** Request boundaries, async requests and the response flush are verified on
   Tomcat 9, 10.1 and 11, embedded (Spring Boot 2.7, 3.5 and 4.1) and standalone. Jetty (ee8, ee10)
   and Undertow 2.3 are expected to record requests and names but are not verified yet. On them the

@@ -6,7 +6,7 @@ Traffic for the sample apps, in two forms with the same request mix:
 |---|---|---|
 | Purpose | overhead benchmark workload (docs/18 §7.2, docs/01 §7.3 item 3) | demo profile traffic (docs/17 §3.9), quick local load |
 | Engine | k6 `constant-arrival-rate`, `grafana/k6:2.3.0` pinned by digest | own Java 17 code on `java.net.http`, fixed arrival rate |
-| License | k6 is AGPL-3.0: development and benchmarks only, never shipped (`docs/licenses/dev-only.md`, ADR-0003 C-33) | Apache-2.0 Argos code only, no third-party dependency (`checkDemoLoadDependencies`); `load.jar` carries `META-INF/LICENSE` and `NOTICE`. The image's base JRE and OS packages keep their own licenses (notices decided with the server image, WO-41/WO-44) |
+| License | k6 is AGPL-3.0: development and benchmarks only, never shipped (`docs/licenses/dev-only.md`, ADR-0003 C-33) | Apache-2.0 Argos code only, no third-party dependency (`checkDemoLoadDependencies`, `checkLicenses`: this project is shipped, WO-41); `load.jar` and the image carry the project's `LICENSE` and `NOTICE`. The image's base JRE and OS packages keep their own licenses (their notices in the published image are WO-44's) |
 
 Both are open-model generators: request *n* is due at `start + n / rate` whatever the app's
 latency, so a slow app shows up as latency and queueing, not as a lower rate. A request that
@@ -31,9 +31,31 @@ times, and order ids walk through all 1,000 orders of the sample data. `bench.js
 generator compute the same sequence; `MixTest` checks that the table in `bench.js` (between
 `// mix:begin` and `// mix:end`) matches `Mix.bench()` and the shared shop catalog.
 
-`MIX=default` is the demo profile of docs/17 §3.9: normal 70% (orders 45, page 25), slow 10%
-(`/api/slow?ms=` 300 ms to 3 s), errors 5% (`error-500` 3, `send-error` 2), N+1 5%, external call
-10% (`/api/pay/{id}`).
+`MIX=default` applies the shares of the demo profile of docs/17 §3.9 to the shop apps: normal 70%
+(orders 45, page 25), slow 10% (`/api/slow?ms=` 300 ms to 3 s), errors 5% (`error-500` 3,
+`send-error` 2), N+1 5%, external call 10% (`/api/pay/{id}` to ext-stub).
+
+`MIX=demo` is the demo profile of docs/17 §3.9 against the demo app `argos-demo-app` (order-api,
+[sample-apps/demo-app](../demo-app/README.md); routes and statuses = `DemoCatalog`, WO-41). It is the
+default of the `argos-demo-load` image:
+
+| Route (order-api) | Share | Expected status | What happens |
+|---|---|---|---|
+| `GET /api/orders/{id}` | 45% | 200 | 1 SQL |
+| `GET /api/orders?page=` | 25% | 200 | 3 SQL |
+| `GET /api/orders/{id}/items` | 5% | 200 | N+1: 1 + 20 SQL |
+| `GET /api/slow?ms=` | 10% | 200 | sleep 300 ms to 3 s (100 ms steps) |
+| `GET /api/error-500` | 3% | 500 | unhandled exception |
+| `GET /api/send-error` | 2% | 503 | `response.sendError(503)` |
+| `GET /api/orders/{id}/checkout` (paid orders) | 8% | 200 | 1 SQL, then payment-api `GET /api/payments/{id}` (2 SQL) |
+| `GET /api/orders/{id}/checkout` (declined orders) | 2% | 502 | 1 SQL, payment-api fails (1 SQL, exception), order-api answers 502 |
+
+Normal 70%, slow 10%, error 5%, N+1 5%, distributed call order-api to payment-api 10%. payment-api
+declines every 5th order id (about 20% of the payments, `DemoCatalog.paymentDeclined`); the two
+checkout routes pick their order ids so that each has one expected status. Seen from order-api
+7% of the requests end with a 5xx, which keeps the recommended `error_rate` alert (WARN at 5%)
+firing in the demo. One cycle of the schedule is 100 requests, and each block of 20 requests
+(0-19, 20-39, ...) holds every route its share within one request.
 
 An "unexpected" outcome is any status other than the route's expected one, or no answer (timeout,
 connection failure). The intended 5% errors are reported separately (`http5xxRate`).
@@ -95,7 +117,7 @@ Settings are environment variables (the container image) or options (the option 
 |---|---|---|---|
 | `TARGET_URL` | `--target-url` | `http://localhost:8080` | base URL, a WAR context path included |
 | `RATE` | `--rate` | `50` | requests per second |
-| `MIX` | `--mix` | `default` | `default` (17 §3.9) or `bench` (18 §7.2) |
+| `MIX` | `--mix` | `default` (`demo` in the `argos-demo-load` image) | `default` (17 §3.9 shares, shop apps), `demo` (17 §3.9, demo app) or `bench` (18 §7.2) |
 | `DURATION` | `--duration` | unset: until stopped | measured window |
 | `WARMUP` | `--warmup` | `0s` | same rate and mix first, excluded from the summary |
 | `MAX_IN_FLIGHT` | `--max-in-flight` | `max(64, rate)`, at most 4096 | due requests beyond it are dropped |
@@ -109,12 +131,21 @@ Exit codes: 0 done, 1 the `MAX_UNEXPECTED_RATE` gate failed or the summary could
 2 bad settings. `docker stop` (SIGTERM) ends the run, drains for up to 5 s and still writes the
 summary. Memory stays constant however long it runs (fixed-size counters and histograms).
 
-Image (the public `argos-demo-load` image is published by WO-41/WO-44):
+Images:
 
 ```bash
-./gradlew :sample-apps:load:sampleImage                   # argos-sample/load:dev, Java 17 JRE, user 10001
+# The public demo image (Jib, local Docker daemon, linux/amd64; WO-41). Base = the server image's
+# digest-pinned Temurin 21 JRE, user 10001:10001, LICENSE and NOTICE in /opt/argos-demo, defaults
+# TARGET_URL=http://sample-app-a:8080, RATE=50, MIX=demo (the demo profile of deploy/compose).
+./gradlew :sample-apps:load:jibDockerBuild                # argos-demo-load:<version>
+docker run --rm --network <net> -e TARGET_URL=http://order-api:8080 argos-demo-load:0.0.0-SNAPSHOT
+
+# The development image (Dockerfile, Java 17 JRE, user 10001), for the shop apps:
+./gradlew :sample-apps:load:sampleImage                   # argos-sample/load:dev
 docker run --rm --network <net> -e TARGET_URL=http://shop-boot3:8080 -e RATE=50 -e MIX=default argos-sample/load:dev
 ```
+
+Multi-arch images, registry push and signing of `argos-demo-load` are WO-44.
 
 ## By hand: one app and one minute of load
 
@@ -132,7 +163,8 @@ Or let the script do steps 1 to 5 with k6: `sample-apps/load/run-bench.sh --summ
 
 ## Tests
 
-- `./gradlew :sample-apps:load:test`: schedule, mixes (also against `bench.js` and the catalog),
+- `./gradlew :sample-apps:load:test`: schedule, mixes (also against `bench.js`, the shop catalog
+  and, for `MIX=demo`, `DemoCatalog`: shares, 20-request windows, checkout ids, T-NFR-16b),
   configuration, histogram, generator timing on a simulated clock (open model, drops, late
   wake-ups, warm-up, stop), outcomes, summary.
 - `./gradlew :sample-apps:load:integrationTest`: the generator over HTTP against an in-process
@@ -142,4 +174,5 @@ Or let the script do steps 1 to 5 with k6: `sample-apps/load/run-bench.sh --summ
   warm-up (a cold app is excluded from the measured window) and an in-flight cap of rate x request
   timeout; a failure message names the outcome counts (TIMEOUT and the others) and the machine CPU
   load sampled just before the run.
-- `checkDemoLoadDependencies` (part of `check`): the generator keeps zero runtime dependencies.
+- `checkDemoLoadDependencies` (part of `check`): the generator keeps zero runtime dependencies;
+  `checkLicenses` (part of `check`) checks the runtime classpath against the allow list.

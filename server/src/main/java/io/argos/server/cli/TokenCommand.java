@@ -32,11 +32,11 @@ import tools.jackson.databind.node.ObjectNode;
  *       {@code TOKEN_ISSUED}).
  * </ul>
  *
- * <p>The command line has no access to the running server's token cache and agent sessions: a
- * revocation (and the end of a grace period) reaches the collector within the cache lifetime (60 s,
- * 12 §7.1) for new calls, while sessions already open stay until they reconnect. For an immediate
- * cut-off use the administration API ({@code POST /api/v1/admin/tokens/{id}/revoke}), which closes
- * the sessions at once (SEC-04).
+ * <p>The command line changes the {@code agent_tokens} row; a running server applies a revocation
+ * on its own ({@link io.argos.server.admin.token.TokenRevocationWatcher}, every 2 s, ADR-0010 C-238
+ * (14)): it drops the token from its cache, so a new Hello is refused, and ends the token's open
+ * agent sessions with {@code UNAUTHENTICATED}, within 5 seconds like the administration API
+ * (SEC-04). A rotated token keeps authenticating until its grace period ends.
  *
  * <p>The token is printed once and nowhere else; the audit rows name the prefix. Exit codes 0
  * success, 1 failure (not found, not active, database), 2 invalid arguments, 4 the application has
@@ -50,8 +50,9 @@ final class TokenCommand {
              argos-admin token revoke (--id <uuid> | --prefix <argos_xxxxxxxx>) --reason <text> [--json]
              argos-admin token rotate (--id <uuid> | --prefix <argos_xxxxxxxx>) [--grace-days <n>] [--json]
         issue is token create. revoke ends a token; rotate issues a successor (printed once) and
-        keeps the old token valid for --grace-days (1 to 30, default 7). Without a running
-        server's cache the change reaches the collector within 60 seconds.
+        keeps the old token valid for --grace-days (1 to 30, default 7). A running server checks
+        for revocations every 2 seconds: it refuses the token and ends its open agent sessions
+        within 5 seconds.
         Exit codes: 0 success, 1 failure, 2 invalid arguments, 4 token limit of the application.
       """;
 
@@ -246,8 +247,8 @@ final class TokenCommand {
     } else {
       out.printf(
           Locale.ROOT,
-          "Token %s (%s) revoked. The collector refuses it within 60 seconds; open agent sessions"
-              + " end when they reconnect.%n",
+          "Token %s (%s) revoked. A running server refuses it and ends its open agent sessions"
+              + " within 5 seconds.%n",
           prefix,
           id);
       out.flush();

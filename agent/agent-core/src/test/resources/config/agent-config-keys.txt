@@ -1,0 +1,98 @@
+# Agent configuration keys: a public contract (T-API-009, O-R03, 19 §9 "config-keys.snapshot",
+# docs/compatibility.md). Every PUBLIC and DIAGNOSTIC key of ConfigKeys, one line each, sorted:
+#   key<TAB>type<TAB>default<TAB>remote<TAB>kind<TAB>env
+# key      canonical name; set in argos-agent.yml, as the system property -Dargos.<key>, or as env
+# type     KeySpec type; an enum lists its values: enum(a|b)
+# default  the documented default; (none) = no default (required, unset or computed at start),
+#          "" = empty
+# remote   Y = remote change allowed by default, N = only when remote-config.allow names it,
+#          - = never changed remotely
+# kind     public or diagnostic (debug.*, honoured in release builds)
+# env      the environment variable (ARGOS_ + key, . and - as _, upper case); - when none sets it
+#          (a family such as ...services.*, or agent.disabled which is read only from -D).
+#          ARGOS_TOKEN, ARGOS_CONFIG and the file name argos-agent.yml are fixed names outside
+#          this table, pinned by the same test.
+# TEST keys (argos.test.*, argos.testing.*) are development-build only and not listed.
+# Checked by AgentConfigKeySnapshotTest (:agent:agent-core:test). Change this file by hand, in the
+# same change as the key, add a CHANGELOG entry and report every addition, rename or change.
+
+active.snapshot-interval-seconds	int	5	Y	public	ARGOS_ACTIVE_SNAPSHOT_INTERVAL_SECONDS
+agent.disabled	bool	false	-	public	-
+app.env	string	default	-	public	ARGOS_APP_ENV
+app.group	string	(none)	-	public	ARGOS_APP_GROUP
+app.instance	string	(none)	-	public	ARGOS_APP_INSTANCE
+app.name	string	(none)	-	public	ARGOS_APP_NAME
+app.version	string	(none)	-	public	ARGOS_APP_VERSION
+async.step	bool	false	Y	public	ARGOS_ASYNC_STEP
+buffer.max-age-seconds	int	120	N	public	ARGOS_BUFFER_MAX_AGE_SECONDS
+buffer.max-bytes	bytes	32MB	N	public	ARGOS_BUFFER_MAX_BYTES
+buffer.transaction.capacity	int	20000	N	public	ARGOS_BUFFER_TRANSACTION_CAPACITY
+capture.error-message-max-length	int	1024	Y	public	ARGOS_CAPTURE_ERROR_MESSAGE_MAX_LENGTH
+capture.http-headers	list	""	N	public	ARGOS_CAPTURE_HTTP_HEADERS
+capture.mask-patterns	list	""	N	public	ARGOS_CAPTURE_MASK_PATTERNS
+capture.query-string	enum(off|whitelist|full)	off	N	public	ARGOS_CAPTURE_QUERY_STRING
+capture.query-string.whitelist	list	""	N	public	ARGOS_CAPTURE_QUERY_STRING_WHITELIST
+capture.remote-ip	enum(full|masked|off)	masked	N	public	ARGOS_CAPTURE_REMOTE_IP
+capture.request-id-header	string	(none)	N	public	ARGOS_CAPTURE_REQUEST_ID_HEADER
+capture.sql-parameters	enum(masked|partial|full)	masked	N	public	ARGOS_CAPTURE_SQL_PARAMETERS
+capture.sql-parameters.whitelist-columns	list	""	N	public	ARGOS_CAPTURE_SQL_PARAMETERS_WHITELIST_COLUMNS
+capture.stack-depth	int	30	Y	public	ARGOS_CAPTURE_STACK_DEPTH
+capture.trusted-proxies	list	""	N	public	ARGOS_CAPTURE_TRUSTED_PROXIES
+capture.user-id.mode	enum(off|plain|hashed)	off	N	public	ARGOS_CAPTURE_USER_ID_MODE
+capture.user-id.source	string	(none)	N	public	ARGOS_CAPTURE_USER_ID_SOURCE
+commands.env-dump.mask-patterns	list	""	N	public	ARGOS_COMMANDS_ENV_DUMP_MASK_PATTERNS
+commands.thread-dump.cooldown-seconds	int	5	N	public	ARGOS_COMMANDS_THREAD_DUMP_COOLDOWN_SECONDS
+commands.thread-dump.max-bytes	int	1048576	N	public	ARGOS_COMMANDS_THREAD_DUMP_MAX_BYTES
+debug.transform-list	path	(none)	-	diagnostic	ARGOS_DEBUG_TRANSFORM_LIST
+debug.transform-log	path	(none)	-	diagnostic	ARGOS_DEBUG_TRANSFORM_LOG
+debug.transform-timing	bool	false	-	diagnostic	ARGOS_DEBUG_TRANSFORM_TIMING
+enabled	bool	true	Y	public	ARGOS_ENABLED
+instrumentation.app-packages	list	(none)	Y	public	ARGOS_INSTRUMENTATION_APP_PACKAGES
+instrumentation.custom-methods	list	""	N	public	ARGOS_INSTRUMENTATION_CUSTOM_METHODS
+instrumentation.custom-methods.max-classes-per-pattern	int	500	N	public	ARGOS_INSTRUMENTATION_CUSTOM_METHODS_MAX_CLASSES_PER_PATTERN
+instrumentation.disabled	list	""	Y	public	ARGOS_INSTRUMENTATION_DISABLED
+instrumentation.error-threshold	int	100	N	public	ARGOS_INSTRUMENTATION_ERROR_THRESHOLD
+instrumentation.exclude-classes	list	""	Y	public	ARGOS_INSTRUMENTATION_EXCLUDE_CLASSES
+instrumentation.ignore-extensions	list	css, js, map, png, jpg, jpeg, gif, svg, ico, woff, woff2, ttf, eot	Y	public	ARGOS_INSTRUMENTATION_IGNORE_EXTENSIONS
+instrumentation.ignore-methods	list	OPTIONS	Y	public	ARGOS_INSTRUMENTATION_IGNORE_METHODS
+instrumentation.ignore-paths	list	/actuator/health, /actuator/health/**, /health, /healthz, /ready, /favicon.ico	Y	public	ARGOS_INSTRUMENTATION_IGNORE_PATHS
+instrumentation.ignore-user-agents	list	""	Y	public	ARGOS_INSTRUMENTATION_IGNORE_USER_AGENTS
+instrumentation.service-dictionary-max	int	10000	N	public	ARGOS_INSTRUMENTATION_SERVICE_DICTIONARY_MAX
+instrumentation.transform-error-threshold	int	10	N	public	ARGOS_INSTRUMENTATION_TRANSFORM_ERROR_THRESHOLD
+log.dir	path	(none)	-	public	ARGOS_LOG_DIR
+log.level	enum(ERROR|WARN|INFO|DEBUG|TRACE)	INFO	Y	public	ARGOS_LOG_LEVEL
+log.max-file-mb	int	10	-	public	ARGOS_LOG_MAX_FILE_MB
+log.max-files	int	5	-	public	ARGOS_LOG_MAX_FILES
+metrics.interval-seconds	int	5	Y	public	ARGOS_METRICS_INTERVAL_SECONDS
+metrics.max-series	int	500	N	public	ARGOS_METRICS_MAX_SERIES
+propagation.argos-state.hosts	list	""	N	public	ARGOS_PROPAGATION_ARGOS_STATE_HOSTS
+propagation.exclude-hosts	list	""	N	public	ARGOS_PROPAGATION_EXCLUDE_HOSTS
+propagation.preserve-incoming	bool	true	N	public	ARGOS_PROPAGATION_PRESERVE_INCOMING
+remote-config.allow	list	sampling.**, instrumentation.disabled, instrumentation.ignore-*, log.level, enabled, transaction.slow-stack.*, capture.error-message-max-length, capture.stack-depth, instrumentation.app-packages, async.step, active.snapshot-interval-seconds, metrics.interval-seconds, transaction.max-duration-ms	-	public	ARGOS_REMOTE_CONFIG_ALLOW
+sampling.profile.max-steps	int	1000	Y	public	ARGOS_SAMPLING_PROFILE_MAX_STEPS
+sampling.profile.normal-rate	double	0.1	Y	public	ARGOS_SAMPLING_PROFILE_NORMAL_RATE
+sampling.profile.slow-threshold-ms	int	1000	Y	public	ARGOS_SAMPLING_PROFILE_SLOW_THRESHOLD_MS
+sampling.profile.slow-threshold-ms.services.*	int	(none)	Y	public	-
+sender.batch-size	int	500	N	public	ARGOS_SENDER_BATCH_SIZE
+sender.compression	enum(gzip|none)	gzip	N	public	ARGOS_SENDER_COMPRESSION
+sender.flush-interval-ms	int	100	N	public	ARGOS_SENDER_FLUSH_INTERVAL_MS
+sender.max-in-flight	int	4	N	public	ARGOS_SENDER_MAX_IN_FLIGHT
+server.address	string	(none)	-	public	ARGOS_SERVER_ADDRESS
+server.connect-timeout-ms	int	5000	-	public	ARGOS_SERVER_CONNECT_TIMEOUT_MS
+server.deadline-ms	int	5000	-	public	ARGOS_SERVER_DEADLINE_MS
+server.tls	bool	true	-	public	ARGOS_SERVER_TLS
+server.tls.ca-file	path	(none)	-	public	ARGOS_SERVER_TLS_CA_FILE
+server.tls.insecure-skip-verify	bool	false	-	public	ARGOS_SERVER_TLS_INSECURE_SKIP_VERIFY
+server.token	string	(none)	-	public	ARGOS_SERVER_TOKEN
+server.token-file	path	(none)	-	public	ARGOS_SERVER_TOKEN_FILE
+sql.backslash-escape	bool	true	N	public	ARGOS_SQL_BACKSLASH_ESCAPE
+sql.keep-hints	bool	false	N	public	ARGOS_SQL_KEEP_HINTS
+sql.max-length	int	65536	N	public	ARGOS_SQL_MAX_LENGTH
+stats.max-keys	int	5000	N	public	ARGOS_STATS_MAX_KEYS
+stats.window-seconds	int	10	N	public	ARGOS_STATS_WINDOW_SECONDS
+transaction.max-duration-ms	int	3600000	Y	public	ARGOS_TRANSACTION_MAX_DURATION_MS
+transaction.slow-stack.depth	int	64	Y	public	ARGOS_TRANSACTION_SLOW_STACK_DEPTH
+transaction.slow-stack.enabled	bool	true	Y	public	ARGOS_TRANSACTION_SLOW_STACK_ENABLED
+transaction.slow-stack.interval-ms	int	3000	Y	public	ARGOS_TRANSACTION_SLOW_STACK_INTERVAL_MS
+transaction.slow-stack.max-captures	int	5	Y	public	ARGOS_TRANSACTION_SLOW_STACK_MAX_CAPTURES
+transaction.slow-stack.max-threads-per-cycle	int	10	Y	public	ARGOS_TRANSACTION_SLOW_STACK_MAX_THREADS_PER_CYCLE

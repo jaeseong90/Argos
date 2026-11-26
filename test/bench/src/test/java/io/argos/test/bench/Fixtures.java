@@ -75,6 +75,41 @@ final class Fixtures {
     return runs;
   }
 
+  /**
+   * Adds {@code measure.selfDiag} to the on runs as the lane B harness writes it from the agent's
+   * self-diagnostics file (C-95): agent threads' CPU seconds of the window, direct memory bytes at
+   * its end and premain ms.
+   */
+  static List<Map<String, Object>> withSelfDiag(
+      List<Map<String, Object>> runs, double agentCpuSeconds, long directBytes, double premainMs) {
+    for (Map<String, Object> r : runs) {
+      if (!"on".equals(r.get("variant"))) {
+        continue;
+      }
+      Map<String, Object> measure = new LinkedHashMap<>(Json.object(r.get("measure")));
+      Map<String, Object> selfDiag = new LinkedHashMap<>();
+      selfDiag.put("agentThreadsCpuSeconds", agentCpuSeconds);
+      selfDiag.put("directMemoryBytes", directBytes);
+      selfDiag.put("premainMs", premainMs);
+      selfDiag.put("source", "selfdiag-file");
+      measure.put("selfDiag", selfDiag);
+      r.put("measure", measure);
+    }
+    return runs;
+  }
+
+  /** set.json of a load set measured with the given exporter. */
+  static Map<String, Object> loadSet(String exporter) {
+    Map<String, Object> set = loadSet("process", false, "default");
+    Map<String, Object> p = new LinkedHashMap<>(Json.object(set.get("parameters")));
+    p.put("exporter", exporter);
+    if (exporter.equals("grpc")) {
+      p.put("collector", "loadhost:4317");
+    }
+    set.put("parameters", p);
+    return set;
+  }
+
   /** A bench-env.sh record; {@code problems} non-empty makes it invalid. */
   static Map<String, Object> envRecord(String... problems) {
     Map<String, Object> env = new LinkedHashMap<>();

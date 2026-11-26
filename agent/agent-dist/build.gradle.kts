@@ -482,6 +482,15 @@ configurations.consumable("agentInstElements") {
   outgoing.artifact(shadowJar)
 }
 
+// META-INF/argos-deps.txt of the agent jar for the server's About list (WO-44, ADR-0010 C-153):
+// :server renders META-INF/argos/licenses/agent.json from exactly this file.
+configurations.consumable("agentDepsElements") {
+  attributes {
+    attribute(Category.CATEGORY_ATTRIBUTE, objects.named("argos-agent-deps"))
+  }
+  outgoing.artifact(generateDepsManifest.flatMap { it.outputFile })
+}
+
 tasks.check { dependsOn(verifyAgentJar) }
 
 // Maven Central publication (19 §7.5): the single jar plus sources (bootstrap + core) and a

@@ -1,8 +1,12 @@
 #!/bin/sh
 # SPDX-License-Identifier: Apache-2.0
+# req: N-11, N-16, O-R02, SEC-74, SEC-75
 #
 # Cases of argos-compose.sh without a stack (docs/17 section 3.1, ADR-0010 C-171 (4) and C-173,
-# docs/03 section 2 "input limits", T-SEC-74): the commands of later work orders refuse, the up
+# docs/03 section 2 "input limits", T-SEC-74): backup, restore and diag run their scripts with the
+# same arguments from the caller's directory and pass their exit codes on (WO-43; stub backup.sh and
+# restore.sh), upgrade and upgrade --rollback keep the version rules and exit codes 0/1/2/8 and change
+# nothing before the backup succeeded (T-NFR-11a logic, O-R02 agent warning), the up
 # preflight refuses without starting anything, token create refuses out-of-range input before any
 # docker call, issues through argos-admin token create in the running, healthy server container
 # (C-173 (4)) and passes its exit codes 0, 4 and 1 on, prints the token once, takes the agent's
@@ -54,12 +58,55 @@ no_docker_call() { [ ! -s "$LOG" ] || { echo "docker was called:"; cat "$LOG"; r
 no_compose_up() { ! grep -qE '(^| )up( |$)' "$LOG" || { echo "docker compose up was called:"; cat "$LOG"; return 1; }; }
 compose_up_called() { grep -qE '(^| )up -d --wait' "$LOG"; }
 
-# --- commands of later work orders (C-171 (4)) --------------------------------------------------
-for c in upgrade backup diag restore; do
-  expect_exit 2 "C-171 (4): '$c' exits 2" ac "$c"
-  output_has "not provided in this version" "C-171 (4): '$c' says it is not provided in this version"
-  check "C-171 (4): '$c' calls no docker" no_docker_call
-done
+# --- backup, restore and diag run their scripts (WO-43, replaces C-171 (4) 'not provided') -------
+# Stubs of backup.sh and restore.sh (lane B's scripts are tested by backup-cases.sh): they record
+# their arguments and working directory and answer like the real ones (backup.sh --json: the last
+# line is the JSON result).
+STUB_SET=/tmp/backups/argos-backup-20261126T000000Z-pre
+cat >"$WORK/backup.sh" <<EOF
+#!/bin/sh
+printf '%s\n' "\$*" >>/tmp/backup.args
+pwd >/tmp/backup.pwd
+if [ "\${FAKE_BACKUP_EXIT:-0}" -ne 0 ]; then echo "backup.sh: pg_dump failed" >&2; exit "\$FAKE_BACKUP_EXIT"; fi
+mkdir -p $STUB_SET
+echo "PostgreSQL dump written"
+printf '{"set":"%s","files":["pg.dump","manifest.json"],"bytes":10,"clickhouse":null}\n' "$STUB_SET"
+EOF
+cat >"$WORK/restore.sh" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >>/tmp/restore.args
+pwd >/tmp/restore.pwd
+if [ "${FAKE_RESTORE_EXIT:-0}" -ne 0 ]; then echo "restore.sh: refused" >&2; exit "$FAKE_RESTORE_EXIT"; fi
+echo "restored"
+EOF
+rm -f /tmp/backup.args /tmp/restore.args
+mkdir -p /tmp/caller
+from_caller() { (cd /tmp/caller && env FAKE_DOCKER_OS="$LINUX" sh "$WORK/argos-compose.sh" "$@"); }
+expect_exit 0 "WO-43: 'backup' runs backup.sh" from_caller backup --dir rel-dir --label nightly
+backup_passed_on() {
+  [ "$(cat /tmp/backup.args)" = "--dir rel-dir --label nightly" ] || { cat /tmp/backup.args; return 1; }
+  [ "$(cat /tmp/backup.pwd)" = /tmp/caller ] || { echo "ran in $(cat /tmp/backup.pwd)"; return 1; }
+}
+check "WO-43: 'backup' passes its arguments unchanged and runs from the caller's directory (relative paths as with ./backup.sh)" backup_passed_on
+expect_exit 3 "WO-43: 'backup' exits with the exit code of backup.sh" env FAKE_BACKUP_EXIT=3 sh -c "cd /tmp/caller && FAKE_DOCKER_OS='$LINUX' sh '$WORK/argos-compose.sh' backup"
+expect_exit 0 "WO-43: 'restore' runs restore.sh" from_caller restore /tmp/some-set --clickhouse --yes
+restore_passed_on() { [ "$(tail -n 1 /tmp/restore.args)" = "/tmp/some-set --clickhouse --yes" ] || { cat /tmp/restore.args; return 1; }; }
+check "WO-43: 'restore' passes its arguments unchanged" restore_passed_on
+expect_exit 2 "WO-43: 'diag' runs diag-bundle.sh (its usage error exits 2)" ac diag --since 9x
+output_has "diag-bundle.sh: --since must be hours" "WO-43: 'diag' shows the message of diag-bundle.sh"
+check "WO-43: 'diag' with a usage error calls no docker" no_docker_call
+mv backup.sh /tmp/backup.sh.aside
+expect_exit 2 "WO-43: 'backup' without backup.sh exits 2" ac backup
+output_has "backup.sh is missing next to argos-compose.sh" "WO-43: the missing backup.sh is named"
+mv /tmp/backup.sh.aside backup.sh
+rm -f /tmp/backup.args /tmp/restore.args
+
+# ARGOS_CH_BACKUP_DIR adds the ClickHouse backup target compose.chbackup.yaml (lane B's file).
+with_chbackup() { env ARGOS_CH_BACKUP_DIR=/mnt/argos-ch-backup sh ./argos-compose.sh files | grep -q -- '-f compose.chbackup.yaml'; }
+without_chbackup() { ! sh ./argos-compose.sh files | grep -q chbackup; }
+check "WO-43: ARGOS_CH_BACKUP_DIR adds -f compose.chbackup.yaml to the compose files" with_chbackup
+check "WO-43: without ARGOS_CH_BACKUP_DIR compose.chbackup.yaml is not used" without_chbackup
+
 expect_exit 2 "argos-compose: an unknown command exits 2" ac frobnicate
 output_has "unknown command 'frobnicate'" "argos-compose: the unknown command is named"
 check "argos-compose: an unknown command calls no docker" no_docker_call
@@ -133,6 +180,14 @@ config_refused config/server/application-compose.yaml 0640 0644
 config_refused config/postgres/init 0750 0755
 config_refused ../clickhouse/users.d/argos.xml 0640 0644
 config_refused ../postgres/roles.sql 0640 0644
+# compose.chbackup.yaml (WO-43) mounts config/clickhouse/backups.xml for ClickHouse: checked only
+# when ARGOS_CH_BACKUP_DIR selects that overlay.
+chmod 0640 config/clickhouse/backups.xml
+chbackup_up() { : >"$LOG"; env ARGOS_CH_BACKUP_DIR=/mnt/argos-ch-backup FAKE_DOCKER_OS="$LINUX" sh ./argos-compose.sh up; }
+expect_exit 2 "WO-43 preflight: config/clickhouse/backups.xml 0640 with ARGOS_CH_BACKUP_DIR: up exits 2" chbackup_up
+output_has "config/clickhouse/backups.xml" "WO-43 preflight: config/clickhouse/backups.xml 0640: the file is named"
+check "WO-43 preflight: config/clickhouse/backups.xml 0640: docker compose up is not called" no_compose_up
+chmod 0644 config/clickhouse/backups.xml
 
 # compose.proxy.yaml: behind the proxy 8080 is published on 127.0.0.1 only (17 section 3.10).
 proxy_up() { # proxy_up [VAR=value...]: up with ARGOS_PROXY=true on a Linux Docker Engine
@@ -321,5 +376,234 @@ check "token create: after SIGINT no token is printed" no_token_printed
 tc_tmp_empty() { [ -z "$(ls -A /tmp/tc-tmp)" ] || { ls -A /tmp/tc-tmp; return 1; }; }
 check "token create: after SIGINT its temporary directory is removed" tc_tmp_empty
 rm -f /tmp/token.raw
+
+# --- upgrade and upgrade --rollback (T-NFR-11a logic; docs/17 section 4.4 and 8, O-R02, WO-43) ----
+# The running server is argos-server:0.9.0 (id sha256:old); FAKE_IMAGES is the local image store.
+cat >/tmp/images.txt <<'EOF'
+argos-server:0.9.0 sha256:old 0.9.0
+argos-server:0.10.0 sha256:new 0.10.0
+argos-server:0.8.5 sha256:older 0.8.5
+argos-server:1.0.0 sha256:one 1.0.0
+argos-server:2.0.0 sha256:two 2.0.0
+argos-server:nolabel sha256:nolabel -
+argos-server:0.9.0-rc.2 sha256:rc 0.9.0-rc.2
+argos-server:bad sha256:bad 0.9
+EOF
+cp .env /tmp/env.orig
+reset_upgrade() {
+  cat /tmp/env.orig >.env # in place: owner and mode stay
+  rm -f upgrade-state.json /tmp/backup.args /tmp/restore.args
+  rm -rf /tmp/backups
+}
+# ug <arguments...>: upgrade with the fake image store, no terminal on standard input.
+ug() {
+  : >"$LOG"
+  env FAKE_DOCKER_OS="$LINUX" FAKE_IMAGES=/tmp/images.txt FAKE_IMAGE_SERVER=argos-server:0.9.0 FAKE_IMAGE_ID_SERVER=sha256:old \
+    sh ./argos-compose.sh upgrade "$@" </dev/null
+}
+env_sum() { cksum <.env; }
+no_backup_call() { [ ! -e /tmp/backup.args ] || { echo "backup.sh ran: $(cat /tmp/backup.args)"; return 1; }; }
+no_state() { [ ! -e upgrade-state.json ] || { echo "upgrade-state.json exists"; return 1; }; }
+
+reset_upgrade
+before_env=$(env_sum)
+env_unchanged() { [ "$(env_sum)" = "$before_env" ] || { echo ".env changed"; diff /tmp/env.orig .env; return 1; }; }
+refused_upgrade() { # refused_upgrade <exit> <description> <message> <upgrade arguments...>
+  want=$1 udesc=$2 umsg=$3
+  shift 3
+  expect_exit "$want" "T-NFR-11a: $udesc: exit $want" ug "$@"
+  output_has "$umsg" "T-NFR-11a: $udesc: the message says why"
+  check "T-NFR-11a: $udesc: backup.sh does not run" no_backup_call
+  check "T-NFR-11a: $udesc: .env is unchanged" env_unchanged
+  check "T-NFR-11a: $udesc: docker compose up is not called" no_compose_up
+  check "T-NFR-11a: $udesc: no upgrade-state.json" no_state
+}
+refused_upgrade 2 "upgrade without options" "usage: upgrade --image REF"
+check "T-NFR-11a: upgrade without options calls no docker" no_docker_call
+refused_upgrade 2 "an image reference with a space" "is not an image reference" --image "argos-server 1.0"
+refused_upgrade 2 "--rollback with --image" "--rollback takes no --image" --rollback --image argos-server:0.10.0
+refused_upgrade 2 "an unknown option" "upgrade: unknown option --frobnicate" --frobnicate
+refused_upgrade 2 "a downgrade (0.9.0 -> 0.8.5)" "refused: 0.8.5 is older than the running 0.9.0" --image argos-server:0.8.5 --yes
+refused_upgrade 2 "a pre-release of the running version (0.9.0 -> 0.9.0-rc.2, SemVer precedence)" "refused: 0.9.0-rc.2 is older" --image argos-server:0.9.0-rc.2 --yes
+refused_upgrade 2 "a skipped major version (0.9.0 -> 2.0.0)" "skips a major version" --image argos-server:2.0.0 --yes
+refused_upgrade 2 "an image without the version label" "has no org.opencontainers.image.version label" --image argos-server:nolabel --yes
+refused_upgrade 2 "a version that is not MAJOR.MINOR.PATCH" "which is not MAJOR.MINOR.PATCH" --image argos-server:bad --yes
+refused_upgrade 2 "an image neither local nor pullable" "is not in the local image store and cannot be pulled" --image registry.example.test/argos-server:9.9.9 --yes
+unhealthy_ug() { (FAKE_HEALTH=starting && export FAKE_HEALTH && ug "$@"); }
+expect_exit 2 "T-NFR-11a: a stack that is not healthy: exit 2" unhealthy_ug --image argos-server:0.10.0 --yes
+output_has "is not healthy (starting)" "T-NFR-11a: the unhealthy service is named"
+check "T-NFR-11a: a stack that is not healthy: backup.sh does not run" no_backup_call
+expect_exit 2 "T-NFR-11a: without --yes and without a terminal: exit 2" ug --image argos-server:0.10.0
+output_has "give --yes to run without a terminal" "T-NFR-11a: without a terminal --yes is asked for"
+check "T-NFR-11a: without --yes: backup.sh does not run" no_backup_call
+check "T-NFR-11a: without --yes: .env is unchanged" env_unchanged
+expect_exit 0 "T-NFR-11a: the version that runs already (0.9.0): exit 0" ug --image argos-server:0.9.0 --yes
+output_has "runs version 0.9.0 already" "T-NFR-11a: the same version: nothing to do"
+check "T-NFR-11a: the same version: backup.sh does not run" no_backup_call
+check "T-NFR-11a: the same version: .env is unchanged" env_unchanged
+
+# A failed backup: nothing changes (exit 1).
+backup_fails() { (FAKE_BACKUP_EXIT=1 && export FAKE_BACKUP_EXIT && ug "$@"); }
+expect_exit 1 "T-NFR-11a: backup.sh fails: exit 1" backup_fails --image argos-server:0.10.0 --yes
+output_has "the backup failed (backup.sh exit code 1); nothing was changed: the server runs 0.9.0" "T-NFR-11a: a failed backup says that nothing was changed"
+check "T-NFR-11a: a failed backup: .env is unchanged" env_unchanged
+check "T-NFR-11a: a failed backup: docker compose up is not called" no_compose_up
+check "T-NFR-11a: a failed backup: no upgrade-state.json" no_state
+
+# The upgrade 0.9.0 -> 0.10.0 (minor 10 > 9 numerically), with connected agents outside 0.8 to 0.10.
+reset_upgrade
+# psql output in the order of the query (ORDER BY the version text).
+printf '|1\n0.10.0|3\n0.11.0|1\n0.7.1|2\n0.8.2|1\n' >/tmp/agents.txt
+agents_ug() { (FAKE_AGENT_VERSIONS=/tmp/agents.txt && export FAKE_AGENT_VERSIONS && ug "$@"); }
+expect_exit 0 "T-NFR-11a: upgrade 0.9.0 -> 0.10.0 --yes: exit 0" agents_ug --image argos-server:0.10.0 --yes
+cp "$LAST" /tmp/upgrade.out
+output_has "connected agents outside the range the server 0.10.0 accepts (0.8 to 0.10, O-R02): 4 agents: unknown (1), 0.11.0 (1), 0.7.1 (2)" \
+  "O-R02: the agents outside X.(Y-2) to X.Y are counted and named (newer and older versions, no version)"
+output_lacks "0.8.2 (1)" "O-R02: an agent at X.(Y-2) is not named"
+output_has "Upgraded to 0.10.0 in" "T-NFR-11a: the upgrade prints its duration"
+backup_labelled() { grep -qxF -- "--label pre-upgrade-0.9.0-0.10.0 --json" /tmp/backup.args || { cat /tmp/backup.args; return 1; }; }
+check "T-NFR-11a: the mandatory PostgreSQL backup runs as backup.sh --label pre-upgrade-0.9.0-0.10.0 --json" backup_labelled
+env_image_new() {
+  [ "$(grep -c '^ARGOS_SERVER_IMAGE=' .env)" -eq 1 ] || { echo "ARGOS_SERVER_IMAGE is not set once"; return 1; }
+  grep -qx 'ARGOS_SERVER_IMAGE=argos-server:0.10.0' .env || { grep ARGOS_SERVER_IMAGE .env; return 1; }
+  [ "$(grep -v '^ARGOS_SERVER_IMAGE=' .env | cksum)" = "$(grep -v '^ARGOS_SERVER_IMAGE=' /tmp/env.orig | cksum)" ] || { echo "other lines changed"; return 1; }
+  [ "$(mode_of .env)" = "-rw-------" ] && [ "$(owner_of .env)" = 0 ] || { echo ".env $(mode_of .env) owner $(owner_of .env)"; return 1; }
+}
+check "T-NFR-11a: .env names the new image once, its other lines and its mode 0600 and owner stay" env_image_new
+server_recreated() { grep -qE 'up -d --wait --wait-timeout 600 server$' "$LOG" || { cat "$LOG"; return 1; }; }
+check "T-NFR-11a: the server is started again with docker compose up -d --wait server" server_recreated
+yesterday=$(date -u -d "@$(($(date -u +%s) - 86400))" +%Y-%m-%d)
+consistency_run() { grep -q "server java .* admin consistency check --date $yesterday" "$LOG" || { cat "$LOG"; return 1; }; }
+check "T-NFR-11a: argos-admin consistency check of yesterday ($yesterday) runs in the server container" consistency_run
+state_ok() {
+  [ "$(mode_of upgrade-state.json)" = "-rw-------" ] || { echo "mode $(mode_of upgrade-state.json)"; return 1; }
+  for kv in '"status": "done"' '"from_image": "argos-server:0.9.0"' '"from_image_id": "sha256:old"' '"from_version": "0.9.0"' \
+    '"to_image": "argos-server:0.10.0"' '"to_version": "0.10.0"' "\"backup_set\": \"$STUB_SET\""; do
+    grep -qF "$kv" upgrade-state.json || { echo "missing $kv"; cat upgrade-state.json; return 1; }
+  done
+}
+check "T-NFR-11a: upgrade-state.json (0600) names the previous image and its id, the versions and the pre-upgrade backup set" state_ok
+agents_query() { ! grep -q 'pg_backup_password' /tmp/upgrade.out && grep -q 'postgres sh -c .*argos_backup' "$LOG"; }
+check "O-R02: the agent versions are read as argos_backup inside the postgres container (no password in the output)" agents_query
+
+# Rollback of that upgrade: the previous image in .env, restore.sh with the pre-upgrade set.
+expect_exit 0 "T-NFR-11a: upgrade --rollback --yes: exit 0" ug --rollback --yes
+restore_called() { grep -qxF "$STUB_SET --yes" /tmp/restore.args || { cat /tmp/restore.args 2>/dev/null; return 1; }; }
+check "T-NFR-11a: rollback runs restore.sh with the pre-upgrade backup set and --yes" restore_called
+env_image_old() { grep -qx 'ARGOS_SERVER_IMAGE=argos-server:0.9.0' .env && [ "$(mode_of .env)" = "-rw-------" ]; }
+check "T-NFR-11a: rollback sets the previous image in .env (mode 0600 kept)" env_image_old
+check "T-NFR-11a: rollback starts the server again with docker compose up -d --wait server" server_recreated
+rolled_back() { grep -qF '"status": "rolled_back"' upgrade-state.json; }
+check "T-NFR-11a: upgrade-state.json says rolled_back" rolled_back
+expect_exit 2 "T-NFR-11a: a second rollback exits 2" ug --rollback --yes
+output_has "was rolled back already" "T-NFR-11a: the second rollback is refused by name"
+
+# The server does not become healthy with the new image: exit 8 and the rollback command.
+reset_upgrade
+up_fails() { (FAKE_UP_EXIT=1 && export FAKE_UP_EXIT && ug "$@"); }
+expect_exit 8 "T-NFR-11a: the new server does not become healthy: exit 8 (rollback needed)" up_fails --image argos-server:0.10.0 --yes
+output_has "./argos-compose.sh upgrade --rollback --yes" "T-NFR-11a: exit 8 gives the rollback command"
+failed_state() { grep -qF '"status": "failed"' upgrade-state.json; }
+check "T-NFR-11a: after exit 8 upgrade-state.json says failed" failed_state
+restore_fails() { (FAKE_RESTORE_EXIT=1 && export FAKE_RESTORE_EXIT && ug "$@"); }
+expect_exit 1 "T-NFR-11a: rollback whose restore.sh fails: exit 1" restore_fails --rollback --yes
+output_has "restore.sh failed (exit code 1)" "T-NFR-11a: the failed restore is named"
+expect_exit 0 "T-NFR-11a: rollback after the failed upgrade: exit 0" ug --rollback --yes
+check "T-NFR-11a: rollback after exit 8 sets the previous image in .env" env_image_old
+
+# A failed consistency check is reported, the upgrade stays done; a failed agent query only warns;
+# ARGOS_SERVER_IMAGE of the environment is named.
+reset_upgrade
+cons_fails() { (FAKE_CONSISTENCY_EXIT=1 FAKE_PSQL_EXIT=2 ARGOS_SERVER_IMAGE=argos-server:0.9.0 && export FAKE_CONSISTENCY_EXIT FAKE_PSQL_EXIT ARGOS_SERVER_IMAGE && ug "$@"); }
+expect_exit 0 "T-NFR-11a: a consistency check that reports a mismatch: exit 0" cons_fails --image argos-server:0.10.0 --yes
+output_has "the consistency check of $yesterday reported a problem (exit code 1)" "T-NFR-11a: the consistency check result is reported"
+output_has "could not read the versions of the connected agents" "O-R02: a failed agent version query warns and the upgrade goes on"
+output_has "ARGOS_SERVER_IMAGE is set in the environment (argos-server:0.9.0) and wins over .env" "T-NFR-11a: ARGOS_SERVER_IMAGE of the environment is named"
+image_used() { grep -qx 'ARGOS_SERVER_IMAGE=argos-server:0.10.0' .env; }
+check "T-NFR-11a: .env names the new image although the environment has another one" image_used
+
+# .env without ARGOS_SERVER_IMAGE (the compose.yaml default): the line is added.
+reset_upgrade
+grep -v '^ARGOS_SERVER_IMAGE=' /tmp/env.orig >.env
+expect_exit 0 "T-NFR-11a: upgrade with .env without ARGOS_SERVER_IMAGE: exit 0" ug --image argos-server:1.0.0 --yes
+added_once() { [ "$(grep -c '^ARGOS_SERVER_IMAGE=argos-server:1.0.0$' .env)" -eq 1 ]; }
+check "T-NFR-11a: 0.9.0 -> 1.0.0 (one major) adds ARGOS_SERVER_IMAGE to .env" added_once
+rm -rf /tmp/backups
+expect_exit 2 "T-NFR-11a: rollback whose backup set is gone: exit 2" ug --rollback --yes
+output_has "does not exist" "T-NFR-11a: the missing backup set is named"
+reset_upgrade
+expect_exit 2 "T-NFR-11a: rollback without upgrade-state.json: exit 2" ug --rollback --yes
+output_has "there is no upgrade to roll back" "T-NFR-11a: rollback without a state says so"
+# backup.sh takes labels of at most 32 characters: long pre-release versions are cut.
+reset_upgrade
+printf 'argos-server:0.10.0-rc.123456789 sha256:rcl 0.10.0-rc.123456789\n' >>/tmp/images.txt
+expect_exit 0 "T-NFR-11a: upgrade to a long pre-release version (0.10.0-rc.123456789): exit 0" ug --image argos-server:0.10.0-rc.123456789 --yes
+label_cut() { grep -qxF -- "--label pre-upgrade-0.9.0-0.10.0-rc.1234 --json" /tmp/backup.args || { cat /tmp/backup.args; return 1; }; }
+check "T-NFR-11a: the pre-upgrade backup label is cut to the 32 characters backup.sh takes" label_cut
+reset_upgrade
+
+# --- demo profile (ARGOS_DEMO_MODE=true of argos-env-init.sh --demo; docs/17 section 3.9, WO-41) ----
+# A second copy prepared with --demo on a Linux Docker Engine (secrets owned by uid 10001), without
+# tls/: the demo has no gRPC certificate.
+cd /
+rm -rf /tmp/demo-deploy
+mkdir -p /tmp/demo-deploy
+cp -R "$SRC" /tmp/demo-deploy/compose
+cp -R /deploy/clickhouse /deploy/postgres /tmp/demo-deploy/
+rm -rf /tmp/demo-deploy/compose/.env /tmp/demo-deploy/compose/secrets /tmp/demo-deploy/compose/tls \
+  /tmp/demo-deploy/compose/compose.override.yaml /tmp/demo-deploy/compose/test
+cd /tmp/demo-deploy/compose || exit 1
+env FAKE_DOCKER_OS="$LINUX" sh ./argos-env-init.sh --demo --ram-mb 16384 >/dev/null 2>&1 \
+  || { echo "FAIL  argos-env-init.sh --demo did not prepare the directory"; exit 1; }
+
+demo_files() { grep -q -- '-f compose.yaml -f compose.unattended.yaml -f compose.demo.yaml --profile demo' "$LOG"; }
+expect_exit 0 "T-NFR-16d: argos-compose up in demo mode starts without tls/ (control case)" ac up
+output_has "Demo mode: plaintext gRPC and sample traffic" "T-NFR-16d: up in demo mode says that it is the demo"
+check "T-NFR-16d: in demo mode docker compose runs with compose.unattended.yaml, compose.demo.yaml and the demo profile" demo_files
+check "T-NFR-16d: in demo mode docker compose up -d --wait is called" compose_up_called
+expect_exit 0 "T-NFR-16d: argos-compose down --volumes in demo mode exits 0" ac down --volumes
+demo_down() { grep -qE -- '--profile demo down --volumes$' "$LOG"; }
+check "T-NFR-16d: down --volumes in demo mode includes the demo profile (its containers and its volume go too)" demo_down
+
+demo_up_refused() { # demo_up_refused <description> <expected message>
+  expect_exit 2 "T-NFR-16d preflight: $1: up exits 2" ac up
+  output_has "$2" "T-NFR-16d preflight: $1: the message names it"
+  check "T-NFR-16d preflight: $1: docker compose up is not called" no_compose_up
+}
+aside secrets/demo_order_api_token
+demo_up_refused "the order-api token missing" "secrets/demo_order_api_token is missing or empty: run ./argos-env-init.sh --demo"
+back secrets/demo_order_api_token
+cp secrets/demo_db_password /tmp/demo-db.backup
+: >secrets/demo_db_password
+demo_up_refused "an empty demo database password" "secrets/demo_db_password is missing or empty"
+cat /tmp/demo-db.backup >secrets/demo_db_password
+rm -f /tmp/demo-db.backup
+chmod 0644 secrets/demo_payment_api_token
+demo_up_refused "the payment-api token 0644" "secrets/demo_payment_api_token must have mode 0600"
+chmod 0600 secrets/demo_payment_api_token
+chown 0:0 secrets/demo_order_api_token
+demo_up_refused "the order-api token owned by root" "secrets/demo_order_api_token must belong to uid 10001"
+chown 10001:10001 secrets/demo_order_api_token
+chmod 0640 config/demo/bootstrap-apps.yaml
+demo_up_refused "config/demo/bootstrap-apps.yaml 0640 (umask 027 checkout)" "the containers cannot read these configuration files"
+chmod 0644 config/demo/bootstrap-apps.yaml
+FAKE_IMAGE_MISSING=1
+export FAKE_IMAGE_MISSING
+expect_exit 2 "T-NFR-16d preflight: the demo images missing: up exits 2" ac up
+output_has "the demo image argos-demo-app:0.0.0-SNAPSHOT is not in the local Docker image store: build it with ./gradlew :sample-apps:demo-app:jibDockerBuild" \
+  "T-NFR-16d preflight: the missing demo application image is named with its build task"
+output_has "the demo image argos-demo-load:0.0.0-SNAPSHOT is not in the local Docker image store: build it with ./gradlew :sample-apps:load:jibDockerBuild" \
+  "T-NFR-16d preflight: the missing load generator image is named with its build task"
+check "T-NFR-16d preflight: the demo images missing: docker compose up is not called" no_compose_up
+unset FAKE_IMAGE_MISSING
+expect_exit 0 "T-NFR-16d: argos-compose up in demo mode starts again after every restore (control case)" ac up
+
+# Demo mode is only what .env (or the environment) says: without it the TLS files are required again
+# and compose.demo.yaml is not used.
+no_demo_up() { : >"$LOG"; env ARGOS_DEMO_MODE=false FAKE_DOCKER_OS="$LINUX" sh ./argos-compose.sh up; }
+expect_exit 2 "T-NFR-16d: ARGOS_DEMO_MODE=false in the environment: up without tls/ exits 2" no_demo_up
+output_has "tls/server.crt is missing" "T-NFR-16d: without demo mode the gRPC certificate is required"
+no_demo_file() { ! grep -q 'compose.demo.yaml' "$LOG"; }
+check "T-NFR-16d: without demo mode compose.demo.yaml is never passed to docker compose" no_demo_file
 
 finish

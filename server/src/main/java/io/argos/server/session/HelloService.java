@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -105,6 +106,19 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Check 6 and the registration run under a per-app lock, so that two Hellos of one app cannot
  * both pass the instance count.
+ *
+ * <p>Check-only Hello ({@code AgentHello.check_only}, the agent's {@code --check}, ADR-0010 C-240
+ * (1)): checks 1 to 5 and the Hello caps run as above, then only the per-token Hello rate of check
+ * 6 ({@code session_rate}; the Hello is counted in it). An accepted one is answered with the app
+ * id, instance id 0, no session id, the server and protocol versions, the server time, the
+ * intervals and the {@code Limits}, an empty {@code config} and salt ({@link
+ * HelloOutcome#checkOnly}); the stream then ends. It never writes {@code instances}, never
+ * registers an app variant (a missing app that automatic registration would create is answered with
+ * app id 0) and never writes {@code pending_registrations} (a missing app without automatic
+ * registration is {@code APP_NOT_REGISTERED} without queueing); it enters neither the session
+ * registry (the server-wide {@link #MAX_SESSIONS} and the sessions per token do not apply and are
+ * not used) nor the instance states nor the alert evaluation, and a refusal is audited like any
+ * other.
  */
 public final class HelloService {
 
@@ -216,7 +230,7 @@ public final class HelloService {
   public HelloOutcome accept(
       AgentHello hello, AuthResult auth, boolean plaintext, SessionStream stream) {
     HelloOutcome outcome = decide(hello, auth, plaintext, stream);
-    if (!outcome.accepted() && auth != null && auth.accepted()) {
+    if (!outcome.accepted() && !outcome.checkOnly() && auth != null && auth.accepted()) {
       auditRejection(hello, auth, outcome);
     }
     return outcome;
@@ -395,6 +409,9 @@ public final class HelloService {
           "Agent version is not supported: " + versions.describe(),
           true);
     }
+    if (hello.getCheckOnly()) {
+      return checkOnly(hello, token, base, now);
+    }
     IpMode ipMode = IpMode.fromProto(hello.getIpMode());
     UserIdMode userIdMode = UserIdMode.fromProto(hello.getUserIdMode());
     try {
@@ -476,6 +493,7 @@ public final class HelloService {
                   + " new sessions per minute per agent token");
         }
         int instanceId;
+        long storedStart;
         if (existing.isEmpty()) {
           if (store.countInstances(app.id()) >= settings.instancesPerApp()) {
             return limited(
@@ -494,8 +512,10 @@ public final class HelloService {
                 "At most " + settings.newInstancesPerHour() + " new instances per app and hour");
           }
           instanceId = store.createInstance(app.id(), name, metadata);
+          storedStart = AgentSession.STARTED_NEW_INSTANCE;
         } else {
           instanceId = existing.getAsInt();
+          storedStart = storedStart(instanceId);
           updateMetadata(instanceId, metadata);
         }
         session =
@@ -518,6 +538,7 @@ public final class HelloService {
                 now,
                 new ClockSync(now, hello.getSentAtMs()),
                 stream);
+        session.startFacts(hello.getProcessStartMs(), storedStart);
         // 7 replace
         registry.register(session);
         newSessions.record(token.tokenId(), now);
@@ -541,6 +562,79 @@ public final class HelloService {
       LOG.warn(
           "A session start needs PostgreSQL (a new app or instance, or no registration cache"
               + " entry) and the database failed; answered UNAVAILABLE (12 §3.9)",
+          e);
+      metrics.rejected("store_unavailable");
+      return reject(
+          base,
+          RejectReason.REJECT_REASON_UNSPECIFIED,
+          Status.Code.UNAVAILABLE,
+          STORE_UNAVAILABLE_RETRY_AFTER_S,
+          "The collector cannot reach its database; retry later",
+          false);
+    }
+  }
+
+  /**
+   * Checks 5 and the per-token Hello rate of a check-only Hello (ADR-0010 C-240 (1), the class
+   * comment): reads only; writes nothing but {@code agent_tokens.last_used_at}.
+   */
+  private HelloOutcome checkOnly(
+      AgentHello hello, TokenRecord token, ServerHello.Builder base, long now) {
+    try {
+      String env = hello.getEnv().isBlank() ? SessionSettings.DEFAULT_ENV : hello.getEnv();
+      Optional<AppRef> found = store.findApp(hello.getAppName(), env);
+      int appId;
+      if (found.isPresent()) {
+        if (!found.get().usableWith(token.appId())) {
+          return reject(
+              base,
+              RejectReason.APP_MISMATCH,
+              Status.Code.PERMISSION_DENIED,
+              0,
+              "The agent token belongs to another app",
+              true);
+        }
+        appId = found.get().id();
+      } else if (autoRegisters(token.appId(), env)) {
+        // Assumption (WO-29): the agent's first session registers the app; the check creates
+        // nothing and answers app id 0.
+        appId = 0;
+      } else {
+        return reject(
+            base,
+            RejectReason.APP_NOT_REGISTERED,
+            Status.Code.OK,
+            APP_NOT_REGISTERED_RETRY_AFTER_S,
+            "The app is not registered and automatic registration is off for its environment;"
+                + " the agent's first session queues it for approval",
+            true);
+      }
+      synchronized (appLocks[Math.floorMod(token.appId(), LOCKS)]) {
+        if (newSessions.atLimit(token.tokenId(), now)) {
+          return limited(
+              base,
+              RejectReason.RATE_LIMITED,
+              "session_rate",
+              "At most "
+                  + settings.newSessionsPerMinute()
+                  + " new sessions per minute per agent token");
+        }
+        newSessions.record(token.tokenId(), now);
+      }
+      touchToken(token.tokenId());
+      return HelloOutcome.checkOnly(
+          base.setAccepted(true)
+              .setAppId(appId)
+              .setInstanceId(0)
+              .setHeartbeatIntervalS((int) Math.max(1, settings.heartbeatInterval().toSeconds()))
+              .setActiveSnapshotIntervalS(ACTIVE_SNAPSHOT_INTERVAL_S)
+              .setStatWindowS(STAT_WINDOW_S)
+              .setLimits(settings.limits())
+              .build());
+    } catch (RuntimeException e) {
+      LOG.warn(
+          "A check-only Hello needs PostgreSQL (app lookup) and the database failed; answered"
+              + " UNAVAILABLE (12 §3.9)",
           e);
       metrics.rejected("store_unavailable");
       return reject(
@@ -694,6 +788,24 @@ public final class HelloService {
     long previous = last.get();
     return (previous == Long.MIN_VALUE || now - previous >= METADATA_WARN_INTERVAL_NANOS)
         && last.compareAndSet(previous, now);
+  }
+
+  /**
+   * The stored process start of an existing instance before this Hello writes it ({@code
+   * AgentSession#startFacts}, F-A26, S-17): {@link AgentSession#STARTED_NONE} for a NULL column,
+   * {@link AgentSession#STARTED_UNKNOWN} when it cannot be read (PostgreSQL down: the session is
+   * accepted anyway, no start event is decided from it).
+   */
+  private long storedStart(int instanceId) {
+    try {
+      OptionalLong stored = store.instanceStartedAtMs(instanceId);
+      return stored.isPresent() && stored.getAsLong() > 0
+          ? stored.getAsLong()
+          : AgentSession.STARTED_NONE;
+    } catch (RuntimeException e) {
+      LOG.debug("instances.started_at of {} not read", instanceId, e);
+      return AgentSession.STARTED_UNKNOWN;
+    }
   }
 
   /**

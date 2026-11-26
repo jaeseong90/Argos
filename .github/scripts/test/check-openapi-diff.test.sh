@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
+# req: O-R03
+# test-ids: T-BLD-034
 #
 # Tests for .github/scripts/check-openapi-diff.sh using a throwaway git repository.
 # Cases that compare two specs run the pinned oasdiff container and are skipped (reported) when

@@ -171,10 +171,12 @@ describe('error groups list (docs/14 §4.8, 05 §2.5-5)', () => {
     expect(parseUrl(ErrorsQ, app.router.state.location.search).state.new).toBe(true);
     expect(screen.getByTestId('stats-errors-new')).toHaveAttribute('aria-pressed', 'true');
     await user.click(screen.getByTestId('stats-errors-new'));
+    // The cached answer of the first (unfiltered) request may render the two rows before the new
+    // request is sent: wait for both, the rows and a request without new_only.
     await waitFor(() => {
       expect(rowKeys()).toEqual(['61', BIG_ID]);
+      expect(lastQuery().new_only).toBeUndefined();
     }, FIND);
-    expect(lastQuery().new_only).toBeUndefined();
   });
 
   it('says what to do when no group is new in the range', async () => {

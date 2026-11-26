@@ -10,6 +10,7 @@ import io.argos.storage.generator.model.TransactionFactory;
 import io.argos.storage.generator.rows.Table;
 import io.argos.storage.generator.sim.Simulation;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -196,5 +197,21 @@ class InvariantsTest {
     assertThat((id >>> 11) & 0xFFF).isEqualTo(1);
     assertThat(id & 0x7FF).isEqualTo(1);
     assertThat(f.txIds).hasSize((int) f.xlogRows);
+  }
+
+  @Test
+  @DisplayName("Trace samples: only roots with a trace id (W3C, never all-zero; no batch root)")
+  void traceSamplesHaveTraceIds() {
+    Map<String, Object> samples = f.manifest.samples();
+    List<?> traces = (List<?>) samples.get("traces");
+    assertThat(traces).isNotEmpty();
+    for (Object o : traces) {
+      String traceId = String.valueOf(((Map<?, ?>) o).get("trace_id"));
+      assertThat(traceId).matches("[0-9a-f]{32}").isNotEqualTo("0".repeat(32));
+    }
+    // The case is exercised: batch roots were among the sampled transactions.
+    assertThat(f.batch).isPositive();
+    assertThat((List<?>) samples.get("transactions"))
+        .anySatisfy(t -> assertThat(((Map<?, ?>) t).get("kind")).isEqualTo("BATCH"));
   }
 }

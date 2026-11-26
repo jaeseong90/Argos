@@ -70,6 +70,33 @@ class OutagesTest {
   }
 
   @Test
+  @Tag("req:F-A26")
+  @Tag("req:S-17")
+  @DisplayName(
+      "T-SV-023b an instance 'start' row (agent start, C-240 (1)) changes no outage: it neither"
+          + " opens nor ends one, inside or outside a DOWN span")
+  void instanceStartRowsIgnored() {
+    List<StateEventRecord> base =
+        List.of(
+            state(7, at(10), "DOWN", null),
+            state(7, at(20), "UP", null),
+            state(8, at(40), "DOWN", null));
+    List<StateEventRecord> withStarts =
+        List.of(
+            new StateEventRecord(7, at(5), "start", null, null),
+            state(7, at(10), "DOWN", null),
+            new StateEventRecord(7, at(15), "start", null, null),
+            state(7, at(20), "UP", null),
+            new StateEventRecord(8, at(45), "start", null, null),
+            state(8, at(40), "DOWN", null),
+            new StateEventRecord(9, at(50), "start", null, null));
+    List<Outages.Outage> expected = Outages.derive(base, FROM, TO, Set.of(), NOW);
+    assertThat(expected).hasSize(2);
+    assertThat(Outages.derive(withStarts, FROM, TO, Set.of(), NOW)).isEqualTo(expected);
+    assertThat(Outages.derive(withStarts, FROM, TO, Set.of(9), NOW)).isEmpty();
+  }
+
+  @Test
   @DisplayName("T-ACC-18a a server stop..start span is a server_down outage of every application")
   void serverDown() {
     List<Outages.Outage> out =

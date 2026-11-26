@@ -23,7 +23,7 @@ import net.bytebuddy.utility.OpenedClassReader;
  * TraceContext argos$ctx}, the interface {@link ContextCarrier} and its two accessors to a class
  * that a module asked for with {@code TypeTransformer.injectContextField()}.
  *
- * <p>The agent builder keeps {@code REDEFINE_FROZEN} for every type (no class format change through
+ * <p>The agent builder decorates every type ({@code DECORATE}: no class format change through
  * ByteBuddy's instrumented type); this wrapper writes the members at the ASM level, and only where
  * the class format may still change ({@link #eligible}):
  *

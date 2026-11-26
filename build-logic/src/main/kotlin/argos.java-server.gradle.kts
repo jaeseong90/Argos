@@ -27,8 +27,11 @@
 //                     /logs ship owned by 10001:10001 with mode 0700 (extraDirectories +
 //                     ImageOwnershipExtension), so new named volumes inherit them; HOME, the WAL,
 //                     setup token, JWT key, temporary files and logs default to them; JVM flags of
-//                     17 §7.2 (heap from JAVA_TOOL_OPTIONS). Only jibDockerBuild (linux/amd64) is
-//                     used so far; multi-arch publishing and signing are WO-44.
+//                     17 §7.2 (heap from JAVA_TOOL_OPTIONS). Locally jibDockerBuild (linux/amd64);
+//                     the release workflow (WO-44, release.yml) builds linux/amd64 + linux/arm64
+//                     with -Pargos.image.platforms and names the registry image with Jib's
+//                     -Djib.to.image / -Djib.to.tags (no registry is configured here). The server
+//                     project adds its notices, SBOM and About lists to the image (WO-44).
 
 import io.argos.buildlogic.ArgosProject
 import io.argos.buildlogic.argosGitCommit
@@ -217,7 +220,7 @@ jib {
       }
     }
   }
-  // Local image only (jibDockerBuild, linux/amd64); the registry image is WO-44's.
+  // Local name; the release workflow overrides it with -Djib.to.image/-Djib.to.tags (WO-44).
   to { image = "${ServerImage.IMAGE_NAME}:${project.version}" }
   container {
     mainClass = serverMainClass

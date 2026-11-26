@@ -3,10 +3,13 @@ blank_issues_enabled: false
 contact_links:
   - name: Question or help
     url: https://github.com/argos-apm/argos/discussions/categories/q-a
-    about: Ask questions in GitHub Discussions (English or Korean). Issues are for bugs, feature proposals and compatibility reports.
+    about: Ask questions in GitHub Discussions. Issues are for bugs, feature proposals and compatibility reports.
   - name: Idea or early discussion
     url: https://github.com/argos-apm/argos/discussions/categories/ideas
     about: Discuss ideas before they become a concrete feature proposal.
+  - name: Korean (한국어)
+    url: https://github.com/argos-apm/argos/discussions/categories/korean
+    about: 한국어 질문과 토론은 여기에서 해 주세요. Questions and discussions in Korean.
   - name: Security vulnerability
     url: https://github.com/argos-apm/argos/security/advisories/new
-    about: Report vulnerabilities privately. Never open a public issue for a security problem.
+    about: Report vulnerabilities privately with GitHub Private Vulnerability Reporting (see SECURITY.md). Never open a public issue for a security problem.

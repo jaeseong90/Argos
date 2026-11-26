@@ -99,6 +99,12 @@ message AgentHello {
   // (server.tls: false). This agent always sets it (false over TLS); absent means an agent that
   // does not report it. The server also decides from the connection itself (11 §5 check 3).
   optional bool plaintext = 25;
+  // Additive optional (ADR-0010 C-240 (1), 11 §5, 10 §13.3): true only for the Hello of
+  // `java -jar argos-agent.jar --check`. The server runs the Hello checks 1 to 5 and the per-token
+  // Hello rate, answers an accepted ServerHello (app_id, instance_id 0, no session_id) and ends the
+  // stream: it registers no instance, tracks no state and evaluates no alert for it. A normal agent
+  // never sets it; absent or false is a normal session.
+  optional bool check_only = 26;
 }
 
 // Answer to AgentHello (11 §5).

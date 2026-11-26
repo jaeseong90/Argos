@@ -1,0 +1,20 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+#
+# Argument-recording stand-in for the age tool in the backup.sh and restore.sh cases (never
+# shipped; the pinned test images have no age and the tests have no network). It appends its
+# arguments to FAKE_AGE_LOG. Encrypting (no -d) prints a header line and then its input unchanged;
+# -d prints the named file without that header line. It proves the argument path only: a real age
+# binary is checked by a person (docs/ops/backup-restore.md).
+
+printf '%s\n' "$*" >>"${FAKE_AGE_LOG:-/dev/null}"
+case " $* " in
+  *" -d "*)
+    for a in "$@"; do f=$a; done
+    tail -n +2 "$f"
+    ;;
+  *)
+    printf 'age-encryption.org/v1 test shim\n'
+    cat
+    ;;
+esac

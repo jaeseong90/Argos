@@ -13,6 +13,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 /**
  * The benchmark report of 18 §7.6, {@code docs/bench/<YYYY-MM-DD>-<commit7>.md}, over one or more
@@ -134,15 +138,20 @@ final class BenchReport {
 
   // ---- command ---------------------------------------------------------------------------------
 
+  /** Flags of {@code publish} (options without a value). */
+  static final Set<String> PUBLISH_FLAGS = Set.of("overwrite", "latest", "trend");
+
   static int publish(Options o) throws Exception {
     List<String> setDirs = o.list("sets", "");
     if (setDirs.isEmpty()) {
       throw new UsageException("--sets DIR[,DIR...] is required");
     }
     Path out = Path.of(o.string("out", "docs/bench")).toAbsolutePath().normalize();
-    Path baseline = o.optional("baseline").map(Path::of).orElse(null);
+    String baselineOption = o.string("baseline", "none");
     String name = o.optional("name").orElse(null);
     boolean overwrite = o.flag("overwrite");
+    boolean latest = o.flag("latest");
+    boolean trend = o.flag("trend");
     String command = o.string("command", "");
     long seed = o.integer("seed", (int) Bootstrap.DEFAULT_SEED, 0, Integer.MAX_VALUE);
     o.rejectUnknown();
@@ -151,14 +160,27 @@ final class BenchReport {
     for (String d : setDirs) {
       sets.add(load(Path.of(d).toAbsolutePath().normalize(), seed));
     }
-    Map<String, Object> baselineSummary = null;
-    if (baseline != null) {
-      baselineSummary = Regression.readSummary(baseline);
-    }
     String reportName = name != null ? name : defaultName(sets);
     Path md = out.resolve(reportName + ".md");
     if (Files.exists(md) && !overwrite) {
       throw new UsageException(md + " exists (choose --name or pass --overwrite)");
+    }
+    // 18 §7.7 baseline: none, the newest approved comparable report (auto) or a given file.
+    Path baseline = null;
+    Map<String, Object> baselineSummary = null;
+    List<String> selection = new ArrayList<>();
+    switch (baselineOption) {
+      case "none" -> selection.add("no baseline (--baseline none)");
+      case "auto" -> {
+        Regression.Selection s = Regression.selectBaseline(out, identity(sets), reportName);
+        baseline = s.file();
+        baselineSummary = s.summary();
+        selection.addAll(s.reasons());
+      }
+      default -> {
+        baseline = Path.of(baselineOption).toAbsolutePath().normalize();
+        baselineSummary = Regression.readSummary(baseline);
+      }
     }
     Files.createDirectories(out.resolve(reportName));
     Map<String, Object> model =
@@ -166,11 +188,18 @@ final class BenchReport {
             sets,
             reportName,
             baselineSummary,
-            baseline == null ? null : baseline.getFileName().toString());
+            baseline == null ? null : baseline.getFileName().toString(),
+            selection);
     List<String> graphs = writeGraphs(out.resolve(reportName), reportName, sets);
     String text = markdown(model, sets, graphs, command, setDirs, out, baseline);
     Files.writeString(md, text, StandardCharsets.UTF_8);
     FileTools.writeJson(out.resolve(reportName).resolve("summary.json"), model.get("summary"));
+    if (latest) {
+      Trend.writeLatest(out, reportName, Json.object(model.get("summary")));
+    }
+    if (trend) {
+      Trend.write(out, out);
+    }
     LoadSet.log(
         "report "
             + md
@@ -207,12 +236,19 @@ final class BenchReport {
         dir.getFileName().toString(), dir, set, runs, result, role(set), EnvRecord.ofSet(dir));
   }
 
-  /** main, worst, vt, container (load sets) or startup. */
+  /**
+   * main, worst, vt, container (load sets), startup, or grpc: a load set measured with the gRPC
+   * exporter is the transport cost and never decides a requirement (the verdict exporter is noop,
+   * ADR-0009 C-80).
+   */
   static String role(Map<String, Object> set) {
     if ("startup".equals(set.get("kind"))) {
       return "startup";
     }
     Map<String, Object> p = Json.object(set.get("parameters"));
+    if ("grpc".equals(p.get("exporter"))) {
+      return "grpc";
+    }
     if ("container".equals(p.get("mode"))) {
       return "container";
     }
@@ -257,6 +293,19 @@ final class BenchReport {
       String reportName,
       Map<String, Object> baselineSummary,
       String baselineName) {
+    return evaluate(sets, reportName, baselineSummary, baselineName, List.of());
+  }
+
+  /**
+   * As {@link #evaluate(List, String, Map, String)}; {@code selection} says how the baseline was
+   * chosen ({@code --baseline auto}) or why there is none.
+   */
+  static Map<String, Object> evaluate(
+      List<SetData> sets,
+      String reportName,
+      Map<String, Object> baselineSummary,
+      String baselineName,
+      List<String> selection) {
     List<SetData> mains = byRole(sets, "main", "worst");
     List<SetData> vts = byRole(sets, "vt");
     List<SetData> containers = byRole(sets, "container");
@@ -275,6 +324,7 @@ final class BenchReport {
       n01.checks.add(
           check(s, mains, "agent thread CPU", on, 1.0, "% of host", "agentThreadCpu", "value"));
       use(n01, s);
+      n01.notes.add(agentCpuNote(s, on));
     }
     noSet(n01, mains, "main");
     reqs.put("N-01", n01);
@@ -312,6 +362,7 @@ final class BenchReport {
         new Requirement(
             "N-27", "T-NFR-04 (heavy)", "heavy sample app port-open median +10% at most");
     Requirement n30 = new Requirement("N-30", "T-NFR-30", "premain median <= 500 ms");
+    Set<String> premainSources = new LinkedHashSet<>();
     for (SetData s : startups) {
       boolean heavy = false;
       Set<String> cds = new LinkedHashSet<>();
@@ -333,6 +384,9 @@ final class BenchReport {
         }
         n30.checks.add(
             new Check(cell + " premain", Json.number(row, "premainMedianMs"), 500, "ms"));
+        for (Object source : Json.array(Json.at(row, "premainSources"))) {
+          premainSources.add(String.valueOf(source));
+        }
       }
       for (Requirement r : List.of(n04, n27, n30)) {
         use(r, s);
@@ -357,9 +411,17 @@ final class BenchReport {
         n30.checks.add(
             check(s, mains, "premain (load runs)", on, 500, "ms", "startup", "premainMedianMs"));
         use(n30, s);
+        Object source = Json.at(on, "startup", "premainSource");
+        if (source != null) {
+          premainSources.add(String.valueOf(source));
+        }
       }
       noSet(n30, mains, "startup or main");
     }
+    if (!premainSources.isEmpty()) {
+      n30.notes.add("premain source: " + String.join(", ", premainSources));
+    }
+    n30.notes.add(N30_NOTE);
     reqs.put("N-04", n04);
 
     Requirement n26 =
@@ -409,6 +471,7 @@ final class BenchReport {
           check(
               s, mains, "thread increase", on, 6, "threads", "memory", "threadIncrease", "value"));
       use(n26, s);
+      n26.notes.add(directMemoryNote(s, on));
     }
     noSet(n26, mains, "main");
     reqs.put("N-26", n26);
@@ -466,8 +529,11 @@ final class BenchReport {
     }
 
     Map<String, Object> metrics = metrics(mains, startups);
+    Map<String, Object> identity = identity(sets);
     Map<String, Object> regression =
-        Regression.compare(metrics, metricsOf(baselineSummary), baselineName);
+        Regression.judge(verdict, metrics, identity, baselineSummary, baselineName, selection);
+    Map<String, Object> transportCost = transportCost(sets);
+    Map<String, Object> reference = otelReference(sets);
 
     Map<String, Object> model = new LinkedHashMap<>();
     model.put("name", reportName);
@@ -480,18 +546,35 @@ final class BenchReport {
     model.put("requirementObjects", reqs);
     model.put("regression", regression);
     model.put("metrics", metrics);
+    model.put("identity", identity);
+    model.put("transportCost", transportCost);
+    model.put("reference", reference);
 
     Map<String, Object> summary = new LinkedHashMap<>();
     summary.put("format", "argos-bench-report/1");
     summary.put("name", reportName);
     summary.put("verdict", verdict);
     summary.put("approved", false);
+    summary.put("startedAt", startedAt(sets));
+    // Identity of the configuration (18 §7.7 comparability, C-145 (4), C-186 (2)).
+    summary.putAll(identity);
     summary.put("measuredRequirements", measured);
     summary.put("metrics", metrics);
     Map<String, Object> verdicts = new LinkedHashMap<>();
     reqs.forEach((k, v) -> verdicts.put(k, v.verdict()));
     summary.put("requirements", verdicts);
+    // Numbers per requirement, for the Gate 1 fragment (bench.sh gate1).
+    Map<String, Object> details = new LinkedHashMap<>();
+    reqs.forEach((k, v) -> details.put(k, v.toJson()));
+    summary.put("requirementDetails", details);
     summary.put("regression", regression.get("verdict"));
+    summary.put("regressionReasons", regression.get("reasons"));
+    if (transportCost != null) {
+      summary.put("transportCost", transportCost);
+    }
+    if (reference != null) {
+      summary.put("reference", reference);
+    }
     List<Object> setList = new ArrayList<>();
     for (SetData s : sets) {
       Map<String, Object> m = new LinkedHashMap<>();
@@ -505,8 +588,222 @@ final class BenchReport {
     return model;
   }
 
-  private static Map<String, Object> metricsOf(Map<String, Object> summary) {
-    return summary == null ? null : Json.object(summary.get("metrics"));
+  /** N-30 is judged on the dedicated machine run (ADR-0010 C-240 (7)). */
+  static final String N30_NOTE =
+      "N-30 is judged on one run on the dedicated bench machine; PremainTimeAttachTest"
+          + " (agent-testing) is a reference only (ADR-0010 C-240 (7))";
+
+  /** Configuration keys of the report for 18 §7.7 comparisons and the trend. */
+  static Map<String, Object> identity(List<SetData> sets) {
+    Map<String, Object> id = new LinkedHashMap<>();
+    SetData primary = null;
+    for (SetData s : sets) {
+      if (!s.role().equals("grpc") && "load".equals(s.set().get("kind"))) {
+        primary = s;
+        break;
+      }
+    }
+    if (primary == null) {
+      primary = sets.stream().filter(s -> !s.role().equals("grpc")).findFirst().orElse(sets.get(0));
+    }
+    Object profile = null;
+    Object jdkText = null;
+    for (SetData s : sets) {
+      if (s.envRecord() != null && profile == null) {
+        profile = s.envRecord().get("machineProfile");
+        jdkText = Json.at(s.envRecord(), "jdk", "version");
+      }
+    }
+    if (jdkText == null) {
+      jdkText = Json.at(primary.set(), "environment", "javaVersion");
+    }
+    Map<String, Object> p = Json.object(primary.set().get("parameters"));
+    Object app = p.get("app");
+    if (app == null && p.get("apps") != null) {
+      app = String.join(",", Json.array(p.get("apps")).stream().map(String::valueOf).toList());
+    }
+    Object exporter = p.get("exporter");
+    id.put("machineProfile", profile);
+    id.put("app", app);
+    id.put("jdk", jdkMajor(jdkText));
+    id.put("jdkVersion", jdkVersion(jdkText));
+    id.put("exporter", exporter);
+    id.put("encoding", Regression.encoding(exporter));
+    id.put("sampleAppDrivers", sampleAppDrivers(sets));
+    return id;
+  }
+
+  private static final Pattern JDK_QUOTED = Pattern.compile("version \"(?:1\\.)?(\\d+)");
+  private static final Pattern JDK_PLAIN = Pattern.compile("^(?:1\\.)?(\\d+)");
+  private static final Pattern JDK_FULL = Pattern.compile("version \"([^\"]+)\"");
+
+  /** The JDK feature version ("21") of a {@code java -version} text or a version string. */
+  static String jdkMajor(Object text) {
+    if (!(text instanceof String s) || s.isBlank()) {
+      return null;
+    }
+    Matcher m = JDK_QUOTED.matcher(s);
+    if (m.find()) {
+      return m.group(1);
+    }
+    m = JDK_PLAIN.matcher(s.trim());
+    return m.find() ? m.group(1) : null;
+  }
+
+  /** The full JDK version ("21.0.10") of a {@code java -version} text, else its first line. */
+  static String jdkVersion(Object text) {
+    if (!(text instanceof String s) || s.isBlank()) {
+      return null;
+    }
+    Matcher m = JDK_FULL.matcher(s);
+    return m.find() ? m.group(1) : s.lines().findFirst().orElse(s).trim();
+  }
+
+  private static final Pattern DRIVER_JAR =
+      Pattern.compile(
+          "(?:BOOT-INF|WEB-INF)/lib/((?:h2|postgresql|mysql-connector-j|mysql-connector-java"
+              + "|mariadb-java-client|mssql-jdbc|ojdbc\\d+)-\\d[^/]*\\.jar)");
+
+  /**
+   * The JDBC driver jars inside the measured shop-boot3 jar (C-186 (2)): a set's recorded {@code
+   * sampleAppDrivers}, else read from the jar named in its inputs; null when neither is there.
+   */
+  static List<String> sampleAppDrivers(List<SetData> sets) {
+    for (SetData s : sets) {
+      if (s.set().get("sampleAppDrivers") instanceof List<?> list) {
+        return list.stream().map(String::valueOf).sorted().toList();
+      }
+    }
+    for (SetData s : sets) {
+      Object path = Json.at(s.set(), "inputs", "shop-boot3.jar", "path");
+      if (path instanceof String text && Files.isRegularFile(Path.of(text))) {
+        try {
+          return driversInJar(Path.of(text));
+        } catch (IOException e) {
+          return null;
+        }
+      }
+    }
+    return null;
+  }
+
+  /** The JDBC driver jar names under BOOT-INF/lib (or WEB-INF/lib) of {@code jar}, sorted. */
+  static List<String> driversInJar(Path jar) throws IOException {
+    List<String> out = new ArrayList<>();
+    try (ZipFile zip = new ZipFile(jar.toFile())) {
+      zip.stream()
+          .map(ZipEntry::getName)
+          .map(DRIVER_JAR::matcher)
+          .filter(Matcher::matches)
+          .forEach(m -> out.add(m.group(1)));
+    }
+    out.sort(null);
+    return out;
+  }
+
+  /** The earliest set start (ISO-8601), or null. */
+  static String startedAt(List<SetData> sets) {
+    String first = null;
+    for (SetData s : sets) {
+      if (s.set().get("startedAt") instanceof String t
+          && (first == null || t.compareTo(first) < 0)) {
+        first = t;
+      }
+    }
+    return first;
+  }
+
+  /**
+   * Transport cost (18 §7.5 {@code --exporter noop|grpc}): the grpc set's relative CPU and p99
+   * difference next to the noop main set's. No verdict: requirements are judged with noop (C-80).
+   * Null without a grpc set.
+   */
+  static Map<String, Object> transportCost(List<SetData> sets) {
+    SetData grpc = byRole(sets, "grpc").stream().findFirst().orElse(null);
+    if (grpc == null) {
+      return null;
+    }
+    SetData noop =
+        byRole(sets, "main").stream()
+            .filter(s -> "noop".equals(Json.at(s.set(), "parameters", "exporter")))
+            .findFirst()
+            .orElse(null);
+    Object g = Json.at(grpc.result(), "comparisons", "on");
+    Object n = noop == null ? null : Json.at(noop.result(), "comparisons", "on");
+    double cpuGrpc = Json.number(g, "cpu", "relative");
+    double cpuNoop = Json.number(n, "cpu", "relative");
+    double p99Grpc = Json.number(g, "latency", "p99", "diffMean");
+    double p99Noop = Json.number(n, "latency", "p99", "diffMean");
+    Map<String, Object> tc = new LinkedHashMap<>();
+    tc.put("grpcSet", grpc.name());
+    tc.put("grpcSetVerdict", grpc.result().get("verdict"));
+    tc.put("noopSet", noop == null ? null : noop.name());
+    tc.put("relativeCpuGrpc", cpuGrpc);
+    tc.put("relativeCpuNoop", cpuNoop);
+    tc.put("relativeCpuDeltaPoints", (cpuGrpc - cpuNoop) * 100);
+    tc.put("p99DiffMsGrpc", p99Grpc);
+    tc.put("p99DiffMsNoop", p99Noop);
+    tc.put("p99DiffDeltaMs", p99Grpc - p99Noop);
+    tc.put("collector", Json.at(grpc.set(), "parameters", "collector"));
+    tc.put("verdict", "none: reported only, requirements are judged with the noop exporter (C-80)");
+    List<String> notes = new ArrayList<>();
+    if (noop == null) {
+      notes.add("no noop main set in this report: the difference cannot be computed");
+    }
+    notes.addAll(grpc.problems());
+    tc.put("notes", notes);
+    return tc;
+  }
+
+  /**
+   * The OpenTelemetry Java agent reference (18 §7.5 {@code --reference otel}): relative CPU and p99
+   * difference of the otel variant against off, and what the OTLP black-hole receiver got. Reported
+   * as a reference point only; null when no set has an otel variant.
+   */
+  static Map<String, Object> otelReference(List<SetData> sets) {
+    for (SetData s : sets) {
+      Object otel = Json.at(s.result(), "comparisons", "otel");
+      if (otel == null) {
+        continue;
+      }
+      Map<String, Object> r = new LinkedHashMap<>();
+      r.put("set", s.name());
+      r.put("relativeCpu", Json.number(otel, "cpu", "relative"));
+      r.put("p99DiffMs", Json.number(otel, "latency", "p99", "diffMean"));
+      r.put("otlpRequests", Json.number(otel, "otlp", "requests"));
+      r.put("otlpBytes", Json.number(otel, "otlp", "bytes"));
+      r.put("argosRelativeCpu", Json.number(s.result(), "comparisons", "on", "cpu", "relative"));
+      r.put(
+          "argosP99DiffMs",
+          Json.number(s.result(), "comparisons", "on", "latency", "p99", "diffMean"));
+      r.put("verdict", "none: reference point only (18 §7.5)");
+      return r;
+    }
+    return null;
+  }
+
+  private static String agentCpuNote(SetData s, Object on) {
+    String note = s.name() + ": agent thread CPU from " + Json.at(on, "agentThreadCpu", "source");
+    double jcmd = Json.number(on, "agentThreadCpu", "jcmdHostPercentMax");
+    if (!Double.isNaN(jcmd)) {
+      note += String.format(Locale.ROOT, " (jcmd cross-check %.3f%% of host)", jcmd);
+    }
+    return note;
+  }
+
+  private static String directMemoryNote(SetData s, Object on) {
+    String note =
+        s.name()
+            + ": direct memory judged on the NMT Other increase ("
+            + format(Json.number(on, "memory", "directMemoryIncreaseMb", "value"), "MB")
+            + ")";
+    double self = Json.number(on, "memory", "selfDiagDirectMemoryMb");
+    return Double.isNaN(self)
+        ? note + "; no self-diagnostics direct_memory_bytes in this set"
+        : note
+            + "; self-diagnostics direct_memory_bytes "
+            + format(self, "MB")
+            + " (JVM-wide direct buffer pool, app buffers included, C-145 (1); reported)";
   }
 
   /** Headline numbers of the first main set (and the startup set) for 18 §7.7 and trends. */
@@ -515,6 +812,10 @@ final class BenchReport {
     if (!mains.isEmpty()) {
       Object on = Json.at(mains.get(0).result(), "comparisons", "on");
       m.put("relativeCpu", Json.number(on, "cpu", "relative"));
+      List<Object> ci = Json.array(Json.at(on, "cpu", "pairRelativeCi95"));
+      m.put(
+          "relativeCpuCiHalfWidth",
+          ci.size() == 2 ? (Json.number(ci.get(1)) - Json.number(ci.get(0))) / 2 : Double.NaN);
       m.put("peakRelativeCpu", Json.number(on, "peak", "value"));
       m.put("p99DiffMs", Json.number(on, "latency", "p99", "diffMean"));
       m.put("p999DiffMs", Json.number(on, "latency", "p99.9", "diffMean"));
@@ -775,6 +1076,9 @@ final class BenchReport {
         .append(' ')
         .append(Json.array(Json.at(model, "regression", "reasons")))
         .append('\n');
+    for (Object note : Json.array(Json.at(model, "regression", "notes"))) {
+      md.append("  - ").append(note).append('\n');
+    }
     List<Object> envProblems = Json.array(model.get("environmentProblems"));
     if (!envProblems.isEmpty()) {
       md.append("- Environment problems (every verdict INVALID): ")
@@ -784,7 +1088,8 @@ final class BenchReport {
     md.append(
         "- Approval: pending. A maintainer approves the report in review by setting"
             + " `\"approved\": true` in the summary comment at the end; 18 §7.7 compares new"
-            + " reports with the last approved one (`--baseline`).\n\n");
+            + " reports with the newest approved one of the same configuration (`--baseline"
+            + " auto`).\n\n");
 
     // 1. Environment
     md.append("## 1. Environment (18 §7.1)\n\n");
@@ -799,6 +1104,7 @@ final class BenchReport {
 
     // 2. Parameters
     md.append("\n## 2. Run parameters\n\n");
+    md.append(Regression.C145_NOTE).append("\n\n");
     for (SetData s : sets) {
       md.append(parameters(s));
     }
@@ -816,11 +1122,20 @@ final class BenchReport {
         md.append(statistics(s));
       }
     }
+    md.append(transportCostSection(Json.object(model.get("transportCost"))));
+    md.append(referenceSection(Json.object(model.get("reference"))));
 
     // 5. Memory, threads, startup
     md.append("## 5. Memory, threads and startup\n\n");
     for (SetData s : sets) {
       md.append(memoryAndStartup(s));
+    }
+    for (Object note : Json.array(Json.at(model, "regression", "notes"))) {
+      if (String.valueOf(note).contains("C-186 (2)") && !byRole(sets, "startup").isEmpty()) {
+        md.append("Footnote (startup and transformed-class numbers across reports): ")
+            .append(note)
+            .append("\n\n");
+      }
     }
 
     // 6. Verdicts
@@ -1118,7 +1433,9 @@ final class BenchReport {
           .append(" | | windows of 60 s every 10 s, averaged over the rounds |\n");
       md.append("| agent thread CPU | | | ")
           .append(LoadReport.fmt(Json.number(c, "agentThreadCpu", "value"), 4))
-          .append("% of host | | jcmd Thread.print cpu= of argos-* threads |\n");
+          .append("% of host | | ")
+          .append(Json.at(c, "agentThreadCpu", "source"))
+          .append(" |\n");
       for (String q : LoadReport.QUANTILES.keySet()) {
         Object l = Json.at(c, "latency", q);
         List<Object> boot = Json.array(Json.at(l, "diffBootstrapCi95"));
@@ -1156,6 +1473,95 @@ final class BenchReport {
       md.append('\n');
     }
     return md.toString();
+  }
+
+  /** Part 4 section of the transport cost (grpc - noop); empty without a grpc set. */
+  static String transportCostSection(Map<String, Object> tc) {
+    if (tc.isEmpty()) {
+      return "";
+    }
+    StringBuilder md = new StringBuilder("### Transport cost (grpc - noop)\n\n");
+    md.append(
+        "The gRPC exporter to a collector (`--exporter grpc`) against the no-op exporter: what the"
+            + " transport adds. Reported only, no verdict: requirements are judged with the noop"
+            + " exporter (ADR-0009 C-80).\n\n");
+    md.append(
+        "| measure | on (grpc) vs off | on (noop) vs off | transport cost |\n|---|---|---|---|\n");
+    md.append("| relative CPU | ")
+        .append(LoadReport.pct(Json.number(tc.get("relativeCpuGrpc"))))
+        .append(" | ")
+        .append(LoadReport.pct(Json.number(tc.get("relativeCpuNoop"))))
+        .append(" | ")
+        .append(points(Json.number(tc.get("relativeCpuDeltaPoints"))))
+        .append(" |\n");
+    md.append("| p99 difference ms | ")
+        .append(LoadReport.fmt(Json.number(tc.get("p99DiffMsGrpc")), 3))
+        .append(" | ")
+        .append(LoadReport.fmt(Json.number(tc.get("p99DiffMsNoop")), 3))
+        .append(" | ")
+        .append(signed(Json.number(tc.get("p99DiffDeltaMs")), 3, " ms"))
+        .append(" |\n\n");
+    md.append("Sets: grpc ")
+        .append(tc.get("grpcSet"))
+        .append(" (harness verdict ")
+        .append(tc.get("grpcSetVerdict"))
+        .append(", collector ")
+        .append(tc.get("collector"))
+        .append("), noop ")
+        .append(tc.get("noopSet"))
+        .append(".");
+    List<Object> notes = Json.array(tc.get("notes"));
+    if (!notes.isEmpty()) {
+      md.append(" Notes: ").append(cell(notes.toString())).append('.');
+    }
+    md.append("\n\n");
+    return md.toString();
+  }
+
+  /** Part 4 section of the OpenTelemetry reference; empty without an otel variant. */
+  static String referenceSection(Map<String, Object> r) {
+    if (r.isEmpty()) {
+      return "";
+    }
+    double requests = Json.number(r.get("otlpRequests"));
+    StringBuilder md =
+        new StringBuilder("### Reference: OpenTelemetry Java agent (18 §7.5, no verdict)\n\n");
+    md.append(
+        "The same load with the OpenTelemetry Java agent exporting OTLP to a black-hole receiver"
+            + " on the app machine: a reference point, never a requirement.\n\n");
+    md.append(
+        "| set | relative CPU (otel) | p99 difference ms (otel) | relative CPU (argos) | p99"
+            + " difference ms (argos) | OTLP requests | OTLP bytes |\n"
+            + "|---|---|---|---|---|---|---|\n");
+    md.append("| ")
+        .append(r.get("set"))
+        .append(" | ")
+        .append(LoadReport.pct(Json.number(r.get("relativeCpu"))))
+        .append(" | ")
+        .append(LoadReport.fmt(Json.number(r.get("p99DiffMs")), 3))
+        .append(" | ")
+        .append(LoadReport.pct(Json.number(r.get("argosRelativeCpu"))))
+        .append(" | ")
+        .append(LoadReport.fmt(Json.number(r.get("argosP99DiffMs")), 3))
+        .append(" | ")
+        .append(LoadReport.fmt(requests, 0))
+        .append(" | ")
+        .append(LoadReport.fmt(Json.number(r.get("otlpBytes")), 0))
+        .append(" |\n\n");
+    if (Double.isNaN(requests) || requests <= 0) {
+      md.append(
+          "The receiver got no OTLP request (or none was recorded): the reference agent did not"
+              + " export, so its numbers are not a like-for-like reference.\n\n");
+    }
+    return md.toString();
+  }
+
+  private static String points(double v) {
+    return Double.isNaN(v) ? "n/a" : String.format(Locale.ROOT, "%+.2f percentage points", v);
+  }
+
+  private static String signed(double v, int decimals, String unit) {
+    return Double.isNaN(v) ? "n/a" : String.format(Locale.ROOT, "%+." + decimals + "f", v) + unit;
   }
 
   private static String pctRange(List<Object> pair) {
@@ -1196,6 +1602,15 @@ final class BenchReport {
           on,
           "directMemoryIncreaseMb",
           "VM.native_memory summary");
+      double selfDirect = Json.number(on, "memory", "selfDiagDirectMemoryMb");
+      md.append("| direct memory (self-diagnostics, max of runs) | ")
+          .append(Double.isNaN(selfDirect) ? "n/a" : format(selfDirect, "MB"))
+          .append(" | reported | ")
+          .append(
+              Double.isNaN(selfDirect)
+                  ? "no self-diagnostics file in this set (argos.test.selfdiag-file, C-95)"
+                  : LoadReport.DIRECT_MEMORY_SELF_DIAG)
+          .append(" |\n");
       memoryRow(
           md,
           "thread increase",
@@ -1214,7 +1629,12 @@ final class BenchReport {
           .append(" | - | gc.log (informational) |\n");
       md.append("| premain median (load runs) | ")
           .append(LoadReport.fmt(Json.number(on, "startup", "premainMedianMs"), 1))
-          .append(" ms | 500 ms | agent log |\n\n");
+          .append(" ms | 500 ms | ")
+          .append(
+              Json.at(on, "startup", "premainSource") == null
+                  ? LoadReport.PREMAIN_BANNER
+                  : Json.at(on, "startup", "premainSource"))
+          .append(" |\n\n");
       return md.toString();
     }
     md.append(
@@ -1243,6 +1663,7 @@ final class BenchReport {
           .append(LoadReport.fmt(Json.number(row, v + "ReadyMedianMs"), 0))
           .append(" | ")
           .append(LoadReport.fmt(Json.number(row, "premainMedianMs"), 1))
+          .append(StartupReport.premainSourceSuffix(row))
           .append(" | ")
           .append(orDash(Json.at(row, "plus2sVerdict")))
           .append(" | ")

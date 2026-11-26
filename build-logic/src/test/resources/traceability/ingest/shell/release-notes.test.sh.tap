@@ -1,0 +1,7 @@
+TAP version 13
+# argos-shell-results 1
+# suite: release-scripts
+# script: scripts/test/release-notes.test.sh
+# started: 2026-11-26T10:05:00Z
+# exit: 2
+1..0

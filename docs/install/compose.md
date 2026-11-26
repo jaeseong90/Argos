@@ -8,6 +8,9 @@ takes about 30 minutes, not counting downloads and image builds
 
 [한국어](compose.ko.md)
 
+To only try Argos with sample applications and generated traffic on one machine, use the demo
+profile instead ([section 14](#14-demo-profile)): no certificate, about five minutes.
+
 Telemetry: none. Argos sends no usage statistics and does not check for updates. The server connects
 only to the targets you configure: its two databases and, later, your alert channels.
 
@@ -120,6 +123,8 @@ Nothing else is needed at run time. Telemetry: none.
 
 Released packages with prebuilt, digest-pinned server images are not published yet. Until then you
 build the server image from the source.
+
+When you download a release, verify it first: see [Verify a release](verify-release.md).
 
 1. Get the source. The public repository does not exist yet: use the location or the git bundle the
    maintainers give you, then change into it:
@@ -251,6 +256,29 @@ The last `openssl verify` prints `tls/server.crt: OK`. You get:
 - `tls/ca.key`: the CA key. Move it off the server to a safe place; you need it only to issue the
   next server certificate. The server never reads it.
 - `tls/server.crt`, `tls/server.key`: the server's certificate (valid for one year) and key.
+
+### Option C: a self-signed certificate for a short evaluation
+
+For a quick evaluation on a test host, `argos-env-init.sh` can write a self-signed certificate in
+[step 1](#step-1-generate-the-configuration-and-the-secrets): add `--self-signed-tls` with every
+name and IP address agents will use, separated by commas:
+
+```sh
+sudo ./argos-env-init.sh --public-url http://localhost:8080 --self-signed-tls argos.example.com,192.0.2.10
+```
+
+It writes `tls/server.crt` (`0644`, valid 365 days, the names as subject alternative names: `DNS:`
+for a name, `IP:` for an IPv4 or IPv6 address) and `tls/server.key` (`0600`, owned by uid `10001`
+on a Linux Docker Engine), and prints a warning that the certificate is for an evaluation only. It
+needs `openssl` 1.1.1 or later (exit code 2 otherwise) and refuses to replace existing
+`tls/server.crt` or `tls/server.key` files (exit code 2): delete them first to create new ones.
+It is never done without the option.
+
+Each agent must trust exactly this certificate: copy `tls/server.crt` to the agent host and name it
+in `server.tls.ca-file` ([section 9](#9-connect-the-first-agent)). There is no CA behind it, so a
+new certificate means copying the new file to every agent again. Do not use it in production: use
+[Option A](#option-a-a-certificate-from-your-organization) or a CA of your own as in
+[Option B](#option-b-an-evaluation-certificate-from-your-own-ca).
 
 ### Give the key to the server
 
@@ -887,6 +915,9 @@ Start the application with one more JVM option. Java 8 applications need 8u252 o
 | start again | `sudo ./argos-compose.sh up` | |
 | restart the server only | `sudo ./argos-compose.sh compose restart server` | |
 | uninstall, delete all data | `sudo ./argos-compose.sh down --volumes` | **deleted**: monitoring data, users, apps, agent tokens, audit log |
+| back up, restore | `sudo ./argos-compose.sh backup`, `sudo ./argos-compose.sh restore <set>` | [section 15](#151-backup-and-restore) |
+| upgrade, roll back | `sudo ./argos-compose.sh upgrade --image <image>`, `upgrade --rollback` | [section 15](#152-upgrade-and-rollback) |
+| diagnostic bundle for a support request | `sudo ./argos-compose.sh diag` | [section 15](#153-diagnostic-bundle) |
 
 After `down --volumes` also delete `secrets/`, `tls/` and `.env` if you do not install again with them.
 
@@ -894,6 +925,8 @@ Do not run `argos-env-init.sh --force` on an installation whose volumes you keep
 database passwords, which no longer match the accounts stored in the volumes.
 
 ## 11. Troubleshooting
+
+For problems of a running installation (ingest lag, disk, refused agents, outages), see the [runbook](../ops/runbook.md).
 
 | Symptom | Cause and fix |
 |---|---|
@@ -908,27 +941,29 @@ database passwords, which no longer match the accounts stored in the volumes.
 | the sign-in page or the last step of the setup wizard says that the browser did not keep the session cookie, or signing in returns to the sign-in page | the browser does not keep the `Secure` session cookies over plain HTTP to a host other than `localhost` (`argos-env-init.sh` warned about this public URL), or `ARGOS_WEB_PUBLIC_URL` differs from the address in the browser. Open the UI at `http://localhost:8080` (on the host or through an SSH tunnel) or through the HTTPS reverse proxy, with that address in `ARGOS_WEB_PUBLIC_URL` ([section 5](#choose-the-address-of-the-ui)) |
 | ClickHouse restarts or queries fail with a memory error | ClickHouse has too little memory for the load. Give the host more memory, or raise `ARGOS_CH_MEM` together with `ARGOS_CH_MAX_SERVER_MEMORY_USAGE` and the two per-query limits ([section 7.1](#71-memory)) |
 | a warning that file modes cannot be checked | the files are on a file system without POSIX modes (Windows, NTFS). This is not a supported production setup; install on a Linux file system |
+| on Docker Desktop for Windows, ClickHouse or the server does not start and its log shows `Input/output error` (EIO) for a configuration, secret or certificate file | Docker Desktop cannot hand a single file to a container whose user is not root (ClickHouse uid `101`, server uid `10001`) when the Windows path of that file is longer than about 180 characters. Keep the installation directory on a short path (for example `C:\argos\deploy\compose`). Docker Desktop is not a supported production setup ([section 2](#2-before-you-start)) |
 | an agent logs a TLS or certificate error | `server.address` is not in the certificate's names, or `server.tls.ca-file` is not the CA that signed it |
 | `token create` exits with code 4 | the application already has 5 active agent tokens |
-| the server exits at start with a message about `argos.master-key-file` | `secrets/master_key` is missing, malformed or has a mode other than `0600` (owner `10001` on a Linux Docker Engine). Restore the key from your backup; never generate a new one for an existing installation, or the stored secrets can no longer be read ([section 7.4](#74-retention-audit-log-and-master-key)) |
+| the server exits at start with a message about `argos.master-key-file` | `secrets/master_key` is missing, malformed or has a mode other than `0600` (owner `10001` on a Linux Docker Engine). Restore the key from your backup; never generate a new one for an existing installation, or the stored secrets can no longer be read ([section 7.4](#74-retention-audit-log-and-master-key)). On Docker Desktop (Windows, macOS, WSL; not a supported production setup, [section 2](#2-before-you-start)) the files in `secrets/` show as `0777` inside the containers: give them the owner and mode from a container, in `deploy/compose` (PowerShell: `"${PWD}\secrets:/s"`; Git Bash: `MSYS_NO_PATHCONV=1` before `docker` and `"$(pwd -W)/secrets:/s"`), then start again: `docker run --rm --network none --user 0 --entrypoint sh -v "$PWD/secrets:/s" argos-server:0.0.0-SNAPSHOT -c 'chown 10001:10001 /s/* && chmod 0600 /s/*'` |
 | `token create` says the server service is not running or not healthy | start the stack (`sudo ./argos-compose.sh up`) and wait until `sudo ./argos-compose.sh status` shows the server healthy: the token is issued by the running server |
+| `upgrade` exits with code 2 | nothing was changed: the stack is not healthy, the image is missing or has no version label, or the new version is older or skips a major version (the message says which) |
+| `upgrade` exits with code 1 | nothing was changed: the pre-upgrade backup failed (the message of `backup.sh` above names the cause) |
+| `upgrade` exits with code 8 | the server did not become healthy with the new image. Read `sudo ./argos-compose.sh logs server`, then go back with `sudo ./argos-compose.sh upgrade --rollback --yes` ([section 15.2](#152-upgrade-and-rollback)) |
 
 ## 12. Not available in this version
 
 These are planned and not part of this version:
 
-- a demo profile with sample applications and generated traffic (`argos-env-init.sh --demo` says it
-  is not available);
-- `argos-compose.sh upgrade`, `backup` and `diag` (they say they are not provided and exit with code
-  2): upgrades, backups and diagnostic bundles for Compose installations;
+- published demo images (build them locally, [section 14](#14-demo-profile));
 - installation from a `tar.gz` archive with systemd, and an air-gapped bundle;
 - released, signed server images for amd64 and arm64;
-- agent tokens and applications managed in the UI (use `argos-compose.sh token create`; the server also
-  offers the administration API for listing, rotating and revoking tokens, `/api/v1/admin/apps/{appId}/tokens`);
-- the other `argos-admin` commands (for example, resetting an administrator's password) and user
-  management in the UI;
-- the UI screens for applications, instances and transactions (check an agent's connection as in
-  [section 9](#check-the-connection)).
+- an `argos-admin` command that resets an administrator's password.
+
+Applications, agent tokens, instances and users are managed in the UI under **Administration**
+(**Applications** with the installation guide and the token shown once, **Agent tokens** for rotation
+and revocation, **Instance management**, **Users**); `argos-compose.sh token create` and the
+administration API (`/api/v1/admin/apps/{appId}/tokens`) remain available. An instance's detail page,
+the XLog screen and the transaction detail show what an agent sends ([section 9](#check-the-connection)).
 
 ## 13. Time budget and tester checklist
 
@@ -985,3 +1020,225 @@ Result:
 - the agent log contains `collector session established` (yes / no);
 - after requests to the application, `<public URL>/api/v1/apps?q=<application>` in the signed-in
   browser shows `instances_up` at `1` or more ([section 9](#check-the-connection)) (yes / no).
+
+## 14. Demo profile
+
+The demo profile runs Argos with two sample applications and generated traffic on one machine, so
+that you can look at every screen with data a minute after the start. It needs no certificate and no
+agent setup.
+
+**Evaluation only.** In the demo the agents send their data over plaintext gRPC (inside the internal
+Docker network), the UI shows the banner "DEMO MODE: plaintext gRPC enabled, sample traffic", and a
+load generator produces traffic. Never connect agents of real applications to it and never keep real
+data in it; for that, install as in sections 2 to 9.
+
+### What it runs
+
+| Service | What it does |
+|---|---|
+| `server`, `clickhouse`, `postgres` | Argos, as in a normal installation, in demo mode: plaintext gRPC accepted, the demo banner, the two demo applications and their agent tokens registered at the start, the recommended alert rules applied |
+| `demo-db` | The database of the demo applications (PostgreSQL, not the one of Argos) |
+| `sample-app-a` (`order-api`) | A sample application with the agent: orders, slow and failing requests, an N+1 query, a checkout that calls `payment-api`, and a settlement batch (`@Scheduled`) every 2 minutes |
+| `sample-app-b` (`payment-api`) | The second application with the agent; about one call in five fails on purpose, so that the error-rate alert of `order-api` fires |
+| `load-generator` | 50 requests a second to `order-api`: normal 70 %, slow (300 ms to 3 s) 10 %, errors (500 and `sendError`) 5 %, N+1 (21 SQL statements) 5 %, checkout through `payment-api` 10 % |
+
+The demo services publish no port and sit on the internal network only. The host ports are the
+usual `8080` (UI) and `9100` (gRPC), published on `127.0.0.1` by default. The agent configuration is
+the production default (no bind parameter values, masked client addresses), so the demo shows what a
+default installation collects.
+
+### Before you start
+
+- Docker Engine 24 or later with the Compose plugin v2.24 or later, or Docker Desktop.
+- At least 7396 MiB of memory visible to Docker (an "8 GB" Docker Desktop is enough; more makes the
+  demo faster) and 20 GB of free disk. `argos-env-init.sh --demo` reserves 1.5 GiB for the demo
+  services and plans the rest as in [section 7.1](#71-memory).
+- Until the images are published, JDK 21 and the source tree to build them (section 3).
+
+### Run it
+
+1. Build the three images once, in the repository root (the first build downloads the build
+   dependencies and takes several minutes):
+
+   ```sh
+   ./gradlew :server:jibDockerBuild :sample-apps:demo-app:jibDockerBuild :sample-apps:load:jibDockerBuild
+   ```
+
+2. Prepare the demo. On a Linux Docker Engine run it with `sudo`, as every command below (the secret
+   files are given to uid `10001`, the user of the containers):
+
+   ```sh
+   cd deploy/compose
+   ./argos-env-init.sh --demo
+   ```
+
+   `--demo` generates the secrets of a normal installation, the administrator password
+   (`secrets/admin_password`), an agent token for each demo application
+   (`secrets/demo_order_api_token`, `secrets/demo_payment_api_token`) and the password of the demo
+   database (`secrets/demo_db_password`), all `0600`. Into `.env` it writes `ARGOS_DEMO_MODE=true`,
+   `COMPOSE_FILE` (with `compose.demo.yaml`) and `COMPOSE_PROFILES=demo`, so that plain
+   `docker compose` commands in this directory use the demo; no secret is written into `.env`.
+   Options: `--http-bind` and `--grpc-bind` (default `127.0.0.1`), `--public-url` (default
+   `http://localhost:8080`), `--ip-mode` (default `masked`).
+
+   **Docker Desktop (Windows, macOS, WSL):** nothing to do. The files in `secrets/` show as `0777`
+   inside the containers there; the demo overlay (`compose.demo.yaml`) sets
+   `ARGOS_SECURITY_MASTERKEY_PERMISSIVE=true`, so the server skips the permission check of its
+   master key file and logs a warning at every start (a missing or malformed key still stops it).
+   Only the demo does this: a production installation keeps the check (troubleshooting in
+   [section 11](#11-troubleshooting)).
+
+3. Start it:
+
+   ```sh
+   docker compose --profile demo up -d
+   ```
+
+   (`./argos-compose.sh up` does the same, checks the files first and waits until every service is
+   healthy.)
+
+4. Open `http://localhost:8080` and sign in as `admin` with the password from the file:
+
+   ```sh
+   cat secrets/admin_password
+   ```
+
+   The UI asks you to choose a new password first. XLog points of `order-api` and `payment-api`
+   arrive within about a minute of the start.
+
+5. Look around: the dashboard of `order-api`; XLog with slow points and errors; a checkout
+   transaction and its trace through `payment-api`; an N+1 transaction (`/api/orders/{id}/items`, 21
+   SQL statements) in the transaction detail; the SQL and error statistics; the batch transactions
+   (kind `BATCH`, every 2 minutes); and, after about 8 minutes, the `order-api` error-rate alert.
+
+6. Remove the demo and all its data:
+
+   ```sh
+   docker compose --profile demo down -v
+   ```
+
+   To run it again from scratch, also delete `.env` and `secrets/` and start at step 2.
+
+### Troubleshooting the demo
+
+| Symptom | Cause and fix |
+|---|---|
+| `up` says `pull access denied` for `argos-server`, `argos-demo-app` or `argos-demo-load` | the images are not built: step 1 |
+| `argos-env-init.sh` exits with code 2 and names the memory | Docker sees less than 7396 MiB: give Docker Desktop (Settings, Resources) or the host more memory |
+| `up` fails with `port is already allocated` | another program uses `8080` or `9100` on `127.0.0.1`: stop it, or prepare the demo again with other bind addresses |
+| the server log shows a warning that the master key file is readable by group or others (`argos.security.master-key.permissive`) | expected in the demo: on Docker Desktop the files in `secrets/` show as `0777` inside the containers, and the demo overlay skips this check. A production installation does not ([section 11](#11-troubleshooting)) |
+| no data after two minutes | `docker compose --profile demo ps` shows which service is not running or healthy; `docker compose --profile demo logs sample-app-a` (or `server`) shows why |
+
+## 15. Backup, upgrade and diagnostics
+
+Run these commands in `deploy/compose`, with `sudo` on a Linux Docker Engine like the others.
+
+### 15.1 Backup and restore
+
+`sudo ./argos-compose.sh backup` runs `./backup.sh` with the same options. It always dumps the
+PostgreSQL database (users, applications, agent token hashes, alert rules, the encrypted channel
+settings and command results, the audit log) and, with `--clickhouse`, backs up the collected data
+in ClickHouse to the external directory `ARGOS_CH_BACKUP_DIR` (it refuses a directory on the disk
+of the ClickHouse data). The backup sets go to `ARGOS_BACKUP_DIR` (default `./backups`; put it on
+another disk or machine), one directory per set with mode `0700` and files `0600`; sets older than 7
+days are deleted. `--encrypt age:<recipient>` or `--encrypt gpg:<key id>` encrypts the dump with
+`age` or GnuPG when that tool is already installed on the host; nothing is downloaded.
+
+A backup does not contain `secrets/` or `tls/`. Keep `secrets/master_key` in a separate safe place:
+without it the channel settings and command results of a restored backup cannot be read. Backups
+contain personal data the agents collected (IP addresses, user IDs, SQL text) and command results;
+protect them like the installation itself.
+
+`sudo ./argos-compose.sh restore <backup set>` runs `./restore.sh`: it first checks that the master
+key belongs to the backup and refuses with exit code 1 without changing anything when it does not,
+then stops the server, restores PostgreSQL (and ClickHouse with `--clickhouse`), lets the server
+migrate the schema forward, starts it and runs a consistency check. When the PostgreSQL backup is
+older than the ClickHouse data it warns of the point-in-time mismatch.
+
+For a daily backup add a line like this to root's crontab (`sudo crontab -e`):
+
+```
+0 1 * * * cd /opt/argos/deploy/compose && ./argos-compose.sh backup >>/var/log/argos-backup.log 2>&1
+```
+
+All options, the exit codes, restoring on a new host and the restore rehearsal are in
+[docs/ops/backup-restore.md](../ops/backup-restore.md) and
+[docs/ops/recovery-rehearsal.md](../ops/recovery-rehearsal.md).
+
+### 15.2 Upgrade and rollback
+
+Upgrade the server first; agents follow when their applications restart. A server `X.Y` accepts
+agents `X.(Y-2)` to `X.Y`. Pause alert notifications for the planned stop (about 10 minutes at
+most); agents keep their data for about 2 minutes and reconnect.
+
+1. Get the new server image into the local image store (or give a registry reference that can be
+   pulled).
+2. Run:
+
+   ```sh
+   sudo ./argos-compose.sh upgrade --image argos-server:<new version>
+   ```
+
+The command checks that the stack is healthy and reads the versions from the image label
+`org.opencontainers.image.version`. It refuses (exit code 2, nothing changed) an older version and a
+skipped major version, and does nothing (exit code 0) when the version runs already. It warns about
+connected agents whose version the new server will not accept. Then, after you confirm (or with
+`--yes`):
+
+1. `backup.sh --label pre-upgrade-<from>-<to>`: a PostgreSQL backup. If it fails, the upgrade stops
+   with exit code 1 and nothing is changed;
+2. it writes `upgrade-state.json` (`0600`: the previous image and its id, the backup set) and sets
+   `ARGOS_SERVER_IMAGE` in `.env` (its mode and owner stay). A value of `ARGOS_SERVER_IMAGE` in your
+   environment wins over `.env`; the command warns about it;
+3. it starts the server with the new image and waits until it is healthy (up to 10 minutes). The
+   server migrates the PostgreSQL and ClickHouse schemas at its start;
+4. it runs `argos-admin consistency check` for yesterday and shows the result (report only) and the
+   duration.
+
+If the new server does not become healthy, the command exits with code 8. Read
+`sudo ./argos-compose.sh logs server`, then roll back:
+
+```sh
+sudo ./argos-compose.sh upgrade --rollback
+```
+
+The rollback sets the previous image in `.env`, restores PostgreSQL from the pre-upgrade backup
+(`restore.sh`) and starts the server again. PostgreSQL changes made since the backup (users, tokens,
+rules, audit rows) are lost; the ClickHouse data stays (the previous version ignores new columns).
+A rollback is possible once per upgrade.
+
+| Exit code | Meaning |
+|---|---|
+| 0 | upgraded, rolled back, or the version runs already |
+| 1 | the backup or the rollback failed; the message says what was changed |
+| 2 | refused or a prerequisite missing; nothing was changed |
+| 8 | the server was replaced but did not become healthy: roll back |
+
+### 15.3 Diagnostic bundle
+
+For a problem report, create a diagnostic bundle and read it before you send it on:
+
+```sh
+sudo ./argos-compose.sh diag --since 24h --out /tmp
+```
+
+It writes `argos-diag-compose-<host>-<time>.tar.gz` (mode `0600`) to `--out` (default: the current
+directory) with:
+
+- the server's own bundle (`argos-admin bundle` in the server container, or in a new container of
+  the server image when the server does not run): the server log of the period (`--since`, 1 hour to
+  7 days), the effective configuration, versions, migrations, storage state, instances and token
+  prefixes, all with secrets masked by the server;
+- what the server cannot see: `docker compose ps`, the images with their ids, digests and labels,
+  the names and SHA-256 of the compose files, `.env` with every value of a key that names a
+  password, token, secret, key or credential replaced by `****`, the last 1000 lines of the
+  ClickHouse and PostgreSQL container logs, the Docker and Compose versions and the disk usage seen
+  by ClickHouse;
+- `manifest.json`, which says which parts could be collected.
+
+Tokens (`argos_...`), URL user information, 64-digit hexadecimal values and `password=`-style
+values are masked as well. The bundle never contains anything from `secrets/` or `tls/`, the output
+of `docker compose config` (it would show the ClickHouse password hashes) or the server's console
+(it shows the setup token of a new installation). List the content with `tar -tzf <file>`. Exit
+codes: 0 written (also when a part could not be collected), 1 not written, 2 usage error or no
+Docker.

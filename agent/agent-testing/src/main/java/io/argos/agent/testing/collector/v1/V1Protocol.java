@@ -388,7 +388,8 @@ public final class V1Protocol implements CollectorProtocol {
                       hello.getProtocolVersion(),
                       hello.getAgentEpoch(),
                       hello.getSentAtMs(),
-                      hello.getPlaintext()));
+                      hello.getPlaintext(),
+                      hello.getCheckOnly()));
             }
             case HEARTBEAT -> {
               Heartbeat heartbeat = message.getHeartbeat();

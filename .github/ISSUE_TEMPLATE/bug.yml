@@ -55,6 +55,15 @@ body:
       placeholder: "Rocky Linux 9 VM, Docker 26 with cgroup v2"
     validations:
       required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Server installation method
+      options:
+        - Docker Compose
+        - Docker Compose demo profile
+        - Other (describe below)
+        - Not applicable (agent only)
   - type: textarea
     id: what-happened
     attributes:
@@ -90,8 +99,11 @@ body:
     attributes:
       label: Diagnostic bundle
       description: >-
-        If you use the diagnostic bundle script shipped with the server package, attach its archive here.
-        It masks tokens and secrets, but review the contents before uploading.
+        Attach a diagnostic bundle if you can: `./argos-compose.sh diag` for a Compose installation, or
+        `argos-admin bundle` (`java -jar argos-server-<version>.jar admin bundle --since 24h`) next to the server.
+        The bundle masks tokens, passwords, keys and channel URLs, but it still contains host names, log lines
+        and configuration: unpack it and review the contents before uploading, and remove anything you do not
+        want to make public.
   - type: checkboxes
     id: confirmations
     attributes:

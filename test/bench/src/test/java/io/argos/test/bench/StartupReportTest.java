@@ -61,6 +61,31 @@ class StartupReportTest {
   }
 
   @Test
+  @Tag("req:N-30")
+  @DisplayName(
+      "T-BLD-015f report: the premain source of a cell is the starts' premainSource, else the"
+          + " agent log banner")
+  void premainSources() {
+    List<Map<String, Object>> runs = new ArrayList<>();
+    for (int i = 0; i < 10; i++) {
+      runs.add(ReportTest.start("shop-boot3", "default", "off", 7000 + i, null));
+      Map<String, Object> on = ReportTest.start("shop-boot3", "default", "on", 8000 + i, 300.0);
+      // the harness codes of SelfDiagFile (lane B); the last starts recorded none (banner)
+      if (i < 4) {
+        on.put("premainSource", "selfdiag-file");
+      } else if (i < 7) {
+        on.put("premainSource", "agent-log-banner");
+      }
+      runs.add(on);
+    }
+    Object row = Json.array(StartupReport.analyze(runs).get("rows")).get(0);
+    assertThat(Json.array(Json.at(row, "premainSources")))
+        .containsExactly(LoadReport.PREMAIN_SELF_DIAG, LoadReport.PREMAIN_BANNER);
+    assertThat(StartupReport.premainSourceSuffix(row))
+        .isEqualTo(" (self-diagnostics premain_ms, agent log banner)");
+  }
+
+  @Test
   @Tag("req:N-04")
   @DisplayName("C-49: the increase is the difference of the medians of 10 starts")
   void medianOfTenStarts() {

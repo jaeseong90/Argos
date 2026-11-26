@@ -61,8 +61,19 @@ body:
     id: stack
     attributes:
       label: Application stack
-      description: Spring Boot / Framework version, servlet container and version, other relevant libraries.
-      placeholder: "Spring Boot 3.3.4, embedded Tomcat 10.1.30"
+      description: Spring Boot / Framework version and other relevant libraries.
+      placeholder: "Spring Boot 3.3.4, HikariCP 5.1.0, Logback 1.5.8"
+  - type: input
+    id: was
+    attributes:
+      label: Servlet container (WAS) and version
+      placeholder: "embedded Tomcat 10.1.30, standalone Tomcat 9.0.96"
+  - type: input
+    id: database
+    attributes:
+      label: Database server and version
+      description: Leave empty if no database was involved.
+      placeholder: "PostgreSQL 16.4, Oracle Database 19c"
   - type: input
     id: os
     attributes:
@@ -89,5 +100,15 @@ body:
     id: agent-log
     attributes:
       label: Agent log excerpt
-      description: The startup banner and any WARN/ERROR lines from argos-agent.log.
+      description: >-
+        The startup banner and any WARN/ERROR lines from argos-agent.log. The output of
+        `java -jar argos-agent-<version>.jar --check --classpath <application jar or directory>` is also helpful.
+        Remove tokens, host names, IP addresses and personal data first.
       render: text
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: This report contains no secrets or personal data.
+          required: true

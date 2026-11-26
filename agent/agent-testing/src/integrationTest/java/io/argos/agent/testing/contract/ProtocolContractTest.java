@@ -174,7 +174,8 @@ class ProtocolContractTest {
   @Tag("req:C-3")
   @DisplayName(
       "11 §6 over gRPC: ACK_OK and ACK_DUPLICATE with last_seq per (instance, epoch, kind), window"
-          + " 1,000, an error answer writes nothing (its retry is ACK_OK); duplicates stay recorded")
+          + " 1,000, an error answer writes nothing (its retry is ACK_OK); duplicates stay"
+          + " recorded")
   void dedup() throws Exception {
     for (Map<String, Object> scenario : section("dedup")) {
       FakeCollector collector = start(FakeCollector.builder());
@@ -327,10 +328,20 @@ class ProtocolContractTest {
           step.containsKey("instance_name")
               ? ContractVectors.string(step, "instance_name")
               : "host:1";
-      session.hello("shop", "test", instanceName, epoch, version, System.currentTimeMillis());
+      boolean checkOnly = Boolean.TRUE.equals(step.get("check_only"));
+      session.hello(
+          "shop", "test", instanceName, epoch, version, System.currentTimeMillis(), checkOnly);
       ServerHello hello = session.next().getHello();
       boolean accepted = Boolean.TRUE.equals(step.get("expected_accepted"));
       assertThat(hello.getAccepted()).as(what).isEqualTo(accepted);
+      if (accepted && Boolean.TRUE.equals(step.get("expected_check_only_answer"))) {
+        // ADR-0010 C-240 (1): no instance, no session; the collector ends the stream.
+        assertThat(hello.getInstanceId()).as(what).isZero();
+        assertThat(hello.getSessionId()).as(what).isEmpty();
+        Ended ended = session.awaitEnd();
+        assertThat(ended.status().getCode()).as(what).isEqualTo(code(step, "expected_code"));
+        return;
+      }
       if (accepted) {
         previous = current;
         current = hello;

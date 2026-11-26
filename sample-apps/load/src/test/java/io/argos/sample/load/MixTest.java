@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.argos.sample.common.catalog.CatalogEntry;
+import io.argos.sample.common.catalog.DemoCatalog;
 import io.argos.sample.common.catalog.ShopCatalog;
 import io.argos.sample.common.db.ShopSchema;
 import java.io.IOException;
@@ -23,8 +24,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The request mixes: 18 §7.2 / 01 §7.3 item 3 (bench, also in bench.js) and 17 §3.9 (demo), checked
- * against the shared shop catalog and against the table in bench.js.
+ * The request mixes: 18 §7.2 / 01 §7.3 item 3 (bench, also in bench.js), 17 §3.9 over the shop apps
+ * (default) and 17 §3.9 over the demo app (demo, WO-41), checked against the shop and demo catalogs
+ * and against the table in bench.js.
  */
 class MixTest {
 
@@ -87,10 +89,10 @@ class MixTest {
   }
 
   @Test
-  @DisplayName("Every route of every mix is a shop catalog endpoint with the same expected status")
+  @DisplayName("Every route of the default and bench mixes is a shop catalog endpoint, same status")
   void routesAreCatalogEndpoints() {
     List<CatalogEntry> catalog = ShopCatalog.entries();
-    for (String name : Mix.names()) {
+    for (String name : List.of(Mix.DEFAULT, Mix.BENCH)) {
       for (Mix.Route route : Mix.byName(name).routes()) {
         assertThat(catalog)
             .as("%s/%s: catalog entry for %s", name, route.key(), route.service())
@@ -119,11 +121,123 @@ class MixTest {
   }
 
   @Test
-  @DisplayName("MIX names: default (also empty, unset, demo) and bench; anything else is rejected")
+  @DisplayName(
+      "T-NFR-16b demo: 17 §3.9 over the demo app (normal 70, slow 10, error 5, N+1 5, call 10)")
+  void demoAppMixMatchesTheDemoProfile() {
+    Mix demo = Mix.byName("demo");
+    assertThat(demo.name()).isEqualTo("demo");
+    assertThat(weights(demo))
+        .containsExactly(
+            Map.entry("orders.get", 45),
+            Map.entry("orders.page", 25),
+            Map.entry("orders.items", 5),
+            Map.entry("slow", 10),
+            Map.entry("error-500", 3),
+            Map.entry("send-error", 2),
+            Map.entry("checkout", 8),
+            Map.entry("checkout.declined", 2));
+    Map<String, Integer> w = weights(demo);
+    assertThat(w.get("orders.get") + w.get("orders.page")).as("normal").isEqualTo(70);
+    assertThat(w.get("error-500") + w.get("send-error")).as("error").isEqualTo(5);
+    assertThat(w.get("checkout") + w.get("checkout.declined")).as("distributed").isEqualTo(10);
+    Mix.Route slow = route(demo, "slow");
+    Set<Long> sleeps = new HashSet<>();
+    for (long ordinal = 0; ordinal < 1000; ordinal++) {
+      long ms = Long.parseLong(slow.path().apply(ordinal).substring("/api/slow?ms=".length()));
+      assertThat(ms).isBetween(DemoCatalog.SLOW_MIN_MS, DemoCatalog.SLOW_MAX_MS);
+      sleeps.add(ms);
+    }
+    assertThat(sleeps).contains(DemoCatalog.SLOW_MIN_MS, DemoCatalog.SLOW_MAX_MS).hasSize(28);
+  }
+
+  @Test
+  @DisplayName(
+      "T-NFR-16b demo: every route is a DemoCatalog endpoint with the same expected status")
+  void demoRoutesAreDemoCatalogEndpoints() {
+    Map<String, CatalogEntry> catalog = new LinkedHashMap<>();
+    DemoCatalog.entries().forEach(e -> catalog.put(e.id(), e));
+    for (Mix.Route route : Mix.demo().routes()) {
+      CatalogEntry entry = catalog.get(route.key());
+      assertThat(entry).as("DemoCatalog entry %s", route.key()).isNotNull();
+      assertThat(entry.method() + " " + entry.route()).isEqualTo(route.service());
+      assertThat(entry.expectedStatus()).as(route.key()).isEqualTo(route.expectedStatus());
+      for (long ordinal = 0; ordinal < 50; ordinal++) {
+        String path = route.path().apply(ordinal);
+        String withoutQuery = path.indexOf('?') < 0 ? path : path.substring(0, path.indexOf('?'));
+        assertThat(withoutQuery).matches(entry.route().replace("{id}", "[1-9][0-9]*"));
+      }
+    }
+    // Every request endpoint order-api serves (all but the health check) gets load.
+    Set<String> loaded = new HashSet<>();
+    Mix.demo().routes().forEach(r -> loaded.add(r.key()));
+    for (CatalogEntry entry : catalog.values()) {
+      boolean orderApi =
+          entry.requires() == null || entry.requires().equals("role:" + DemoCatalog.ROLE_ORDER);
+      if (orderApi && !entry.id().equals("health")) {
+        assertThat(loaded).as("load on %s", entry.id()).contains(entry.id());
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("T-NFR-16b demo: checkout ids follow payment-api's decline rule; all ids are used")
+  void demoCheckoutIdsMatchThePaymentOutcome() {
+    assertThat(Mix.DECLINE_EVERY).isEqualTo(DemoCatalog.DECLINE_EVERY);
+    assertThat(Mix.ORDERS).isEqualTo(DemoCatalog.ORDERS);
+    Set<Long> paid = new HashSet<>();
+    Set<Long> declined = new HashSet<>();
+    for (long ordinal = 0; ordinal < 2 * Mix.ORDERS; ordinal++) {
+      long p = Mix.paidOrderId(ordinal);
+      long d = Mix.declinedOrderId(ordinal);
+      assertThat(p).isBetween(1L, (long) Mix.ORDERS);
+      assertThat(d).isBetween(1L, (long) Mix.ORDERS);
+      assertThat(DemoCatalog.paymentDeclined(p)).as("paid id %d", p).isFalse();
+      assertThat(DemoCatalog.paymentDeclined(d)).as("declined id %d", d).isTrue();
+      paid.add(p);
+      declined.add(d);
+    }
+    assertThat(paid).hasSize(Mix.ORDERS - Mix.ORDERS / DemoCatalog.DECLINE_EVERY);
+    assertThat(declined).hasSize(Mix.ORDERS / DemoCatalog.DECLINE_EVERY);
+    // Seen from order-api: error routes 3 + 2 plus the declined checkouts 2 = 7% 5xx answers.
+    int errors =
+        Mix.demo().routes().stream()
+            .filter(r -> r.expectedStatus() >= 500)
+            .mapToInt(Mix.Route::weight)
+            .sum();
+    assertThat(errors).isEqualTo(7);
+  }
+
+  @Test
+  @DisplayName("T-NFR-16b demo: every 20 requests hold each route weight/5 times (within 1)")
+  void demoScheduleInterleaves() {
+    Mix demo = Mix.demo();
+    WeightedSchedule schedule = demo.schedule();
+    assertThat(schedule.cycleLength()).isEqualTo(100);
+    for (int window = 0; window < 10; window++) {
+      Map<String, Integer> counts = new LinkedHashMap<>();
+      for (long n = window * 20L; n < window * 20L + 20; n++) {
+        counts.merge(demo.routes().get(schedule.routeIndex(n)).key(), 1, Integer::sum);
+      }
+      for (Mix.Route r : demo.routes()) {
+        double expected = r.weight() / 5.0;
+        assertThat((double) counts.getOrDefault(r.key(), 0))
+            .as("window %d, route %s", window, r.key())
+            .isBetween(Math.floor(expected) - 1, Math.ceil(expected) + 1);
+      }
+    }
+  }
+
+  private static Mix.Route route(Mix mix, String key) {
+    return mix.routes().stream().filter(r -> r.key().equals(key)).findFirst().orElseThrow();
+  }
+
+  @Test
+  @DisplayName("MIX names: default (also empty, unset), demo and bench; anything else is rejected")
   void names() {
+    assertThat(Mix.names()).containsExactly("default", "demo", "bench");
     assertThat(Mix.byName(null).name()).isEqualTo("default");
     assertThat(Mix.byName("").name()).isEqualTo("default");
-    assertThat(Mix.byName(" Demo ").name()).isEqualTo("default");
+    assertThat(Mix.byName(" Demo ").name()).isEqualTo("demo");
     assertThat(Mix.byName("BENCH").name()).isEqualTo("bench");
     assertThatThrownBy(() -> Mix.byName("all"))
         .isInstanceOf(IllegalArgumentException.class)

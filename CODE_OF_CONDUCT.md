@@ -36,7 +36,12 @@ This Code of Conduct applies within all community spaces, and also applies when 
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement, the maintainers listed in [GOVERNANCE.md](GOVERNANCE.md), privately through the contact details on their GitHub profiles (a project conduct mailbox will be listed here once the project organization is set up). Do not use public issues or discussions for reports. All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement, the maintainers listed in [GOVERNANCE.md](GOVERNANCE.md), privately:
+
+* through GitHub, by contacting a maintainer listed in [GOVERNANCE.md](GOVERNANCE.md) privately (for example with a direct message on a platform the maintainer lists on their GitHub profile); if the report concerns a maintainer, contact another owner of the project organization;
+* by email to the project conduct mailbox `conduct@<project-domain>`, which will be published here once the project organization domain exists. Until then the mailbox does not exist; use GitHub.
+
+Do not use public issues, pull requests or discussions for reports. All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the reporter of any incident.
 

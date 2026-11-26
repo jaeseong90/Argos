@@ -1,0 +1,273 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Weekly agent overhead bench (docs/18 section 7, DSN-18-07; docs/19 section 6.1 and 6.4; WO-51).
+# Runs the 01 section 7.3 protocol (test/bench/bench-protocol.sh, what `benchTest` runs) on the
+# dedicated self-hosted pair argos-bench-app (this job, the measured app machine) and
+# argos-bench-load (the k6 load machine, reached over ssh), then opens a pull request with the report
+# docs/bench/<YYYY-MM-DD>-<commit7>.md. A maintainer reviews it, approves it as the next regression
+# baseline by setting "approved": true in its summary comment, and merges it (docs/bench/README.md).
+#
+#   bench    self-hosted [self-hosted, linux, argos-bench-app], read-only token. Builds the harness,
+#            the agent and the sample apps, stops the Gradle daemon (no daemon while measuring) and
+#            runs the protocol with --no-build --baseline auto --latest. The weekly sets are main and
+#            startup (ADR-0009 C-80); container, vt, worst, otel and grpc run per release candidate
+#            (workflow_dispatch with the sets input). Exit codes 0 PASS, 3 FAIL and 4 INVALID are
+#            results: the report is uploaded and published either way. 1 and 2 fail the job.
+#   publish  GitHub-hosted, the only job with write scopes (contents: write to push the branch
+#            bench/weekly-<YYYY-MM-DD>-<commit7>, pull-requests: write to open the pull request). It
+#            downloads the report artifact, commits only docs/bench files and runs `gh pr create`.
+#            It executes no repository code.
+#
+# Triggers: schedule (Saturday 18:00 UTC) and workflow_dispatch only. Never pull_request,
+# workflow_run or workflow_call: fork code must never reach the self-hosted bench runner (O-S05,
+# docs/19 section 6.6). The bench job runs only for main and release/* (docs/19 section 6.3).
+#
+# Runner preparation (a person, docs/poc/agent-overhead.md section 9): Linux x86_64 with the CPU
+# governor performance, Docker Engine (cgroup v2) for the container set, the runner user's ssh key
+# authorised on the load machine (key authentication, no GitHub secret), k6 v2.3.0 on the load
+# machine (test/bench/fetch-k6.sh). Repository variables: ARGOS_BENCH_LOADER (user@host of the load
+# machine) and ARGOS_BENCH_APP_ADDRESS (this machine's address as the load machine reaches it).
+# The OpenTelemetry reference jar (set otel) is fetched at bench time by test/bench/fetch-otel-agent.sh,
+# pinned by version and SHA-256, under test/bench/build/otel (never shipped, never fetched by Argos
+# at run time).
+#
+# Policy (docs/19 section 6.6, .github/scripts/check-workflows.sh): actions pinned to commit SHAs,
+# read-only token by default, write scopes only in the GitHub-hosted publish job, values from inputs
+# and variables reach run scripts through env: only.
+name: Weekly bench
+
+on:
+  schedule:
+    - cron: "0 18 * * 6"
+  workflow_dispatch:
+    inputs:
+      sets:
+        description: "Sets (main, startup, container, vt, worst, otel, grpc); weekly default main,startup (C-80)"
+        type: string
+        default: main,startup
+      exporter:
+        description: "Exporter of the verdict sets (C-80: verdicts use noop)"
+        type: choice
+        options:
+          - noop
+          - drop
+          - grpc
+        default: noop
+      collector:
+        description: "HOST:PORT of a collector on the load machine (grpc set or exporter); empty otherwise"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bench
+  cancel-in-progress: false
+
+env:
+  GRADLE_TOOLCHAINS_FROM_ENV: JAVA_HOME_8_X64,JAVA_HOME_21_X64
+
+jobs:
+  bench:
+    name: bench
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    runs-on: [self-hosted, linux, argos-bench-app]
+    timeout-minutes: 420
+    outputs:
+      report: ${{ steps.stage.outputs.report }}
+      verdict: ${{ steps.protocol.outputs.verdict }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8 and 21 (21 measures; 8 is the agent build toolchain)
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+      - name: Validate the inputs
+        env:
+          SETS: ${{ inputs.sets || 'main,startup' }}
+          EXPORTER: ${{ inputs.exporter || 'noop' }}
+          COLLECTOR: ${{ inputs.collector }}
+          LOADER: ${{ vars.ARGOS_BENCH_LOADER }}
+          APP_ADDR: ${{ vars.ARGOS_BENCH_APP_ADDRESS }}
+        run: |
+          fail() { echo "::error::$*"; exit 2; }
+          [[ "$SETS" =~ ^[a-z]+(,[a-z]+)*$ ]] || fail "sets '$SETS': comma-separated set names"
+          [[ "$EXPORTER" =~ ^(noop|drop|grpc)$ ]] || fail "exporter '$EXPORTER': noop, drop or grpc"
+          [[ -z "$COLLECTOR" || "$COLLECTOR" =~ ^[A-Za-z0-9.-]+:[0-9]+$ ]] || fail "collector '$COLLECTOR': HOST:PORT"
+          if [[ ",$SETS," == *",grpc,"* || "$EXPORTER" == grpc ]] && [[ -z "$COLLECTOR" ]]; then
+            fail "the grpc set and exporter need the collector input"
+          fi
+          [[ "$LOADER" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+$ ]] || fail "repository variable ARGOS_BENCH_LOADER (user@host of argos-bench-load) is missing or malformed"
+          [[ "$APP_ADDR" =~ ^[A-Za-z0-9.:-]+$ ]] || fail "repository variable ARGOS_BENCH_APP_ADDRESS is missing or malformed"
+      - name: Build the harness, the agent and the sample apps
+        run: |
+          ./gradlew -Pargos.ui.skip=true -Porg.gradle.java.installations.fromEnv="$GRADLE_TOOLCHAINS_FROM_ENV" \
+            :test:bench:benchJar :agent:agent-dist:agentJar :sample-apps:ext-stub:sampleAppJar \
+            :sample-apps:shop-boot3:sampleAppJar :sample-apps:shop-heavy:sampleAppJar
+      - name: Stop the Gradle daemon (no daemon during the measurement)
+        run: ./gradlew --stop
+      - name: Fetch the pinned OpenTelemetry reference agent (set otel only)
+        if: contains(format(',{0},', inputs.sets), ',otel,')
+        run: test/bench/fetch-otel-agent.sh
+      - name: Run the protocol
+        id: protocol
+        env:
+          SETS: ${{ inputs.sets || 'main,startup' }}
+          EXPORTER: ${{ inputs.exporter || 'noop' }}
+          COLLECTOR: ${{ inputs.collector }}
+          LOADER: ${{ vars.ARGOS_BENCH_LOADER }}
+          APP_ADDR: ${{ vars.ARGOS_BENCH_APP_ADDRESS }}
+        run: |
+          args=(--no-build --machine-profile argos-bench-app --sets "$SETS" --exporter "$EXPORTER"
+            --loader "$LOADER" --app-address "$APP_ADDR" --baseline auto --latest
+            --out "build/bench/weekly-$GITHUB_RUN_ID")
+          [[ -n "$COLLECTOR" ]] && args+=(--collector "$COLLECTOR")
+          [[ ",$SETS," == *",otel,"* ]] && args+=(--otel-agent auto)
+          set +e
+          test/bench/bench-protocol.sh "${args[@]}"
+          code=$?
+          set -e
+          case "$code" in
+            0) verdict=PASS ;;
+            3) verdict=FAIL ;;
+            4) verdict=INVALID ;;
+            *) verdict=ERROR ;;
+          esac
+          echo "verdict=$verdict" >>"$GITHUB_OUTPUT"
+          echo "code=$code" >>"$GITHUB_OUTPUT"
+          echo "bench-protocol exit code $code ($verdict)"
+      - name: Stage the report files
+        id: stage
+        if: always()
+        env:
+          VERDICT: ${{ steps.protocol.outputs.verdict }}
+        run: |
+          stage=build/bench-publish
+          rm -rf "$stage"
+          mkdir -p "$stage"
+          # New and changed files under docs/bench only: the report, its directory, latest.md, trend.*
+          git ls-files --others --modified --exclude-standard -z -- docs/bench >"$RUNNER_TEMP/bench-files"
+          if [[ -s "$RUNNER_TEMP/bench-files" ]]; then
+            xargs -0 cp --parents -t "$stage" <"$RUNNER_TEMP/bench-files"
+          fi
+          report=""
+          for f in "$stage"/docs/bench/*.md; do
+            name=$(basename "$f" .md)
+            if [[ "$name" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{7}$ ]]; then
+              [[ -z "$report" ]] || { echo "::error::more than one new report: $report, $name"; exit 1; }
+              report=$name
+            fi
+          done
+          echo "report=$report" >>"$GITHUB_OUTPUT"
+          {
+            echo "## Weekly bench"
+            echo
+            echo "Report: ${report:-none}, verdict: ${VERDICT:-none}"
+          } >>"$GITHUB_STEP_SUMMARY"
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bench-report
+          path: build/bench-publish/
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Upload the raw sets (diagnosis; not committed)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bench-raw
+          path: |
+            build/bench/weekly-*/
+            !build/bench/weekly-*/**/k6-raw.json.gz
+            !build/bench/weekly-*/**/*.jar
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Fail on a harness error (exit 1 or 2)
+        env:
+          CODE: ${{ steps.protocol.outputs.code }}
+        run: |
+          case "$CODE" in
+            0 | 3 | 4) echo "result recorded (exit $CODE)" ;;
+            *) echo "::error::bench-protocol.sh failed with exit code ${CODE:-none}"; exit 1 ;;
+          esac
+
+  publish:
+    name: publish
+    needs: bench
+    if: needs.bench.result == 'success' && needs.bench.outputs.report != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check out (the token pushes the report branch)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+      - name: Download the report
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bench-report
+          path: ${{ runner.temp }}/bench-report
+      - name: Commit the report and open the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.ref_name }}
+          REPORT: ${{ needs.bench.outputs.report }}
+          VERDICT: ${{ needs.bench.outputs.verdict }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [[ "$REPORT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{7}$ ]] || { echo "::error::bad report name '$REPORT'"; exit 1; }
+          [[ "$VERDICT" =~ ^(PASS|FAIL|INVALID)$ ]] || { echo "::error::bad verdict '$VERDICT'"; exit 1; }
+          art="$RUNNER_TEMP/bench-report"
+          # Only regular files below docs/bench, no links.
+          if [[ -n "$(find "$art" -type l)" ]]; then echo "::error::links in the artifact"; exit 1; fi
+          outside=$(cd "$art" && find . -type f ! -path './docs/bench/*')
+          if [[ -n "$outside" ]]; then echo "::error::files outside docs/bench: $outside"; exit 1; fi
+          summary="$art/docs/bench/$REPORT/summary.json"
+          [[ -f "$art/docs/bench/$REPORT.md" && -f "$summary" ]] || { echo "::error::report $REPORT incomplete"; exit 1; }
+
+          branch="bench/weekly-$REPORT"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          cp -R "$art/docs/bench/." docs/bench/
+          git add -- docs/bench
+          bad=$(git diff --cached --name-only | grep -v '^docs/bench/' || true)
+          if [[ -n "$bad" ]]; then echo "::error::staged files outside docs/bench: $bad"; exit 1; fi
+          git commit -s -m "bench: weekly report $REPORT ($VERDICT)"
+          git push origin "$branch"
+
+          regression=$(jq -r '.regression // "NOT COMPARED"' "$summary")
+          body="$RUNNER_TEMP/pr-body.md"
+          {
+            if [[ "$VERDICT" != PASS || "$regression" == WARN ]]; then
+              echo "> [!CAUTION]"
+              echo "> Verdict **$VERDICT**, regression **$regression** (18 section 7.7). A person decides."
+              echo
+            fi
+            echo "Weekly overhead bench report [\`docs/bench/$REPORT.md\`]($GITHUB_SERVER_URL/$REPO/blob/$branch/docs/bench/$REPORT.md) from run $RUN_URL."
+            echo
+            echo "| Requirement | Verdict |"
+            echo "|---|---|"
+            jq -r '.requirements // {} | to_entries[] | "| \(.key) | \(.value) |"' "$summary"
+            echo
+            echo "Overall verdict: **$VERDICT**. Regression against the approved baseline: **$regression**."
+            echo "Weekly runs measure only main and startup (ADR-0009 C-80), so the other requirements stay INVALID (not measured)."
+            echo
+            echo "Approval (docs/bench/README.md): when the measured sets are valid, set \`\"approved\": true\`"
+            echo "in the summary comment at the end of the report in this branch, then merge. An approved report"
+            echo "becomes the baseline of \`--baseline auto\`. Do not approve a report whose measured sets are INVALID."
+          } >"$body"
+          gh pr create --repo "$REPO" --base "$BASE" --head "$branch" \
+            --title "bench: weekly report $REPORT ($VERDICT, regression $regression)" --body-file "$body"

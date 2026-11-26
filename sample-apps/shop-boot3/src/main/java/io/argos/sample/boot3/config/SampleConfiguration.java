@@ -23,6 +23,7 @@ import io.argos.sample.common.spring.SpringJdbcAccess;
 import java.time.Clock;
 import java.util.List;
 import javax.sql.DataSource;
+import org.springframework.boot.autoconfigure.orm.jpa.HibernatePropertiesCustomizer;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -67,6 +68,20 @@ public class SampleConfiguration implements WebMvcConfigurer {
   @Primary
   public DataSource dataSource(SampleDataSource sampleDataSource) {
     return sampleDataSource.dataSource();
+  }
+
+  /**
+   * The JPA dialect of the vendor databases without one of Hibernate's own (SAMPLE_DB=tibero,
+   * altibase, cubrid; db2 named explicitly, WO-50); the other databases are detected by Hibernate.
+   */
+  @Bean
+  public HibernatePropertiesCustomizer sampleHibernateDialect(SampleConfig config) {
+    String dialect = config.db().hibernateDialect();
+    return properties -> {
+      if (dialect != null) {
+        properties.putIfAbsent("hibernate.dialect", dialect);
+      }
+    };
   }
 
   @Bean

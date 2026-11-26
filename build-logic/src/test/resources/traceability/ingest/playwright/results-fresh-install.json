@@ -1,0 +1,138 @@
+{
+  "config": {
+    "rootDir": "C:/workspace/Argos/ui",
+    "projects": [
+      { "name": "fresh-setup", "testDir": "C:/workspace/Argos/ui/e2e/setup" },
+      { "name": "fresh-install", "testDir": "C:/workspace/Argos/ui/e2e/specs/fresh" },
+      { "name": "fresh-teardown", "testDir": "C:/workspace/Argos/ui/e2e/setup" }
+    ]
+  },
+  "suites": [
+    {
+      "title": "e2e\\setup\\fresh.setup.ts",
+      "file": "e2e/setup/fresh.setup.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "start the fresh-install stack (PostgreSQL, ClickHouse, server; no administrator, setup token copied)",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 900000,
+              "annotations": [{ "type": "stack-url", "description": "http://127.0.0.1:57433" }],
+              "expectedStatus": "passed",
+              "projectId": "fresh-setup",
+              "projectName": "fresh-setup",
+              "results": [
+                { "workerIndex": 0, "status": "passed", "duration": 18591, "errors": [], "retry": 0, "startTime": "2026-11-26T01:33:03.697Z", "annotations": [] }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6f637c74e0a912313793-f869668a4cbaa87e5755",
+          "file": "e2e/setup/fresh.setup.ts",
+          "line": 12,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "e2e\\setup\\fresh.teardown.ts",
+      "file": "e2e/setup/fresh.teardown.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "T-SEC-46 (fresh) server CSP counter: no growth of argos_csp_violations_total over the fresh-install run; the stack is removed",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [
+                { "type": "req", "description": "SEC-46" },
+                { "type": "csp-counter", "description": "increase 0 (informational, C-187)" }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "fresh-teardown",
+              "projectName": "fresh-teardown",
+              "results": [
+                { "workerIndex": 0, "status": "passed", "duration": 2100, "errors": [], "retry": 0, "startTime": "2026-11-26T01:33:29.112Z", "annotations": [] }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6f637c74e0a912313793-aa",
+          "file": "e2e/setup/fresh.teardown.ts",
+          "line": 20,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "e2e\\specs\\fresh\\setup-wizard.spec.ts",
+      "file": "e2e/specs/fresh/setup-wizard.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "T-SEC-47 (fresh) without a token, with a wrong one or a too short password the setup is refused (token message, 403/422) and nothing is created",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [
+                { "type": "serial" },
+                { "type": "req", "description": "SEC-47" },
+                { "type": "req", "description": "SEC-48" },
+                { "type": "req", "description": "SEC-31" }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "fresh-install",
+              "projectName": "fresh-install",
+              "results": [
+                { "workerIndex": 0, "status": "passed", "duration": 3000, "errors": [], "retry": 0, "startTime": "2026-11-26T01:33:22.500Z", "annotations": [] }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6f637c74e0a912313793-bb",
+          "file": "e2e/specs/fresh/setup-wizard.spec.ts",
+          "line": 40,
+          "column": 3
+        },
+        {
+          "title": "T-E2E-059 T-SEC-47 (fresh) the real wizard: token, administrator (12 characters), IP mode chosen, first application with its agent token once (no-store), finish",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [
+                { "type": "serial" },
+                { "type": "req", "description": "SEC-47" },
+                { "type": "req", "description": "SEC-02" }
+              ],
+              "expectedStatus": "passed",
+              "projectId": "fresh-install",
+              "projectName": "fresh-install",
+              "results": [
+                { "workerIndex": 0, "status": "passed", "duration": 4000, "errors": [], "retry": 0, "startTime": "2026-11-26T01:33:25.800Z", "annotations": [] }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6f637c74e0a912313793-cc",
+          "file": "e2e/specs/fresh/setup-wizard.spec.ts",
+          "line": 80,
+          "column": 3
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": { "startTime": "2026-11-26T01:33:02.938Z", "duration": 27542.595, "expected": 4, "skipped": 0, "unexpected": 0, "flaky": 0 }
+}

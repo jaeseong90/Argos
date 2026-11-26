@@ -14,6 +14,7 @@ import { isApiError } from '../api/errors';
 import { queryKeys } from '../api/queryKeys';
 import { GlobalShortcuts } from '../app/GlobalShortcuts';
 import { useDocumentTitle } from '../app/useDocumentTitle';
+import { DemoBanner } from '../components/DemoBanner';
 import { EmptyState } from '../components/EmptyState';
 import { SafeText } from '../components/SafeText';
 import { useSecondsSinceMessage } from '../realtime/hooks';
@@ -141,6 +142,8 @@ export function Shell() {
       <TopBar />
       <SideMenu />
       <main id="argos-main" className="argos-shell__content" tabIndex={-1}>
+        {/* Demo profile only (setup/status demo_mode, WO-41); renders nothing otherwise. */}
+        <DemoBanner />
         <UrlNotices />
         {/* The screen may name the keys of its filter values for the chips (filterLabels.tsx). */}
         <FilterLabelProvider>

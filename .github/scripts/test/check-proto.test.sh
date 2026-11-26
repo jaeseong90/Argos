@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
+# req: O-R02, O-R03
+# test-ids: T-BLD-035
 #
 # Tests for .github/scripts/check-proto.sh on copies of the real argos.v1 protos (proto/).
 # Cases that run buf use the pinned buf container and are skipped (reported) when Docker is not

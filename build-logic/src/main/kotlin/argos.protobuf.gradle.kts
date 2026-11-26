@@ -48,4 +48,12 @@ dependencies {
   "api"(catalog.library("protobuf-java"))
   "api"(catalog.library("grpc-protobuf"))
   "api"(catalog.library("grpc-stub"))
+  // grpc-java's transitive Guava is raised to the catalog floor (CVE-2026-102554, WO-44 T-BLD-008).
+  // A constraint on api reaches every consumer of :proto, including the shaded agent jar.
+  val guava = catalog.library("grpc-guava-android").get()
+  constraints {
+    "api"("${guava.module}:${guava.versionConstraint.requiredVersion}") {
+      because("grpc-java 1.85.1 requests guava 33.6.0-android (CVE-2026-102554)")
+    }
+  }
 }

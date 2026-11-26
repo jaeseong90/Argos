@@ -20,6 +20,9 @@ responses.
 | `org.apache.catalina.connector.ResponseFacade.flushBuffer()` | by name (Tomcat 9, 10.1, 11) | `ResponseFlushAdvice` | streaming end |
 | `ResponseFacade.getOutputStream()`, `getWriter()` | by name | `ResponseStreamAdvice` | the returned stream is linked to the facade (also before `startAsync`) |
 | `org.apache.catalina.connector.CoyoteOutputStream.flush()`, `CoyoteWriter.flush()` | by name | `ResponseFlushAdvice` | streaming end |
+| Jetty 9.4 `org.eclipse.jetty.server.Response` (`flushBuffer()`, `getOutputStream()`, `getWriter()`), `HttpOutput.flush()`, `ResponseWriter.flush()` | by name (WO-50) | `ResponseFlushAdvice` / `ResponseStreamAdvice` | streaming end, stream link |
+| Jetty 12.0 and 12.1 `org.eclipse.jetty.ee10.servlet` and `org.eclipse.jetty.ee11.servlet`: `ServletApiResponse` (`flushBuffer()`, `getOutputStream()`, `getWriter()`), `HttpOutput.flush()`, `ResponseWriter.flush()` | by name (WO-50) | `ResponseFlushAdvice` / `ResponseStreamAdvice` | streaming end, stream link |
+| Undertow 2.2 and 2.3 `io.undertow.servlet.spec.HttpServletResponseImpl` (`flushBuffer()`, `getOutputStream()`, `getWriter()`), `ServletOutputStreamImpl.flush()`, `ServletPrintWriterDelegate.flush()` | by name (WO-50) | `ResponseFlushAdvice` / `ResponseStreamAdvice` | streaming end, stream link |
 
 Witness: `javax.servlet.http.HttpServlet` or `jakarta.servlet.http.HttpServlet` (resource lookup).
 The Tomcat response classes are matched by exact name and method shape; their presence is their
@@ -108,8 +111,9 @@ namespaces are defined in every matching loader, and defining a class resolves i
   servlet-async` no listener is registered and an async request ends at the exit of its last ASYNC
   dispatch or of the ERROR dispatch after a timeout; a timeout without an error page and
   `AsyncContext.complete()` without a dispatch stay open until `transaction.max-duration-ms`.
-- Containers outside the flush list (Jetty, Undertow until WO-50): SSE and `StreamingResponseBody`
-  end at `onComplete`/`onTimeout` of the listener, with `transaction.max-duration-ms` as the bound.
+- Containers outside the flush list (Tomcat, Jetty 9.4/12.0/12.1 and Undertow 2.2/2.3 are on it
+  since WO-50): SSE and `StreamingResponseBody` end at `onComplete`/`onTimeout` of the listener,
+  with `transaction.max-duration-ms` as the bound.
 - Provisional service name `[<context path> ]<METHOD> <path>`. When the REQUEST dispatch begins
   the transaction, the Servlet 4+ `HttpServletMapping` replaces it as a non-fixed candidate when
   its match is EXACT, PATH or EXTENSION (`GET /items/*`, `GET *.do`; the container maps the request
@@ -151,8 +155,12 @@ recording proxy request of each namespace and asserts that.
   `jakarta.servlet.http.HttpServlet`.
 - Run: `./gradlew :agent:agent-instrumentation:servlet:test`; end to end
   `./gradlew :agent:agent-testing:integrationTest -Pagent.e2e=shop-boot2@8,shop-boot3@21,shop-boot4@21,shop-war-javax@8,shop-war-jakarta@21 --tests '*servlet*'`.
-- Jetty and Undertow are not verified yet (WO-50); javax.servlet 3.1 containers are compiled for
-  but not run.
+- Jetty and Undertow (WO-50): their response class names are in the flush list
+  (`ServletModuleTest` T-AG-016b), and the shop jar apps run on them with `SAMPLE_CONTAINER=jetty`
+  or `undertow` (shop-boot2 on Jetty 9.4, a javax.servlet 3.1 container, and Undertow 2.2;
+  shop-boot3 on Jetty 12.0 ee10 and Undertow 2.3; shop-boot4 on Jetty 12.1 ee11). The agent runs
+  on them are compatibility matrix rows (`test/matrix/matrix.yaml`, T-MX-130..139); they stay
+  **not yet verified** below until a matrix run passes (`docs/compatibility-matrix.md`).
 
 ### Details
 
@@ -167,5 +175,6 @@ injected but never linked. jakarta.servlet 5.0 has `HttpServletMapping` itself.
 |---|---|---|
 | javax.servlet 3.1-4.0 | Tomcat 9 (Spring Boot 2.7 `shop-boot2`, standalone `shop-war-javax`) | supported; boundary verified in WO-02, WO-12 cases in the agent-testing integration tests (results: WO-12 report) |
 | jakarta.servlet 5.0-6.1 | Tomcat 10.1 and 11 (Spring Boot 3.x/4.x `shop-boot3`/`shop-boot4`, standalone `shop-war-jakarta`) | supported; boundary verified in WO-02, WO-12 cases in the agent-testing integration tests (results: WO-12 report) |
-| javax.servlet (ee8), jakarta.servlet (ee10) | Jetty | boundary: expected to work; flush end not instrumented; **not yet verified** (WO-50) |
-| jakarta.servlet | Undertow 2.3 | boundary: expected to work; flush end not instrumented; **not yet verified** (WO-50) |
+| javax.servlet 3.1 | Jetty 9.4 (`shop-boot2`, `SAMPLE_CONTAINER=jetty`) | flush end instrumented by name (WO-50); **not yet verified** (matrix row, T-MX-130..139) |
+| jakarta.servlet 6.0, 6.1 | Jetty 12.0 ee10 (`shop-boot3`), Jetty 12.1 ee11 (`shop-boot4`) | flush end instrumented by name (WO-50); **not yet verified** (matrix rows) |
+| javax.servlet 4.0, jakarta.servlet 6.0 | Undertow 2.2 (`shop-boot2`), Undertow 2.3 (`shop-boot3`) | flush end instrumented by name (WO-50); **not yet verified** (matrix rows) |

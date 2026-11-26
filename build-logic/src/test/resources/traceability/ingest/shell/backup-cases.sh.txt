@@ -1,0 +1,9 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+# Fixture of a container case file (T-BLD-014d): run by backup.test.sh inside a container.
+# req: SEC-84
+. /t/container/lib.sh
+
+check "T-SEC-84b: retention keeps the ClickHouse chain of $kept sets" retention_ok
+check "T-SEC-84c: no plaintext copy next to the .gpg file" no_plaintext
+finish

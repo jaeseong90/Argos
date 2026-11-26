@@ -118,7 +118,8 @@ class SampleConfigTest {
   @Test
   @DisplayName("Invalid values fail with the variable name")
   void invalidValues() {
-    assertThatThrownBy(() -> config("SAMPLE_DB", "db2")).hasMessageContaining("SAMPLE_DB");
+    // db2 is a valid SAMPLE_DB since WO-50 (the nine databases of 18 §6.3).
+    assertThatThrownBy(() -> config("SAMPLE_DB", "sybase")).hasMessageContaining("SAMPLE_DB");
     assertThatThrownBy(() -> config("SAMPLE_POOL", "c3p0")).hasMessageContaining("SAMPLE_POOL");
     assertThatThrownBy(() -> config("SAMPLE_POOL_MAX", "0"))
         .hasMessageContaining("SAMPLE_POOL_MAX");

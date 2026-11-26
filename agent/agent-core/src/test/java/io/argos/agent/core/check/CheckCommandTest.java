@@ -120,6 +120,8 @@ class CheckCommandTest {
             .setAccepted(true)
             .setAppId(3)
             .setInstanceId(41)
+            // A session: a server older than check_only (C-240 (1)) registered the instance.
+            .setSessionId("6f1c2a52-8d2b-4d7e-9a43-0c5e2f6b9d11")
             .setServerVersion("1.0.0")
             .setProtocolVersion(1)
             .setMinAgentVersion("0.8.0")
@@ -220,6 +222,49 @@ class CheckCommandTest {
         .contains("Configuration (keys not at their default):")
         .contains("  server.address = collector.example:9100 (sysprop)")
         .contains("  app.env = prod (sysprop)");
+  }
+
+  /** A server's answer to the check-only Hello (C-240 (1)): accepted, no session, instance 0. */
+  static CheckProbe.Result checkOnlyAccepted() {
+    CheckProbe.Result result = accepted(5);
+    result.hello = result.hello.toBuilder().setInstanceId(0).clearSessionId().build();
+    result.byeSent = false;
+    return result;
+  }
+
+  @Test
+  @Tag("req:C-240")
+  @DisplayName(
+      "T-AG-068b check-only answer (C-240 (1)): hello PASS 'check-only (no instance registered)',"
+          + " the note says the server registered nothing, exit 0")
+  void checkOnlyAnswer() throws IOException {
+    Run run = run(new String[] {"--check"}, env(goodProperties(), checkOnlyAccepted()));
+    assertThat(run.exit).as(run.out).isZero();
+    assertThat(line(run.out, "hello"))
+        .contains("PASS")
+        .contains("accepted by server 1.0.0")
+        .contains("app id 3, check-only (no instance registered), instance 'app-host-check'")
+        .doesNotContain("instance id");
+    assertThat(line(run.out, "clock")).contains("PASS");
+    assertThat(run.out)
+        .contains(
+            "Note: the hello check was a check-only session as instance 'app-host-check': the"
+                + " server registered no instance for it")
+        .doesNotContain("AgentBye");
+    assertThat(CheckProbe.checkOnlyAnswer(checkOnlyAccepted().hello)).isTrue();
+    assertThat(CheckProbe.checkOnlyAnswer(accepted(0).hello))
+        .as("a session id: an older server registered the instance")
+        .isFalse();
+    assertThat(CheckProbe.checkOnlyAnswer(null)).isFalse();
+
+    // An older server ignores check_only and registers '<host>-check' (C-240 (1)): the note says
+    // so (the check ended that session with AgentBye).
+    Run older = run(new String[] {"--check"}, env(goodProperties(), accepted(5)));
+    assertThat(line(older.out, "hello")).contains("instance id 41");
+    assertThat(older.out)
+        .contains(
+            "the server lists that instance as stopped (this server is older than this agent and"
+                + " does not know check-only sessions)");
   }
 
   @Test

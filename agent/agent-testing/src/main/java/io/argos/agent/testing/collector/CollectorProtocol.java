@@ -137,7 +137,8 @@ public interface CollectorProtocol {
       int protocolVersion,
       long agentEpoch,
       long sentAtMs,
-      boolean plaintextDeclared) {}
+      boolean plaintextDeclared,
+      boolean checkOnly) {}
 
   /**
    * A {@code ServerHello}.

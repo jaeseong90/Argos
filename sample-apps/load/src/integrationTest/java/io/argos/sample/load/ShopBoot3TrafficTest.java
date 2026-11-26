@@ -174,7 +174,12 @@ class ShopBoot3TrafficTest {
             .as("seed.env never echoes a secret value")
             .doesNotContain(Seeds.SENTINEL);
       } else {
-        soft.assertThat(body).as("%s %s body", entry.id(), entry.path()).contains(Seeds.SENTINEL);
+        // The phone and card exception seeds carry their real-shaped sentinel instead (C-250 (1)).
+        String expected =
+            entry.id().equals("seed.phone.error")
+                ? Seeds.PHONE_PATTERN
+                : entry.id().equals("seed.card.error") ? Seeds.CARD_PATTERN : Seeds.SENTINEL;
+        soft.assertThat(body).as("%s %s body", entry.id(), entry.path()).contains(expected);
       }
     }
     soft.assertAll();

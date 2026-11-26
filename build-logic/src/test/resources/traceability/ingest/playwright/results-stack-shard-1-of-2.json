@@ -1,0 +1,126 @@
+{
+  "config": { "rootDir": "/work/ui", "projects": [{ "name": "stack", "testDir": "/work/ui/e2e/specs" }] },
+  "suites": [
+    {
+      "title": "e2e/specs/stats.spec.ts",
+      "file": "e2e/specs/stats.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "T-E2E-stats statistics screens",
+          "file": "e2e/specs/stats.spec.ts",
+          "column": 1,
+          "line": 5,
+          "specs": [
+            {
+              "title": "T-E2E-stats-1 list values equal the API",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectName": "stack",
+                  "results": [{ "status": "passed", "retry": 0, "startTime": "2026-11-26T02:00:00.000Z", "annotations": [] }],
+                  "status": "expected"
+                }
+              ],
+              "file": "e2e/specs/stats.spec.ts",
+              "line": 9,
+              "column": 3
+            },
+            {
+              "title": "T-E2E-stats-2 CSV export",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "annotations": [{ "type": "req", "description": "F-U07, F-U08" }],
+                  "expectedStatus": "passed",
+                  "projectName": "stack",
+                  "results": [{ "status": "timedOut", "retry": 0, "startTime": "2026-11-26T02:01:00.000Z", "annotations": [] }],
+                  "status": "unexpected"
+                }
+              ],
+              "file": "e2e/specs/stats.spec.ts",
+              "line": 20,
+              "column": 3
+            },
+            {
+              "title": "T-E2E-stats-3 version markers",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "annotations": [{ "type": "fixme", "description": "needs the deployment marker seed (C-201)" }],
+                  "expectedStatus": "skipped",
+                  "projectName": "stack",
+                  "results": [{ "status": "skipped", "retry": 0, "startTime": "2026-11-26T02:02:00.000Z", "annotations": [] }],
+                  "status": "skipped"
+                }
+              ],
+              "file": "e2e/specs/stats.spec.ts",
+              "line": 30,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "e2e/specs/required.spec.ts",
+      "file": "e2e/specs/required.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Active transactions (docs/05 §2.6)",
+          "file": "e2e/specs/required.spec.ts",
+          "column": 1,
+          "line": 13,
+          "specs": [
+            {
+              "title": "T-E2E-active-1 2.6-1 per-instance bars equal the last real push and REST",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "annotations": [{ "type": "req", "description": "F-U04" }],
+                  "expectedStatus": "passed",
+                  "projectName": "stack",
+                  "results": [{ "status": "passed", "retry": 0, "startTime": "2026-11-26T02:03:00.000Z", "annotations": [] }],
+                  "status": "expected"
+                }
+              ],
+              "file": "e2e/specs/required.spec.ts",
+              "line": 13,
+              "column": 1
+            },
+            {
+              "title": "expected failure that passed unexpectedly",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "annotations": [{ "type": "req", "description": "F-U04" }],
+                  "expectedStatus": "failed",
+                  "projectName": "stack",
+                  "results": [{ "status": "passed", "retry": 0, "startTime": "2026-11-26T02:04:00.000Z", "annotations": [] }],
+                  "status": "unexpected"
+                }
+              ],
+              "file": "e2e/specs/required.spec.ts",
+              "line": 13,
+              "column": 1
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": { "expected": 2, "skipped": 1, "unexpected": 2, "flaky": 0 }
+}

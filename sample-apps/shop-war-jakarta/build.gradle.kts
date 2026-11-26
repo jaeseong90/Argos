@@ -82,6 +82,8 @@ sampleApp {
 dependencies {
   implementation(platform(libs.sample.boot3.bom))
   implementation(project(":sample-apps:shop-boot3"))
+  // WarAppConfiguration (WO-50): the catalog constants and the shutdown cleanup of common.
+  implementation(project(":sample-apps:common"))
   // ServletInitializer compiles against SpringBootServletInitializer (spring-boot) and the servlet
   // API; shop-boot3 brings them at run time but keeps them off its consumers' compile class path.
   compileOnly(libs.sample.starter.web)

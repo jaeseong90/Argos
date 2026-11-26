@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -15,6 +16,8 @@ import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.sql.DataSource;
 
 /**
@@ -45,6 +48,16 @@ public final class ShopSchema {
       try {
         try (Statement statement = connection.createStatement()) {
           for (String sql : statements(db)) {
+            if (db.createsMissingObjectsOnly()) {
+              if (CREATE_SEQUENCE.matcher(sql).matches()) {
+                boolean unused = createSequence(statement, sql);
+                continue;
+              }
+              DatabaseMetaData metaData = connection.getMetaData();
+              if (exists(metaData, schemaOf(db, metaData), sql)) {
+                continue;
+              }
+            }
             statement.execute(sql);
           }
         }
@@ -62,6 +75,76 @@ public final class ShopSchema {
     } catch (SQLException e) {
       throw new ShopDataException("Schema initialization failed for SAMPLE_DB=" + db.id(), e);
     }
+  }
+
+  private static final Pattern CREATE_TABLE =
+      Pattern.compile("(?is)\\s*CREATE\\s+TABLE\\s+(\\w+).*");
+  private static final Pattern CREATE_INDEX =
+      Pattern.compile("(?is)\\s*CREATE\\s+INDEX\\s+(\\w+)\\s+ON\\s+(\\w+).*");
+  private static final Pattern CREATE_SEQUENCE =
+      Pattern.compile("(?is)\\s*CREATE\\s+SEQUENCE\\s+(\\w+).*");
+
+  /**
+   * A vendor script's {@code CREATE SEQUENCE}: the JDBC metadata has no portable way to list
+   * sequences, so the statement runs and a failure (the sequence exists) is ignored; a sequence
+   * that really cannot be created fails the first insert that uses it.
+   */
+  private static boolean createSequence(Statement statement, String sql) {
+    try {
+      statement.execute(sql);
+      return true;
+    } catch (SQLException exists) {
+      // Created by an earlier start of the app (the usual case on a trusted runner's database).
+      return false;
+    }
+  }
+
+  /** The schema of the vendor database's objects: the user (Tibero, Altibase, Db2), else any. */
+  static String schemaOf(DbKind db, DatabaseMetaData metaData) throws SQLException {
+    return db == DbKind.CUBRID ? null : upper(metaData.getUserName());
+  }
+
+  /**
+   * Whether the object that a plain {@code CREATE TABLE} or {@code CREATE INDEX} statement of a
+   * vendor script creates exists already in {@code schema} (null: any) according to the JDBC
+   * metadata ({@link DbKind#createsMissingObjectsOnly()}). Other statements: false.
+   */
+  static boolean exists(DatabaseMetaData metaData, String schema, String sql) throws SQLException {
+    Matcher table = CREATE_TABLE.matcher(sql);
+    if (table.matches()) {
+      return hasTable(metaData, schema, table.group(1));
+    }
+    Matcher index = CREATE_INDEX.matcher(sql);
+    if (index.matches()) {
+      String name = index.group(1);
+      for (String tableName : new String[] {upper(index.group(2)), index.group(2)}) {
+        try (ResultSet rs = metaData.getIndexInfo(null, schema, tableName, false, true)) {
+          while (rs.next()) {
+            if (name.equalsIgnoreCase(rs.getString("INDEX_NAME"))) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  private static boolean hasTable(DatabaseMetaData metaData, String schema, String name)
+      throws SQLException {
+    // Every table type: drivers name base tables differently ("TABLE", "BASE TABLE").
+    try (ResultSet rs = metaData.getTables(null, schema, null, null)) {
+      while (rs.next()) {
+        if (name.equalsIgnoreCase(rs.getString("TABLE_NAME"))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private static String upper(String value) {
+    return value == null ? null : value.toUpperCase(java.util.Locale.ROOT);
   }
 
   /** Product id of item {@code index} (0-based) of order {@code orderId}. */

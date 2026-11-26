@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+# Form for the "Q&A" Discussions category (slug q-a, GOVERNANCE.md "Discussions").
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ask anything about installing, configuring or using Argos APM. Answers come from the community on a best-effort basis.
+        **Do not post security vulnerabilities here**; follow SECURITY.md. Found a defect? Open a bug report issue instead.
+        Remove tokens, passwords, host names, IP addresses and personal data from everything you paste.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What are you trying to do, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Argos server and agent version, application JDK, Spring Boot and servlet container, if relevant.
+      placeholder: "server 0.1.0, agent 0.1.0, Temurin 21.0.4, Spring Boot 3.3.4, embedded Tomcat 10.1.30"
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: Documentation sections you read, configuration you used, commands you ran.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or configuration
+      render: text

@@ -291,7 +291,9 @@ public final class Manifest {
     // Trace samples describe whole traces from their root: a callee (callerAppId != 0) shares the
     // root's trace id but would report its own app, start and subtree size. Callees have no
     // callees of their own (TransactionFactory.child), so 1 + children is the trace size.
-    if (tx.callerAppId == 0 && traceSamples.size() < 100) {
+    // A batch root has no trace: its trace_id stays all-zero (TransactionFactory.root), which W3C
+    // trace context makes invalid, so it is never a trace sample.
+    if (tx.callerAppId == 0 && hasTrace(tx) && traceSamples.size() < 100) {
       Map<String, Object> t = new LinkedHashMap<>();
       t.put("trace_id", HexFormat.of().formatHex(tx.traceId));
       t.put("app_id", tx.instance.app.id);
@@ -320,6 +322,16 @@ public final class Manifest {
               "ts",
               Instant.ofEpochMilli(tx.tsMs).toString()));
     }
+  }
+
+  /** Whether the transaction carries a trace id (not all-zero; batch roots have none). */
+  private static boolean hasTrace(Transaction tx) {
+    for (byte b : tx.traceId) {
+      if (b != 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Samples for query parameters (Q4-Q6, Q11). */

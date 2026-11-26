@@ -1,0 +1,111 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# 72-hour soak (docs/18 section 11.2, T-SOAK-001, T-NFR-18; docs/19 sections 6.3 and 6.6; WO-52).
+# test/soak/README.md describes the runner, the samples and the verdicts.
+#
+#   soak  self-hosted [self-hosted, linux, argos-bench-app], read-only token, no secrets. Runs
+#         `./gradlew soakTest -Pbench.machine-profile=argos-bench-app` for the given duration
+#         (default 72h): the server bootJar in a child JVM over Testcontainers PostgreSQL and
+#         ClickHouse, shop-boot3 and shop-batch with the agent (NMT on), the sample-apps load
+#         generator, samples of agent heap, NMT, threads, file descriptors, ClickHouse parts, WAL size,
+#         consistency and alerts. OOM 0 and the ClickHouse settings are PASS/FAIL in every run; the
+#         slope and budget verdicts are PASS/FAIL only for the full 72 hours on this dedicated machine.
+#         With -Psoak.publish=true the runner also writes docs/bench/soak-<date>.md; the job uploads it
+#         with the run directory. A maintainer commits the report by hand (no write scope here, no
+#         publish job). Release notes keep saying that the 72-hour soak was not run until a valid run
+#         exists (ADR-0010 C-246 (2)).
+#
+# Trigger: workflow_dispatch only (a person starts the run before a release candidate). Never
+# pull_request, workflow_run or workflow_call: fork code must never reach the self-hosted runner
+# (O-S05, docs/19 section 6.6). The job has the trusted-ref guard, checks out without persisted
+# credentials, has no write scope and runs in the 'trusted' environment.
+#
+# The run occupies argos-bench-app for about three days: the weekly bench (bench.yml, Saturday 18:00
+# UTC) queues behind it on the same runner, so start the soak right after a weekly bench. The
+# timeout (4,560 minutes = 76 hours) leaves four hours for the build, the stack start and the report.
+# GitHub keeps a self-hosted job running for up to 5 days; if the artifact upload at the end fails,
+# the report stays on the runner under test/soak/build/reports/soak/ (collect it by hand).
+#
+# Runner preparation (a person, docs/poc/agent-overhead.md section 9 and test/soak/README.md): Linux
+# x86_64, Docker Engine (cgroup v2), at least 16 GiB of memory, nothing else running on the machine
+# during the soak, outbound HTTPS to GitHub, Maven Central, the Gradle distribution and Docker Hub.
+#
+# Policy (docs/19 section 6.6, .github/scripts/check-workflows.sh): actions pinned to commit SHAs,
+# read-only token, values from inputs reach run scripts through env: only.
+name: Soak
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Soak duration (72h for a verdict; shorter runs such as 15m or 6h are INVALID)"
+        type: string
+        default: 72h
+      tps:
+        description: "Load generator rate in requests per second (18 section 11.2: 500)"
+        type: string
+        default: "500"
+      vt:
+        description: "Run shop-boot3 on virtual threads (SAMPLE_VT, JDK 21; ADR-0010 C-232 (9))"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soak
+  cancel-in-progress: false
+
+env:
+  GRADLE_TOOLCHAINS_FROM_ENV: JAVA_HOME_8_X64,JAVA_HOME_17_X64,JAVA_HOME_21_X64
+
+jobs:
+  soak:
+    name: soak
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    runs-on: [self-hosted, linux, argos-bench-app]
+    environment: trusted
+    timeout-minutes: 4560
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8, 17 and 21 (21 runs Gradle, the server and the apps; 8 and 17 are toolchains)
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            17
+            21
+      - name: Validate the inputs
+        env:
+          DURATION: ${{ inputs.duration }}
+          TPS: ${{ inputs.tps }}
+        run: |
+          fail() { echo "::error::$*"; exit 2; }
+          [[ "$DURATION" =~ ^[1-9][0-9]{0,3}[mh]$ ]] || fail "duration '$DURATION': minutes or hours, for example 72h or 15m"
+          [[ "$TPS" =~ ^[1-9][0-9]{0,4}$ ]] || fail "tps '$TPS': a positive whole number"
+      - name: Run the soak
+        env:
+          DURATION: ${{ inputs.duration }}
+          TPS: ${{ inputs.tps }}
+          VT: ${{ inputs.vt }}
+        run: |
+          args=(-Pargos.ui.skip=true "-Porg.gradle.java.installations.fromEnv=$GRADLE_TOOLCHAINS_FROM_ENV"
+            -Pbench.machine-profile=argos-bench-app "-Psoak.duration=$DURATION" "-Psoak.tps=$TPS"
+            -Psoak.publish=true)
+          [[ "$VT" == true ]] && args+=(-Psoak.vt=true)
+          ./gradlew "${args[@]}" soakTest
+      - name: Upload the soak report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: soak-report
+          path: |
+            test/soak/build/reports/soak/
+            docs/bench/soak-*.md
+          if-no-files-found: warn
+          retention-days: 90

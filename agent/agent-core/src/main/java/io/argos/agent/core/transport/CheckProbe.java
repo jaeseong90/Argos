@@ -44,10 +44,13 @@ import javax.net.ssl.SSLSession;
  * TransportSettings}: {@code server.address}, TLS with {@code server.tls.ca-file} or the JDK trust,
  * {@code insecure-skip-verify}), the token in the call credentials only ({@link TokenCredentials}),
  * never a proxy ({@link GrpcTransport#NO_PROXY}), a 5 s TCP connect timeout. It sends one {@code
- * AgentHello} (the instance name given by the caller, {@code <app.instance or host>-check}), waits
- * for the {@code ServerHello} and, when the session was accepted, ends it at once with {@code
- * AgentBye{SHUTDOWN}} and a half-close, so that the server records a clean stop (11 §7, C-214) and
- * no down alert. Nothing else is sent: no batch, no heartbeat.
+ * AgentHello} (the instance name given by the caller, {@code <app.instance or host>-check}) with
+ * {@code check_only} set (ADR-0010 C-240 (1)) and waits for the {@code ServerHello}. A server that
+ * knows {@code check_only} answers it without a session (no {@code session_id}, instance id 0),
+ * registers no instance and ends the stream itself; the probe then only half-closes. A server older
+ * than this agent ignores the field and opens a normal session for the instance: the probe ends it
+ * at once with {@code AgentBye{SHUTDOWN}} and a half-close, so that the server records a clean stop
+ * (11 §7, C-214) and no down alert. Nothing else is sent: no batch, no heartbeat.
  *
  * <p>The result keeps what the check reports: the gRPC status and failure cause of a stream that
  * ended without a {@code ServerHello}, the TLS protocol and the server's certificates, the {@code
@@ -118,7 +121,10 @@ public final class CheckProbe {
     /** Trailer {@code argos-reject-reason} of a refused stream, or null. */
     public String rejectReasonTrailer;
 
-    /** {@code AgentBye{SHUTDOWN}} was written after the accepted {@code ServerHello}. */
+    /**
+     * {@code AgentBye{SHUTDOWN}} was written after the accepted {@code ServerHello} (a server that
+     * opened a session for the check: one older than {@code check_only}, C-240 (1)).
+     */
     public boolean byeSent;
 
     /** The instance name the hello carried. */
@@ -129,6 +135,24 @@ public final class CheckProbe {
       Metadata.Key.of("argos-reject-reason", Metadata.ASCII_STRING_MARSHALLER);
 
   private CheckProbe() {}
+
+  /**
+   * The Hello of the check: {@code hello} (the agent's own, {@link AgentIdentity}) with {@code
+   * AgentHello.check_only} set (ADR-0010 C-240 (1)). Only the check sets it; the agent's sessions
+   * never do.
+   */
+  public static AgentHello checkOnly(AgentHello hello) {
+    return hello.toBuilder().setCheckOnly(true).build();
+  }
+
+  /**
+   * Whether {@code hello} is a server's answer to a check-only Hello: accepted without a session
+   * ({@code session_id} empty), so no instance was registered (ADR-0010 C-240 (1)). A server older
+   * than {@code check_only} answers with a session instead.
+   */
+  public static boolean checkOnlyAnswer(ServerHello hello) {
+    return hello != null && hello.getAccepted() && hello.getSessionId().isEmpty();
+  }
 
   /**
    * Opens a session to {@code config}'s {@code server.address} with {@code token}, sends one hello
@@ -252,7 +276,7 @@ public final class CheckProbe {
             // The hello is written once the connection and the stream exist, so that its
             // sent_at_ms does not count the TCP connect and the TLS handshake (clock, item 5).
             if (helloSent.compareAndSet(false, true)) {
-              AgentHello hello = identity.hello();
+              AgentHello hello = checkOnly(identity.hello());
               result.helloSentAtMs = hello.getSentAtMs();
               call.sendMessage(AgentMessage.newBuilder().setHello(hello).build());
             }
@@ -292,7 +316,14 @@ public final class CheckProbe {
       await(closed, BYE_WAIT_MILLIS);
       return;
     }
-    if (result.hello != null && result.hello.getAccepted() && result.statusCode == null) {
+    if (checkOnlyAnswer(result.hello) && result.statusCode == null) {
+      // C-240 (1): no session to end; the server ends the stream after its answer.
+      call.halfClose();
+      if (!await(closed, BYE_WAIT_MILLIS)) {
+        call.cancel("check done", null);
+      }
+    } else if (result.hello != null && result.hello.getAccepted() && result.statusCode == null) {
+      // An older server opened a session for the check (it ignores check_only).
       // 11 §7: end the check's session cleanly, as an agent that shuts down does (C-214).
       call.sendMessage(
           AgentMessage.newBuilder()

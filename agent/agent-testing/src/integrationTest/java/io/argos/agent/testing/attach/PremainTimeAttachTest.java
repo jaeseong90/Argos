@@ -14,6 +14,7 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.TestFactory;
@@ -46,6 +47,7 @@ class PremainTimeAttachTest {
   @TempDir Path work;
 
   @TestFactory
+  @DisplayName("T-NFR-30 premain time and start banner on every JDK of -Pagent.attach.jdks")
   Stream<DynamicTest> premainTimeOnEveryJdk() {
     return jdks().stream()
         .map(

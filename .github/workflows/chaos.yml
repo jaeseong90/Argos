@@ -1,0 +1,114 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Chaos scenarios (docs/18 section 11.1, T-CH-001..009, T-NFR-05; docs/19 sections 6.3 and 6.6;
+# WO-52). test/chaos/README.md describes the runner, the stack and the verdicts.
+#
+#   chaos  self-hosted [self-hosted, linux, argos-matrix], read-only token, no secrets. Runs
+#          `./gradlew chaosTest -Pbench.machine-profile=argos-matrix -Pchaos.profile=full`: one stack
+#          (Testcontainers PostgreSQL and ClickHouse, the server bootJar in a child JVM, a pinned
+#          toxiproxy container, shop-boot3 with the agent, the sample-apps load generator) and the
+#          nine scenarios in their full length (server down 1 hour, ClickHouse down 30 minutes, ...).
+#          Invariants (drop accounting, duplicates 0, agent ERROR 0, outage shown) are PASS/FAIL in
+#          every profile; timing and p99 verdicts are PASS/FAIL only with the full profile on this
+#          dedicated runner. With -Pchaos.publish=true the runner also writes docs/bench/chaos-<date>.md;
+#          the job uploads it with the run directory and the JUnit XML. A maintainer commits the
+#          report by hand (no write scope here, no publish job). Release notes keep saying that the
+#          chaos run was not done until a valid run exists (ADR-0010 C-246 (2)).
+#
+# Triggers: schedule (weekly, Sunday 02:00 UTC, when the daily nightly of 17:00 UTC has normally left
+# the argos-matrix runner; the jobs queue on the runner otherwise), workflow_dispatch and pushes to
+# release/** only (check-workflows.sh W8).
+# Never pull_request, workflow_run or workflow_call: fork code must never reach the self-hosted
+# runner (O-S05, docs/19 section 6.6). The job has the trusted-ref guard, checks out without
+# persisted credentials, has no write scope and runs in the 'trusted' environment.
+#
+# Runner preparation (a person, test/matrix/README.md "Runner preparation"): Linux x86_64, Docker
+# Engine (cgroup v2) with the host-gateway alias, at least 16 GiB of memory free for this job (the
+# stack runs alone: no other matrix job on the same runner at the same time), outbound HTTPS to
+# GitHub, Maven Central, the Gradle distribution and Docker Hub (toxiproxy, PostgreSQL and ClickHouse
+# images are pinned by digest). The tc netem variant of T-CH-003 runs only on Linux with the
+# privileges the README names; without them it is SKIPPED with the reason.
+#
+# Policy (docs/19 section 6.6, .github/scripts/check-workflows.sh): actions pinned to commit SHAs,
+# read-only token, values from inputs reach run scripts through env: only.
+name: Chaos
+
+on:
+  schedule:
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "Scenario length: full (18 section 11.1 durations, verdicts) or short (minutes, INVALID)"
+        type: choice
+        options:
+          - full
+          - short
+        default: full
+      scenarios:
+        description: "Comma-separated scenario ids (T-CH-001..T-CH-009); empty: all nine"
+        type: string
+        default: ""
+  push:
+    branches:
+      - "release/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chaos
+  cancel-in-progress: false
+
+env:
+  GRADLE_TOOLCHAINS_FROM_ENV: JAVA_HOME_8_X64,JAVA_HOME_17_X64,JAVA_HOME_21_X64
+
+jobs:
+  chaos:
+    name: chaos
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    runs-on: [self-hosted, linux, argos-matrix]
+    environment: trusted
+    timeout-minutes: 480
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up JDK 8, 17 and 21 (21 runs Gradle and the server; 8 and 17 are toolchains)
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            17
+            21
+      - name: Validate the inputs
+        env:
+          PROFILE: ${{ inputs.profile || 'full' }}
+          SCENARIOS: ${{ inputs.scenarios }}
+        run: |
+          fail() { echo "::error::$*"; exit 2; }
+          [[ "$PROFILE" =~ ^(full|short)$ ]] || fail "profile '$PROFILE': full or short"
+          [[ -z "$SCENARIOS" || "$SCENARIOS" =~ ^T-CH-00[1-9](,T-CH-00[1-9])*$ ]] \
+            || fail "scenarios '$SCENARIOS': comma-separated T-CH-001..T-CH-009"
+      - name: Run the chaos scenarios
+        env:
+          PROFILE: ${{ inputs.profile || 'full' }}
+          SCENARIOS: ${{ inputs.scenarios }}
+        run: |
+          args=(-Pargos.ui.skip=true "-Porg.gradle.java.installations.fromEnv=$GRADLE_TOOLCHAINS_FROM_ENV"
+            -Pbench.machine-profile=argos-matrix "-Pchaos.profile=$PROFILE" -Pchaos.publish=true)
+          [[ -n "$SCENARIOS" ]] && args+=("-Pchaos.scenarios=$SCENARIOS")
+          ./gradlew "${args[@]}" chaosTest
+      - name: Upload the chaos report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: chaos-report
+          path: |
+            test/chaos/build/reports/chaos/
+            test/chaos/build/test-results/chaosTest/
+            docs/bench/chaos-*.md
+          if-no-files-found: warn
+          retention-days: 90

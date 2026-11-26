@@ -89,6 +89,8 @@ val sampleApps =
     "shop-war-javax",
     "shop-war-jakarta",
     "load",
+    // demo-app: the public argos-demo-app image (WO-41, ADR-0004 C-43; shipped, so checkLicenses)
+    "demo-app",
   )
 
 sampleApps.forEach { include(":sample-apps:$it") }
@@ -115,12 +117,12 @@ include(":test:agent:transport-poc")
 // (test/bench/README.md).
 include(":test:bench")
 
-// Performance and long-run layers of 18 §2.1/§2.2 whose runners are later work orders (WO-05
-// skeletons). Development-only (ArgosProject.isDevelopmentOnly). Each project carries its task,
-// which requires -Pbench.machine-profile=<id> and then fails naming the owning WO (test/README.md):
+// Performance and long-run layers of 18 §2.1/§2.2 (WO-05 skeletons, runners by the named WO).
+// Development-only (ArgosProject.isDevelopmentOnly). Each project carries its task, which requires
+// -Pbench.machine-profile=<id> and fails before building anything without it (test/README.md):
 //   load/fake-agents   serverLoadTest  fake agents at protocol level (18 §8)        WO-29
-//   soak               soakTest        72-hour soak (18 §11.2)                       WO-52
-//   chaos              chaosTest       toxiproxy and docker scenarios (18 §11.1)     WO-52
+//   soak               soakTest        72-hour soak (18 §11.2, runner)               WO-52
+//   chaos              chaosTest       toxiproxy and docker scenarios (18 §11.1)     WO-52 (runner)
 include(":test:load:fake-agents")
 include(":test:soak")
 include(":test:chaos")

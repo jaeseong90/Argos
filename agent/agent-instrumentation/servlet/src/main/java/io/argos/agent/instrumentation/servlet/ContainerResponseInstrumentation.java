@@ -32,8 +32,21 @@ import net.bytebuddy.matcher.ElementMatcher;
  * </ul>
  *
  * {@code org.apache.catalina.connector.Response.flushBuffer()} is not instrumented: applications
- * hold the facade, and Tomcat calls the internal one at the end of every request. Jetty and
- * Undertow class names come with WO-50 (compatibility matrix).
+ * hold the facade, and Tomcat calls the internal one at the end of every request.
+ *
+ * <p>Jetty and Undertow (WO-50, compatibility matrix rows with {@code SAMPLE_CONTAINER}): the
+ * response object the application gets, its output stream and its writer.
+ *
+ * <ul>
+ *   <li>Jetty 9.4 (javax.servlet 3.1): {@code org.eclipse.jetty.server.Response}, {@code
+ *       org.eclipse.jetty.server.HttpOutput}, {@code org.eclipse.jetty.server.ResponseWriter}.
+ *   <li>Jetty 12.0 ee10 (jakarta.servlet 6.0) and 12.1 ee11 (6.1): {@code
+ *       org.eclipse.jetty.ee10|ee11.servlet.ServletApiResponse}, {@code ...servlet.HttpOutput},
+ *       {@code ...servlet.ResponseWriter}.
+ *   <li>Undertow 2.2 (javax) and 2.3 (jakarta): {@code
+ *       io.undertow.servlet.spec.HttpServletResponseImpl}, {@code ...spec.ServletOutputStreamImpl},
+ *       {@code ...spec.ServletPrintWriterDelegate}.
+ * </ul>
  */
 final class ContainerResponseInstrumentation implements TypeInstrumentation {
   /** Tomcat's response facade (9, 10.1, 11). */
@@ -45,6 +58,65 @@ final class ContainerResponseInstrumentation implements TypeInstrumentation {
   /** Tomcat's servlet writer (9, 10.1, 11). */
   static final String TOMCAT_WRITER = "org.apache.catalina.connector.CoyoteWriter";
 
+  /** Jetty 9.4's response (the application's response object itself). */
+  static final String JETTY9_RESPONSE = "org.eclipse.jetty.server.Response";
+
+  /** Jetty 9.4's servlet output stream. */
+  static final String JETTY9_OUTPUT_STREAM = "org.eclipse.jetty.server.HttpOutput";
+
+  /** Jetty 9.4's servlet writer. */
+  static final String JETTY9_WRITER = "org.eclipse.jetty.server.ResponseWriter";
+
+  /** Jetty 12.0's (ee10) response facade. */
+  static final String JETTY_EE10_RESPONSE = "org.eclipse.jetty.ee10.servlet.ServletApiResponse";
+
+  /** Jetty 12.0's (ee10) servlet output stream. */
+  static final String JETTY_EE10_OUTPUT_STREAM = "org.eclipse.jetty.ee10.servlet.HttpOutput";
+
+  /** Jetty 12.0's (ee10) servlet writer. */
+  static final String JETTY_EE10_WRITER = "org.eclipse.jetty.ee10.servlet.ResponseWriter";
+
+  /** Jetty 12.1's (ee11) response facade. */
+  static final String JETTY_EE11_RESPONSE = "org.eclipse.jetty.ee11.servlet.ServletApiResponse";
+
+  /** Jetty 12.1's (ee11) servlet output stream. */
+  static final String JETTY_EE11_OUTPUT_STREAM = "org.eclipse.jetty.ee11.servlet.HttpOutput";
+
+  /** Jetty 12.1's (ee11) servlet writer. */
+  static final String JETTY_EE11_WRITER = "org.eclipse.jetty.ee11.servlet.ResponseWriter";
+
+  /** Undertow's response (2.2 javax, 2.3 jakarta). */
+  static final String UNDERTOW_RESPONSE = "io.undertow.servlet.spec.HttpServletResponseImpl";
+
+  /** Undertow's servlet output stream. */
+  static final String UNDERTOW_OUTPUT_STREAM = "io.undertow.servlet.spec.ServletOutputStreamImpl";
+
+  /** Undertow's servlet writer (the PrintWriter that getWriter() returns). */
+  static final String UNDERTOW_WRITER = "io.undertow.servlet.spec.ServletPrintWriterDelegate";
+
+  /** Response objects of every container: flush and stream mapping. */
+  static final String[] RESPONSES = {
+    TOMCAT_RESPONSE_FACADE,
+    JETTY9_RESPONSE,
+    JETTY_EE10_RESPONSE,
+    JETTY_EE11_RESPONSE,
+    UNDERTOW_RESPONSE
+  };
+
+  /** Output streams and writers of every container: flush. */
+  static final String[] STREAMS = {
+    TOMCAT_OUTPUT_STREAM,
+    TOMCAT_WRITER,
+    JETTY9_OUTPUT_STREAM,
+    JETTY9_WRITER,
+    JETTY_EE10_OUTPUT_STREAM,
+    JETTY_EE10_WRITER,
+    JETTY_EE11_OUTPUT_STREAM,
+    JETTY_EE11_WRITER,
+    UNDERTOW_OUTPUT_STREAM,
+    UNDERTOW_WRITER
+  };
+
   private final ElementMatcher<TypeDescription> types;
   private final boolean facade;
 
@@ -55,13 +127,12 @@ final class ContainerResponseInstrumentation implements TypeInstrumentation {
 
   /** The response facades: flush and stream mapping. */
   static ContainerResponseInstrumentation facades() {
-    return new ContainerResponseInstrumentation(named(TOMCAT_RESPONSE_FACADE), true);
+    return new ContainerResponseInstrumentation(namedOneOf(RESPONSES), true);
   }
 
   /** The output streams and writers: flush. */
   static ContainerResponseInstrumentation streams() {
-    return new ContainerResponseInstrumentation(
-        namedOneOf(TOMCAT_OUTPUT_STREAM, TOMCAT_WRITER), false);
+    return new ContainerResponseInstrumentation(namedOneOf(STREAMS), false);
   }
 
   @Override

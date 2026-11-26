@@ -22,6 +22,7 @@ import io.argos.server.collector.batch.Shaped;
 import io.argos.server.collector.grpc.Inbound;
 import io.argos.server.collector.limits.LimitsChecker;
 import io.argos.server.collector.limits.Violation;
+import io.argos.server.collector.testing.IngestFaultInjector;
 import io.argos.server.ingest.api.ApdexProvider;
 import io.argos.server.ingest.api.IngestPipeline;
 import io.argos.server.session.AgentSession;
@@ -37,6 +38,7 @@ import io.argos.server.wal.api.WalRecordType;
 import io.argos.server.wal.api.WalWriteException;
 import io.argos.server.wal.api.WalWriter;
 import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
 import java.time.Clock;
 import java.util.Objects;
@@ -93,8 +95,12 @@ import org.slf4j.LoggerFactory;
  *       batch's seq, and a {@code Throttle} hint above the WAL or writer warn ratio.
  * </ol>
  *
- * {@code SendActiveSnapshot} is volatile (12 §3.2): limits, then the session's latest snapshot is
- * replaced and handed to {@link IngestPipeline#onActive}; no WAL, no deduplication.
+ * Development builds can inject failures after the limits ({@code argos.testing.ingest-fault-file},
+ * {@link IngestFaultInjector}: an error answer before deduplication, or a quota drop before the
+ * quota step).
+ *
+ * <p>{@code SendActiveSnapshot} is volatile (12 §3.2): limits, then the session's latest snapshot
+ * is replaced and handed to {@link IngestPipeline#onActive}; no WAL, no deduplication.
  *
  * <p>Runs on the {@code argos-grpc-exec} threads; the only wait is the WAL append (normally at most
  * 10 ms of grouping, never much longer than the 1 s append wait, 12 §11).
@@ -124,6 +130,9 @@ public final class AgentServiceImpl {
 
   /** The instance states (WO-22): server drops and context leaks; null in protocol-only tests. */
   private volatile InstanceStateTracker states;
+
+  /** Test hook {@code argos.testing.ingest-fault-file} (development builds, WO-52); none else. */
+  private volatile IngestFaultInjector faults = IngestFaultInjector.NONE;
 
   private final LimitsChecker limits;
   private final DedupWindow dedup;
@@ -280,6 +289,11 @@ public final class AgentServiceImpl {
       reject(out, v);
       return;
     }
+    StatusRuntimeException injected = faults.reject();
+    if (injected != null) {
+      out.onError(injected);
+      return;
+    }
     BatchHeader header = kind.header().apply(batch);
     DedupKey key = DedupKey.of(session.instanceId(), kind.walType(), header);
     switch (dedup.claim(key)) {
@@ -310,7 +324,7 @@ public final class AgentServiceImpl {
     B charged = null;
     try {
       Shaped<B> filtered = kind.enumFilter().apply(batch);
-      Shaped<B> trimmed = kind.quota().apply(session.instanceId(), filtered.batch());
+      Shaped<B> trimmed = faults.quota(kind.quota(), session.instanceId(), filtered.batch());
       charged = trimmed.batch();
       B kept = kind.redact().apply(session, charged);
       SessionContext context = context(session, receivedAt);
@@ -443,6 +457,14 @@ public final class AgentServiceImpl {
     } catch (RuntimeException e) {
       LOG.error("The ingest pipeline failed on a durable batch of {}", session, e);
     }
+  }
+
+  /**
+   * Sets the failure injection of the data batches ({@code argos.testing.ingest-fault-file}, 18
+   * §19; {@link IngestFaultInjector#NONE} in release builds).
+   */
+  public void ingestFaults(IngestFaultInjector injector) {
+    this.faults = Objects.requireNonNull(injector, "injector");
   }
 
   /** Sets the instance states that server drops and context leaks are reported to (WO-22). */

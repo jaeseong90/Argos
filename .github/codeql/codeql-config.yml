@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# CodeQL configuration of .github/workflows/codeql.yml (O-S04, docs/16 section 10.5).
+# Queries: the default suite plus security-extended.
+# paths-ignore lists only code that is never shipped and that violates rules on purpose, or code
+# that is generated; production code (agent, server, UI sources) is never excluded. Every entry is
+# checked by .github/scripts/test/supply-chain-workflows.test.sh (T-BLD-028, proposed).
+# With build-mode none (both languages here), paths-ignore applies to Java as well.
+name: Argos CodeQL configuration
+
+queries:
+  - uses: security-extended
+
+paths-ignore:
+  # ArchUnit negative fixtures: classes that break the agent rules on purpose (test/README.md).
+  - agent/agent-testing/src/archFixtures
+  # ArchUnit negative fixtures of the server rules (controllers without a role, secrets in
+  # toString or logs) that the rule tests must catch.
+  - server/src/archTest/java/io/argos/server/arch/fixture
+  - server/src/archTest/java/io/argos/server/security/fixture
+  # PII, secret and XSS seed values of 18 section 4.3 (sentinel ARGOS_SEED): test data only.
+  - sample-apps/common/src/main/java/io/argos/sample/common/seed
+  # Generated from docs/api/openapi.yaml (pnpm -C ui gen:api); the spec and its generator are analysed.
+  - ui/src/api/generated

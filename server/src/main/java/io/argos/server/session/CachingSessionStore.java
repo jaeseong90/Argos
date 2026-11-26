@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -134,6 +135,12 @@ public final class CachingSessionStore implements SessionStore {
     return found;
   }
 
+  /** Not cached: a failure reaches the caller (the start rule treats it as unknown). */
+  @Override
+  public OptionalLong instanceStartedAtMs(int instanceId) {
+    return delegate.instanceStartedAtMs(instanceId);
+  }
+
   @Override
   public int countInstances(int appId) {
     return delegate.countInstances(appId);
@@ -175,7 +182,8 @@ public final class CachingSessionStore implements SessionStore {
     if (lastWarn.compareAndSet(last, now)) {
       LOG.warn(
           "PostgreSQL cannot be read; a known app and instance start their session from the"
-              + " registration cache (12 §3.9); further occurrences are not logged for a minute: {}",
+              + " registration cache (12 §3.9); further occurrences are not logged for a minute:"
+              + " {}",
           e.toString());
     }
   }

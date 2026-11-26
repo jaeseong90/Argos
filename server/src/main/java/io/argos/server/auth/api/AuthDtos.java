@@ -169,7 +169,13 @@ final class AuthDtos {
   /** {@code GET /setup/status}. */
   record SetupStatusResponse(
       @JsonProperty("needs_setup") boolean needsSetup,
-      @JsonProperty("server_version") String serverVersion) {}
+      @JsonProperty("server_version") String serverVersion,
+      @Schema(
+              description =
+                  "Whether the server runs in demo mode (argos.demo.enabled, Compose demo profile):"
+                      + " the UI shows the demo banner on every screen, also before login (WO-41)")
+          @JsonProperty("demo_mode")
+          boolean demoMode) {}
 
   /** {@code POST /setup/admin}. */
   record SetupAdminResponse(UserView user) {}

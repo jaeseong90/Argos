@@ -8,10 +8,16 @@ object TestIds {
 
   /**
    * T-<prefix>-<number>, an optional capital letter of the catalogue ID (T-SEC-3A) and an optional
-   * lower-case letter of a partial check (T-AG-031a, T-SEC-3Aa; 18 appendix A, ADR-0010 C-122, C-182).
+   * lower-case letter of a partial check (T-AG-031a, T-SEC-3Aa; 18 appendix A, ADR-0010 C-122, C-182);
+   * or a named E2E ID of the required-elements engine: T-E2E-<lower-case area, hyphens allowed>-<number>
+   * with an optional lower-case letter (T-E2E-stats-1, T-E2E-service-version-2; 18 appendix A). A
+   * parenthesized variant after an ID ("T-SEC-47 (fresh)", "T-ACC-13 (b) Compose") is the same ID:
+   * the variant stays in the test name only.
    */
   private val pattern =
-    Regex("""(?<![A-Za-z0-9-])T-(?:${PREFIXES.joinToString("|")})-[0-9]+[A-Z]?[a-z]?(?![A-Za-z0-9])""")
+    Regex(
+      """(?<![A-Za-z0-9-])T-(?:E2E-[a-z]+(?:-[a-z]+)*-[0-9]+[a-z]?|(?:${PREFIXES.joinToString("|")})-[0-9]+[A-Z]?[a-z]?)(?![A-Za-z0-9])"""
+    )
 
   /** Catalogue IDs that end in a lower-case letter themselves (18 §3: N-10a..d -> T-NFR-10a..d). */
   private val CATALOG_IDS_ENDING_IN_LOWER_CASE: Set<String> = setOf("T-NFR-10a", "T-NFR-10b", "T-NFR-10c", "T-NFR-10d")
@@ -51,10 +57,13 @@ data class SourceClass(
 )
 
 /**
- * A test found in a source file: a JUnit test method (or ArchUnit `@ArchTest` field), or a Vitest or
- * Playwright test title. [dynamic] marks JUnit tests whose runtime names differ from the source
- * (parameterized, repeated, factories, templates); [nameTemplate] is the `name` attribute of
- * `@ParameterizedTest`/`@RepeatedTest`.
+ * A test found in a source file: a JUnit test method (or ArchUnit `@ArchTest` field), a Vitest or
+ * Playwright test title, a shell assertion description or a compatibility matrix row ([sourceSet]
+ * "vitest", "playwright", "shell" or "matrix"; [methodName] is null for all of them). [dynamic] marks
+ * JUnit tests whose runtime names differ from the source (parameterized, repeated, factories,
+ * templates); [nameTemplate] is the `name` attribute of `@ParameterizedTest`/`@RepeatedTest`.
+ * [matchAll] marks a shell script's header entry (`# test-ids:`/`# req:` that no assertion
+ * description carries): it takes the results of that script whose descriptions have no test ID.
  */
 data class SourceTest(
   val file: String,
@@ -69,6 +78,7 @@ data class SourceTest(
   val testIds: List<String>,
   val requirements: List<String>,
   val tags: List<String>,
+  val matchAll: Boolean = false,
 )
 
 /** Result of scanning one Java or Kotlin file. */
@@ -467,8 +477,9 @@ object JavaKotlinTestScanner {
 /**
  * Finds Vitest and Playwright tests whose titles carry test IDs (`it('T-UI-021 …')`,
  * `test('T-E2E-040 …')`, `describe('T-UI-001 …')`) and the requirement annotations of the file
- * (`{ type: 'req', description: 'F-U02' }`, 18 §3). Requirements are associated per file: the
- * skeleton does not parse which test uses which annotation object.
+ * (`{ type: 'req', description: 'F-U02' }`, 18 §3). Requirements are associated per file: the scanner
+ * does not parse which test uses which annotation object; the per-test `req` annotations of a
+ * Playwright JSON result replace them for that test ([PlaywrightResults], [Traceability.build]).
  */
 object ScriptTestScanner {
   private val title =

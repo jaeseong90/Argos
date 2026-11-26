@@ -17,6 +17,10 @@
 //                   keeps it)
 //   initial-load    perf/initial-load.spec.ts (T-NFR-14 initial load, reference values); defined only
 //                   when selected with `--project initial-load` (corepack pnpm perf:initial-load)
+//   fresh-install   e2e/specs/fresh/*.spec.ts (WO-46: the real setup wizard) against the
+//                   fresh-install stack of fresh-setup (e2e/stack/fresh.ts: no administrator, a setup
+//                   token, no seed), torn down by fresh-teardown; defined only when selected with
+//                   `--project fresh-install` (corepack pnpm e2e:fresh), never with the stack project
 // docs/18 §13 and §15: retries 0, one worker, traces of failures only, 1366x768, UTC, en-US (the i18n
 // spec switches the language in the UI). CI shards with --shard=<i>/<n> (blob reports, merged).
 // The XLog frame-time spec has its own configuration (playwright.perf.config.ts) and never runs here.
@@ -39,6 +43,9 @@ const webServer =
 const selection = projectSelection(process.argv, process.env);
 const preview = selection === null || selection.includes('preview');
 const initialLoad = selection?.includes('initial-load') === true;
+// The fresh-install projects (WO-46) start a stack of their own: defined only when selected
+// (`--project fresh-install`, corepack pnpm e2e:fresh), never together with the stack project.
+const freshInstall = selection?.includes('fresh-install') === true;
 const ci = process.env.CI !== undefined;
 
 /**
@@ -47,9 +54,36 @@ const ci = process.env.CI !== undefined;
  */
 const PREVIEW_SPECS = ['xlog-poc.spec.ts', 'global-hooks.spec.ts', 'stack-hooks.spec.ts'];
 
+/**
+ * The JSON report of this run, read by the traceability report (WO-53, test/README.md section 6):
+ * one file per project selection and shard, so the preview run and the stack shards do not
+ * overwrite each other. It sits outside `outputDir`, which Playwright empties at the start of every
+ * run. Only the runner process writes reports; workers never name a project on their command line.
+ */
+function jsonReportFile(argv: readonly string[]): string {
+  const name =
+    selection === null
+      ? 'default'
+      : selection.map((p) => p.replace(/[^A-Za-z0-9_-]/g, '_')).join('-');
+  let shard = '';
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i] ?? '';
+    const value = arg.startsWith('--shard=')
+      ? arg.slice('--shard='.length)
+      : arg === '--shard'
+        ? (argv[i + 1] ?? '')
+        : '';
+    const m = /^(\d+)\/(\d+)$/.exec(value);
+    if (m !== null) {
+      shard = `-shard-${m[1] ?? ''}-of-${m[2] ?? ''}`;
+    }
+  }
+  return `./test-results/e2e-json/results-${name}${shard}.json`;
+}
+
 const reporter: ReporterDescription[] = [
   ['list'],
-  ['json', { outputFile: './test-results/e2e/results.json' }],
+  ['json', { outputFile: jsonReportFile(process.argv) }],
   ci
     ? ['blob', { outputDir: './blob-report' }]
     : ['html', { open: 'never', outputFolder: './playwright-report/e2e' }],
@@ -106,7 +140,7 @@ export default defineConfig({
       name: 'stack',
       testDir: './e2e/specs',
       testMatch: '**/*.spec.ts',
-      testIgnore: PREVIEW_SPECS,
+      testIgnore: [...PREVIEW_SPECS, 'fresh/**'],
       dependencies: ['stack-setup'],
       // Baselines are created and compared only in the pinned Linux Playwright image (e2e:docker).
       snapshotPathTemplate: '{testDir}/__screenshots__/{testFileName}/{arg}{ext}',
@@ -121,6 +155,23 @@ export default defineConfig({
             dependencies: ['stack-setup'],
             // No tracing or screenshots during the measurement.
             use: { trace: 'off' as const, screenshot: 'off' as const },
+          },
+        ]
+      : []),
+    ...(freshInstall
+      ? [
+          {
+            name: 'fresh-setup',
+            testDir: './e2e/setup',
+            testMatch: 'fresh.setup.ts',
+            teardown: 'fresh-teardown',
+          },
+          { name: 'fresh-teardown', testDir: './e2e/setup', testMatch: 'fresh.teardown.ts' },
+          {
+            name: 'fresh-install',
+            testDir: './e2e/specs/fresh',
+            testMatch: '**/*.spec.ts',
+            dependencies: ['fresh-setup'],
           },
         ]
       : []),

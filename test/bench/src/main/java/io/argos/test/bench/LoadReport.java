@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -31,6 +32,19 @@ final class LoadReport {
   static final double CV_LIMIT = 0.02;
 
   static final double MB = 1024.0;
+
+  /** Sources of the agent thread CPU (18 §7.4), recorded with the value. */
+  static final String AGENT_CPU_SELF_DIAG =
+      "self-diagnostics agent_threads_cpu_seconds_total (window difference)";
+
+  static final String AGENT_CPU_JCMD = "jcmd Thread.print cpu= of the argos-* threads";
+
+  static final String DIRECT_MEMORY_SELF_DIAG =
+      "self-diagnostics direct_memory_bytes (JVM-wide direct buffer pool, C-145 (1))";
+
+  static final String PREMAIN_SELF_DIAG = "self-diagnostics premain_ms";
+
+  static final String PREMAIN_BANNER = "agent log banner";
 
   /** Re-aggregated latencies of a run's measured window (written by {@link LoadSet}). */
   static final String HDR_FILE = "latency-hdr.json";
@@ -275,8 +289,13 @@ final class LoadReport {
     validity.put("offCpuCvOk", cvOk);
     if (!cvOk) {
       invalid = true;
-      reasons.add(
-          String.format(Locale.ROOT, "off-run CPU CV %.2f%% > 2%% (01 7.3 item 4)", cv * 100));
+      if (offCpu.length < 2 || Double.isNaN(cv)) {
+        reasons.add(
+            "off-run CPU CV not available (fewer than 2 off runs with CPU data, 01 7.3 item 4)");
+      } else {
+        reasons.add(
+            String.format(Locale.ROOT, "off-run CPU CV %.2f%% > 2%% (01 7.3 item 4)", cv * 100));
+      }
     }
     List<String> gateProblems = new ArrayList<>();
     for (Map<String, Object> r : runs) {
@@ -288,7 +307,15 @@ final class LoadReport {
       gateProblems.add(where + ": " + verdict);
       if ("INVALID".equals(verdict) || "off".equals(r.get("variant")) || verdict == null) {
         invalid = true;
-        reasons.add(where + ": k6 gate " + verdict + " (C-46)");
+        // The gate's own reason (for example the H-2 provisional rule's loader-side socket
+        // errors, ADR-0009 C-80) makes the cause visible in the report.
+        Object gateReason = Json.at(r, "measure", "gate", "reason");
+        reasons.add(
+            where
+                + ": k6 gate "
+                + verdict
+                + " (C-46)"
+                + (gateReason instanceof String s && !s.isBlank() ? ": " + s : ""));
       } else {
         fail = true;
         reasons.add(where + ": k6 gate FAIL with the agent (load not sustained, C-46)");
@@ -432,15 +459,22 @@ final class LoadReport {
     }
     c.put("peak", peak);
 
-    // Agent threads' own CPU (N-01 auxiliary: <= 1% of the host).
-    double[] agentCpu = values(runs, variant, "measure", "agentThreadCpuSeconds");
+    // Agent threads' own CPU (N-01 auxiliary: <= 1% of the host). 18 §7.4: the self-diagnostics
+    // counter agent_threads_cpu_seconds_total over the window (measure.selfDiag, written when the
+    // agent ran with the development key argos.test.selfdiag-file, C-95); without it the jcmd
+    // Thread.print cpu= values of the argos-* threads. With both, jcmd stays as a cross-check.
+    double[] jcmdCpu = values(runs, variant, "measure", "agentThreadCpuSeconds");
+    double[] selfCpu = values(runs, variant, "measure", "selfDiag", "agentThreadsCpuSeconds");
+    boolean selfDiag = complete(selfCpu);
+    double[] agentCpu = selfDiag ? selfCpu : jcmdCpu;
     double[] wall = values(runs, variant, "measure", "wallSeconds");
-    double[] hostPercent = new double[agentCpu.length];
-    for (int i = 0; i < agentCpu.length; i++) {
-      hostPercent[i] = 100 * agentCpu[i] / (wall[i] * logicalCpus);
-    }
+    double[] hostPercent = hostPercent(agentCpu, wall, logicalCpus);
     Map<String, Object> threads = new LinkedHashMap<>();
     threads.put("agentThreadCpuSeconds", agentCpu);
+    threads.put("source", selfDiag ? AGENT_CPU_SELF_DIAG : AGENT_CPU_JCMD);
+    if (selfDiag && complete(jcmdCpu)) {
+      threads.put("jcmdHostPercentMax", Stats.max(hostPercent(jcmdCpu, wall, logicalCpus)));
+    }
     threads.put("hostCpus", logicalCpus);
     if (variant.equals("on")) {
       Map<String, Object> tv = verdict(Stats.max(hostPercent), 1.0, "% of host CPU");
@@ -609,6 +643,14 @@ final class LoadReport {
       memory.put("nmtInternalOtherIncreaseMb", internalOther);
       memory.put("threadIncrease", threadDiff);
     }
+    // Direct memory as the agent sees it (18 §7.4: self-diagnostics direct_memory_bytes at the end
+    // of the window). It is the JVM-wide direct buffer pool (ADR-0010 C-145 (1)), the app's
+    // buffers included, so it is reported next to the NMT Other increase that N-26 judges.
+    double[] selfDirect = values(runs, variant, "measure", "selfDiag", "directMemoryBytes");
+    if (complete(selfDirect)) {
+      memory.put("selfDiagDirectMemoryMb", Stats.max(selfDirect) / MB / MB);
+      memory.put("selfDiagDirectMemorySource", DIRECT_MEMORY_SELF_DIAG);
+    }
     memory.put("nmtTotalCommittedIncreaseMb", totalDiff);
     memory.put("liveHeapIncreaseMb", liveHeapDiff);
     memory.put("loadedClassIncrease", classDiff);
@@ -628,18 +670,44 @@ final class LoadReport {
     c.put("gc", gc);
 
     // premain (N-30) and the startup of the load runs (informational; startup set judges N-04).
-    double[] premain = values(runs, variant, "premainMs");
+    double[] selfPremain = values(runs, variant, "measure", "selfDiag", "premainMs");
+    boolean selfPremainComplete = complete(selfPremain);
+    double[] premain = selfPremainComplete ? selfPremain : values(runs, variant, "premainMs");
     Map<String, Object> start = new LinkedHashMap<>();
     start.put("premainMs", premain);
     start.put("premainMedianMs", Stats.median(premain));
+    start.put("premainSource", selfPremainComplete ? PREMAIN_SELF_DIAG : PREMAIN_BANNER);
     start.put("offReadyMedianMs", Stats.median(values(runs, "off", "startup", "spawnToReadyMs")));
     start.put(
         variant + "ReadyMedianMs",
         Stats.median(values(runs, variant, "startup", "spawnToReadyMs")));
     c.put("startup", start);
+
+    // OTLP black-hole receiver of the OpenTelemetry reference variant (18 §7.5): what the
+    // reference agent exported in the window (measure.otlp; absent for the other variants).
+    double[] otlpRequests = values(runs, variant, "measure", "otlp", "requests");
+    if (complete(otlpRequests)) {
+      Map<String, Object> otlp = new LinkedHashMap<>();
+      otlp.put("requests", Arrays.stream(otlpRequests).sum());
+      otlp.put("bytes", Arrays.stream(values(runs, variant, "measure", "otlp", "bytes")).sum());
+      c.put("otlp", otlp);
+    }
     c.put("failed", failed);
     c.put("noData", noData);
     return c;
+  }
+
+  /** True when there is at least one value and none is missing. */
+  static boolean complete(double[] values) {
+    return values.length > 0 && Arrays.stream(values).noneMatch(Double::isNaN);
+  }
+
+  private static double[] hostPercent(double[] cpuSeconds, double[] wall, double logicalCpus) {
+    double[] out = new double[cpuSeconds.length];
+    for (int i = 0; i < cpuSeconds.length; i++) {
+      out[i] = 100 * cpuSeconds[i] / (wall[i] * logicalCpus);
+    }
+    return out;
   }
 
   /** Adds {@code what} to {@code noData} when the check has no number. */
@@ -845,9 +913,13 @@ final class LoadReport {
           .append(Json.at(o, "gate"))
           .append(" |\n");
     }
+    double offCv = Json.number(result, "validity", "offCpuCv");
     md.append("\nOff-run CPU CV: ")
-        .append(fmt(Json.number(result, "validity", "offCpuCv") * 100, 2))
-        .append("% (limit 2%).\n");
+        .append(
+            Double.isNaN(offCv)
+                ? "not available (fewer than 2 off runs)"
+                : fmt(offCv * 100, 2) + "%")
+        .append(" (limit 2%).\n");
     for (Map.Entry<String, Object> e : Json.object(result.get("comparisons")).entrySet()) {
       String v = e.getKey();
       Object c = e.getValue();
@@ -918,7 +990,9 @@ final class LoadReport {
             .append(" |\n");
       }
       if (Json.at(c, "agentThreadCpu", "verdict") != null) {
-        md.append("| agent thread CPU (max of runs) | | | ")
+        md.append("| agent thread CPU (max of runs; ")
+            .append(Json.at(c, "agentThreadCpu", "source"))
+            .append(") | | | ")
             .append(fmt(Json.number(c, "agentThreadCpu", "value"), 4))
             .append("% of host | | 1% | ")
             .append(Json.at(c, "agentThreadCpu", "verdict"))

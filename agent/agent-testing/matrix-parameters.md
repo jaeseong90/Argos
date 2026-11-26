@@ -1,11 +1,21 @@
 # Matrix parameters for the compatibility runner
 
 Hand-over sheet for the compatibility matrix runner (WO-50, [18 §6](../../docs/18-test-design.md)):
-for every `T-MX` range of 18 §6.1, how the agent harness of this project runs that combination
-today, which switches it needs, where its results land, what it costs on the development laptop
-and what is still missing. `test/matrix/matrix.yaml`, the nightly workflow, the per-combination
-smoke sequence and the generated `docs/compatibility-matrix.md` are WO-50's; this file only lists
-the parameters the runner has to pass. The ID numbering inside each range is matrix.yaml's.
+for every `T-MX` range of 18 §6.1, how the agent harness of this project runs that combination,
+which switches it needs, where its results land, what it costs on the development laptop and what
+was missing before the runner existed. The ID numbering inside each range is matrix.yaml's.
+
+**Runner (WO-50).** [`test/matrix/matrix.yaml`](../../test/matrix/matrix.yaml) now defines every
+combination as a row with exactly these switches (`app`, `jdk`, `props`, `app-env`, `tomcat`, `vt`,
+`coexist`) and the suites below; each row is the task `matrixTest-<ID>` of this project, wired by
+the same `wireHarness` function as `integrationTest`, with the result file `build/matrix/<ID>.json`
+and the page `docs/compatibility-matrix.md` (`matrixReport`). Run one with
+`./gradlew matrixTest -Pmatrix.combo=<ID>`; format, verdicts and runner preparation are in
+[test/matrix/README.md](../../test/matrix/README.md). The matrix-only tests of `src/matrixTest`
+(package `io.argos.agent.testing.matrix`) close the gaps the "Missing" column lists: the 18 §6.1
+smoke sequence (`MatrixSmokeTest`), real Tomcat manager redeploys (`WarRedeployTest`), the Tomcat
+choice (`argos.test.matrix.tomcat`), coexistence (`CoexistenceTest`), JSP forward, service-name
+boundaries and JDK 8 TLS 1.3. The columns below keep the state at hand-over.
 
 All commands run from the repository root with JDK 21 as `JAVA_HOME`; Gradle downloads the other
 JDKs (toolchains). Heavy runs take the shared lock: `bash test/lock/argos-lock.sh run agent-it
@@ -53,7 +63,9 @@ this sheet.
 
 ## The 18 §6.1 smoke sequence, step by step
 
-The runner's per-combination sequence does not exist yet (WO-50). Each step has a suite today:
+At hand-over the per-combination sequence did not exist; WO-50 runs it as
+`matrix.MatrixSmokeTest` in every Boot, heavy and container row of matrix.yaml. Each step also
+has a suite of its own, which the rows run next to it:
 
 | Step | Covered today by | Note |
 |---|---|---|
@@ -66,10 +78,18 @@ The runner's per-combination sequence does not exist yet (WO-50). Each step has 
 | Thread dump command (VT included) | `command.ThreadDumpVirtualTest` | shop-boot3 on 21+ with `SAMPLE_VT` |
 | Shutdown, AgentBye received | `transport.ShutdownTransportTest` (attach JDKs, trivial app, T-AG-067) | Not per sample app |
 
+## Rows beyond 18 §6.1 (WO-50, proposed IDs)
+
+| T-MX range | Axis | Switches in matrix.yaml |
+|---|---|---|
+| T-MX-114 | Coexistence with Spring Boot devtools | `coexist: devtools` (shop-boot3-devtools.jar) |
+| T-MX-130~139 | Jetty 9.4 (servlet 3.1), Undertow 2.2 and 2.3, Jetty 12 and 12.1 (C-127) | `app-env: [SAMPLE_CONTAINER=jetty\|undertow]`; Undertow rows `status: unverified` |
+| T-MX-140~149 | Old JREs 8u242 and 8u252, JDK 8 TLS 1.3, container mode, Linux transport variants, cgroup v2 | `app: trivial` with `requires: [prop:agent.jdk8u242]` and similar, `props: [agent.container=true]`, `requires: [os:linux]` |
+| T-MX-150~159 | httpclient-jdk11 on JDK 17 and 25, custom methods on WAR and JDK 11, 17 (C-240 (10)) | the row's app and JDK with the one suite |
+
 ## Not in this sheet
 
-- `test/matrix/matrix.yaml`, the merge script, `build/matrix/<combo>.json` and the nightly workflow
-  (WO-50); the trusted runner label `argos-matrix` (the `matrixTest` task skips without it or
-  without `-Pmatrix.combo`/`-Pmatrix.group`).
-- Real cgroup v1 hosts, Jetty and Undertow containers (the servlet and servlet-async READMEs list
-  them as not verified): WO-50 matrix, human check.
+- The nightly workflow `.github/workflows/nightly.yml` and the runner label `argos-matrix` (the
+  `matrixTest` task skips without it or without `-Pmatrix.combo`/`-Pmatrix.group`): see
+  test/matrix/README.md.
+- Real cgroup v1 hosts: a human check outside the matrix.
