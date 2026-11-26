@@ -10,21 +10,21 @@
 
 [versions]
 # --- agent runtime (shaded into argos-agent.jar under io.argos.agent.shaded) ---
-bytebuddy = "1.18.15"
+bytebuddy = "1.18.17"
 grpc = "1.85.1"
 protobuf = "4.36.2"
-netty = "4.2.19.Final"
+netty = "4.2.21.Final"
 jctools = "4.0.7"
 # --- server runtime ---
-spring-boot = "4.1.2"
-clickhouse-client = "0.11.0"
+spring-boot = "4.2.0"
+clickhouse-client = "0.11.2"
 postgresql = "42.7.14"
-flyway = "13.11.1"
+flyway = "13.13.0"
 # springdoc 3.x is the Spring Boot 4 line; 3.2.0 is built against Boot 4.1.2. Only the WebMVC API
 # starter is used: the runtime OpenAPI document, no Swagger UI webjar (14 §8, §12 #9; WO-24).
 springdoc = "3.2.0"
 # In-memory token buckets of the API rate limits (16 §7.13, §15 #12; Apache-2.0, no dependencies).
-bucket4j = "8.21.0"
+bucket4j = "8.22.0"
 # Alert windows: per-second latency histograms of the alert engine (12 §5.2, DSN-12-07; WO-25;
 # BSD-2-Clause OR CC0-1.0, no dependencies). The same version Micrometer brings at run time.
 hdrhistogram = "2.2.2"
@@ -45,22 +45,22 @@ agent-servlet-javax-api = "3.1.0"
 agent-servlet-javax-api4 = "4.0.1"
 agent-servlet-jakarta-api = "5.0.0"
 # --- build tools ---
-errorprone = "2.51.0"
+errorprone = "2.53.0"
 # 1.37.0 exists but fails inside Spotless 8.10.4 (NoSuchMethodError on
 # JavaFormatterOptions$Style.valueOf); 1.36.1 is the version Spotless 8.10.4 is built against.
 google-java-format = "1.36.1"
-spotless = "8.10.4"
-errorprone-plugin = "5.1.1"
+spotless = "8.11.0"
+errorprone-plugin = "5.2.0"
 shadow = "9.6.1"
-cyclonedx = "3.5.1"
-license-report = "3.1.4"
+cyclonedx = "3.6.1"
+license-report = "3.1.5"
 jib = "3.5.4"
 # Jib's plugin extension API, at the versions jib-gradle-plugin 3.5.4 itself depends on: build-logic
 # compiles the server image's directory ownership extension against them (WO-40, ServerImage).
 jib-extension-api = "0.4.0"
 jib-extension-common = "0.2.0"
 jib-build-plan = "0.4.0"
-protobuf-plugin = "0.10.0"
+protobuf-plugin = "0.10.1"
 maven-publish = "0.37.0"
 # --- sample apps (sample-apps/, 18 §4, WO-01) ---
 # Development-only: sample apps are not shipped, so their dependencies are checked by
@@ -87,9 +87,9 @@ sample-tomcat11 = "11.0.27"
 sample-springdoc = "2.9.1"
 sample-querydsl = "6.12"
 sample-poi = "5.5.1"
-sample-aws-sdk = "2.57.3"
-sample-guava = "33.7.2-jre"
-sample-commons-collections4 = "4.5.0"
+sample-aws-sdk = "2.59.5"
+sample-guava = "33.8.0-android"
+sample-commons-collections4 = "4.6.0"
 sample-commons-text = "1.15.0"
 sample-mapstruct = "1.6.3"
 
@@ -105,14 +105,14 @@ grpc-netty = { module = "io.grpc:grpc-netty", version.ref = "grpc" }
 # WO-02 P-3 transport comparison only (test/agent/transport-poc, A-1); not used by shipped modules.
 grpc-okhttp = { module = "io.grpc:grpc-okhttp", version.ref = "grpc" }
 # Netty 4.1 line for the P-3 ADR-0003 C-22 comparison (Netty 4.2 ships Java 11 class files).
-poc-netty41-bom = { module = "io.netty:netty-bom", version = "4.1.139.Final" }
+poc-netty41-bom = { module = "io.netty:netty-bom", version = "4.2.21.Final" }
 # Netty of the agent transport only (ADR-0009 C-73: 4.1.x >= 4.1.139 keeps C-22, shaded major <= 52;
 # enforced in :agent:agent-dist). Never used by the server (its own netty-bom entry, WO-21).
-agent-netty-bom = { module = "io.netty:netty-bom", version = "4.1.139.Final" }
+agent-netty-bom = { module = "io.netty:netty-bom", version = "4.2.21.Final" }
 # Floor for grpc-java's transitive Guava (Android flavor, Java 8 class files): grpc 1.85.1 asks for
 # 33.6.0-android, which carries CVE-2026-102554 (HIGH, release SBOM scan, WO-44 T-BLD-008). Applied as
 # a dependency constraint by argos.protobuf, so every gRPC consumer (agent jar included) resolves it.
-grpc-guava-android = { module = "com.google.guava:guava", version = "33.7.2-android" }
+grpc-guava-android = { module = "com.google.guava:guava", version = "33.8.0-android" }
 grpc-inprocess = { module = "io.grpc:grpc-inprocess", version.ref = "grpc" }
 protoc-gen-grpc-java = { module = "io.grpc:protoc-gen-grpc-java", version.ref = "grpc" }
 protobuf-bom = { module = "com.google.protobuf:protobuf-bom", version.ref = "protobuf" }
@@ -179,10 +179,10 @@ agent-servlet-jakarta-api = { module = "jakarta.servlet:jakarta.servlet-api", ve
 # HTTP client instrumentation (WO-14, 10 §6.5): compileOnly at the older line, module tests at both
 # lines the sample apps already use (03 §3.1; no new artifact). HC4 comes from sample-hc4 with the
 # Boot 2 BOM, OkHttp from sample-okhttp3/4.
-agent-hc5 = { module = "org.apache.httpcomponents.client5:httpclient5", version = "5.5.2" }
+agent-hc5 = { module = "org.apache.httpcomponents.client5:httpclient5", version = "5.6.5" }
 agent-hc5-latest = { module = "org.apache.httpcomponents.client5:httpclient5", version = "5.6.5" }
-agent-reactor-netty-http = { module = "io.projectreactor.netty:reactor-netty-http", version = "1.2.18" }
-agent-reactor-netty-http-latest = { module = "io.projectreactor.netty:reactor-netty-http", version = "1.3.8" }
+agent-reactor-netty-http = { module = "io.projectreactor.netty:reactor-netty-http", version = "1.4.0" }
+agent-reactor-netty-http-latest = { module = "io.projectreactor.netty:reactor-netty-http", version = "1.4.0" }
 # build tools (resolved by convention plugins, never shipped)
 errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }
 google-java-format = { module = "com.google.googlejavaformat:google-java-format", version.ref = "google-java-format" }
@@ -240,13 +240,13 @@ sample-logback-classic = { module = "ch.qos.logback:logback-classic" }
 sample-log4j-api = { module = "org.apache.logging.log4j:log4j-api" }
 sample-log4j-core = { module = "org.apache.logging.log4j:log4j-core" }
 sample-log4j1 = { module = "log4j:log4j", version = "1.2.17" }
-sample-reload4j = { module = "ch.qos.reload4j:reload4j", version = "1.2.26" }
+sample-reload4j = { module = "ch.qos.reload4j:reload4j", version = "1.2.27" }
 sample-hc4 ={ module = "org.apache.httpcomponents:httpclient" }
 # Lower boundary of the httpclient-apache4 module (WO-50, ADR-0010 C-240 (10)): the first 4.5
 # release (published as "4.5", the 4.5.0 of C-240) and the httpcore it was released with, module
 # test variant testLowerBound only.
-agent-hc4-min = { module = "org.apache.httpcomponents:httpclient", version = "4.5" }
-agent-hc4-core-min = { module = "org.apache.httpcomponents:httpcore", version = "4.4.1" }
+agent-hc4-min = { module = "org.apache.httpcomponents:httpclient", version = "4.5.14" }
+agent-hc4-core-min = { module = "org.apache.httpcomponents:httpcore", version = "4.4.16" }
 # Servlet containers of the compatibility matrix (WO-50, ADR-0010 C-127, SAMPLE_CONTAINER): versions
 # from each app's Boot BOM (Boot 2.7: Jetty 9.4 and Undertow 2.2; Boot 3.5: Jetty 12.0 ee10 and
 # Undertow 2.3; Boot 4.1: Jetty 12.1 ee11), on the runtime class path of the shop jar apps only.
