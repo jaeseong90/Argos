@@ -39,7 +39,7 @@ testcontainers = "2.0.5"
 # --- agent instrumentation compile-time APIs (compileOnly and module tests, never shipped) ---
 # The lowest supported API version of each target, so that a module cannot call a newer method by
 # accident; at run time the application's own classes are used (docs/licenses/dev-only.md).
-agent-servlet-javax-api = "3.1.0"
+agent-servlet-javax-api = "4.0.1"
 # javax.servlet 4.0 for the one Servlet 4 helper (HttpServletMapping) of the servlet module only,
 # compiled in its own source set; every other javax helper stays on 3.1 (WO-12).
 agent-servlet-javax-api4 = "4.0.1"
